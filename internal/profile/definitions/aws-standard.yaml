@@ -1,0 +1,81 @@
+name: aws-standard
+displayName: AWS Standard Development Cluster
+description: Standard 6-node cluster with dedicated workers for development and integration testing
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - labs.example.com
+    - dev.example.com
+    - staging.example.com
+  default: labs.example.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: m6i.xlarge
+    schedulable: false
+  workers:
+    replicas: 3
+    minReplicas: 0
+    maxReplicas: 10
+    instanceType: m6i.2xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 168
+  defaultTTLHours: 72
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 7.80
+  maxMonthlyCost: 5600
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000

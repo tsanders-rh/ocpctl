@@ -1,0 +1,80 @@
+name: aws-minimal-test
+displayName: AWS Minimal Test Cluster
+description: Compact 3-node cluster for quick testing (masters schedulable, no workers)
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - labs.example.com
+    - dev.example.com
+  default: labs.example.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: m6i.xlarge
+    schedulable: true
+  workers:
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 3
+    instanceType: m6i.2xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 72
+  defaultTTLHours: 24
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 1
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: test
+  defaults:
+    Purpose: testing
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 2.50
+  maxMonthlyCost: 1800
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000

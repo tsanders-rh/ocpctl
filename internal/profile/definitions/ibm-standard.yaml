@@ -1,0 +1,77 @@
+name: ibm-standard
+displayName: IBM Cloud Standard Development Cluster
+description: Standard 6-node cluster with dedicated workers for IBM Cloud development
+platform: ibmcloud
+enabled: false  # Will be enabled in Phase 2
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-south
+    - us-east
+    - eu-de
+  default: us-south
+
+baseDomains:
+  allowlist:
+    - labs.example.com
+    - ibm.example.com
+    - staging.example.com
+  default: labs.example.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: bx2-4x16
+    schedulable: false
+  workers:
+    replicas: 3
+    minReplicas: 0
+    maxReplicas: 10
+    instanceType: bx2-8x32
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 168
+  defaultTTLHours: 72
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 8.50
+  maxMonthlyCost: 6100
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  ibmcloud:
+    resourceGroup: default
+    vpcName: ocpctl-vpc

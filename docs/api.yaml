@@ -1,0 +1,798 @@
+openapi: 3.0.3
+info:
+  title: OpenShift Cluster Control Plane API
+  description: |
+    Self-service API for provisioning and managing ephemeral OpenShift clusters on AWS and IBM Cloud.
+
+    ## Authentication
+    All requests must be authenticated using AWS IAM authentication via AWS Signature Version 4.
+    The API extracts the IAM principal ARN from the request and performs RBAC authorization.
+
+    ## Idempotency
+    All write operations (POST/PUT/DELETE) require an `Idempotency-Key` header to prevent duplicate requests.
+    Idempotency keys are valid for 24 hours.
+
+    ## Rate Limiting
+    - 100 requests per minute per IAM principal
+    - 10 cluster creates per hour per team
+  version: 1.0.0
+  contact:
+    name: Platform Engineering Team
+    url: https://github.com/tsanders-rh/ocpctl
+  license:
+    name: Internal Use Only
+
+servers:
+  - url: https://api.ocpctl.example.com/api/v1
+    description: Production
+  - url: https://api-staging.ocpctl.example.com/api/v1
+    description: Staging
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+tags:
+  - name: clusters
+    description: Cluster lifecycle operations
+  - name: jobs
+    description: Async job status and logs
+  - name: reports
+    description: Usage and cost reports
+  - name: admin
+    description: Administrative operations (platform admin only)
+
+paths:
+  /clusters:
+    get:
+      summary: List clusters
+      description: Retrieve clusters with optional filtering
+      operationId: listClusters
+      tags:
+        - clusters
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ClusterStatus'
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [aws, ibmcloud]
+        - name: owner
+          in: query
+          schema:
+            type: string
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: profile
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of clusters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusters:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Cluster'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create cluster
+      description: Request creation of a new OpenShift cluster
+      operationId: createCluster
+      tags:
+        - clusters
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClusterRequest'
+      responses:
+        '202':
+          description: Cluster creation request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateClusterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Cluster with same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clusters/{clusterId}:
+    get:
+      summary: Get cluster details
+      description: Retrieve detailed information about a specific cluster
+      operationId: getCluster
+      tags:
+        - clusters
+      parameters:
+        - $ref: '#/components/parameters/ClusterId'
+      responses:
+        '200':
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clusters/{clusterId}/destroy:
+    post:
+      summary: Destroy cluster
+      description: Request destruction of a cluster
+      operationId: destroyCluster
+      tags:
+        - clusters
+      parameters:
+        - $ref: '#/components/parameters/ClusterId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Cluster destruction request accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusterId:
+                    type: string
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [DESTROYING]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cluster is already being destroyed or in invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clusters/{clusterId}/scale-workers:
+    post:
+      summary: Scale worker nodes
+      description: Scale worker nodes up or down (for off-hours cost savings)
+      operationId: scaleWorkers
+      tags:
+        - clusters
+      parameters:
+        - $ref: '#/components/parameters/ClusterId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - replicas
+              properties:
+                replicas:
+                  type: integer
+                  minimum: 0
+                  description: Target number of worker nodes
+      responses:
+        '202':
+          description: Worker scaling request accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusterId:
+                    type: string
+                  jobId:
+                    type: string
+                  targetReplicas:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Replicas exceed profile limits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clusters/{clusterId}/outputs:
+    get:
+      summary: Get cluster access outputs
+      description: Retrieve cluster access credentials and endpoints
+      operationId: getClusterOutputs
+      tags:
+        - clusters
+      parameters:
+        - $ref: '#/components/parameters/ClusterId'
+      responses:
+        '200':
+          description: Cluster outputs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterOutputs'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cluster is not ready yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{jobId}:
+    get:
+      summary: Get job status
+      description: Retrieve async job status and logs
+      operationId: getJob
+      tags:
+        - jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^job_[A-Za-z0-9]+$'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /reports/usage:
+    get:
+      summary: Get usage report
+      description: Retrieve cost and usage report aggregated by tags
+      operationId: getUsageReport
+      tags:
+        - reports
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: groupBy
+          in: query
+          schema:
+            type: string
+            enum: [team, owner, costCenter, platform, profile]
+            default: team
+      responses:
+        '200':
+          description: Usage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/profiles:
+    get:
+      summary: List cluster profiles
+      description: Retrieve available cluster profiles (admin only)
+      operationId: listProfiles
+      tags:
+        - admin
+      responses:
+        '200':
+          description: List of profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    ClusterId:
+      name: clusterId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^clu_[A-Za-z0-9]+$'
+      description: Cluster identifier
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+      description: Unique idempotency key for this request (valid for 24 hours)
+
+  schemas:
+    ClusterStatus:
+      type: string
+      enum:
+        - PENDING
+        - CREATING
+        - READY
+        - DESTROYING
+        - DESTROYED
+        - FAILED
+
+    CreateClusterRequest:
+      type: object
+      required:
+        - name
+        - platform
+        - version
+        - profile
+        - region
+        - baseDomain
+        - owner
+        - team
+        - costCenter
+        - ttlHours
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+          minLength: 3
+          maxLength: 63
+          description: Cluster name (DNS-compatible)
+        platform:
+          type: string
+          enum: [aws, ibmcloud]
+        version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+          description: OpenShift version (semver)
+        profile:
+          type: string
+          description: Cluster profile name
+        region:
+          type: string
+          description: Cloud provider region
+        baseDomain:
+          type: string
+          description: DNS base domain
+        owner:
+          type: string
+          description: Owner identifier
+        team:
+          type: string
+          description: Team name
+        costCenter:
+          type: string
+          description: Cost center for billing
+        ttlHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          description: Time-to-live in hours
+        sshPublicKey:
+          type: string
+          description: SSH public key for cluster access
+        extraTags:
+          type: object
+          additionalProperties:
+            type: string
+          description: User-defined tags
+        offhoursOptIn:
+          type: boolean
+          default: false
+          description: Enable off-hours worker scaling
+
+    CreateClusterResponse:
+      type: object
+      properties:
+        clusterId:
+          type: string
+        jobId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ClusterStatus'
+        message:
+          type: string
+
+    Cluster:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        version:
+          type: string
+        profile:
+          type: string
+        region:
+          type: string
+        baseDomain:
+          type: string
+        owner:
+          type: string
+        team:
+          type: string
+        costCenter:
+          type: string
+        status:
+          $ref: '#/components/schemas/ClusterStatus'
+        requestedBy:
+          type: string
+        ttlHours:
+          type: integer
+        destroyAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        destroyedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+
+    ClusterDetail:
+      allOf:
+        - $ref: '#/components/schemas/Cluster'
+        - type: object
+          properties:
+            currentJob:
+              $ref: '#/components/schemas/Job'
+            recentJobs:
+              type: array
+              items:
+                $ref: '#/components/schemas/Job'
+
+    ClusterOutputs:
+      type: object
+      properties:
+        clusterId:
+          type: string
+        apiUrl:
+          type: string
+          format: uri
+        consoleUrl:
+          type: string
+          format: uri
+        kubeconfigDownloadUrl:
+          type: string
+          format: uri
+          description: Pre-signed S3 URL for kubeconfig download
+        kubeadminPasswordRef:
+          type: string
+          description: AWS Secrets Manager ARN for kubeadmin password
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        clusterId:
+          type: string
+        jobType:
+          type: string
+          enum: [CREATE, DESTROY, SCALE_WORKERS, JANITOR_DESTROY, ORPHAN_SWEEP]
+        status:
+          type: string
+          enum: [PENDING, RUNNING, SUCCEEDED, FAILED, RETRYING]
+        attempt:
+          type: integer
+        maxAttempts:
+          type: integer
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        logs:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              level:
+                type: string
+              message:
+                type: string
+
+    Profile:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        platform:
+          type: string
+        enabled:
+          type: boolean
+        compute:
+          type: object
+          properties:
+            controlPlane:
+              type: object
+              properties:
+                replicas:
+                  type: integer
+                instanceType:
+                  type: string
+                schedulable:
+                  type: boolean
+            workers:
+              type: object
+              properties:
+                replicas:
+                  type: integer
+                minReplicas:
+                  type: integer
+                maxReplicas:
+                  type: integer
+                instanceType:
+                  type: string
+        lifecycle:
+          type: object
+          properties:
+            maxTTLHours:
+              type: integer
+            defaultTTLHours:
+              type: integer
+        costControls:
+          type: object
+          properties:
+            estimatedHourlyCost:
+              type: number
+              format: float
+
+    UsageReport:
+      type: object
+      properties:
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        groupBy:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              clusterCount:
+                type: integer
+              totalHours:
+                type: number
+              estimatedCost:
+                type: number
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        requestId:
+          type: string
+
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+        - validationErrors
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+        validationErrors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              error:
+                type: string
+        requestId:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    awsSignatureV4:
+      type: apiKey
+      name: Authorization
+      in: header
+      description: AWS Signature Version 4 authentication
+
+security:
+  - awsSignatureV4: []

@@ -205,9 +205,33 @@ See [docs/deployment.md](docs/deployment.md) for infrastructure provisioning and
 
 ## Roadmap
 
-### Phase 1 (MVP)
+### Phase 0 (Design) ✅ COMPLETE
 - [x] Project scaffolding
-- [ ] API service with PostgreSQL
+- [x] Complete database schema with migrations
+- [x] Cluster profile definitions (4 profiles)
+- [x] OpenAPI specification
+- [x] Worker concurrency safety design
+- [x] RBAC mapping model
+- [x] Idempotency mechanism
+
+### Phase 1 (MVP) 🚧 IN PROGRESS
+
+#### Phase 1a: Data Layer ✅ COMPLETE
+- [x] PostgreSQL connection pooling
+- [x] Complete store package (9 tables, 50+ operations)
+- [x] Worker concurrency locks (job_locks)
+- [x] Idempotency mechanism
+- [x] RBAC mapping queries
+- [x] Audit logging infrastructure
+
+#### Phase 1b: Profile & Policy Engine (NEXT)
+- [ ] Profile YAML loader
+- [ ] Profile validation engine
+- [ ] install-config.yaml renderer
+- [ ] Policy enforcement
+
+#### Phase 1c: API & Worker Services
+- [ ] API service with Chi router
 - [ ] Worker service for AWS create/destroy
 - [ ] S3 artifact storage
 - [ ] Basic web UI
@@ -237,3 +261,8 @@ Internal use only - All rights reserved.
 - Issues: [GitHub Issues](https://github.com/tsanders-rh/ocpctl/issues)
 - Documentation: [docs/](docs/)
 - Design Spec: [docs/design-specification.md](docs/design-specification.md)
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Implementation Guide: [docs/IMPLEMENTATION-GUIDE.md](docs/IMPLEMENTATION-GUIDE.md)
+- Critical Items Resolved: [docs/CRITICAL-ITEMS-RESOLVED.md](docs/CRITICAL-ITEMS-RESOLVED.md)
+- Data Layer Complete: [docs/DATA-LAYER-COMPLETE.md](docs/DATA-LAYER-COMPLETE.md)
+- Store Package README: [internal/store/README.md](internal/store/README.md)
