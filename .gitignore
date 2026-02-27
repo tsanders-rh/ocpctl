@@ -1,0 +1,83 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+node_modules/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+
+# Build artifacts
+build/
+*.tar.gz
+*.zip
+
+# Logs
+*.log
+logs/
+
+# PostgreSQL data
+.postgres-data/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+
+# Frontend build
+web/build/
+web/dist/
+web/.cache/
+
+# Testing
+.test-clusters/
+test-results/
+
+# OpenShift installer artifacts
+auth/
+metadata.json
+terraform.tfstate*
+.openshift_install_state.json
+.openshift_install.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+tmp/
+temp/
+*.tmp

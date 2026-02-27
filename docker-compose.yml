@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ocpctl-postgres
+    environment:
+      POSTGRES_DB: ocpctl
+      POSTGRES_USER: ocpctl
+      POSTGRES_PASSWORD: ocpctl-dev-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ocpctl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: ocpctl-localstack
+    environment:
+      SERVICES: s3,sqs,secretsmanager,kms
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/tmp/localstack
+    healthcheck:
+      test: ["CMD", "awslocal", "s3", "ls"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  localstack-data:
