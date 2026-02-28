@@ -277,8 +277,8 @@ build_application() {
     # Install goose for migrations
     sudo -u ${OCPCTL_USER} /usr/local/go/bin/go install github.com/pressly/goose/v3/cmd/goose@latest
 
-    # Build backend binaries
-    sudo -u ${OCPCTL_USER} make build
+    # Build backend binaries (set PATH to include Go)
+    sudo -u ${OCPCTL_USER} PATH=/usr/local/go/bin:$PATH make build
 
     # Install frontend dependencies
     cd "${OCPCTL_DIR}/web"
