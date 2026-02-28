@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -21,6 +22,8 @@ type ServerConfig struct {
 	EnableCORS        bool
 	EnableAuth        bool
 	JWTSecret         string
+	JWTAccessTTL      time.Duration
+	JWTRefreshTTL     time.Duration
 	AllowedOrigins    []string
 	MaxBodySize       string
 	RateLimitRequests int
@@ -33,8 +36,11 @@ func DefaultServerConfig() *ServerConfig {
 		Port:              8080,
 		ShutdownTimeout:   10 * time.Second,
 		EnableCORS:        true,
-		EnableAuth:        false, // Disabled for Phase 1
-		AllowedOrigins:    []string{"*"},
+		EnableAuth:        true, // Enabled for Phase 2
+		JWTSecret:         "change-me-in-production-min-32-chars",
+		JWTAccessTTL:      15 * time.Minute,
+		JWTRefreshTTL:     7 * 24 * time.Hour, // 7 days
+		AllowedOrigins:    []string{"http://localhost:3000"}, // Next.js dev server
 		MaxBodySize:       "1M",
 		RateLimitRequests: 100,
 		RateLimitDuration: 1 * time.Minute,
@@ -48,6 +54,7 @@ type Server struct {
 	store    *store.Store
 	registry *profile.Registry
 	policy   *policy.Engine
+	auth     *auth.Auth
 }
 
 // NewServer creates a new API server
@@ -67,12 +74,20 @@ func NewServer(
 	// Set custom validator
 	e.Validator = NewValidator()
 
+	// Create auth service
+	authService := auth.NewAuth(
+		config.JWTSecret,
+		config.JWTAccessTTL,
+		config.JWTRefreshTTL,
+	)
+
 	s := &Server{
 		echo:     e,
 		config:   config,
 		store:    store,
 		registry: registry,
 		policy:   policyEngine,
+		auth:     authService,
 	}
 
 	s.setupMiddleware()
@@ -95,9 +110,11 @@ func (s *Server) setupMiddleware() {
 	// CORS if enabled
 	if s.config.EnableCORS {
 		s.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-			AllowOrigins: s.config.AllowedOrigins,
-			AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch},
-			AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+			AllowOrigins:     s.config.AllowedOrigins,
+			AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch},
+			AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+			AllowCredentials: true, // Required for cookies
+			ExposeHeaders:    []string{echo.HeaderContentLength},
 		}))
 	}
 
@@ -112,30 +129,55 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes configures API routes
 func (s *Server) setupRoutes() {
-	// Health check
+	// Health check (no auth required)
 	s.echo.GET("/health", s.healthCheck)
 	s.echo.GET("/ready", s.readyCheck)
 
 	// API v1 routes
 	v1 := s.echo.Group("/api/v1")
 
-	// Cluster handlers
+	// Auth routes (public)
+	authHandler := NewAuthHandler(s.store, s.auth)
+	authGroup := v1.Group("/auth")
+	authGroup.POST("/login", authHandler.Login)
+	authGroup.POST("/logout", authHandler.Logout)
+	authGroup.POST("/refresh", authHandler.Refresh)
+
+	// Protected auth routes (require authentication)
+	authProtected := authGroup.Group("", auth.RequireAuth(s.auth))
+	authProtected.GET("/me", authHandler.GetMe)
+	authProtected.PATCH("/me", authHandler.UpdateMe)
+	authProtected.POST("/password", authHandler.ChangePassword)
+
+	// User management routes (admin only)
+	userHandler := NewUserHandler(s.store)
+	usersGroup := v1.Group("/users", auth.RequireAuth(s.auth), auth.RequireAdmin())
+	usersGroup.GET("", userHandler.List)
+	usersGroup.POST("", userHandler.Create)
+	usersGroup.GET("/:id", userHandler.Get)
+	usersGroup.PATCH("/:id", userHandler.Update)
+	usersGroup.DELETE("/:id", userHandler.Delete)
+
+	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy)
-	v1.POST("/clusters", clusterHandler.Create)
-	v1.GET("/clusters", clusterHandler.List)
-	v1.GET("/clusters/:id", clusterHandler.Get)
-	v1.DELETE("/clusters/:id", clusterHandler.Delete)
-	v1.PATCH("/clusters/:id/extend", clusterHandler.Extend)
+	clustersGroup := v1.Group("/clusters", auth.RequireAuth(s.auth))
+	clustersGroup.POST("", clusterHandler.Create)
+	clustersGroup.GET("", clusterHandler.List)
+	clustersGroup.GET("/:id", clusterHandler.Get)
+	clustersGroup.DELETE("/:id", clusterHandler.Delete)
+	clustersGroup.PATCH("/:id/extend", clusterHandler.Extend)
 
-	// Profile handlers
+	// Profile routes (public for now, authenticated users only in production)
 	profileHandler := NewProfileHandler(s.registry)
-	v1.GET("/profiles", profileHandler.List)
-	v1.GET("/profiles/:name", profileHandler.Get)
+	profilesGroup := v1.Group("/profiles")
+	profilesGroup.GET("", profileHandler.List)
+	profilesGroup.GET("/:name", profileHandler.Get)
 
-	// Job handlers
+	// Job routes (require authentication)
 	jobHandler := NewJobHandler(s.store)
-	v1.GET("/jobs", jobHandler.List)
-	v1.GET("/jobs/:id", jobHandler.Get)
+	jobsGroup := v1.Group("/jobs", auth.RequireAuth(s.auth))
+	jobsGroup.GET("", jobHandler.List)
+	jobsGroup.GET("/:id", jobHandler.Get)
 }
 
 // healthCheck returns basic health status

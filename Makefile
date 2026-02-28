@@ -1,8 +1,15 @@
 .PHONY: help install-deps build test clean run-api run-worker run-janitor migrate-up migrate-down docker-up docker-down
+.PHONY: build-linux deploy-binaries deploy-profiles deploy install-services start stop restart status logs logs-api logs-worker
+
+# Deployment configuration
+DEPLOY_HOST ?= ubuntu@your-ec2-instance.com
+DEPLOY_PATH = /opt/ocpctl
 
 # Default target
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Development:"
 	@echo "  install-deps    Install development dependencies"
 	@echo "  build           Build all binaries"
 	@echo "  test            Run all tests"
@@ -18,6 +25,22 @@ help:
 	@echo "  docker-down     Stop local development dependencies"
 	@echo "  lint            Run linters"
 	@echo "  fmt             Format code"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  build-linux     Build binaries for Linux deployment"
+	@echo "  deploy          Deploy binaries and profiles to server"
+	@echo "  deploy-binaries Deploy only binaries to server"
+	@echo "  deploy-profiles Deploy only profiles to server"
+	@echo "  install-services Install systemd services (run on server)"
+	@echo ""
+	@echo "Service Management (on server):"
+	@echo "  start           Start services"
+	@echo "  stop            Stop services"
+	@echo "  restart         Restart services"
+	@echo "  status          Check service status"
+	@echo "  logs            View all service logs"
+	@echo "  logs-api        View API logs only"
+	@echo "  logs-worker     View worker logs only"
 
 # Install development dependencies
 install-deps:
@@ -92,3 +115,63 @@ fmt:
 dev: docker-up
 	@echo "Starting development environment..."
 	@echo "Run 'make run-api' and 'make run-worker' in separate terminals"
+
+# Deployment targets
+build-linux:
+	@echo "Building for Linux (amd64)..."
+	@mkdir -p bin
+	GOOS=linux GOARCH=amd64 go build -o bin/ocpctl-api-linux ./cmd/api
+	GOOS=linux GOARCH=amd64 go build -o bin/ocpctl-worker-linux ./cmd/worker
+	@echo "Built Linux binaries in bin/"
+
+deploy-binaries: build-linux
+	@echo "Deploying binaries to $(DEPLOY_HOST)..."
+	scp bin/ocpctl-api-linux $(DEPLOY_HOST):$(DEPLOY_PATH)/bin/ocpctl-api
+	scp bin/ocpctl-worker-linux $(DEPLOY_HOST):$(DEPLOY_PATH)/bin/ocpctl-worker
+	ssh $(DEPLOY_HOST) "sudo chown ocpctl:ocpctl $(DEPLOY_PATH)/bin/*"
+	ssh $(DEPLOY_HOST) "sudo chmod +x $(DEPLOY_PATH)/bin/*"
+	@echo "Binaries deployed successfully"
+
+deploy-profiles:
+	@echo "Deploying profiles to $(DEPLOY_HOST)..."
+	rsync -av --delete internal/profile/definitions/ $(DEPLOY_HOST):$(DEPLOY_PATH)/profiles/
+	ssh $(DEPLOY_HOST) "sudo chown -R ocpctl:ocpctl $(DEPLOY_PATH)/profiles"
+	@echo "Profiles deployed successfully"
+
+deploy: deploy-binaries deploy-profiles
+	@echo ""
+	@echo "=== Deployment Complete ==="
+	@echo "Restart services with:"
+	@echo "  ssh $(DEPLOY_HOST) 'sudo systemctl restart ocpctl-api ocpctl-worker'"
+
+install-services:
+	@echo "Installing systemd services..."
+	sudo cp deploy/systemd/ocpctl-api.service /etc/systemd/system/
+	sudo cp deploy/systemd/ocpctl-worker.service /etc/systemd/system/
+	sudo systemctl daemon-reload
+	@echo ""
+	@echo "Services installed. Enable and start with:"
+	@echo "  sudo systemctl enable ocpctl-api ocpctl-worker"
+	@echo "  sudo systemctl start ocpctl-api ocpctl-worker"
+
+# Service management (run on server)
+start:
+	sudo systemctl start ocpctl-api ocpctl-worker
+
+stop:
+	sudo systemctl stop ocpctl-api ocpctl-worker
+
+restart:
+	sudo systemctl restart ocpctl-api ocpctl-worker
+
+status:
+	sudo systemctl status ocpctl-api ocpctl-worker
+
+logs:
+	sudo journalctl -u ocpctl-api -u ocpctl-worker -f
+
+logs-api:
+	sudo journalctl -u ocpctl-api -f
+
+logs-worker:
+	sudo journalctl -u ocpctl-worker -f

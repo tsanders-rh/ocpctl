@@ -32,6 +32,19 @@ func main() {
 		fmt.Sscanf(portStr, "%d", &port)
 	}
 
+	// JWT configuration
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Println("WARNING: Using default JWT_SECRET. Set JWT_SECRET environment variable in production!")
+		jwtSecret = "change-me-in-production-min-32-chars"
+	}
+
+	// CORS configuration
+	corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if corsOrigins == "" {
+		corsOrigins = "http://localhost:3000"
+	}
+
 	// Initialize store
 	log.Println("Connecting to database...")
 	st, err := store.NewStore(dbURL)
@@ -64,6 +77,13 @@ func main() {
 	// Create server config
 	config := api.DefaultServerConfig()
 	config.Port = port
+	config.JWTSecret = jwtSecret
+	config.AllowedOrigins = []string{corsOrigins}
+
+	log.Printf("Server configured:")
+	log.Printf("  Port: %d", config.Port)
+	log.Printf("  Auth enabled: %v", config.EnableAuth)
+	log.Printf("  CORS origins: %v", config.AllowedOrigins)
 
 	// Create API server
 	server := api.NewServer(config, st, registry, policyEngine)
