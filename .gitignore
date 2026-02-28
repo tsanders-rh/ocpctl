@@ -67,7 +67,8 @@ test-results/
 
 # OpenShift installer artifacts (in work directories only)
 /auth/
-/*/auth/
+/tmp/*/auth/
+/workdir/*/auth/
 metadata.json
 terraform.tfstate*
 .openshift_install_state.json
