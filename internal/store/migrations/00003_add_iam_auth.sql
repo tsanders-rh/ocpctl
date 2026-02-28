@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: Add IAM Authentication Support
 -- Description: Adds IAM principal mapping table for AWS IAM authentication
 -- Date: 2026-02-28
@@ -39,3 +40,8 @@ COMMENT ON TABLE iam_principal_mappings IS 'Maps AWS IAM principals to internal 
 COMMENT ON COLUMN iam_principal_mappings.iam_principal_arn IS 'AWS IAM principal ARN (arn:aws:iam::account-id:user/username or role/rolename)';
 COMMENT ON COLUMN iam_principal_mappings.user_id IS 'Reference to internal users table';
 COMMENT ON COLUMN iam_principal_mappings.enabled IS 'Whether this mapping is active (allows disabling without deletion)';
+
+-- +goose Down
+DROP TRIGGER IF EXISTS trg_iam_mapping_updated_at ON iam_principal_mappings;
+DROP FUNCTION IF EXISTS update_iam_mapping_updated_at();
+DROP TABLE IF EXISTS iam_principal_mappings;

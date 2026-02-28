@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: Add authentication and authorization
 -- Creates users table, refresh_tokens table, and adds owner_id to clusters
 
@@ -52,3 +53,10 @@ ON CONFLICT (email) DO NOTHING;
 UPDATE clusters
 SET owner_id = 'a0000000-0000-0000-0000-000000000001'
 WHERE owner_id IS NULL;
+
+-- +goose Down
+DROP INDEX IF EXISTS idx_clusters_owner_id;
+ALTER TABLE clusters DROP COLUMN IF EXISTS owner_id;
+
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS users;
