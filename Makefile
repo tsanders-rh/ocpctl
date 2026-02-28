@@ -6,11 +6,16 @@
 DEPLOY_HOST ?= ubuntu@your-ec2-instance.com
 DEPLOY_PATH = /opt/ocpctl
 
+# Database configuration
+DATABASE_URL ?= $(shell grep DATABASE_URL .env 2>/dev/null | cut -d '=' -f2)
+
 # Default target
 help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Development:"
+	@echo "  setup           Complete local development setup (run once)"
+	@echo "  bootstrap-db    Setup database with migrations and seed data"
 	@echo "  install-deps    Install development dependencies"
 	@echo "  build           Build all binaries"
 	@echo "  test            Run all tests"
@@ -50,6 +55,18 @@ help:
 	@echo "  restart-web     Restart web service"
 	@echo "  status-web      Check web service status"
 	@echo "  logs-web        View web service logs"
+
+# Complete local development setup
+setup:
+	@echo "Running complete development setup..."
+	@chmod +x scripts/*.sh
+	./scripts/setup-dev.sh
+
+# Bootstrap database (create DB, run migrations, seed data)
+bootstrap-db:
+	@echo "Bootstrapping database..."
+	@chmod +x scripts/bootstrap-db.sh
+	./scripts/bootstrap-db.sh
 
 # Install development dependencies
 install-deps:
