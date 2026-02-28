@@ -193,3 +193,40 @@ func (s *JobLockStore) IsLocked(ctx context.Context, clusterID string) (bool, er
 
 	return locked, nil
 }
+
+// TryAcquire attempts to acquire a lock without a transaction
+// Returns true if lock was acquired, false if already held
+func (s *JobLockStore) TryAcquire(ctx context.Context, lock *types.JobLock) (bool, error) {
+	query := `
+		INSERT INTO job_locks (cluster_id, job_id, locked_by, locked_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (cluster_id) DO NOTHING
+	`
+
+	result, err := s.pool.Exec(ctx, query,
+		lock.ClusterID,
+		lock.JobID,
+		lock.LockedBy,
+		lock.LockedAt,
+		lock.ExpiresAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf("try acquire lock: %w", err)
+	}
+
+	// If no rows were affected, lock already exists (conflict)
+	acquired := result.RowsAffected() > 0
+	return acquired, nil
+}
+
+// CleanupExpired removes expired locks and returns count
+func (s *JobLockStore) CleanupExpired(ctx context.Context) (int64, error) {
+	query := `DELETE FROM job_locks WHERE expires_at < NOW()`
+
+	result, err := s.pool.Exec(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup expired locks: %w", err)
+	}
+
+	return result.RowsAffected(), nil
+}

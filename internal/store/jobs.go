@@ -333,3 +333,52 @@ func (s *JobStore) GetStuckJobs(ctx context.Context, threshold time.Duration) ([
 
 	return jobs, nil
 }
+
+// GetPending returns pending jobs up to the specified limit
+func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, error) {
+	query := `
+		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
+			error_code, error_message, started_at, ended_at,
+			created_at, updated_at, metadata
+		FROM jobs
+		WHERE status = 'PENDING'
+		ORDER BY created_at ASC
+		LIMIT $1
+	`
+
+	rows, err := s.pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query pending jobs: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := []*types.Job{}
+	for rows.Next() {
+		var job types.Job
+		err := rows.Scan(
+			&job.ID,
+			&job.ClusterID,
+			&job.JobType,
+			&job.Status,
+			&job.Attempt,
+			&job.MaxAttempts,
+			&job.ErrorCode,
+			&job.ErrorMessage,
+			&job.StartedAt,
+			&job.EndedAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+			&job.Metadata,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan pending job: %w", err)
+		}
+		jobs = append(jobs, &job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending jobs: %w", err)
+	}
+
+	return jobs, nil
+}
