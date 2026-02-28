@@ -305,8 +305,14 @@ setup_database() {
 
     cd "${OCPCTL_DIR}"
 
-    # Run migrations
-    sudo -u ${OCPCTL_USER} /home/${OCPCTL_USER}/go/bin/goose -dir internal/store/migrations postgres "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}?sslmode=disable" up
+    # Check if migrations have already been run
+    if sudo -u ${OCPCTL_USER} /home/${OCPCTL_USER}/go/bin/goose -dir internal/store/migrations postgres "$(grep DATABASE_URL ${OCPCTL_DIR}/.env | cut -d= -f2)" status | grep -q "Applied"; then
+        log_warn "Database migrations already applied, skipping"
+        return 0
+    fi
+
+    # Run migrations using password from .env file
+    sudo -u ${OCPCTL_USER} /home/${OCPCTL_USER}/go/bin/goose -dir internal/store/migrations postgres "$(grep DATABASE_URL ${OCPCTL_DIR}/.env | cut -d= -f2)" up
 
     log_success "Database migrations completed"
 }
