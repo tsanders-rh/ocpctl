@@ -181,6 +181,8 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id", clusterHandler.Get)
 	clustersGroup.DELETE("/:id", clusterHandler.Delete)
 	clustersGroup.PATCH("/:id/extend", clusterHandler.Extend)
+	clustersGroup.GET("/:id/outputs", clusterHandler.GetOutputs)
+	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 
 	// Profile routes (public for now, authenticated users only in production)
 	profileHandler := NewProfileHandler(s.registry)

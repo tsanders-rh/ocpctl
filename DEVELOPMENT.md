@@ -7,6 +7,7 @@ This guide covers local development setup and workflows for ocpctl.
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Initial Setup](#initial-setup)
+- [OpenShift Installer Setup](#openshift-installer-setup)
 - [Running Locally](#running-locally)
 - [Development Workflow](#development-workflow)
 - [Testing](#testing)
@@ -70,6 +71,42 @@ go version      # Should be 1.21 or higher
 node --version  # Should be v18 or higher
 psql --version  # Should be 14 or higher
 ```
+
+## OpenShift Installer Setup
+
+To actually provision clusters (not just test the API), you need the OpenShift installer and credentials.
+
+### Quick Setup
+
+```bash
+# 1. Install openshift-install binary
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-install-linux.tar.gz
+tar xvf openshift-install-linux.tar.gz
+sudo mv openshift-install /usr/local/bin/
+openshift-install version
+
+# 2. Get pull secret from Red Hat
+# Visit: https://console.redhat.com/openshift/install/pull-secret
+# Copy the pull secret and add to .env:
+echo "OPENSHIFT_PULL_SECRET='paste-your-pull-secret-json-here'" >> .env
+
+# 3. Configure AWS credentials
+aws configure
+# OR add to .env:
+echo "AWS_ACCESS_KEY_ID=your-key" >> .env
+echo "AWS_SECRET_ACCESS_KEY=your-secret" >> .env
+```
+
+### Without OpenShift Installer
+
+You can develop and test the API/web UI without provisioning real clusters:
+
+- **API server** works fully
+- **Web UI** works fully
+- **Cluster create requests** create database records
+- **Jobs** are created but worker will fail without installer
+
+See [docs/OPENSHIFT_INSTALL_SETUP.md](docs/OPENSHIFT_INSTALL_SETUP.md) for complete setup instructions.
 
 ## Initial Setup
 
