@@ -1,4 +1,4 @@
-name: ibm-minimal-test
+name: ibmcloud-minimal-test
 displayName: IBM Cloud Minimal Test Cluster
 description: Compact 3-node cluster for IBM Cloud testing (masters schedulable, no workers)
 platform: ibmcloud
