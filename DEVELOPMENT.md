@@ -19,13 +19,15 @@ This guide covers local development setup and workflows for ocpctl.
 **First time setup:**
 
 ```bash
-# Clone the repository
-git clone https://github.com/tsanders-rh/ocpctl.git
+# Clone the repository (using SSH)
+git clone git@github.com:tsanders-rh/ocpctl.git
 cd ocpctl
 
 # Run complete setup (installs deps, sets up DB, builds binaries)
 make setup
 ```
+
+> **Note**: If you don't have SSH keys set up, see [GitHub SSH Setup](#github-ssh-setup) below.
 
 **Daily development:**
 
@@ -90,6 +92,35 @@ go version      # Should be 1.21 or higher
 node --version  # Should be v18 or higher
 psql --version  # Should be 14 or higher
 ```
+
+### GitHub SSH Setup
+
+If you don't have SSH keys configured for GitHub:
+
+```bash
+# Generate SSH key (if you don't have one)
+ssh-keygen -t ed25519 -C "your-email@example.com"
+# Press Enter to accept default location
+# Enter passphrase (optional but recommended)
+
+# Display your public key
+cat ~/.ssh/id_ed25519.pub
+
+# Copy the output and add it to GitHub:
+# 1. Go to: https://github.com/settings/keys
+# 2. Click "New SSH key"
+# 3. Paste your public key
+# 4. Click "Add SSH key"
+
+# Test SSH connection
+ssh -T git@github.com
+# Should see: "Hi username! You've successfully authenticated..."
+```
+
+**Alternative**: Use HTTPS with Personal Access Token:
+- Go to https://github.com/settings/tokens
+- Generate new token (classic) with `repo` scope
+- Use token as password when cloning: `git clone https://github.com/tsanders-rh/ocpctl.git`
 
 ## OpenShift Installer Setup
 

@@ -41,8 +41,8 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/tsanders-rh/ocpctl/main
 # SSH into your Brix
 ssh your-brix-ip
 
-# Clone the repository
-git clone https://github.com/tsanders-rh/ocpctl.git
+# Clone the repository (using SSH)
+git clone git@github.com:tsanders-rh/ocpctl.git
 cd ocpctl
 
 # Make script executable
@@ -50,6 +50,19 @@ chmod +x scripts/setup-fedora-brix.sh
 
 # Run setup
 sudo ./scripts/setup-fedora-brix.sh
+```
+
+**Note**: If you don't have SSH keys set up with GitHub:
+
+```bash
+# Generate SSH key
+ssh-keygen -t ed25519 -C "your-email@example.com"
+
+# Display public key
+cat ~/.ssh/id_ed25519.pub
+
+# Add this key to GitHub at: https://github.com/settings/keys
+# Then clone with SSH as shown above
 ```
 
 ## What the Script Does

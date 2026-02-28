@@ -23,7 +23,7 @@ NC='\033[0m' # No Color
 # Configuration
 OCPCTL_USER=${OCPCTL_USER:-ocpctl}
 OCPCTL_DIR=${OCPCTL_DIR:-/opt/ocpctl}
-REPO_URL="https://github.com/tsanders-rh/ocpctl.git"
+REPO_URL="${REPO_URL:-git@github.com:tsanders-rh/ocpctl.git}"  # Use SSH by default
 DB_NAME="ocpctl"
 DB_USER="ocpctl"
 DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
@@ -204,7 +204,20 @@ clone_repository() {
         cd "${OCPCTL_DIR}"
         sudo -u ${OCPCTL_USER} git pull
     else
-        sudo -u ${OCPCTL_USER} git clone "${REPO_URL}" "${OCPCTL_DIR}"
+        # Attempt to clone
+        if ! sudo -u ${OCPCTL_USER} git clone "${REPO_URL}" "${OCPCTL_DIR}" 2>&1; then
+            log_error "Failed to clone repository from ${REPO_URL}"
+            echo ""
+            log_info "If using SSH (git@github.com), ensure SSH keys are configured:"
+            echo "  1. Generate key: ssh-keygen -t ed25519 -C \"your-email@example.com\""
+            echo "  2. Display key: cat ~/.ssh/id_ed25519.pub"
+            echo "  3. Add to GitHub: https://github.com/settings/keys"
+            echo ""
+            log_info "Alternatively, use HTTPS with Personal Access Token:"
+            echo "  REPO_URL=\"https://github.com/tsanders-rh/ocpctl.git\" ./setup-fedora-brix.sh"
+            echo ""
+            exit 1
+        fi
     fi
 
     cd "${OCPCTL_DIR}"
