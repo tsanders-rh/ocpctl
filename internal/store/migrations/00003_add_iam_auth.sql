@@ -21,6 +21,7 @@ CREATE INDEX idx_iam_principals_arn ON iam_principal_mappings(iam_principal_arn)
 CREATE INDEX idx_iam_principals_user ON iam_principal_mappings(user_id);
 
 -- Function to update updated_at timestamp
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_iam_mapping_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -28,6 +29,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 -- Trigger to automatically update updated_at
 CREATE TRIGGER trg_iam_mapping_updated_at
