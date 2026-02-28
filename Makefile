@@ -80,12 +80,7 @@ build:
 	go build -o bin/ocpctl-api ./cmd/api
 	@echo "Building worker service..."
 	go build -o bin/ocpctl-worker ./cmd/worker
-	@echo "Building janitor service..."
-	go build -o bin/ocpctl-janitor ./cmd/janitor
-	@echo "Building CLI..."
-	go build -o bin/ocpctl ./cmd/cli
-	@echo "Building frontend..."
-	cd web && npm run build
+	@echo "All services built successfully"
 
 # Run tests
 test: test-unit

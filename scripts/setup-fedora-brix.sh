@@ -359,32 +359,32 @@ ReadWritePaths=/var/lib/ocpctl
 WantedBy=multi-user.target
 EOF
 
-    # Janitor Service
-    cat > /etc/systemd/system/ocpctl-janitor.service << EOF
-[Unit]
-Description=ocpctl Janitor Service
-After=network.target postgresql.service ocpctl-api.service
-Wants=postgresql.service
-
-[Service]
-Type=simple
-User=${OCPCTL_USER}
-WorkingDirectory=${OCPCTL_DIR}
-EnvironmentFile=${OCPCTL_DIR}/.env
-ExecStart=${OCPCTL_DIR}/bin/ocpctl-janitor
-Restart=always
-RestartSec=10
-
-# Security hardening
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/ocpctl
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    # Janitor Service (disabled - not yet implemented)
+    # cat > /etc/systemd/system/ocpctl-janitor.service << EOF
+# [Unit]
+# Description=ocpctl Janitor Service
+# After=network.target postgresql.service ocpctl-api.service
+# Wants=postgresql.service
+#
+# [Service]
+# Type=simple
+# User=${OCPCTL_USER}
+# WorkingDirectory=${OCPCTL_DIR}
+# EnvironmentFile=${OCPCTL_DIR}/.env
+# ExecStart=${OCPCTL_DIR}/bin/ocpctl-janitor
+# Restart=always
+# RestartSec=10
+#
+# # Security hardening
+# NoNewPrivileges=true
+# PrivateTmp=true
+# ProtectSystem=strict
+# ProtectHome=true
+# ReadWritePaths=/var/lib/ocpctl
+#
+# [Install]
+# WantedBy=multi-user.target
+# EOF
 
     # Web Service
     cat > /etc/systemd/system/ocpctl-web.service << EOF
@@ -503,16 +503,16 @@ start_services() {
     # Enable all services
     systemctl enable ocpctl-api
     systemctl enable ocpctl-worker
-    systemctl enable ocpctl-janitor
+    # systemctl enable ocpctl-janitor  # Disabled - not yet implemented
     systemctl enable ocpctl-web
 
     # Start API first
     systemctl start ocpctl-api
     sleep 3
 
-    # Start worker and janitor
+    # Start worker
     systemctl start ocpctl-worker
-    systemctl start ocpctl-janitor
+    # systemctl start ocpctl-janitor  # Disabled - not yet implemented
 
     # Start web
     systemctl start ocpctl-web
@@ -525,7 +525,7 @@ verify_installation() {
     log_info "Verifying installation..."
 
     # Check service status
-    for service in ocpctl-api ocpctl-worker ocpctl-janitor ocpctl-web nginx; do
+    for service in ocpctl-api ocpctl-worker ocpctl-web nginx; do
         if systemctl is-active --quiet ${service}; then
             log_success "${service} is running"
         else
