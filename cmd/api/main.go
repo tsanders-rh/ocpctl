@@ -45,6 +45,9 @@ func main() {
 		corsOrigins = "http://localhost:3000"
 	}
 
+	// IAM authentication configuration
+	enableIAMAuth := os.Getenv("ENABLE_IAM_AUTH") == "true"
+
 	// Initialize store
 	log.Println("Connecting to database...")
 	st, err := store.NewStore(dbURL)
@@ -79,10 +82,11 @@ func main() {
 	config.Port = port
 	config.JWTSecret = jwtSecret
 	config.AllowedOrigins = []string{corsOrigins}
+	config.EnableIAMAuth = enableIAMAuth
 
 	log.Printf("Server configured:")
 	log.Printf("  Port: %d", config.Port)
-	log.Printf("  Auth enabled: %v", config.EnableAuth)
+	log.Printf("  Auth enabled: %v (JWT: true, IAM: %v)", config.EnableAuth, config.EnableIAMAuth)
 	log.Printf("  CORS origins: %v", config.AllowedOrigins)
 
 	// Create API server

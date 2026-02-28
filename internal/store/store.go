@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // Store provides database operations
@@ -22,6 +23,7 @@ type Store struct {
 	Usage          *UsageStore
 	Users          *UserStore
 	RefreshTokens  *RefreshTokenStore
+	IAMMappings    *IAMMappingStore
 }
 
 // New creates a new Store with all sub-stores initialized
@@ -41,6 +43,10 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Usage = &UsageStore{pool: pool}
 	s.Users = &UserStore{pool: pool}
 	s.RefreshTokens = &RefreshTokenStore{pool: pool}
+	s.IAMMappings = &IAMMappingStore{
+		pool:  pool,
+		cache: make(map[string]*types.IAMPrincipalMapping),
+	}
 
 	return s
 }

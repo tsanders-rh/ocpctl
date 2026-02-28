@@ -21,6 +21,7 @@ type ServerConfig struct {
 	ShutdownTimeout   time.Duration
 	EnableCORS        bool
 	EnableAuth        bool
+	EnableIAMAuth     bool
 	JWTSecret         string
 	JWTAccessTTL      time.Duration
 	JWTRefreshTTL     time.Duration
@@ -36,7 +37,8 @@ func DefaultServerConfig() *ServerConfig {
 		Port:              8080,
 		ShutdownTimeout:   10 * time.Second,
 		EnableCORS:        true,
-		EnableAuth:        true, // Enabled for Phase 2
+		EnableAuth:        true,  // Enabled for Phase 2
+		EnableIAMAuth:     false, // Disabled by default, enable with ENABLE_IAM_AUTH=true
 		JWTSecret:         "change-me-in-production-min-32-chars",
 		JWTAccessTTL:      15 * time.Minute,
 		JWTRefreshTTL:     7 * 24 * time.Hour, // 7 days
@@ -55,6 +57,7 @@ type Server struct {
 	registry *profile.Registry
 	policy   *policy.Engine
 	auth     *auth.Auth
+	iamAuth  *auth.IAMAuthenticator
 }
 
 // NewServer creates a new API server
@@ -81,6 +84,17 @@ func NewServer(
 		config.JWTRefreshTTL,
 	)
 
+	// Create IAM auth service
+	iamAuthService, err := auth.NewIAMAuthenticator(
+		store.IAMMappings,
+		store.Users,
+		config.EnableIAMAuth,
+	)
+	if err != nil {
+		// Log warning but continue (IAM auth will be disabled)
+		e.Logger.Warn("Failed to initialize IAM authenticator: ", err)
+	}
+
 	s := &Server{
 		echo:     e,
 		config:   config,
@@ -88,6 +102,7 @@ func NewServer(
 		registry: registry,
 		policy:   policyEngine,
 		auth:     authService,
+		iamAuth:  iamAuthService,
 	}
 
 	s.setupMiddleware()
@@ -144,14 +159,14 @@ func (s *Server) setupRoutes() {
 	authGroup.POST("/refresh", authHandler.Refresh)
 
 	// Protected auth routes (require authentication)
-	authProtected := authGroup.Group("", auth.RequireAuth(s.auth))
+	authProtected := authGroup.Group("", auth.RequireAuthDual(s.auth, s.iamAuth))
 	authProtected.GET("/me", authHandler.GetMe)
 	authProtected.PATCH("/me", authHandler.UpdateMe)
 	authProtected.POST("/password", authHandler.ChangePassword)
 
 	// User management routes (admin only)
 	userHandler := NewUserHandler(s.store)
-	usersGroup := v1.Group("/users", auth.RequireAuth(s.auth), auth.RequireAdmin())
+	usersGroup := v1.Group("/users", auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireAdmin())
 	usersGroup.GET("", userHandler.List)
 	usersGroup.POST("", userHandler.Create)
 	usersGroup.GET("/:id", userHandler.Get)
@@ -160,7 +175,7 @@ func (s *Server) setupRoutes() {
 
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy)
-	clustersGroup := v1.Group("/clusters", auth.RequireAuth(s.auth))
+	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
 	clustersGroup.POST("", clusterHandler.Create)
 	clustersGroup.GET("", clusterHandler.List)
 	clustersGroup.GET("/:id", clusterHandler.Get)
@@ -175,7 +190,7 @@ func (s *Server) setupRoutes() {
 
 	// Job routes (require authentication)
 	jobHandler := NewJobHandler(s.store)
-	jobsGroup := v1.Group("/jobs", auth.RequireAuth(s.auth))
+	jobsGroup := v1.Group("/jobs", auth.RequireAuthDual(s.auth, s.iamAuth))
 	jobsGroup.GET("", jobHandler.List)
 	jobsGroup.GET("/:id", jobHandler.Get)
 }

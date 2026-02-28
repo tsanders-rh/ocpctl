@@ -1,0 +1,16 @@
+[Unit]
+Description=ocpctl Web Frontend
+After=network.target ocpctl-api.service
+
+[Service]
+Type=simple
+User=ocpctl
+WorkingDirectory=/opt/ocpctl/web
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/ocpctl/web.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

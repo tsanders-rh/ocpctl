@@ -1,5 +1,6 @@
 .PHONY: help install-deps build test clean run-api run-worker run-janitor migrate-up migrate-down docker-up docker-down
 .PHONY: build-linux deploy-binaries deploy-profiles deploy install-services start stop restart status logs logs-api logs-worker
+.PHONY: build-web deploy-web install-web-service start-web stop-web restart-web status-web logs-web
 
 # Deployment configuration
 DEPLOY_HOST ?= ubuntu@your-ec2-instance.com
@@ -31,16 +32,24 @@ help:
 	@echo "  deploy          Deploy binaries and profiles to server"
 	@echo "  deploy-binaries Deploy only binaries to server"
 	@echo "  deploy-profiles Deploy only profiles to server"
+	@echo "  build-web       Build Next.js production bundle"
+	@echo "  deploy-web      Deploy web frontend to server"
 	@echo "  install-services Install systemd services (run on server)"
+	@echo "  install-web-service Install web systemd service (run on server)"
 	@echo ""
 	@echo "Service Management (on server):"
-	@echo "  start           Start services"
-	@echo "  stop            Stop services"
-	@echo "  restart         Restart services"
+	@echo "  start           Start all services"
+	@echo "  stop            Stop all services"
+	@echo "  restart         Restart all services"
 	@echo "  status          Check service status"
 	@echo "  logs            View all service logs"
 	@echo "  logs-api        View API logs only"
 	@echo "  logs-worker     View worker logs only"
+	@echo "  start-web       Start web service"
+	@echo "  stop-web        Stop web service"
+	@echo "  restart-web     Restart web service"
+	@echo "  status-web      Check web service status"
+	@echo "  logs-web        View web service logs"
 
 # Install development dependencies
 install-deps:
@@ -148,30 +157,77 @@ install-services:
 	@echo "Installing systemd services..."
 	sudo cp deploy/systemd/ocpctl-api.service /etc/systemd/system/
 	sudo cp deploy/systemd/ocpctl-worker.service /etc/systemd/system/
+	sudo cp deploy/systemd/ocpctl-web.service /etc/systemd/system/
 	sudo systemctl daemon-reload
 	@echo ""
 	@echo "Services installed. Enable and start with:"
-	@echo "  sudo systemctl enable ocpctl-api ocpctl-worker"
-	@echo "  sudo systemctl start ocpctl-api ocpctl-worker"
+	@echo "  sudo systemctl enable ocpctl-api ocpctl-worker ocpctl-web"
+	@echo "  sudo systemctl start ocpctl-api ocpctl-worker ocpctl-web"
 
 # Service management (run on server)
 start:
-	sudo systemctl start ocpctl-api ocpctl-worker
+	sudo systemctl start ocpctl-api ocpctl-worker ocpctl-web
 
 stop:
-	sudo systemctl stop ocpctl-api ocpctl-worker
+	sudo systemctl stop ocpctl-api ocpctl-worker ocpctl-web
 
 restart:
-	sudo systemctl restart ocpctl-api ocpctl-worker
+	sudo systemctl restart ocpctl-api ocpctl-worker ocpctl-web
 
 status:
-	sudo systemctl status ocpctl-api ocpctl-worker
+	sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
 
 logs:
-	sudo journalctl -u ocpctl-api -u ocpctl-worker -f
+	sudo journalctl -u ocpctl-api -u ocpctl-worker -u ocpctl-web -f
 
 logs-api:
 	sudo journalctl -u ocpctl-api -f
 
 logs-worker:
 	sudo journalctl -u ocpctl-worker -f
+
+# Web frontend targets
+build-web:
+	@echo "Building Next.js production bundle..."
+	cd web && npm install && npm run build
+	@echo "Web frontend built successfully"
+
+deploy-web: build-web
+	@echo "Deploying web frontend to $(DEPLOY_HOST)..."
+	rsync -avz --delete \
+		--exclude node_modules \
+		--exclude .next/cache \
+		--exclude .env.local \
+		web/ $(DEPLOY_HOST):$(DEPLOY_PATH)/web/
+	ssh $(DEPLOY_HOST) "cd $(DEPLOY_PATH)/web && npm install --production"
+	ssh $(DEPLOY_HOST) "sudo chown -R ocpctl:ocpctl $(DEPLOY_PATH)/web"
+	@echo ""
+	@echo "=== Web Frontend Deployed ==="
+	@echo "Configure environment at: /etc/ocpctl/web.env"
+	@echo "Restart web service with:"
+	@echo "  ssh $(DEPLOY_HOST) 'sudo systemctl restart ocpctl-web'"
+
+install-web-service:
+	@echo "Installing web systemd service..."
+	sudo cp deploy/systemd/ocpctl-web.service /etc/systemd/system/
+	sudo systemctl daemon-reload
+	@echo ""
+	@echo "Web service installed. Enable and start with:"
+	@echo "  sudo systemctl enable ocpctl-web"
+	@echo "  sudo systemctl start ocpctl-web"
+
+# Web service management (run on server)
+start-web:
+	sudo systemctl start ocpctl-web
+
+stop-web:
+	sudo systemctl stop ocpctl-web
+
+restart-web:
+	sudo systemctl restart ocpctl-web
+
+status-web:
+	sudo systemctl status ocpctl-web
+
+logs-web:
+	sudo journalctl -u ocpctl-web -f

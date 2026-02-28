@@ -128,8 +128,25 @@ func GetClaims(c echo.Context) (*Claims, error) {
 	return claims, nil
 }
 
+// GetUser retrieves the user object from context (set by RequireAuthDual)
+func GetUser(c echo.Context) (*types.User, error) {
+	user, ok := c.Get(string(UserContextKey)).(*types.User)
+	if ok && user != nil {
+		return user, nil
+	}
+	// Fallback: try to construct from claims (for JWT-only auth)
+	return nil, echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+}
+
 // GetUserID retrieves the current user ID from context
 func GetUserID(c echo.Context) (string, error) {
+	// Try to get from user object first (dual auth)
+	user, err := GetUser(c)
+	if err == nil {
+		return user.ID, nil
+	}
+
+	// Fallback to claims (JWT-only auth)
 	claims, err := GetClaims(c)
 	if err != nil {
 		return "", err
@@ -139,6 +156,13 @@ func GetUserID(c echo.Context) (string, error) {
 
 // GetUserRole retrieves the current user role from context
 func GetUserRole(c echo.Context) (types.UserRole, error) {
+	// Try to get from user object first (dual auth)
+	user, err := GetUser(c)
+	if err == nil {
+		return user.Role, nil
+	}
+
+	// Fallback to claims (JWT-only auth)
 	claims, err := GetClaims(c)
 	if err != nil {
 		return "", err
@@ -153,4 +177,58 @@ func IsAdmin(c echo.Context) bool {
 		return false
 	}
 	return role == types.RoleAdmin
+}
+
+// RequireAuthDual is middleware that supports both JWT and IAM authentication
+func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing authorization header")
+			}
+
+			// Detect auth type
+			if IsIAMRequest(c.Request()) {
+				// IAM authentication
+				if iamAuth == nil || !iamAuth.enabledIAMAuth {
+					return echo.NewHTTPError(http.StatusUnauthorized, "IAM authentication not enabled")
+				}
+
+				user, err := iamAuth.ValidateIAMRequest(c.Request().Context(), c.Request())
+				if err != nil {
+					return echo.NewHTTPError(http.StatusUnauthorized, "invalid IAM credentials: "+err.Error())
+				}
+
+				// Store user in context
+				c.Set(string(UserContextKey), user)
+				return next(c)
+			}
+
+			// JWT authentication (existing flow)
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) != 2 || parts[0] != "Bearer" {
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid authorization header format")
+			}
+
+			tokenString := parts[1]
+			claims, err := auth.ValidateAccessToken(tokenString)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid or expired token")
+			}
+
+			// Store claims in context (for backward compatibility)
+			c.Set(string(ClaimsContextKey), claims)
+
+			// Also create a user object from claims for consistency
+			user := &types.User{
+				ID:       claims.UserID,
+				Email:    claims.Email,
+				Role:     types.UserRole(claims.Role),
+			}
+			c.Set(string(UserContextKey), user)
+
+			return next(c)
+		}
+	}
 }
