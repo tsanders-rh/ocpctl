@@ -230,6 +230,15 @@ clone_repository() {
 setup_environment() {
     log_info "Setting up environment files..."
 
+    # Check if .env already exists and preserve password
+    if [[ -f "${OCPCTL_DIR}/.env" ]]; then
+        log_warn "Environment file already exists, preserving existing password"
+        EXISTING_PASSWORD=$(grep "DATABASE_URL" "${OCPCTL_DIR}/.env" | grep -o "ocpctl:[^@]*" | cut -d: -f2)
+        if [[ -n "$EXISTING_PASSWORD" ]]; then
+            DB_PASSWORD="$EXISTING_PASSWORD"
+        fi
+    fi
+
     # Backend .env
     cat > "${OCPCTL_DIR}/.env" << EOF
 DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}?sslmode=disable
