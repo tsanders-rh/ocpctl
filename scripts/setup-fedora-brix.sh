@@ -144,12 +144,14 @@ install_postgresql() {
         postgresql-setup --initdb
     fi
 
-    # Start and enable PostgreSQL
-    systemctl enable postgresql
-    systemctl start postgresql
+    # Enable PostgreSQL
+    systemctl enable postgresql || true
 
-    # Wait for PostgreSQL to start
-    sleep 3
+    # Start PostgreSQL if not running
+    if ! systemctl is-active --quiet postgresql; then
+        systemctl start postgresql
+        sleep 3
+    fi
 
     if systemctl is-active --quiet postgresql; then
         log_success "PostgreSQL installed and running"
@@ -463,8 +465,8 @@ EOF
     # Test nginx configuration
     nginx -t
 
-    # Enable and start nginx
-    systemctl enable nginx
+    # Enable and restart nginx
+    systemctl enable nginx || true
     systemctl restart nginx
 
     log_success "Nginx configured"
@@ -473,9 +475,13 @@ EOF
 configure_firewall() {
     log_info "Configuring firewall..."
 
-    # Start firewalld
-    systemctl enable firewalld
-    systemctl start firewalld
+    # Enable firewalld
+    systemctl enable firewalld || true
+
+    # Start firewalld if not running
+    if ! systemctl is-active --quiet firewalld; then
+        systemctl start firewalld
+    fi
 
     # Allow HTTP
     firewall-cmd --permanent --add-service=http
