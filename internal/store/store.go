@@ -11,15 +11,17 @@ import (
 type Store struct {
 	pool *pgxpool.Pool
 
-	Clusters      *ClusterStore
-	Jobs          *JobStore
-	JobLocks      *JobLockStore
-	Idempotency   *IdempotencyStore
-	RBAC          *RBACStore
-	Audit         *AuditStore
+	Clusters       *ClusterStore
+	Jobs           *JobStore
+	JobLocks       *JobLockStore
+	Idempotency    *IdempotencyStore
+	RBAC           *RBACStore
+	Audit          *AuditStore
 	ClusterOutputs *ClusterOutputsStore
-	Artifacts     *ArtifactStore
-	Usage         *UsageStore
+	Artifacts      *ArtifactStore
+	Usage          *UsageStore
+	Users          *UserStore
+	RefreshTokens  *RefreshTokenStore
 }
 
 // New creates a new Store with all sub-stores initialized
@@ -37,6 +39,8 @@ func New(pool *pgxpool.Pool) *Store {
 	s.ClusterOutputs = &ClusterOutputsStore{pool: pool}
 	s.Artifacts = &ArtifactStore{pool: pool}
 	s.Usage = &UsageStore{pool: pool}
+	s.Users = &UserStore{pool: pool}
+	s.RefreshTokens = &RefreshTokenStore{pool: pool}
 
 	return s
 }

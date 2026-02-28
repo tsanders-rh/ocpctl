@@ -65,8 +65,9 @@ web/.cache/
 .test-clusters/
 test-results/
 
-# OpenShift installer artifacts
-auth/
+# OpenShift installer artifacts (in work directories only)
+/auth/
+/*/auth/
 metadata.json
 terraform.tfstate*
 .openshift_install_state.json
