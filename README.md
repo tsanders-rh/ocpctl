@@ -179,7 +179,7 @@ make test-e2e
 
 ## Deployment
 
-See [docs/deployment.md](docs/deployment.md) for infrastructure provisioning and deployment instructions.
+See [docs/deployment/](docs/deployment/) for infrastructure provisioning and deployment instructions.
 
 ## Security
 
@@ -259,10 +259,10 @@ Internal use only - All rights reserved.
 ## Support
 
 - Issues: [GitHub Issues](https://github.com/tsanders-rh/ocpctl/issues)
-- Documentation: [docs/](docs/)
-- Design Spec: [docs/design-specification.md](docs/design-specification.md)
-- Architecture: [docs/architecture.md](docs/architecture.md)
-- Implementation Guide: [docs/IMPLEMENTATION-GUIDE.md](docs/IMPLEMENTATION-GUIDE.md)
-- Critical Items Resolved: [docs/CRITICAL-ITEMS-RESOLVED.md](docs/CRITICAL-ITEMS-RESOLVED.md)
-- Data Layer Complete: [docs/DATA-LAYER-COMPLETE.md](docs/DATA-LAYER-COMPLETE.md)
+- Documentation: [docs/](docs/README.md)
+- Setup Guides: [docs/setup/](docs/setup/)
+- Architecture: [docs/architecture/](docs/architecture/)
+- Deployment: [docs/deployment/](docs/deployment/)
+- Design Spec: [docs/architecture/design-specification.md](docs/architecture/design-specification.md)
+- Implementation Phases: [docs/phases/](docs/phases/)
 - Store Package README: [internal/store/README.md](internal/store/README.md)

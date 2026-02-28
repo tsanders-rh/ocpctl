@@ -53,7 +53,7 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/tsanders-rh/ocpctl/main
 
 This script automatically installs all dependencies, sets up services, and configures nginx reverse proxy.
 
-**See [docs/BRIX_SETUP.md](docs/BRIX_SETUP.md) for complete Brix setup guide.**
+**See [docs/setup/BRIX_SETUP.md](docs/setup/BRIX_SETUP.md) for complete Brix setup guide.**
 
 ### Local Development (macOS/Ubuntu)
 
@@ -125,7 +125,7 @@ You can develop and test the API/web UI without provisioning real clusters:
 - **Cluster create requests** create database records
 - **Jobs** are created but worker will fail without installer
 
-See [docs/OPENSHIFT_INSTALL_SETUP.md](docs/OPENSHIFT_INSTALL_SETUP.md) for complete setup instructions.
+See [docs/setup/OPENSHIFT_INSTALL_SETUP.md](docs/setup/OPENSHIFT_INSTALL_SETUP.md) for complete setup instructions.
 
 ## Initial Setup
 
@@ -578,10 +578,11 @@ ocpctl/
 
 ## Next Steps
 
-- Read [Architecture Documentation](docs/ARCHITECTURE.md)
-- Review [API Documentation](docs/API.md)
-- Check [Deployment Guide](docs/DEPLOYMENT.md)
+- Read [Architecture Documentation](docs/architecture/architecture.md)
+- Review [API Documentation](docs/architecture/api.yaml)
+- Check [Deployment Guide](docs/deployment/DEPLOYMENT_WEB.md)
 - Explore [Profile Definitions](internal/profile/definitions/)
+- Browse all documentation in [docs/](docs/README.md)
 
 ## Getting Help
 
