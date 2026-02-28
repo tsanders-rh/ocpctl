@@ -197,8 +197,9 @@ create_user() {
 clone_repository() {
     log_info "Cloning ocpctl repository..."
 
-    # Create directory
+    # Create directory and set ownership
     mkdir -p "${OCPCTL_DIR}"
+    chown ${OCPCTL_USER}:${OCPCTL_USER} "${OCPCTL_DIR}"
 
     # Clone if not exists
     if [[ -d "${OCPCTL_DIR}/.git" ]]; then
