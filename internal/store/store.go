@@ -83,3 +83,18 @@ func (s *Store) Ping(ctx context.Context) error {
 func (s *Store) Stats() *pgxpool.Stat {
 	return s.pool.Stat()
 }
+
+// NewStore creates a new Store from a database URL
+func NewStore(databaseURL string) (*Store, error) {
+	pool, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return New(pool), nil
+}
+
+// Migrate runs database migrations
+func (s *Store) Migrate() error {
+	// TODO: implement migrations
+	return nil
+}

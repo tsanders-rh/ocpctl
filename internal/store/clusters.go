@@ -3,9 +3,9 @@ package store
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -278,7 +278,7 @@ func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, s
 		WHERE id = $2
 	`
 
-	var result pgx.CommandTag
+	var result pgconn.CommandTag
 	var err error
 
 	if tx != nil {
@@ -309,6 +309,26 @@ func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 	result, err := s.pool.Exec(ctx, query, types.ClusterStatusDestroyed, id)
 	if err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// UpdateTTL updates a cluster's TTL and destroy_at timestamp
+func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) error {
+	query := `
+		UPDATE clusters
+		SET ttl_hours = $1, destroy_at = NOW() + ($1 || ' hours')::interval, updated_at = NOW()
+		WHERE id = $2
+	`
+
+	result, err := s.pool.Exec(ctx, query, ttlHours, id)
+	if err != nil {
+		return fmt.Errorf("update cluster TTL: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
