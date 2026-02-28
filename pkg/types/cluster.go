@@ -61,7 +61,8 @@ type Cluster struct {
 	Profile        string        `db:"profile"`
 	Region         string        `db:"region"`
 	BaseDomain     string        `db:"base_domain"`
-	Owner          string        `db:"owner"`
+	Owner          string        `db:"owner"`           // Email for display/metadata
+	OwnerID        string        `db:"owner_id"`        // Foreign key to users table
 	Team           string        `db:"team"`
 	CostCenter     string        `db:"cost_center"`
 	Status         ClusterStatus `db:"status"`

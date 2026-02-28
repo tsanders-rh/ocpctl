@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -24,6 +25,27 @@ func NewClusterHandler(s *store.Store, p *policy.Engine) *ClusterHandler {
 		store:  s,
 		policy: p,
 	}
+}
+
+// checkClusterAccess verifies the user has access to the cluster
+// Returns true if user is owner or admin
+func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Cluster) error {
+	// Admins can access all clusters
+	if auth.IsAdmin(c) {
+		return nil
+	}
+
+	// Check if user owns this cluster
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	if cluster.OwnerID != userID {
+		return ErrorForbidden(c, "You do not have access to this cluster")
+	}
+
+	return nil
 }
 
 // CreateClusterRequest represents the API request to create a cluster
@@ -110,6 +132,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		return ErrorValidation(c, validation)
 	}
 
+	// Get authenticated user ID
+	ownerID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
 	ctx := c.Request().Context()
 
 	// Parse destroy_at timestamp
@@ -129,6 +157,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		BaseDomain:    req.BaseDomain,
 		Status:        types.ClusterStatusPending,
 		Owner:         req.Owner,
+		OwnerID:       ownerID,
 		Team:          req.Team,
 		CostCenter:    req.CostCenter,
 		TTLHours:      ttl,
@@ -168,6 +197,15 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 func (h *ClusterHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	// Get authenticated user
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Check if user is admin
+	isAdmin := auth.IsAdmin(c)
+
 	// Parse pagination
 	pagination := ParsePaginationParams(c)
 
@@ -179,6 +217,11 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		Team:       c.QueryParam("team"),
 		CostCenter: c.QueryParam("cost_center"),
 		Status:     c.QueryParam("status"),
+	}
+
+	// Non-admin users can only see their own clusters
+	if !isAdmin {
+		filters.Owner = "" // Clear any owner filter for non-admins
 	}
 
 	// Build filter map for response
@@ -208,11 +251,17 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		Offset: pagination.Offset,
 	}
 
+	// Non-admin users can only see their own clusters
+	if !isAdmin {
+		listFilters.OwnerID = &userID
+	}
+
 	if filters.Platform != "" {
 		platform := types.Platform(filters.Platform)
 		listFilters.Platform = &platform
 	}
-	if filters.Owner != "" {
+	// Only admins can filter by owner email
+	if filters.Owner != "" && isAdmin {
 		listFilters.Owner = &filters.Owner
 	}
 	if filters.Team != "" {
@@ -254,6 +303,11 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
 	}
 
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
 	return SuccessOK(c, cluster)
 }
 
@@ -271,6 +325,11 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 			return ErrorNotFound(c, "Cluster not found")
 		}
 		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
 	}
 
 	// Check if cluster can be deleted
@@ -329,6 +388,11 @@ func (h *ClusterHandler) Extend(c echo.Context) error {
 			return ErrorNotFound(c, "Cluster not found")
 		}
 		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
 	}
 
 	// Extend destroy_at timestamp

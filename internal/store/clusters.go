@@ -20,12 +20,12 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 	query := `
 		INSERT INTO clusters (
 			id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
 			offhours_opt_in
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19
 		)
 	`
 
@@ -38,6 +38,7 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.Region,
 		cluster.BaseDomain,
 		cluster.Owner,
+		cluster.OwnerID,
 		cluster.Team,
 		cluster.CostCenter,
 		cluster.Status,
@@ -154,7 +155,8 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 type ListFilters struct {
 	Status   *types.ClusterStatus
 	Platform *types.Platform
-	Owner    *string
+	Owner    *string  // Filter by owner email
+	OwnerID  *string  // Filter by owner user ID
 	Team     *string
 	Profile  *string
 	Limit    int
@@ -166,7 +168,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	// Build query dynamically based on filters
 	query := `
 		SELECT id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in
 		FROM clusters
@@ -195,6 +197,13 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 		query += fmt.Sprintf(" AND owner = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND owner = $%d", argPos)
 		args = append(args, *filters.Owner)
+		argPos++
+	}
+
+	if filters.OwnerID != nil {
+		query += fmt.Sprintf(" AND owner_id = $%d", argPos)
+		countQuery += fmt.Sprintf(" AND owner_id = $%d", argPos)
+		args = append(args, *filters.OwnerID)
 		argPos++
 	}
 
