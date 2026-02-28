@@ -40,6 +40,25 @@ cd web && npm run dev
 # Login: admin@localhost / changeme
 ```
 
+## Deployment Options
+
+### Fedora Brix Box (Recommended for Testing)
+
+For a headless Fedora box or Brix device, use the automated setup script:
+
+```bash
+# Run directly from GitHub
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/tsanders-rh/ocpctl/main/scripts/setup-fedora-brix.sh)
+```
+
+This script automatically installs all dependencies, sets up services, and configures nginx reverse proxy.
+
+**See [docs/BRIX_SETUP.md](docs/BRIX_SETUP.md) for complete Brix setup guide.**
+
+### Local Development (macOS/Ubuntu)
+
+For local development on your laptop, follow the manual setup below.
+
 ## Prerequisites
 
 ### Required
