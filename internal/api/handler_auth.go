@@ -96,7 +96,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
 		Secure:   c.Request().TLS != nil, // Only secure in HTTPS
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(h.auth.GetRefreshTTL().Seconds()),
 	}
 	c.SetCookie(cookie)
