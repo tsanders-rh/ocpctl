@@ -77,9 +77,9 @@ install-deps:
 # Build all binaries
 build:
 	@echo "Building API service..."
-	go build -o bin/ocpctl-api ./cmd/api
+	go build -buildvcs=false -o bin/ocpctl-api ./cmd/api
 	@echo "Building worker service..."
-	go build -o bin/ocpctl-worker ./cmd/worker
+	go build -buildvcs=false -o bin/ocpctl-worker ./cmd/worker
 	@echo "All services built successfully"
 
 # Run tests
