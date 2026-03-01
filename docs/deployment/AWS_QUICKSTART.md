@@ -2,15 +2,62 @@
 
 This guide will walk you through deploying ocpctl to a test EC2 instance in AWS from scratch.
 
-**Estimated Time:** 45-60 minutes
+**Estimated Time:** 30-40 minutes (EC2 PostgreSQL) or 45-60 minutes (RDS PostgreSQL)
 
 ## Overview
 
 We'll deploy:
 - 1x EC2 instance (t3.medium recommended)
-- 1x RDS PostgreSQL database (db.t3.micro for testing)
+- PostgreSQL database (on EC2 or RDS - **EC2 recommended for testing**)
 - Security Groups for network isolation
 - ocpctl API server, Worker, and Web frontend
+
+## Database Options
+
+**Choose your database deployment:**
+
+### Option A: PostgreSQL on EC2 (Recommended for Testing) ⚡
+
+**Use this if:**
+- Testing and validating ocpctl functionality
+- Want fastest deployment (30-40 minutes)
+- Lower cost (~$35/month vs ~$50/month)
+- Don't need automated backups or high availability
+
+**Pros:**
+- ✅ Faster setup (2-3 minutes vs 10-15 minutes)
+- ✅ Simpler architecture (no VPC/subnet complexity)
+- ✅ Lower cost (saves $15/month)
+- ✅ Easy to migrate to RDS later
+
+**Cons:**
+- ❌ No automated backups
+- ❌ No multi-AZ failover
+- ❌ Manual PostgreSQL management
+
+### Option B: RDS PostgreSQL (Production-like)
+
+**Use this if:**
+- Need production-like testing environment
+- Want automated backups and point-in-time recovery
+- Plan to run this long-term (6+ months)
+- Need to separate database from application tier
+
+**Pros:**
+- ✅ Automated backups (7 days retention)
+- ✅ AWS-managed updates and patches
+- ✅ Multi-AZ and read replica support
+- ✅ Professional-grade reliability
+
+**Cons:**
+- ❌ Additional cost (+$15/month)
+- ❌ Longer setup time
+- ❌ More complex networking setup
+
+---
+
+**This guide uses Option A (PostgreSQL on EC2) as the default path.**
+For RDS instructions, see [Appendix: RDS PostgreSQL Setup](#appendix-rds-postgresql-setup) at the end.
 
 ---
 
@@ -29,83 +76,37 @@ We'll deploy:
 
 ---
 
-## Part 1: Infrastructure Setup (15-20 minutes)
+## Part 1: Infrastructure Setup (5-10 minutes)
 
-### Step 1: Create RDS PostgreSQL Database
+### Step 1: Set AWS Variables and Create EC2 Security Group
 
 ```bash
 # Set variables
 export AWS_REGION=us-east-1
-export DB_PASSWORD=$(openssl rand -base64 32)
-echo "Database password: $DB_PASSWORD" > ~/ocpctl-db-password.txt
 
-# Create DB subnet group (using default VPC)
-aws rds create-db-subnet-group \
-  --db-subnet-group-name ocpctl-db-subnet \
-  --db-subnet-group-description "ocpctl database subnet group" \
-  --subnet-ids subnet-xxx subnet-yyy \
-  --region $AWS_REGION
-
-# Create security group for RDS
-aws ec2 create-security-group \
-  --group-name ocpctl-db-sg \
-  --description "ocpctl PostgreSQL database" \
-  --vpc-id vpc-xxx \
-  --region $AWS_REGION
-
-# Note the security group ID
-export DB_SG_ID=sg-xxxxx
-
-# Create RDS instance
-aws rds create-db-instance \
-  --db-instance-identifier ocpctl-test-db \
-  --db-instance-class db.t3.micro \
-  --engine postgres \
-  --engine-version 15.5 \
-  --master-username ocpctl \
-  --master-user-password "$DB_PASSWORD" \
-  --allocated-storage 20 \
-  --vpc-security-group-ids $DB_SG_ID \
-  --db-subnet-group-name ocpctl-db-subnet \
-  --backup-retention-period 7 \
-  --no-publicly-accessible \
-  --region $AWS_REGION
-
-# Wait for database to be available (takes ~5 minutes)
-aws rds wait db-instance-available \
-  --db-instance-identifier ocpctl-test-db \
-  --region $AWS_REGION
-
-# Get database endpoint
-export DB_ENDPOINT=$(aws rds describe-db-instances \
-  --db-instance-identifier ocpctl-test-db \
-  --query 'DBInstances[0].Endpoint.Address' \
+# Get your default VPC ID (or specify your VPC)
+export VPC_ID=$(aws ec2 describe-vpcs \
+  --filters "Name=is-default,Values=true" \
+  --query 'Vpcs[0].VpcId' \
   --output text \
   --region $AWS_REGION)
 
-echo "Database endpoint: $DB_ENDPOINT"
-```
+echo "Using VPC: $VPC_ID"
 
-**Alternative: Quick Test with Local PostgreSQL**
-
-If you want to test faster, you can skip RDS and use PostgreSQL on the EC2 instance:
-
-```bash
-# We'll install PostgreSQL on the EC2 instance in Step 3
-# This is faster for testing but not recommended for production
-```
-
-### Step 2: Create EC2 Security Groups
-
-```bash
 # Create security group for EC2 instance
 aws ec2 create-security-group \
   --group-name ocpctl-app-sg \
   --description "ocpctl application server" \
-  --vpc-id vpc-xxx \
+  --vpc-id $VPC_ID \
   --region $AWS_REGION
 
-export APP_SG_ID=sg-yyyyy
+export APP_SG_ID=$(aws ec2 describe-security-groups \
+  --filters "Name=group-name,Values=ocpctl-app-sg" \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text \
+  --region $AWS_REGION)
+
+echo "Security Group ID: $APP_SG_ID"
 
 # Allow HTTP (80)
 aws ec2 authorize-security-group-ingress \
@@ -132,18 +133,21 @@ aws ec2 authorize-security-group-ingress \
   --cidr $MY_IP/32 \
   --region $AWS_REGION
 
-# Allow EC2 to access RDS (if using RDS)
-aws ec2 authorize-security-group-ingress \
-  --group-id $DB_SG_ID \
-  --protocol tcp \
-  --port 5432 \
-  --source-group $APP_SG_ID \
-  --region $AWS_REGION
+echo "Security group configured successfully"
 ```
 
-### Step 3: Launch EC2 Instance
+### Step 2: Launch EC2 Instance
 
 ```bash
+# Get a public subnet from the VPC
+export SUBNET_ID=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=default-for-az,Values=true" \
+  --query 'Subnets[0].SubnetId' \
+  --output text \
+  --region $AWS_REGION)
+
+echo "Using subnet: $SUBNET_ID"
+
 # Find latest Amazon Linux 2023 AMI
 export AMI_ID=$(aws ec2 describe-images \
   --owners amazon \
@@ -152,26 +156,33 @@ export AMI_ID=$(aws ec2 describe-images \
   --output text \
   --region $AWS_REGION)
 
-# Launch instance
+echo "Using AMI: $AMI_ID"
+
+# Launch instance (without IAM role for now - we'll add it later if needed)
 aws ec2 run-instances \
   --image-id $AMI_ID \
   --instance-type t3.medium \
   --key-name your-key-pair-name \
   --security-group-ids $APP_SG_ID \
-  --subnet-id subnet-xxx \
-  --iam-instance-profile Name=ocpctl-ec2-role \
+  --subnet-id $SUBNET_ID \
   --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":30,"VolumeType":"gp3"}}]' \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ocpctl-test}]' \
   --region $AWS_REGION
 
+# Wait a moment for instance to register
+sleep 5
+
 # Get instance ID
 export INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=ocpctl-test" "Name=instance-state-name,Values=running" \
+  --filters "Name=tag:Name,Values=ocpctl-test" "Name=instance-state-name,Values=pending,running" \
   --query 'Reservations[0].Instances[0].InstanceId' \
   --output text \
   --region $AWS_REGION)
 
+echo "Instance ID: $INSTANCE_ID"
+
 # Wait for instance to be running
+echo "Waiting for instance to be running (this takes ~60 seconds)..."
 aws ec2 wait instance-running \
   --instance-ids $INSTANCE_ID \
   --region $AWS_REGION
@@ -185,6 +196,10 @@ export EC2_IP=$(aws ec2 describe-instances \
 
 echo "EC2 Instance IP: $EC2_IP"
 echo "SSH command: ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP"
+echo ""
+echo "IMPORTANT: Save these values for later steps"
+echo "export EC2_IP=$EC2_IP"
+echo "export INSTANCE_ID=$INSTANCE_ID"
 ```
 
 **IAM Instance Profile (if using IAM auth):**
@@ -243,7 +258,7 @@ aws iam add-role-to-instance-profile \
 
 ## Part 2: Server Setup (10-15 minutes)
 
-### Step 4: Connect and Install Dependencies
+### Step 3: Connect and Install Dependencies
 
 ```bash
 # SSH into instance
@@ -252,8 +267,8 @@ ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
 # Update system
 sudo dnf update -y
 
-# Install PostgreSQL client (for database setup)
-sudo dnf install -y postgresql15
+# Install PostgreSQL 15 server
+sudo dnf install -y postgresql15-server postgresql15
 
 # Install Node.js 18
 curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
@@ -272,32 +287,45 @@ psql --version
 nginx -v
 ```
 
-### Step 5: Set Up Database Schema
+### Step 4: Set Up PostgreSQL Database
 
 ```bash
-# Set database connection string
-export DATABASE_URL="postgres://ocpctl:$DB_PASSWORD@$DB_ENDPOINT:5432/postgres?sslmode=require"
+# Initialize PostgreSQL database
+sudo postgresql-setup --initdb
 
-# Or if using local PostgreSQL:
-# sudo dnf install -y postgresql-server
-# sudo postgresql-setup --initdb
-# sudo systemctl enable postgresql
-# sudo systemctl start postgresql
-# sudo -u postgres createuser ocpctl
-# sudo -u postgres createdb ocpctl
-# export DATABASE_URL="postgres://ocpctl@localhost:5432/ocpctl?sslmode=disable"
+# Start and enable PostgreSQL
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+
+# Check status
+sudo systemctl status postgresql
+
+# Create database and user
+sudo -u postgres psql <<EOF
+CREATE USER ocpctl WITH PASSWORD 'changeme-generate-secure-password';
+CREATE DATABASE ocpctl OWNER ocpctl;
+GRANT ALL PRIVILEGES ON DATABASE ocpctl TO ocpctl;
+\q
+EOF
 
 # Test connection
-psql "$DATABASE_URL" -c "SELECT version();"
+psql "postgres://ocpctl:changeme-generate-secure-password@localhost:5432/ocpctl" -c "SELECT version();"
 
-# We'll run migrations in the next step after deploying the API
+# Set DATABASE_URL for later use
+export DATABASE_URL="postgres://ocpctl:changeme-generate-secure-password@localhost:5432/ocpctl?sslmode=disable"
+echo "export DATABASE_URL='$DATABASE_URL'" >> ~/.bashrc
+
+echo "PostgreSQL configured successfully"
+echo "IMPORTANT: Save your database password securely!"
 ```
+
+**Note:** For production, generate a secure password with `openssl rand -base64 32` instead of using "changeme-generate-secure-password".
 
 ---
 
 ## Part 3: Deploy Application (15-20 minutes)
 
-### Step 6: Create Application User and Deploy Binaries
+### Step 5: Create Application User and Deploy Binaries
 
 ```bash
 # Create ocpctl user
@@ -359,7 +387,7 @@ cd /opt/ocpctl/web
 sudo -u ocpctl npm install --production
 ```
 
-### Step 7: Configure Environment Variables
+### Step 6: Configure Environment Variables
 
 ```bash
 # Generate JWT secret
@@ -436,7 +464,7 @@ sudo nano /etc/ocpctl/worker.env
 # Paste your pull secret from console.redhat.com
 ```
 
-### Step 8: Install systemd Services
+### Step 7: Install systemd Services
 
 ```bash
 # Copy service files from deploy directory
@@ -471,7 +499,7 @@ sudo systemctl enable ocpctl-worker
 sudo systemctl enable ocpctl-web
 ```
 
-### Step 9: Run Database Migrations
+### Step 8: Run Database Migrations
 
 ```bash
 # Start API temporarily to run migrations
@@ -484,7 +512,7 @@ sudo journalctl -u ocpctl-api -n 50 --no-pager
 # If migrations don't run automatically, you may need to run them manually
 ```
 
-### Step 10: Start All Services
+### Step 9: Start All Services
 
 ```bash
 # Start services
@@ -504,7 +532,7 @@ curl http://localhost:8081/ready
 curl http://localhost:3000
 ```
 
-### Step 11: Configure Nginx
+### Step 10: Configure Nginx
 
 ```bash
 # Copy nginx config or create new one
@@ -567,7 +595,7 @@ sudo systemctl status nginx
 
 ## Part 4: Verification (5 minutes)
 
-### Step 12: Test the Deployment
+### Step 11: Test the Deployment
 
 ```bash
 # Check all services are running
@@ -585,7 +613,7 @@ curl http://localhost/api/v1/health
 curl http://localhost
 ```
 
-### Step 13: Access the Web Interface
+### Step 12: Access the Web Interface
 
 1. **Open browser:** Navigate to `http://<EC2_IP>`
 2. **Login with default credentials:**
@@ -597,7 +625,7 @@ curl http://localhost
    - View available profiles
    - Create a test cluster (it will provision!)
 
-### Step 14: Monitor Logs
+### Step 13: Monitor Logs
 
 ```bash
 # API logs
@@ -642,11 +670,17 @@ ls -la /opt/ocpctl/bin/
 # Test database connection
 psql "$DATABASE_URL" -c "SELECT version();"
 
-# Check if RDS security group allows EC2
-aws ec2 describe-security-groups --group-ids $DB_SG_ID
+# Check if PostgreSQL is running
+sudo systemctl status postgresql
+
+# Check PostgreSQL logs
+sudo journalctl -u postgresql -n 50 --no-pager
 
 # Verify DATABASE_URL in environment files
 grep DATABASE_URL /etc/ocpctl/api.env
+
+# Test connection as postgres user
+sudo -u postgres psql -c "SELECT version();"
 ```
 
 ### Web build issues
@@ -714,50 +748,71 @@ sudo rpm -U ./amazon-cloudwatch-agent.rpm
 ### Backup Strategy
 
 ```bash
-# RDS automated backups are enabled (7 day retention)
-# For additional protection, enable point-in-time recovery:
-aws rds modify-db-instance \
-  --db-instance-identifier ocpctl-test-db \
-  --backup-retention-period 7 \
-  --region $AWS_REGION
+# For PostgreSQL on EC2, set up manual backups
+# Create a backup script
+sudo tee /opt/ocpctl/backup-db.sh > /dev/null <<'EOF'
+#!/bin/bash
+BACKUP_DIR="/opt/ocpctl/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+mkdir -p $BACKUP_DIR
+
+# Backup database
+sudo -u postgres pg_dump ocpctl > $BACKUP_DIR/ocpctl_$TIMESTAMP.sql
+
+# Keep only last 7 days of backups
+find $BACKUP_DIR -name "ocpctl_*.sql" -mtime +7 -delete
+
+echo "Backup completed: $BACKUP_DIR/ocpctl_$TIMESTAMP.sql"
+EOF
+
+sudo chmod +x /opt/ocpctl/backup-db.sh
+
+# Run manually or add to cron
+# sudo crontab -e
+# Add: 0 2 * * * /opt/ocpctl/backup-db.sh
 ```
+
+**For production:** Consider using RDS for automated backups. See [Appendix: RDS PostgreSQL Setup](#appendix-rds-postgresql-setup).
 
 ---
 
 ## Clean Up (When Done Testing)
 
 ```bash
-# Stop services
-sudo systemctl stop ocpctl-api ocpctl-worker ocpctl-web nginx
+# On the EC2 instance, stop services
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+sudo systemctl stop ocpctl-api ocpctl-worker ocpctl-web nginx postgresql
+exit
 
-# Terminate EC2 instance
-aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+# From your local machine, terminate EC2 instance
+aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
 
-# Delete RDS instance
-aws rds delete-db-instance \
-  --db-instance-identifier ocpctl-test-db \
-  --skip-final-snapshot
+# Wait for termination (takes ~60 seconds)
+aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID --region $AWS_REGION
 
-# Delete security groups (after instances are terminated)
-aws ec2 delete-security-group --group-id $APP_SG_ID
-aws ec2 delete-security-group --group-id $DB_SG_ID
+# Delete security group (after instance is terminated)
+aws ec2 delete-security-group --group-id $APP_SG_ID --region $AWS_REGION
 
-# Delete IAM role
-aws iam remove-role-from-instance-profile \
-  --instance-profile-name ocpctl-ec2-role \
-  --role-name ocpctl-ec2-role
-aws iam delete-instance-profile --instance-profile-name ocpctl-ec2-role
-aws iam delete-role-policy --role-name ocpctl-ec2-role --policy-name ocpctl-s3-access
-aws iam delete-role --role-name ocpctl-ec2-role
+# Delete IAM role (if created)
+# aws iam remove-role-from-instance-profile \
+#   --instance-profile-name ocpctl-ec2-role \
+#   --role-name ocpctl-ec2-role
+# aws iam delete-instance-profile --instance-profile-name ocpctl-ec2-role
+# aws iam delete-role-policy --role-name ocpctl-ec2-role --policy-name ocpctl-s3-access
+# aws iam delete-role --role-name ocpctl-ec2-role
+
+echo "Cleanup complete!"
 ```
+
+**Note:** Database data is deleted when the EC2 instance is terminated. If you need to preserve data, take a backup first.
 
 ---
 
 ## Summary
 
 You now have:
-- ✅ RDS PostgreSQL database
-- ✅ EC2 instance with all services running
+- ✅ EC2 instance with PostgreSQL database
+- ✅ All services running (API, Worker, Web)
 - ✅ Nginx reverse proxy
 - ✅ Web interface accessible at `http://<EC2_IP>`
 - ✅ Worker processing cluster jobs
@@ -766,10 +821,146 @@ You now have:
 
 **Total Monthly Cost (estimate):**
 - EC2 t3.medium: ~$30/month
-- RDS db.t3.micro: ~$15/month
-- Data transfer: ~$5/month
-- **Total: ~$50/month**
+- EBS Storage (30GB): ~$3/month
+- Data transfer: ~$2/month
+- **Total: ~$35/month**
+
+**Migration to RDS:** If you need production-grade database features (automated backups, multi-AZ, etc.), you can migrate to RDS later. See [Appendix: RDS PostgreSQL Setup](#appendix-rds-postgresql-setup) for instructions.
 
 For production deployment, see:
 - [Security Configuration Guide](./SECURITY_CONFIGURATION.md)
 - [Deployment Guide](./DEPLOYMENT_WEB.md)
+
+---
+
+## Appendix: RDS PostgreSQL Setup
+
+If you prefer to use RDS PostgreSQL instead of running PostgreSQL on the EC2 instance, follow these additional steps:
+
+### A1: Create RDS Database (instead of Step 4 in main guide)
+
+```bash
+# Set variables
+export AWS_REGION=us-east-1
+export DB_PASSWORD=$(openssl rand -base64 32)
+echo "Database password: $DB_PASSWORD" > ~/ocpctl-db-password.txt
+
+# Get subnets from your VPC
+export SUBNET1=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=${AWS_REGION}a" \
+  --query 'Subnets[0].SubnetId' \
+  --output text \
+  --region $AWS_REGION)
+
+export SUBNET2=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=${AWS_REGION}b" \
+  --query 'Subnets[0].SubnetId' \
+  --output text \
+  --region $AWS_REGION)
+
+# Create DB subnet group
+aws rds create-db-subnet-group \
+  --db-subnet-group-name ocpctl-db-subnet \
+  --db-subnet-group-description "ocpctl database subnet group" \
+  --subnet-ids $SUBNET1 $SUBNET2 \
+  --region $AWS_REGION
+
+# Create security group for RDS
+aws ec2 create-security-group \
+  --group-name ocpctl-db-sg \
+  --description "ocpctl PostgreSQL database" \
+  --vpc-id $VPC_ID \
+  --region $AWS_REGION
+
+export DB_SG_ID=$(aws ec2 describe-security-groups \
+  --filters "Name=group-name,Values=ocpctl-db-sg" \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text \
+  --region $AWS_REGION)
+
+# Allow EC2 to access RDS
+aws ec2 authorize-security-group-ingress \
+  --group-id $DB_SG_ID \
+  --protocol tcp \
+  --port 5432 \
+  --source-group $APP_SG_ID \
+  --region $AWS_REGION
+
+# Create RDS instance
+aws rds create-db-instance \
+  --db-instance-identifier ocpctl-test-db \
+  --db-instance-class db.t3.micro \
+  --engine postgres \
+  --engine-version 15.5 \
+  --master-username ocpctl \
+  --master-user-password "$DB_PASSWORD" \
+  --allocated-storage 20 \
+  --vpc-security-group-ids $DB_SG_ID \
+  --db-subnet-group-name ocpctl-db-subnet \
+  --backup-retention-period 7 \
+  --no-publicly-accessible \
+  --region $AWS_REGION
+
+# Wait for database to be available (takes ~10-15 minutes)
+echo "Creating RDS instance (this takes ~10-15 minutes)..."
+aws rds wait db-instance-available \
+  --db-instance-identifier ocpctl-test-db \
+  --region $AWS_REGION
+
+# Get database endpoint
+export DB_ENDPOINT=$(aws rds describe-db-instances \
+  --db-instance-identifier ocpctl-test-db \
+  --query 'DBInstances[0].Endpoint.Address' \
+  --output text \
+  --region $AWS_REGION)
+
+echo "Database endpoint: $DB_ENDPOINT"
+echo "Database password: $DB_PASSWORD"
+```
+
+### A2: Configure DATABASE_URL for RDS
+
+When configuring environment variables in Step 6, use:
+
+```bash
+export DATABASE_URL="postgres://ocpctl:$DB_PASSWORD@$DB_ENDPOINT:5432/postgres?sslmode=require"
+```
+
+**Important differences from EC2 PostgreSQL:**
+- Use RDS endpoint instead of `localhost`
+- Use `sslmode=require` for SSL/TLS connection
+- Use database name `postgres` (default RDS database)
+- No need to install or configure PostgreSQL on EC2 instance
+
+### A3: Clean Up RDS (when done testing)
+
+```bash
+# Delete RDS instance
+aws rds delete-db-instance \
+  --db-instance-identifier ocpctl-test-db \
+  --skip-final-snapshot \
+  --region $AWS_REGION
+
+# Wait for deletion (takes ~5 minutes)
+aws rds wait db-instance-deleted \
+  --db-instance-identifier ocpctl-test-db \
+  --region $AWS_REGION
+
+# Delete DB subnet group
+aws rds delete-db-subnet-group \
+  --db-subnet-group-name ocpctl-db-subnet \
+  --region $AWS_REGION
+
+# Delete RDS security group
+aws ec2 delete-security-group --group-id $DB_SG_ID --region $AWS_REGION
+```
+
+**RDS Monthly Cost (additional):**
+- RDS db.t3.micro: ~$15/month
+- Total with RDS: ~$50/month (vs ~$35/month with EC2 PostgreSQL)
+
+**When to use RDS:**
+- Production deployments requiring automated backups
+- Long-term deployments (6+ months)
+- Need for multi-AZ failover or read replicas
+- Compliance requirements for managed databases
