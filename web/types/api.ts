@@ -67,6 +67,19 @@ export interface UpdateMeRequest {
   username?: string;
 }
 
+export interface CreateUserRequest {
+  email: string;
+  username: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface UpdateUserRequest {
+  username?: string;
+  role?: UserRole;
+  active?: boolean;
+}
+
 // Cluster Types
 export interface CreateClusterRequest {
   name: string;
