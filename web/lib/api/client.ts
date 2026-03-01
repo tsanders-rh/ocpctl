@@ -28,8 +28,18 @@ class ApiClient {
 
     const { accessToken, authMode } = useAuthStore.getState();
 
+    // Debug logging
+    console.log('[API Client] Getting headers:', {
+      authMode,
+      hasAccessToken: !!accessToken,
+      accessTokenLength: accessToken?.length || 0,
+    });
+
     if (authMode === "jwt" && accessToken) {
       headers["Authorization"] = `Bearer ${accessToken}`;
+      console.log('[API Client] Added Authorization header');
+    } else {
+      console.log('[API Client] No Authorization header added');
     }
 
     // IAM mode headers would be added here (AWS SigV4)
