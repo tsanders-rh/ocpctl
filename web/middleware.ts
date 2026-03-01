@@ -9,13 +9,13 @@ export function middleware(request: NextRequest) {
   if (authMode === "jwt") {
     const hasRefreshToken = request.cookies.has("refresh_token");
 
+    // Redirect unauthenticated users to login
     if (!hasRefreshToken && !isAuthPage) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    if (hasRefreshToken && isAuthPage) {
-      return NextResponse.redirect(new URL("/clusters", request.url));
-    }
+    // Allow authenticated users to visit login page
+    // (they may want to logout or switch accounts)
   }
 
   // IAM mode would check for AWS credentials
