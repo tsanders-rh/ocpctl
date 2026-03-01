@@ -93,7 +93,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	cookie := &http.Cookie{
 		Name:     "refresh_token",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/",
 		HttpOnly: true,
 		Secure:   c.Request().TLS != nil, // Only secure in HTTPS
 		SameSite: http.SameSiteLaxMode,
