@@ -503,14 +503,20 @@ server {
 }
 EOF
 
+    # Disable default server block to avoid conflicts
+    sed -i '/^    server {/,/^    }/s/^/#/' /etc/nginx/nginx.conf
+
     # Test nginx configuration
     nginx -t
+
+    # Allow nginx to connect to backend services (SELinux)
+    setsebool -P httpd_can_network_connect 1
 
     # Enable and restart nginx
     systemctl enable nginx || true
     systemctl restart nginx
 
-    log_success "Nginx configured"
+    log_success "Nginx configured (SELinux policy applied)"
 }
 
 configure_firewall() {
