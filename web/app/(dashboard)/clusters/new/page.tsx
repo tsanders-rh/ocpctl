@@ -131,11 +131,15 @@ export default function NewClusterPage() {
                     <SelectValue placeholder="Select profile" />
                   </SelectTrigger>
                   <SelectContent>
-                    {profiles?.map((profile) => (
-                      <SelectItem key={profile.name} value={profile.name}>
-                        {profile.display_name} (${profile.lifecycle.estimated_hourly_cost}/hr)
-                      </SelectItem>
-                    ))}
+                    {profiles && profiles.length > 0 ? (
+                      profiles.map((profile) => (
+                        <SelectItem key={profile.name} value={profile.name}>
+                          {profile.display_name} (${profile.lifecycle.estimated_hourly_cost}/hr)
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="" disabled>No profiles available</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 {selectedProfile && (
@@ -145,7 +149,7 @@ export default function NewClusterPage() {
                 )}
               </div>
 
-              {selectedProfile && (
+              {selectedProfile && selectedProfile.openshift_versions?.allowed && (
                 <div className="space-y-2">
                   <Label htmlFor="version">OpenShift Version</Label>
                   <Select
@@ -182,11 +186,11 @@ export default function NewClusterPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedProfile.regions.allowed.map((region) => (
+                      {selectedProfile.regions?.allowed?.map((region) => (
                         <SelectItem key={region} value={region}>
                           {region}
                         </SelectItem>
-                      ))}
+                      )) || <SelectItem value="">No regions available</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -201,11 +205,11 @@ export default function NewClusterPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedProfile.base_domains.allowed.map((domain) => (
+                      {selectedProfile.base_domains?.allowed?.map((domain) => (
                         <SelectItem key={domain} value={domain}>
                           {domain}
                         </SelectItem>
-                      ))}
+                      )) || <SelectItem value="">No domains available</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>

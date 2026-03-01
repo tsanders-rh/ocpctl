@@ -37,14 +37,14 @@ export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
               </li>
               <li>• Region: {formValues.region || "Not selected"}</li>
               <li>
-                • Control Plane: {profile.compute.control_plane.replicas} ×{" "}
-                {profile.compute.control_plane.instance_type}
+                • Control Plane: {profile.compute?.control_plane?.replicas || "?"} ×{" "}
+                {profile.compute?.control_plane?.instance_type || "?"}
               </li>
               <li>
-                • Workers: {profile.compute.workers.min_replicas}-
-                {profile.compute.workers.max_replicas} ×{" "}
-                {profile.compute.workers.instance_type}
-                {profile.compute.workers.autoscaling && " (autoscaling)"}
+                • Workers: {profile.compute?.workers?.min_replicas || "?"}-
+                {profile.compute?.workers?.max_replicas || "?"} ×{" "}
+                {profile.compute?.workers?.instance_type || "?"}
+                {profile.compute?.workers?.autoscaling && " (autoscaling)"}
               </li>
               <li>• Estimated cost: {formatCurrency(estimatedCost)}/hour</li>
               <li>• Time to live: {ttl} hours</li>

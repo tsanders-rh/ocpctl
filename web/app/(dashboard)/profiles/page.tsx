@@ -150,10 +150,10 @@ export default function ProfilesPage() {
                   OpenShift Versions
                 </div>
                 <div className="text-sm">
-                  {profile.openshift_versions.default} (default)
+                  {profile.openshift_versions?.default || "N/A"} (default)
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Available: {profile.openshift_versions.allowed.join(", ")}
+                  Available: {profile.openshift_versions?.allowed?.join(", ") || "N/A"}
                 </div>
               </div>
 
@@ -162,10 +162,10 @@ export default function ProfilesPage() {
                   Regions
                 </div>
                 <div className="text-sm">
-                  {profile.regions.default} (default)
+                  {profile.regions?.default || "N/A"} (default)
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Available: {profile.regions.allowed.join(", ")}
+                  Available: {profile.regions?.allowed?.join(", ") || "N/A"}
                 </div>
               </div>
             </CardContent>
