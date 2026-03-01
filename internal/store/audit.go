@@ -17,10 +17,10 @@ type AuditStore struct {
 func (s *AuditStore) Log(ctx context.Context, event *types.AuditEvent) error {
 	query := `
 		INSERT INTO audit_events (
-			id, actor, action, target_cluster_id, target_job_id,
+			id, actor, action, target_cluster_id, target_job_id, target_user_id,
 			status, metadata, ip_address, user_agent
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 		)
 	`
 
@@ -30,6 +30,7 @@ func (s *AuditStore) Log(ctx context.Context, event *types.AuditEvent) error {
 		event.Action,
 		event.TargetClusterID,
 		event.TargetJobID,
+		event.TargetUserID,
 		event.Status,
 		event.Metadata,
 		event.IPAddress,
@@ -46,7 +47,7 @@ func (s *AuditStore) Log(ctx context.Context, event *types.AuditEvent) error {
 // ListByActor retrieves audit events for an actor
 func (s *AuditStore) ListByActor(ctx context.Context, actor string, limit, offset int) ([]*types.AuditEvent, error) {
 	query := `
-		SELECT id, actor, action, target_cluster_id, target_job_id,
+		SELECT id, actor, action, target_cluster_id, target_job_id, target_user_id,
 			status, metadata, ip_address, user_agent, created_at
 		FROM audit_events
 		WHERE actor = $1
@@ -69,6 +70,7 @@ func (s *AuditStore) ListByActor(ctx context.Context, actor string, limit, offse
 			&event.Action,
 			&event.TargetClusterID,
 			&event.TargetJobID,
+			&event.TargetUserID,
 			&event.Status,
 			&event.Metadata,
 			&event.IPAddress,
@@ -91,7 +93,7 @@ func (s *AuditStore) ListByActor(ctx context.Context, actor string, limit, offse
 // ListByCluster retrieves audit events for a cluster
 func (s *AuditStore) ListByCluster(ctx context.Context, clusterID string) ([]*types.AuditEvent, error) {
 	query := `
-		SELECT id, actor, action, target_cluster_id, target_job_id,
+		SELECT id, actor, action, target_cluster_id, target_job_id, target_user_id,
 			status, metadata, ip_address, user_agent, created_at
 		FROM audit_events
 		WHERE target_cluster_id = $1
@@ -113,6 +115,7 @@ func (s *AuditStore) ListByCluster(ctx context.Context, clusterID string) ([]*ty
 			&event.Action,
 			&event.TargetClusterID,
 			&event.TargetJobID,
+			&event.TargetUserID,
 			&event.Status,
 			&event.Metadata,
 			&event.IPAddress,

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -96,10 +97,29 @@ func (s *Store) Stats() *pgxpool.Stat {
 
 // NewStore creates a new Store from a database URL
 func NewStore(databaseURL string) (*Store, error) {
-	pool, err := pgxpool.New(context.Background(), databaseURL)
+	// Parse the database URL to get pool config
+	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, err
 	}
+
+	// Configure connection pool timeouts
+	config.MaxConns = 20                        // Maximum number of connections
+	config.MinConns = 2                         // Minimum number of connections
+	config.MaxConnLifetime = 1 * time.Hour      // Max lifetime of a connection
+	config.MaxConnIdleTime = 30 * time.Minute   // Max idle time before closing
+	config.HealthCheckPeriod = 1 * time.Minute  // How often to check connection health
+
+	// Add statement timeout to prevent long-running queries
+	// This adds a runtime parameter that PostgreSQL will enforce
+	config.ConnConfig.RuntimeParams["statement_timeout"] = "30000" // 30 seconds in milliseconds
+
+	// Create the pool with configured timeouts
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		return nil, err
+	}
+
 	return New(pool), nil
 }
 

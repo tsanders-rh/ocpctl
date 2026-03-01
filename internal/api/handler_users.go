@@ -23,6 +23,31 @@ func NewUserHandler(st *store.Store) *UserHandler {
 	}
 }
 
+// logAudit logs an audit event for user management actions
+func (h *UserHandler) logAudit(c echo.Context, action string, targetUserID string, status types.AuditEventStatus, metadata map[string]interface{}) {
+	// Get actor (current user)
+	actorID, _ := auth.GetUserID(c)
+
+	// Get request metadata
+	ip := c.RealIP()
+	userAgent := c.Request().UserAgent()
+
+	event := &types.AuditEvent{
+		ID:           uuid.New().String(),
+		Actor:        actorID,
+		Action:       action,
+		TargetUserID: &targetUserID,
+		Status:       status,
+		Metadata:     metadata,
+		IPAddress:    &ip,
+		UserAgent:    &userAgent,
+		CreatedAt:    time.Now(),
+	}
+
+	// Log audit event (fire and forget, don't fail the request if audit fails)
+	_ = h.store.Audit.Log(c.Request().Context(), event)
+}
+
 // List returns all users
 // GET /api/v1/users
 func (h *UserHandler) List(c echo.Context) error {
@@ -99,8 +124,18 @@ func (h *UserHandler) Create(c echo.Context) error {
 	}
 
 	if err := h.store.Users.Create(c.Request().Context(), user); err != nil {
+		h.logAudit(c, "user.create", user.ID, types.AuditEventStatusFailure, map[string]interface{}{
+			"email": user.Email,
+			"role":  user.Role,
+		})
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create user")
 	}
+
+	// Log successful user creation
+	h.logAudit(c, "user.create", user.ID, types.AuditEventStatusSuccess, map[string]interface{}{
+		"email": user.Email,
+		"role":  user.Role,
+	})
 
 	return c.JSON(http.StatusCreated, user.ToResponse())
 }
@@ -166,8 +201,12 @@ func (h *UserHandler) Update(c echo.Context) error {
 	// Update user
 	if err := h.store.Users.UpdatePartial(c.Request().Context(), userID, updates); err != nil {
 		if err == store.ErrNotFound {
+			h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, map[string]interface{}{
+				"error": "user not found",
+			})
 			return echo.NewHTTPError(http.StatusNotFound, "user not found")
 		}
+		h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, updates)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update user")
 	}
 
@@ -176,6 +215,9 @@ func (h *UserHandler) Update(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get updated user")
 	}
+
+	// Log successful user update
+	h.logAudit(c, "user.update", userID, types.AuditEventStatusSuccess, updates)
 
 	return c.JSON(http.StatusOK, user.ToResponse())
 }
@@ -200,10 +242,17 @@ func (h *UserHandler) Delete(c echo.Context) error {
 	// Delete user (cascades to refresh tokens)
 	if err := h.store.Users.Delete(c.Request().Context(), userID); err != nil {
 		if err == store.ErrNotFound {
+			h.logAudit(c, "user.delete", userID, types.AuditEventStatusFailure, map[string]interface{}{
+				"error": "user not found",
+			})
 			return echo.NewHTTPError(http.StatusNotFound, "user not found")
 		}
+		h.logAudit(c, "user.delete", userID, types.AuditEventStatusFailure, nil)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete user")
 	}
+
+	// Log successful user deletion
+	h.logAudit(c, "user.delete", userID, types.AuditEventStatusSuccess, nil)
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"message": "user deleted successfully",

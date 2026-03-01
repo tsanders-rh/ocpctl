@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
@@ -43,7 +44,7 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Cluster not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
 	// Check access
@@ -122,7 +123,7 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Cluster not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
 	// Check access
@@ -154,4 +155,60 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 
 	// Send file
 	return c.File(kubeconfigPath)
+}
+
+// GetKubeconfigDownloadURL handles GET /api/v1/clusters/:id/kubeconfig/download-url
+// Returns a pre-signed S3 URL for downloading the kubeconfig
+func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Check if cluster is ready
+	if cluster.Status != types.ClusterStatusReady {
+		return ErrorBadRequest(c, fmt.Sprintf("Cluster is not ready (status: %s)", cluster.Status))
+	}
+
+	// Check if S3 URI is available
+	if cluster.KubeconfigS3URI == nil || *cluster.KubeconfigS3URI == "" {
+		return ErrorNotFound(c, "Kubeconfig S3 URI not available for this cluster")
+	}
+
+	// Create S3 client
+	s3Client, err := s3.NewClient(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create S3 client: %w", err))
+	}
+
+	// Generate presigned URL (valid for 15 minutes)
+	presignedURL, err := s3Client.GeneratePresignedURL(ctx, *cluster.KubeconfigS3URI, 15)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to generate presigned URL: %w", err))
+	}
+
+	// Log the download request
+	LogInfo(c, "kubeconfig download URL generated",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name)
+
+	return SuccessOK(c, map[string]interface{}{
+		"download_url": presignedURL,
+		"expires_in":   "15 minutes",
+		"filename":     fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name),
+	})
 }

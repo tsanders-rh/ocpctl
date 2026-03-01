@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -56,7 +57,7 @@ func (h *JobHandler) List(c echo.Context) error {
 	// Get jobs with total count
 	jobs, total, err := h.store.Jobs.List(ctx, pagination.Offset, pagination.PerPage)
 	if err != nil {
-		return ErrorInternal(c, "Failed to list jobs: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to list jobs: %w", err))
 	}
 
 	// Calculate pagination metadata
@@ -78,7 +79,7 @@ func (h *JobHandler) Get(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Job not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve job: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve job: %w", err))
 	}
 
 	return SuccessOK(c, job)

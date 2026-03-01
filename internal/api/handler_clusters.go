@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -125,7 +126,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Validate against policy
 	validation, err := h.policy.ValidateCreateRequest(policyReq)
 	if err != nil {
-		return ErrorInternal(c, "Policy validation failed: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("policy validation failed: %w", err))
 	}
 
 	if !validation.Valid {
@@ -143,7 +144,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Parse destroy_at timestamp
 	destroyAt, err := time.Parse(time.RFC3339, validation.DestroyAt)
 	if err != nil {
-		return ErrorInternal(c, "Invalid destroy_at timestamp")
+		return LogAndReturnGenericError(c, fmt.Errorf("invalid destroy_at timestamp: %w", err))
 	}
 
 	// Create cluster record
@@ -170,7 +171,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
-		return ErrorInternal(c, "Failed to create cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create cluster: %w", err))
 	}
 
 	// Create provision job
@@ -187,8 +188,15 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	if err := h.store.Jobs.Create(ctx, job); err != nil {
-		return ErrorInternal(c, "Failed to create provision job: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create provision job: %w", err))
 	}
+
+	// Log successful cluster creation
+	LogInfo(c, "cluster created successfully",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"job_id", job.ID,
+		"user_id", userID)
 
 	return SuccessCreated(c, cluster)
 }
@@ -278,7 +286,7 @@ func (h *ClusterHandler) List(c echo.Context) error {
 	// Get clusters with total count
 	clusters, total, err := h.store.Clusters.List(ctx, listFilters)
 	if err != nil {
-		return ErrorInternal(c, "Failed to list clusters: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to list clusters: %w", err))
 	}
 
 	// Calculate pagination metadata
@@ -300,7 +308,7 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Cluster not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
 	// Check access
@@ -324,7 +332,7 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Cluster not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
 	// Check access
@@ -339,7 +347,7 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 
 	// Update cluster status to destroying (using nil for tx means no transaction)
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroying); err != nil {
-		return ErrorInternal(c, "Failed to update cluster status: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
 	}
 
 	cluster.Status = types.ClusterStatusDestroying
@@ -358,8 +366,15 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 	}
 
 	if err := h.store.Jobs.Create(ctx, job); err != nil {
-		return ErrorInternal(c, "Failed to create deprovision job: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create deprovision job: %w", err))
 	}
+
+	// Log successful cluster deletion
+	LogInfo(c, "cluster deletion initiated",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"job_id", job.ID,
+		"user_id", auth.GetUserIDFromContext(c))
 
 	return SuccessOK(c, cluster)
 }
@@ -387,7 +402,7 @@ func (h *ClusterHandler) Extend(c echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrorNotFound(c, "Cluster not found")
 		}
-		return ErrorInternal(c, "Failed to retrieve cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
 	// Check access
@@ -397,13 +412,13 @@ func (h *ClusterHandler) Extend(c echo.Context) error {
 
 	// Extend destroy_at timestamp
 	if err := h.store.Clusters.UpdateTTL(ctx, id, req.TTLHours); err != nil {
-		return ErrorInternal(c, "Failed to extend cluster TTL: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to extend cluster TTL: %w", err))
 	}
 
 	// Refresh cluster data
 	cluster, err = h.store.Clusters.GetByID(ctx, id)
 	if err != nil {
-		return ErrorInternal(c, "Failed to retrieve updated cluster: "+err.Error())
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve updated cluster: %w", err))
 	}
 
 	return SuccessOK(c, cluster)

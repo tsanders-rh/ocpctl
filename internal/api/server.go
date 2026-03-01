@@ -141,6 +141,9 @@ func (s *Server) setupMiddleware() {
 	s.echo.Use(middleware.TimeoutWithConfig(middleware.TimeoutConfig{
 		Timeout: 30 * time.Second,
 	}))
+
+	// Rate limiting (global, moderate limits)
+	s.echo.Use(apimiddleware.RateLimit(s.config.RateLimitRequests, 10))
 }
 
 // setupRoutes configures API routes
@@ -155,7 +158,9 @@ func (s *Server) setupRoutes() {
 	// Auth routes (public)
 	authHandler := NewAuthHandler(s.store, s.auth)
 	authGroup := v1.Group("/auth")
-	authGroup.POST("/login", authHandler.Login)
+
+	// Strict rate limiting for login to prevent brute force
+	authGroup.POST("/login", authHandler.Login, apimiddleware.StrictRateLimit(5)) // 5 requests/minute
 	authGroup.POST("/logout", authHandler.Logout)
 	authGroup.POST("/refresh", authHandler.Refresh)
 
@@ -177,13 +182,16 @@ func (s *Server) setupRoutes() {
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy)
 	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
-	clustersGroup.POST("", clusterHandler.Create)
+
+	// Stricter rate limit for cluster creation (resource intensive)
+	clustersGroup.POST("", clusterHandler.Create, apimiddleware.StrictRateLimit(10)) // 10 requests/minute
 	clustersGroup.GET("", clusterHandler.List)
 	clustersGroup.GET("/:id", clusterHandler.Get)
 	clustersGroup.DELETE("/:id", clusterHandler.Delete)
 	clustersGroup.PATCH("/:id/extend", clusterHandler.Extend)
 	clustersGroup.GET("/:id/outputs", clusterHandler.GetOutputs)
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
+	clustersGroup.GET("/:id/kubeconfig/download-url", clusterHandler.GetKubeconfigDownloadURL)
 
 	// Profile routes (require authentication)
 	profileHandler := NewProfileHandler(s.registry)

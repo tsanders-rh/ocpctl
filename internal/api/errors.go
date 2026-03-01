@@ -1,11 +1,22 @@
 package api
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 )
+
+// GetRequestID extracts the request ID from the echo context
+func GetRequestID(c echo.Context) string {
+	requestID := c.Response().Header().Get(echo.HeaderXRequestID)
+	if requestID == "" {
+		requestID = "unknown"
+	}
+	return requestID
+}
 
 // ErrorResponse represents a standard API error response
 type ErrorResponse struct {
@@ -70,11 +81,71 @@ func ErrorValidation(c echo.Context, result *policy.ValidationResult) error {
 }
 
 // ErrorInternal returns a 500 Internal Server Error
+// DEPRECATED: Use ErrorInternalWithLog instead to avoid exposing internal details
 func ErrorInternal(c echo.Context, message string) error {
 	return c.JSON(http.StatusInternalServerError, NewErrorResponse("internal_error", message))
+}
+
+// ErrorInternalWithLog logs the detailed error server-side and returns a generic message to the client
+func ErrorInternalWithLog(c echo.Context, userMessage string, internalError error) error {
+	// Log the detailed error server-side with request context
+	requestID := GetRequestID(c)
+	log.Printf("[ERROR] request_id=%s method=%s path=%s error=%v",
+		requestID, c.Request().Method, c.Request().URL.Path, internalError)
+
+	// Return generic message to client
+	return c.JSON(http.StatusInternalServerError, NewErrorResponse("internal_error", userMessage))
+}
+
+// LogAndReturnGenericError logs detailed error and returns a generic internal error
+func LogAndReturnGenericError(c echo.Context, internalError error) error {
+	return ErrorInternalWithLog(c, "An internal error occurred. Please try again later.", internalError)
 }
 
 // ErrorServiceUnavailable returns a 503 Service Unavailable error
 func ErrorServiceUnavailable(c echo.Context, message string) error {
 	return c.JSON(http.StatusServiceUnavailable, NewErrorResponse("service_unavailable", message))
+}
+
+// LogInfo logs an informational message with request context
+func LogInfo(c echo.Context, message string, keyvals ...interface{}) {
+	requestID := GetRequestID(c)
+
+	// Build key-value pairs string
+	kvString := ""
+	for i := 0; i < len(keyvals); i += 2 {
+		if i+1 < len(keyvals) {
+			if i > 0 {
+				kvString += " "
+			}
+			kvString += formatKeyVal(keyvals[i], keyvals[i+1])
+		}
+	}
+
+	log.Printf("[INFO] request_id=%s method=%s path=%s message=\"%s\" %s",
+		requestID, c.Request().Method, c.Request().URL.Path, message, kvString)
+}
+
+// LogWarning logs a warning message with request context
+func LogWarning(c echo.Context, message string, keyvals ...interface{}) {
+	requestID := GetRequestID(c)
+
+	// Build key-value pairs string
+	kvString := ""
+	for i := 0; i < len(keyvals); i += 2 {
+		if i+1 < len(keyvals) {
+			if i > 0 {
+				kvString += " "
+			}
+			kvString += formatKeyVal(keyvals[i], keyvals[i+1])
+		}
+	}
+
+	log.Printf("[WARN] request_id=%s method=%s path=%s message=\"%s\" %s",
+		requestID, c.Request().Method, c.Request().URL.Path, message, kvString)
+}
+
+// formatKeyVal formats a key-value pair for logging
+func formatKeyVal(key, val interface{}) string {
+	return fmt.Sprintf("%v=%v", key, val)
 }

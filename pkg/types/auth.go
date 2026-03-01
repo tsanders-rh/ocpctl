@@ -46,10 +46,11 @@ const (
 // AuditEvent represents an immutable audit log entry
 type AuditEvent struct {
 	ID              string           `db:"id"`
-	Actor           string           `db:"actor"` // IAM principal ARN
+	Actor           string           `db:"actor"` // User ID or IAM principal ARN
 	Action          string           `db:"action"`
 	TargetClusterID *string          `db:"target_cluster_id"`
 	TargetJobID     *string          `db:"target_job_id"`
+	TargetUserID    *string          `db:"target_user_id"`
 	Status          AuditEventStatus `db:"status"`
 	Metadata        JobMetadata      `db:"metadata"`
 	IPAddress       *string          `db:"ip_address"`

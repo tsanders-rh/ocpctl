@@ -259,9 +259,32 @@ export default function ClusterDetailPage() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => {
-                      // TODO: Implement download from S3
-                      alert('Kubeconfig download will be implemented');
+                    onClick={async () => {
+                      try {
+                        // Get pre-signed download URL from API
+                        const response = await fetch(`/api/v1/clusters/${cluster.id}/kubeconfig/download-url`, {
+                          headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                          },
+                        });
+
+                        if (!response.ok) {
+                          throw new Error('Failed to get download URL');
+                        }
+
+                        const data = await response.json();
+
+                        // Create a temporary anchor element and trigger download
+                        const link = document.createElement('a');
+                        link.href = data.download_url;
+                        link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      } catch (error) {
+                        console.error('Failed to download kubeconfig:', error);
+                        alert('Failed to download kubeconfig. Please try again.');
+                      }
                     }}
                   >
                     <Download className="h-4 w-4" />

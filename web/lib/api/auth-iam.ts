@@ -1,51 +1,126 @@
 /**
- * IAM Auth Provider - Placeholder Implementation
+ * IAM Auth Provider
  *
- * IMPORTANT: Full AWS IAM authentication requires server-side processing
- * because AWS SDK modules use Node.js APIs that don't work in browsers.
- *
- * To implement IAM auth properly:
- * 1. Create Next.js API routes (app/api/auth/iam/*.ts)
- * 2. Use AWS SDK on the server-side to verify credentials
- * 3. Sign requests with SigV4 on the backend
- * 4. Return a session token/JWT to the browser
- *
- * For now, this is a stub that would need to be replaced with
- * server-side API route handlers.
+ * Handles AWS IAM authentication by delegating to server-side Next.js API routes.
+ * The AWS SDK requires Node.js APIs that don't work in browsers, so all AWS
+ * operations are handled server-side.
  */
+
+interface IAMCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  region?: string;
+}
+
+interface CallerIdentity {
+  arn: string;
+  account: string;
+  userId: string;
+}
+
 export class IAMAuthProvider {
+  private credentials: IAMCredentials | null = null;
+  private identity: CallerIdentity | null = null;
+
   /**
-   * Get headers for a request
-   * Currently just marks the request as using IAM mode
+   * Set AWS IAM credentials
    */
-  async getHeaders(): Promise<HeadersInit> {
-    return {
-      "Content-Type": "application/json",
-      "X-Auth-Mode": "iam",
-    };
+  setCredentials(credentials: IAMCredentials): void {
+    this.credentials = credentials;
+    this.identity = null; // Clear cached identity
   }
 
   /**
-   * Verify IAM credentials - STUB
-   * In production, this would call a Next.js API route that
-   * uses AWS SDK server-side to verify credentials
+   * Get current credentials
    */
-  async verifyCredentials(): Promise<{
-    arn: string;
-    account: string;
-    userId: string;
-  }> {
-    throw new Error(
-      "IAM authentication is not fully implemented. " +
-        "AWS SDK requires server-side processing. " +
-        "Please use JWT authentication mode or implement server-side IAM auth via Next.js API routes."
-    );
+  getCredentials(): IAMCredentials | null {
+    return this.credentials;
   }
 
   /**
-   * Refresh credentials - STUB
+   * Verify IAM credentials by calling server-side API route
+   */
+  async verifyCredentials(): Promise<CallerIdentity> {
+    if (!this.credentials) {
+      throw new Error("No credentials set");
+    }
+
+    const response = await fetch("/api/auth/iam/verify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(this.credentials),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to verify credentials");
+    }
+
+    const data = await response.json();
+    this.identity = data.identity;
+    return data.identity;
+  }
+
+  /**
+   * Get headers for a request with AWS SigV4 signature
+   */
+  async getHeaders(
+    method: string,
+    url: string,
+    body?: string
+  ): Promise<HeadersInit> {
+    if (!this.credentials) {
+      throw new Error("No credentials set");
+    }
+
+    // Call server-side API route to sign the request
+    const response = await fetch("/api/auth/iam/sign", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...this.credentials,
+        method,
+        url,
+        body,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to sign request");
+    }
+
+    const data = await response.json();
+    return data.headers;
+  }
+
+  /**
+   * Get current identity (cached)
+   */
+  getIdentity(): CallerIdentity | null {
+    return this.identity;
+  }
+
+  /**
+   * Clear credentials and identity
+   */
+  clear(): void {
+    this.credentials = null;
+    this.identity = null;
+  }
+
+  /**
+   * Refresh credentials - No-op for IAM (credentials are long-lived)
    */
   async refresh(): Promise<void> {
+    // IAM credentials don't need refresh in the same way JWT does
+    // If using temporary credentials (STS), the caller would need to
+    // refresh them externally and call setCredentials again
     return Promise.resolve();
   }
 }
