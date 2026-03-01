@@ -23,50 +23,50 @@ type Profile struct {
 
 // VersionConfig defines OpenShift version constraints
 type VersionConfig struct {
-	Allowlist []string `yaml:"allowlist" validate:"required,min=1"`
-	Default   string   `yaml:"default" validate:"required"`
+	Allowlist []string `yaml:"allowlist" json:"allowed" validate:"required,min=1"`
+	Default   string   `yaml:"default" json:"default" validate:"required"`
 }
 
 // RegionConfig defines region constraints
 type RegionConfig struct {
-	Allowlist []string `yaml:"allowlist" validate:"required,min=1"`
-	Default   string   `yaml:"default" validate:"required"`
+	Allowlist []string `yaml:"allowlist" json:"allowed" validate:"required,min=1"`
+	Default   string   `yaml:"default" json:"default" validate:"required"`
 }
 
 // BaseDomainConfig defines base domain constraints
 type BaseDomainConfig struct {
-	Allowlist []string `yaml:"allowlist" validate:"required,min=1"`
-	Default   string   `yaml:"default" validate:"required"`
+	Allowlist []string `yaml:"allowlist" json:"allowed" validate:"required,min=1"`
+	Default   string   `yaml:"default" json:"default" validate:"required"`
 }
 
 // ComputeConfig defines compute resource configuration
 type ComputeConfig struct {
-	ControlPlane ControlPlaneConfig `yaml:"controlPlane" validate:"required"`
-	Workers      WorkersConfig      `yaml:"workers" validate:"required"`
+	ControlPlane ControlPlaneConfig `yaml:"controlPlane" json:"control_plane" validate:"required"`
+	Workers      WorkersConfig      `yaml:"workers" json:"workers" validate:"required"`
 }
 
 // ControlPlaneConfig defines control plane node configuration
 type ControlPlaneConfig struct {
-	Replicas     int    `yaml:"replicas" validate:"required,min=1,odd"`
-	InstanceType string `yaml:"instanceType" validate:"required"`
-	Schedulable  bool   `yaml:"schedulable"`
+	Replicas     int    `yaml:"replicas" json:"replicas" validate:"required,min=1,odd"`
+	InstanceType string `yaml:"instanceType" json:"instance_type" validate:"required"`
+	Schedulable  bool   `yaml:"schedulable" json:"schedulable"`
 }
 
 // WorkersConfig defines worker node configuration
 type WorkersConfig struct {
-	Replicas     int    `yaml:"replicas" validate:"min=0"`
-	MinReplicas  int    `yaml:"minReplicas" validate:"min=0"`
-	MaxReplicas  int    `yaml:"maxReplicas" validate:"gtefield=MinReplicas"`
-	InstanceType string `yaml:"instanceType" validate:"required"`
-	Autoscaling  bool   `yaml:"autoscaling"`
+	Replicas     int    `yaml:"replicas" json:"replicas" validate:"min=0"`
+	MinReplicas  int    `yaml:"minReplicas" json:"min_replicas" validate:"min=0"`
+	MaxReplicas  int    `yaml:"maxReplicas" json:"max_replicas" validate:"gtefield=MinReplicas"`
+	InstanceType string `yaml:"instanceType" json:"instance_type" validate:"required"`
+	Autoscaling  bool   `yaml:"autoscaling" json:"autoscaling"`
 }
 
 // LifecycleConfig defines cluster lifecycle policies
 type LifecycleConfig struct {
-	MaxTTLHours              int  `yaml:"maxTTLHours" validate:"required,min=1"`
-	DefaultTTLHours          int  `yaml:"defaultTTLHours" validate:"required,min=1,ltefield=MaxTTLHours"`
-	AllowCustomTTL           bool `yaml:"allowCustomTTL"`
-	WarnBeforeDestroyHours   int  `yaml:"warnBeforeDestroyHours" validate:"min=0"`
+	MaxTTLHours              int  `yaml:"maxTTLHours" json:"max_ttl_hours" validate:"required,min=1"`
+	DefaultTTLHours          int  `yaml:"defaultTTLHours" json:"default_ttl_hours" validate:"required,min=1,ltefield=MaxTTLHours"`
+	AllowCustomTTL           bool `yaml:"allowCustomTTL" json:"allow_custom_ttl"`
+	WarnBeforeDestroyHours   int  `yaml:"warnBeforeDestroyHours" json:"warn_before_destroy_hours" validate:"min=0"`
 }
 
 // NetworkingConfig defines networking configuration
@@ -90,16 +90,16 @@ type MachineNetworkConfig struct {
 
 // TagsConfig defines tag requirements
 type TagsConfig struct {
-	Required       map[string]string `yaml:"required"`
-	Defaults       map[string]string `yaml:"defaults"`
-	AllowUserTags  bool              `yaml:"allowUserTags"`
+	Required       map[string]string `yaml:"required" json:"required"`
+	Defaults       map[string]string `yaml:"defaults" json:"defaults"`
+	AllowUserTags  bool              `yaml:"allowUserTags" json:"allow_user_tags"`
 }
 
 // FeaturesConfig defines feature flags
 type FeaturesConfig struct {
-	OffHoursScaling bool `yaml:"offHoursScaling"`
-	FIPSMode        bool `yaml:"fipsMode"`
-	PrivateCluster  bool `yaml:"privateCluster"`
+	OffHoursScaling bool `yaml:"offHoursScaling" json:"off_hours_scaling"`
+	FIPSMode        bool `yaml:"fipsMode" json:"fips_mode"`
+	PrivateCluster  bool `yaml:"privateCluster" json:"private_cluster"`
 }
 
 // CostControlsConfig defines cost management settings
