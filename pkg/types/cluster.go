@@ -44,12 +44,23 @@ func (t *Tags) Scan(value interface{}) error {
 		return nil
 	}
 
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		*t = nil
 		return nil
 	}
 
-	return json.Unmarshal(bytes, t)
+	result := make(Tags)
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return err
+	}
+	*t = result
+	return nil
 }
 
 // Cluster represents a cluster record in the database
