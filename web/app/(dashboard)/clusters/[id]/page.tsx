@@ -226,14 +226,18 @@ export default function ClusterDetailPage() {
           <CardTitle>Tags</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.entries(cluster.effective_tags).map(([key, value]) => (
-              <div key={key} className="flex items-center gap-2 text-sm">
-                <span className="font-medium">{key}:</span>
-                <span className="text-muted-foreground">{value}</span>
-              </div>
-            ))}
-          </div>
+          {cluster.effective_tags && Object.keys(cluster.effective_tags).length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(cluster.effective_tags).map(([key, value]) => (
+                <div key={key} className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">{key}:</span>
+                  <span className="text-muted-foreground">{value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No tags</p>
+          )}
         </CardContent>
       </Card>
     </div>
