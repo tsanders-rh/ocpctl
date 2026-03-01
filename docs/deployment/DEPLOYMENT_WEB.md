@@ -2,6 +2,8 @@
 
 This guide covers deploying the ocpctl Next.js web frontend on the same EC2 instance as the API server.
 
+> **Security Note:** Before deploying to production, review the [Security Configuration Guide](./SECURITY_CONFIGURATION.md) for critical security settings including JWT secrets, rate limiting, audit logging, and more.
+
 ## Architecture
 
 ```
@@ -20,6 +22,39 @@ This guide covers deploying the ocpctl Next.js web frontend on the same EC2 inst
     │  :8080         │         │  :3000          │
     └────────────────┘         └─────────────────┘
 ```
+
+## New Security Features
+
+This deployment includes enhanced security features:
+
+- **Rate Limiting:** Protects against brute force and DoS attacks
+  - Login: 5 requests/minute
+  - Cluster creation: 10 requests/minute
+  - Global: 100 requests/minute
+
+- **Audit Logging:** Tracks all security-relevant actions
+  - User management (create, update, delete)
+  - Cluster operations (create, delete)
+  - Kubeconfig downloads
+
+- **S3 Presigned URLs:** Secure, time-limited kubeconfig downloads
+  - 15-minute expiration
+  - Automatic signed URL generation
+
+- **Worker Health Checks:** Monitor worker service health
+  - `/health` endpoint for liveness
+  - `/ready` endpoint for readiness
+
+- **Request ID Propagation:** Full request tracing
+  - Unique ID per request
+  - Structured logging with context
+
+- **IAM Authentication (Enhanced):** Full AWS IAM support
+  - Server-side Next.js API routes for AWS SDK
+  - SigV4 request signing
+  - Credential verification via STS
+
+For detailed configuration, see the [Security Configuration Guide](./SECURITY_CONFIGURATION.md).
 
 ## Prerequisites
 
@@ -101,6 +136,9 @@ NODE_ENV=production
 
 **Important Notes**:
 - Use `NEXT_PUBLIC_AUTH_MODE=iam` for AWS deployments with IAM authentication
+  - **New:** IAM auth now includes server-side Next.js API routes for AWS SDK operations
+  - Requires `@aws-sdk/client-sts`, `@smithy/signature-v4`, `@smithy/protocol-http` packages
+  - See [Security Configuration Guide](./SECURITY_CONFIGURATION.md#iam-authentication) for details
 - Use `NEXT_PUBLIC_AUTH_MODE=jwt` for email/password authentication
 - API URL should use localhost since nginx proxies both services
 
@@ -191,13 +229,17 @@ curl http://localhost
 
 1. **Open browser**: Navigate to your domain (e.g., https://ocpctl.example.com)
 2. **Login**:
-   - JWT mode: Use admin@localhost / changeme
+   - JWT mode: Use admin@localhost / changeme (change immediately!)
    - IAM mode: Ensure AWS credentials configured
 3. **Test features**:
    - View cluster list
    - Create new cluster
    - View cluster details
    - Browse profiles
+4. **Test security features**:
+   - Rate limiting: Try logging in 6+ times quickly (should be blocked)
+   - Kubeconfig download: Create cluster and test S3 presigned URL download
+   - Audit logging: Check database for audit events after user/cluster operations
 
 ### Check Logs
 
@@ -386,14 +428,41 @@ location /_next/static {
 
 ## Security Checklist
 
+### Critical Configuration
 - [ ] HTTPS enabled with valid certificate
+- [ ] JWT_SECRET configured with strong random value (see [Security Guide](./SECURITY_CONFIGURATION.md#jwt-secret))
+- [ ] CORS_ALLOWED_ORIGINS set to production frontend URL
+- [ ] ENVIRONMENT=production set for all services
+- [ ] Default admin password changed immediately
+
+### Network & Infrastructure
 - [ ] Firewall configured (only 80, 443 exposed)
-- [ ] Security headers configured in nginx (HSTS, X-Frame-Options, etc.)
-- [ ] Environment variables stored securely (not in source code)
-- [ ] IAM mode enabled for production (no password exposure)
 - [ ] Services running as non-root user (ocpctl)
 - [ ] Nginx configured to hide server version
+- [ ] Database SSL enabled (sslmode=require)
 - [ ] Regular security updates enabled
+
+### Security Features
+- [ ] Security headers configured (HSTS, X-Frame-Options, CSP, etc.)
+  - Automatically configured via `web/next.config.mjs`
+- [ ] Rate limiting enabled on sensitive endpoints
+  - Login: 5 req/min, Cluster creation: 10 req/min
+- [ ] Audit logging enabled for user and cluster operations
+- [ ] Worker health checks configured (port 8081)
+- [ ] Request ID propagation enabled for tracing
+
+### Authentication
+- [ ] IAM mode enabled for production (no password exposure), OR
+- [ ] JWT mode with strong password policy enforced
+- [ ] If IAM: AWS SDK dependencies installed for Next.js API routes
+- [ ] If IAM: EC2 instance role configured with required permissions
+
+### Data Protection
+- [ ] S3 presigned URLs configured for kubeconfig downloads (15min expiration)
+- [ ] Environment variables stored securely (not in source code)
+- [ ] Sensitive data never logged (passwords, tokens, secrets)
+
+For detailed configuration instructions, see the [Security Configuration Guide](./SECURITY_CONFIGURATION.md).
 
 ## Monitoring
 
@@ -408,17 +477,32 @@ curl -f http://localhost:3000 || alert
 # API health
 curl -f http://localhost:8080/health || alert
 
+# Worker health (new)
+curl -f http://localhost:8081/health || alert
+
+# Worker readiness (new)
+curl -f http://localhost:8081/ready || alert
+
 # Nginx health
 systemctl is-active nginx || alert
 ```
 
+**Worker Health Endpoints:**
+- `/health`: Returns 200 OK if worker service is running
+- `/ready`: Returns 200 OK if worker is ready to process jobs (database connected)
+- Default port: 8081 (configurable via `WORKER_HEALTH_PORT`)
+- See [Security Configuration Guide](./SECURITY_CONFIGURATION.md#worker-health-checks) for details
+
 ### Metrics to Monitor
 
-- Response times (Nginx access logs)
+- Response times (Nginx access logs with request IDs)
 - Error rates (Nginx error logs, app logs)
 - Memory usage (`systemctl status ocpctl-web`)
 - Disk usage (Next.js cache can grow)
 - SSL certificate expiration
+- **Rate limit hits:** Monitor for excessive 429 errors (potential attack)
+- **Audit events:** Track security-relevant actions (user management, cluster operations)
+- **Worker health:** Monitor `/ready` endpoint failures (database connectivity issues)
 
 ## Backup
 

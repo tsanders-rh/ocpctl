@@ -184,8 +184,14 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 		return ErrorBadRequest(c, fmt.Sprintf("Cluster is not ready (status: %s)", cluster.Status))
 	}
 
+	// Get cluster outputs
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, id)
+	if err != nil {
+		return ErrorNotFound(c, "Cluster outputs not found")
+	}
+
 	// Check if S3 URI is available
-	if cluster.KubeconfigS3URI == nil || *cluster.KubeconfigS3URI == "" {
+	if outputs.KubeconfigS3URI == nil || *outputs.KubeconfigS3URI == "" {
 		return ErrorNotFound(c, "Kubeconfig S3 URI not available for this cluster")
 	}
 
@@ -196,7 +202,7 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 	}
 
 	// Generate presigned URL (valid for 15 minutes)
-	presignedURL, err := s3Client.GeneratePresignedURL(ctx, *cluster.KubeconfigS3URI, 15)
+	presignedURL, err := s3Client.GeneratePresignedURL(ctx, *outputs.KubeconfigS3URI, 15)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to generate presigned URL: %w", err))
 	}

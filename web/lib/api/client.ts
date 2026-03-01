@@ -22,12 +22,19 @@ class ApiClient {
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
   }
 
-  private async getHeaders(): Promise<HeadersInit> {
+  private async getHeaders(
+    method?: string,
+    url?: string,
+    body?: string
+  ): Promise<HeadersInit> {
     const { accessToken, authMode } = useAuthStore.getState();
 
     // IAM auth mode - use AWS credentials
     if (authMode === "iam") {
-      return await iamAuthProvider.getHeaders();
+      if (!method || !url) {
+        throw new Error("Method and URL required for IAM authentication");
+      }
+      return await iamAuthProvider.getHeaders(method, url, body);
     }
 
     // JWT auth mode - use access token
@@ -88,10 +95,14 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers = await this.getHeaders();
     const url = endpoint.startsWith("http")
       ? endpoint
       : `${this.baseURL}${endpoint}`;
+
+    const method = options.method || "GET";
+    const body = options.body as string | undefined;
+
+    const headers = await this.getHeaders(method, url, body);
 
     const config: RequestInit = {
       ...options,
@@ -109,7 +120,7 @@ class ApiClient {
       await this.refreshToken();
 
       // Retry the request with new token
-      const newHeaders = await this.getHeaders();
+      const newHeaders = await this.getHeaders(method, url, body);
       config.headers = {
         ...newHeaders,
         ...options.headers,

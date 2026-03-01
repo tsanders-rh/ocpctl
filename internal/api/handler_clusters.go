@@ -196,7 +196,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		"cluster_id", cluster.ID,
 		"cluster_name", cluster.Name,
 		"job_id", job.ID,
-		"user_id", userID)
+		"user_id", ownerID)
 
 	return SuccessCreated(c, cluster)
 }
@@ -326,6 +326,12 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 	// Get cluster ID
 	id := c.Param("id")
 
+	// Get authenticated user ID
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
 	// Get cluster to verify it exists
 	cluster, err := h.store.Clusters.GetByID(ctx, id)
 	if err != nil {
@@ -374,7 +380,7 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		"cluster_id", cluster.ID,
 		"cluster_name", cluster.Name,
 		"job_id", job.ID,
-		"user_id", auth.GetUserIDFromContext(c))
+		"user_id", userID)
 
 	return SuccessOK(c, cluster)
 }

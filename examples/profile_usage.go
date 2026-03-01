@@ -10,7 +10,7 @@ import (
 
 // This example demonstrates complete profile and policy usage
 func main() {
-	fmt.Println("=== OpenShift Cluster Profile & Policy Example ===\n")
+	fmt.Println("=== OpenShift Cluster Profile & Policy Example ===")
 
 	// Step 1: Load profiles from YAML files
 	fmt.Println("1. Loading profiles...")

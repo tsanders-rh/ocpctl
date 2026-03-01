@@ -1,14 +1,7 @@
 package store_test
 
 import (
-	"context"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tsanders-rh/ocpctl/internal/store"
-	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // This is a sample test demonstrating the testing pattern
@@ -19,8 +12,6 @@ func TestClusterStore_Create(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test")
 	}
-
-	ctx := context.Background()
 
 	// In real tests, you would:
 	// 1. Start a PostgreSQL container with testcontainers
@@ -35,21 +26,22 @@ func TestClusterStore_Create(t *testing.T) {
 		// defer pool.Close()
 		// s := store.New(pool)
 
-		cluster := &types.Cluster{
-			ID:          types.GenerateClusterID(),
-			Name:        "test-cluster-01",
-			Platform:    types.PlatformAWS,
-			Version:     "4.20.3",
-			Profile:     "aws-minimal-test",
-			Region:      "us-east-1",
-			BaseDomain:  "labs.example.com",
-			Owner:       "test-user",
-			Team:        "test-team",
-			CostCenter:  "test-cost-center",
-			Status:      types.ClusterStatusPending,
-			RequestedBy: "arn:aws:iam::123456789012:user/test-user",
-			TTLHours:    24,
-		}
+		// Example cluster for testing:
+		// cluster := &types.Cluster{
+		//	ID:          types.GenerateClusterID(),
+		//	Name:        "test-cluster-01",
+		//	Platform:    types.PlatformAWS,
+		//	Version:     "4.20.3",
+		//	Profile:     "aws-minimal-test",
+		//	Region:      "us-east-1",
+		//	BaseDomain:  "labs.example.com",
+		//	Owner:       "test-user",
+		//	Team:        "test-team",
+		//	CostCenter:  "test-cost-center",
+		//	Status:      types.ClusterStatusPending,
+		//	RequestedBy: "arn:aws:iam::123456789012:user/test-user",
+		//	TTLHours:    24,
+		// }
 
 		// Execute
 		// err := s.Clusters.Create(ctx, cluster)
