@@ -138,7 +138,7 @@ export default function NewClusterPage() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>No profiles available</SelectItem>
+                      <div className="p-2 text-sm text-muted-foreground">No profiles available</div>
                     )}
                   </SelectContent>
                 </Select>
@@ -190,7 +190,7 @@ export default function NewClusterPage() {
                         <SelectItem key={region} value={region}>
                           {region}
                         </SelectItem>
-                      )) || <SelectItem value="">No regions available</SelectItem>}
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -209,7 +209,7 @@ export default function NewClusterPage() {
                         <SelectItem key={domain} value={domain}>
                           {domain}
                         </SelectItem>
-                      )) || <SelectItem value="">No domains available</SelectItem>}
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
