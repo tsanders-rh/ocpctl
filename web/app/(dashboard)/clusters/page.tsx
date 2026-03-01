@@ -10,13 +10,35 @@ import { Plus } from "lucide-react";
 
 export default function ClustersPage() {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useClusters({ page, per_page: 20 });
+  const { data, isLoading, error } = useClusters({ page, per_page: 20 });
 
   if (isLoading) {
-    return <div>Loading clusters...</div>;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg">Loading clusters...</div>
+      </div>
+    );
   }
 
-  const clusters = data?.data || [];
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg text-red-600">
+          Error loading clusters: {error instanceof Error ? error.message : 'Unknown error'}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg">No data available</div>
+      </div>
+    );
+  }
+
+  const clusters = data.data || [];
 
   return (
     <div className="space-y-6">
@@ -100,7 +122,7 @@ export default function ClustersPage() {
         </div>
       </div>
 
-      {data?.pagination && data.pagination.total_pages > 1 && (
+      {data.pagination && data.pagination.total_pages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
             Page {data.pagination.page} of {data.pagination.total_pages} (
