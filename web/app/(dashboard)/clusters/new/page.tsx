@@ -99,7 +99,7 @@ export default function NewClusterPage() {
               <div className="space-y-2">
                 <Label htmlFor="platform">Platform</Label>
                 <Select
-                  value={watchedValues.platform}
+                  value={watchedValues.platform || ""}
                   onValueChange={(value) => {
                     setValue("platform", value as Platform);
                     setSelectedPlatform(value as Platform);
@@ -124,7 +124,7 @@ export default function NewClusterPage() {
               <div className="space-y-2">
                 <Label htmlFor="profile">Size Profile</Label>
                 <Select
-                  value={watchedValues.profile}
+                  value={watchedValues.profile || ""}
                   onValueChange={(value) => setValue("profile", value)}
                 >
                   <SelectTrigger>
@@ -153,7 +153,7 @@ export default function NewClusterPage() {
                 <div className="space-y-2">
                   <Label htmlFor="version">OpenShift Version</Label>
                   <Select
-                    value={watchedValues.version}
+                    value={watchedValues.version || ""}
                     onValueChange={(value) => setValue("version", value)}
                   >
                     <SelectTrigger>
@@ -179,7 +179,7 @@ export default function NewClusterPage() {
                 <div className="space-y-2">
                   <Label htmlFor="region">Region</Label>
                   <Select
-                    value={watchedValues.region}
+                    value={watchedValues.region || ""}
                     onValueChange={(value) => setValue("region", value)}
                   >
                     <SelectTrigger>
@@ -198,7 +198,7 @@ export default function NewClusterPage() {
                 <div className="space-y-2">
                   <Label htmlFor="base_domain">Base Domain</Label>
                   <Select
-                    value={watchedValues.base_domain}
+                    value={watchedValues.base_domain || ""}
                     onValueChange={(value) => setValue("base_domain", value)}
                   >
                     <SelectTrigger>

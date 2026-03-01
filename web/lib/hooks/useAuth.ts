@@ -31,16 +31,8 @@ export function useLogin() {
   return useMutation({
     mutationFn: (data: LoginRequest) => authApi.login(data),
     onSuccess: (response) => {
-      console.log('[Login] Received response:', {
-        hasUser: !!response.user,
-        hasAccessToken: !!response.access_token,
-        accessTokenLength: response.access_token?.length || 0,
-      });
-
       setUser(response.user);
       setAccessToken(response.access_token);
-
-      console.log('[Login] Token saved to store, navigating to /clusters');
       router.push("/clusters");
     },
   });

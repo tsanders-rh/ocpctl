@@ -30,15 +30,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       isAuthenticated: !!user,
     }),
 
-  setAccessToken: (token) => {
-    console.log('[AuthStore] Setting access token:', {
-      hasToken: !!token,
-      tokenLength: token?.length || 0,
-    });
+  setAccessToken: (token) =>
     set({
       accessToken: token,
-    });
-  },
+    }),
 
   setLoading: (loading) =>
     set({
