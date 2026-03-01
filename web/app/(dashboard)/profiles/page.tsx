@@ -10,10 +10,32 @@ import { Platform } from "@/types/api";
 
 export default function ProfilesPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | undefined>();
-  const { data: profiles, isLoading } = useProfiles(selectedPlatform);
+  const { data: profiles, isLoading, error } = useProfiles(selectedPlatform);
 
   if (isLoading) {
-    return <div>Loading profiles...</div>;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg">Loading profiles...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg text-red-600">
+          Error loading profiles: {error instanceof Error ? error.message : 'Unknown error'}
+        </div>
+      </div>
+    );
+  }
+
+  if (!profiles) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-lg">No profiles available</div>
+      </div>
+    );
   }
 
   return (
@@ -50,7 +72,7 @@ export default function ProfilesPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {profiles?.map((profile) => (
+        {profiles.map((profile) => (
           <Card key={profile.name} className="hover:shadow-lg transition-shadow">
             <CardHeader>
               <div className="flex justify-between items-start">
