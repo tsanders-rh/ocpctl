@@ -34,9 +34,22 @@ func main() {
 
 	// JWT configuration
 	jwtSecret := os.Getenv("JWT_SECRET")
+	environment := os.Getenv("ENVIRONMENT")
 	if jwtSecret == "" {
-		log.Println("WARNING: Using default JWT_SECRET. Set JWT_SECRET environment variable in production!")
+		if environment == "production" {
+			log.Fatalf("CRITICAL: JWT_SECRET must be set in production environment")
+		}
+		log.Println("WARNING: Using default JWT_SECRET for development only")
+		log.Println("         Set JWT_SECRET environment variable before deploying to production!")
 		jwtSecret = "change-me-in-production-min-32-chars"
+	}
+
+	// Validate JWT secret length
+	if len(jwtSecret) < 32 {
+		if environment == "production" {
+			log.Fatalf("CRITICAL: JWT_SECRET must be at least 32 characters (current: %d)", len(jwtSecret))
+		}
+		log.Printf("WARNING: JWT_SECRET should be at least 32 characters (current: %d)", len(jwtSecret))
 	}
 
 	// CORS configuration

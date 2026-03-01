@@ -185,9 +185,9 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id/outputs", clusterHandler.GetOutputs)
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 
-	// Profile routes (public for now, authenticated users only in production)
+	// Profile routes (require authentication)
 	profileHandler := NewProfileHandler(s.registry)
-	profilesGroup := v1.Group("/profiles")
+	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))
 	profilesGroup.GET("", profileHandler.List)
 	profilesGroup.GET("/:name", profileHandler.Get)
 
