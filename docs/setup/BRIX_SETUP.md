@@ -119,7 +119,7 @@ http://<brix-ip>
 ```
 
 **Default login:**
-- Email: `admin@localhost`
+- Email: `admin@example.com`
 - Password: `changeme`
 
 **⚠️ Change the password immediately after first login!**
