@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: Add target_user_id to audit_events for user management audit logging
 -- Created: 2026-03-01
 
@@ -11,3 +12,6 @@ ON audit_events(target_user_id);
 
 -- Add comment
 COMMENT ON COLUMN audit_events.target_user_id IS 'User ID for user management actions (create/update/delete user)';
+
+-- +goose Down
+ALTER TABLE audit_events DROP COLUMN IF EXISTS target_user_id;
