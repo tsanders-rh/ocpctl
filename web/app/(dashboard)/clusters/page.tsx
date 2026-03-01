@@ -134,7 +134,7 @@ export default function ClustersPage() {
                 <div className="space-y-2">
                   <Label>Platform</Label>
                   <Select
-                    value={filters.platform || ""}
+                    value={filters.platform}
                     onValueChange={(value) =>
                       setFilters({ ...filters, platform: value as Platform })
                     }
@@ -143,7 +143,6 @@ export default function ClustersPage() {
                       <SelectValue placeholder="All platforms" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All platforms</SelectItem>
                       <SelectItem value={Platform.AWS}>AWS</SelectItem>
                       <SelectItem value={Platform.IBMCloud}>
                         IBM Cloud
@@ -155,7 +154,7 @@ export default function ClustersPage() {
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <Select
-                    value={filters.status || ""}
+                    value={filters.status}
                     onValueChange={(value) =>
                       setFilters({ ...filters, status: value as ClusterStatus })
                     }
@@ -164,7 +163,6 @@ export default function ClustersPage() {
                       <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All statuses</SelectItem>
                       <SelectItem value={ClusterStatus.PENDING}>
                         Pending
                       </SelectItem>
@@ -189,7 +187,7 @@ export default function ClustersPage() {
                   <div className="space-y-2">
                     <Label>Owner</Label>
                     <Select
-                      value={filters.owner || ""}
+                      value={filters.owner}
                       onValueChange={(value) =>
                         setFilters({ ...filters, owner: value })
                       }
@@ -198,7 +196,6 @@ export default function ClustersPage() {
                         <SelectValue placeholder="All owners" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All owners</SelectItem>
                         {usersData?.users.map((u) => (
                           <SelectItem key={u.id} value={u.email}>
                             {u.email}
