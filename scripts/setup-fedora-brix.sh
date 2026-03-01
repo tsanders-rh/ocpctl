@@ -283,7 +283,7 @@ EOF
     # Frontend .env.local
     mkdir -p "${OCPCTL_DIR}/web"
     cat > "${OCPCTL_DIR}/web/.env.local" << EOF
-NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+NEXT_PUBLIC_API_URL=/api/v1
 NEXT_PUBLIC_AUTH_MODE=jwt
 NEXT_PUBLIC_AWS_REGION=us-east-1
 NODE_ENV=production
