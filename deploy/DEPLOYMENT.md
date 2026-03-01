@@ -64,7 +64,7 @@ aws ec2 describe-instances \
 
 ### Step 2: Setup Database
 
-**Option A: RDS PostgreSQL**
+**Option A: RDS PostgreSQL (Recommended for Production)**
 ```bash
 aws rds create-db-instance \
   --db-instance-identifier ocpctl-db \
@@ -75,10 +75,22 @@ aws rds create-db-instance \
   --master-user-password 'your-secure-password' \
   --allocated-storage 20 \
   --vpc-security-group-ids sg-xxxxxxxxx \
-  --db-name ocpctl
+  --db-name ocpctl \
+  --publicly-accessible false \
+  --storage-encrypted true
 ```
 
-**Option B: PostgreSQL on EC2**
+Get the RDS endpoint:
+```bash
+aws rds describe-db-instances \
+  --db-instance-identifier ocpctl-db \
+  --query 'DBInstances[0].Endpoint.Address' \
+  --output text
+```
+
+**Note**: RDS automatically enforces SSL connections. Use `sslmode=require` in DATABASE_URL.
+
+**Option B: PostgreSQL on EC2 (Development/Testing)**
 ```bash
 # SSH to EC2 instance
 sudo apt-get update
@@ -93,6 +105,9 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ocpctl TO ocpctl;"
 # Add: host ocpctl ocpctl 127.0.0.1/32 md5
 sudo systemctl restart postgresql
 ```
+
+**Note**: If using local PostgreSQL, you can use `sslmode=disable` for DATABASE_URL since it's local.
+For production, consider using RDS with SSL instead.
 
 ### Step 3: Setup EC2 Instance
 
@@ -158,16 +173,52 @@ make deploy
 
 **On the EC2 instance:**
 
+**Generate JWT Secret (CRITICAL):**
+```bash
+# Generate a strong random secret (minimum 32 characters)
+JWT_SECRET=$(openssl rand -base64 32)
+echo "Generated JWT_SECRET: $JWT_SECRET"
+# Save this somewhere secure!
+```
+
 Create API configuration:
 ```bash
+# Replace placeholders with your actual values:
+# - your-password: Your PostgreSQL password
+# - your-jwt-secret: The JWT_SECRET you just generated
+# - your-domain.com: Your production frontend domain (or EC2 public IP)
+
 sudo bash -c 'cat > /etc/ocpctl/api.env' << 'EOF'
-DATABASE_URL=postgres://ocpctl:your-password@localhost:5432/ocpctl?sslmode=disable
+# Database Configuration (REQUIRED)
+DATABASE_URL=postgres://ocpctl:your-password@localhost:5432/ocpctl?sslmode=require
+
+# API Server Configuration
 PORT=8080
 PROFILES_DIR=/opt/ocpctl/profiles
+
+# Authentication Configuration (CRITICAL - REQUIRED in production)
+# Generate with: openssl rand -base64 32
+JWT_SECRET=your-jwt-secret
+
+# CORS Configuration (REQUIRED for web frontend)
+# Set to your production frontend URL
+CORS_ALLOWED_ORIGINS=https://your-domain.com
+
+# IAM Authentication (optional)
+ENABLE_IAM_AUTH=false
+
+# Logging
 LOG_LEVEL=info
+
+# Environment (CRITICAL - triggers security validations)
 ENVIRONMENT=production
 EOF
 ```
+
+**Important Security Notes:**
+- **JWT_SECRET**: Server will FAIL TO START if this is missing or less than 32 characters in production
+- **sslmode=require**: Always use SSL for database connections in production
+- **CORS_ALLOWED_ORIGINS**: Must match your frontend URL exactly (include protocol and port)
 
 Create Worker configuration:
 ```bash
@@ -193,7 +244,30 @@ sudo chown ocpctl:ocpctl /etc/ocpctl/*.env
 rm ~/pull-secret.json
 ```
 
-### Step 7: Install and Start Services
+### Step 7: Verify Configuration
+
+**CRITICAL: Verify all required configuration before starting services**
+
+```bash
+# Check API configuration
+sudo cat /etc/ocpctl/api.env
+
+# Verify critical settings:
+# ✓ JWT_SECRET is set and ≥32 characters
+# ✓ DATABASE_URL has correct password and sslmode
+# ✓ CORS_ALLOWED_ORIGINS is set
+# ✓ ENVIRONMENT=production
+```
+
+**Test database connection:**
+```bash
+# Extract DATABASE_URL and test connection
+source /etc/ocpctl/api.env
+psql "$DATABASE_URL" -c '\dt'
+# Should connect successfully and show tables (or empty list on first run)
+```
+
+### Step 8: Install and Start Services
 
 **On the EC2 instance:**
 
@@ -212,7 +286,16 @@ sudo systemctl start ocpctl-api ocpctl-worker
 sudo systemctl status ocpctl-api ocpctl-worker
 ```
 
-### Step 8: Verify Deployment
+**If API fails to start, check logs:**
+```bash
+sudo journalctl -u ocpctl-api -n 50
+# Common errors:
+# - "CRITICAL: JWT_SECRET must be set" → Add JWT_SECRET to /etc/ocpctl/api.env
+# - "JWT_SECRET must be at least 32 characters" → Generate new secret with openssl rand -base64 32
+# - Database connection errors → Check DATABASE_URL and database accessibility
+```
+
+### Step 9: Verify Deployment
 
 **Health check:**
 ```bash
