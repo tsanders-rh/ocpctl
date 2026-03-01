@@ -43,6 +43,9 @@ type InstallConfigData struct {
 	ServiceCIDR     string
 	MachineCIDR     string
 
+	// Tags
+	UserTags map[string]string
+
 	// AWS-specific
 	AWSRootVolumeType string
 	AWSRootVolumeSize int
@@ -73,6 +76,7 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		ControlPlaneType:     prof.Compute.ControlPlane.InstanceType,
 		WorkerReplicas:       prof.Compute.Workers.Replicas,
 		WorkerType:           prof.Compute.Workers.InstanceType,
+		UserTags:             mergedTags,
 	}
 
 	// Set networking defaults
@@ -158,6 +162,12 @@ metadata:
 platform:
   aws:
     region: {{.Region}}
+{{- if .UserTags}}
+    userTags:
+{{- range $key, $value := .UserTags}}
+      {{$key}}: {{$value}}
+{{- end}}
+{{- end}}
 {{- if .AWSRootVolumeType}}
     defaultMachinePlatform:
       rootVolume:
