@@ -1,4 +1,5 @@
 import { useAuthStore } from "../stores/authStore";
+import { iamAuthProvider } from "./auth-iam";
 import type { APIError } from "@/types/api";
 
 export class ApiError extends Error {
@@ -22,23 +23,35 @@ class ApiClient {
   }
 
   private async getHeaders(): Promise<HeadersInit> {
+    const { accessToken, authMode } = useAuthStore.getState();
+
+    // IAM auth mode - use AWS credentials
+    if (authMode === "iam") {
+      return await iamAuthProvider.getHeaders();
+    }
+
+    // JWT auth mode - use access token
     const headers: HeadersInit = {
       "Content-Type": "application/json",
     };
 
-    const { accessToken, authMode } = useAuthStore.getState();
-
-    if (authMode === "jwt" && accessToken) {
+    if (accessToken) {
       headers["Authorization"] = `Bearer ${accessToken}`;
     }
-
-    // IAM mode headers would be added here (AWS SigV4)
-    // For now, we'll focus on JWT mode for the frontend
 
     return headers;
   }
 
   private async refreshToken(): Promise<void> {
+    const { authMode } = useAuthStore.getState();
+
+    // IAM mode - refresh AWS credentials
+    if (authMode === "iam") {
+      await iamAuthProvider.refresh();
+      return;
+    }
+
+    // JWT mode - refresh access token
     // Prevent multiple simultaneous refresh requests
     if (this.refreshPromise) {
       return this.refreshPromise;

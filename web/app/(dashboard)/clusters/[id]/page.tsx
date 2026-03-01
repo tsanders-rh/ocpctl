@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useCluster, useDeleteCluster, useExtendCluster } from "@/lib/hooks/useClusters";
+import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs } from "@/lib/hooks/useClusters";
 import { useJobs } from "@/lib/hooks/useJobs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -19,6 +19,7 @@ export default function ClusterDetailPage() {
 
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
+  const { data: outputs } = useClusterOutputs(id);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();
 
@@ -185,6 +186,106 @@ export default function ClusterDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Outputs Card */}
+      {cluster.status === "READY" && outputs && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cluster Outputs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {outputs.api_url && (
+              <div className="space-y-2">
+                <Label>API URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={outputs.api_url}
+                    readOnly
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(outputs.api_url!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {outputs.console_url && (
+              <div className="space-y-2">
+                <Label>Console URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={outputs.console_url}
+                    readOnly
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(outputs.console_url!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(outputs.console_url, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {outputs.kubeconfig_s3_uri && (
+              <div className="space-y-2">
+                <Label>Kubeconfig</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={outputs.kubeconfig_s3_uri}
+                    readOnly
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(outputs.kubeconfig_s3_uri!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      // TODO: Implement download from S3
+                      alert('Kubeconfig download will be implemented');
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  S3 URI - Use AWS CLI to download: aws s3 cp {outputs.kubeconfig_s3_uri} ./kubeconfig
+                </p>
+              </div>
+            )}
+
+            {outputs.kubeadmin_secret_ref && (
+              <div className="space-y-2">
+                <Label>Kubeadmin Secret</Label>
+                <Input
+                  value={outputs.kubeadmin_secret_ref}
+                  readOnly
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Jobs Card */}
       <Card>
