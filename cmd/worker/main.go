@@ -24,9 +24,10 @@ func main() {
 		workDir = "/tmp/ocpctl"
 	}
 
-	// Verify required environment variables
+	// Check for pull secret (required for cluster provisioning, but not for worker startup)
 	if os.Getenv("OPENSHIFT_PULL_SECRET") == "" {
-		log.Fatal("OPENSHIFT_PULL_SECRET environment variable must be set")
+		log.Println("WARNING: OPENSHIFT_PULL_SECRET not set. Cluster provisioning will fail until configured.")
+		log.Println("See docs/OPENSHIFT_INSTALL_SETUP.md for instructions on obtaining a pull secret.")
 	}
 
 	// Initialize store
