@@ -252,6 +252,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.Region,
 			&cluster.BaseDomain,
 			&cluster.Owner,
+			&cluster.OwnerID,
 			&cluster.Team,
 			&cluster.CostCenter,
 			&cluster.Status,
