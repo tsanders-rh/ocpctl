@@ -164,10 +164,25 @@ install_postgresql() {
 configure_postgresql() {
     log_info "Configuring PostgreSQL..."
 
-    # Create database user
-    sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || true
+    # Check if .env exists and extract existing password to preserve it
+    if [[ -f "${OCPCTL_DIR}/.env" ]]; then
+        EXISTING_PASSWORD=$(grep "DATABASE_URL" "${OCPCTL_DIR}/.env" | grep -o "ocpctl:[^@]*" | cut -d: -f2)
+        if [[ -n "$EXISTING_PASSWORD" ]]; then
+            log_warn "Using existing password from .env"
+            DB_PASSWORD="$EXISTING_PASSWORD"
+        fi
+    fi
 
-    # Create database
+    # Check if user already exists
+    if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+        log_warn "Database user already exists, updating password to match .env"
+        sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';"
+    else
+        # Create database user
+        sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';"
+    fi
+
+    # Create database if it doesn't exist
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || true
 
     # Grant privileges
@@ -175,10 +190,19 @@ configure_postgresql() {
 
     # Update pg_hba.conf to allow password authentication
     PG_HBA="/var/lib/pgsql/data/pg_hba.conf"
-    if ! grep -q "host.*${DB_NAME}.*${DB_USER}" "${PG_HBA}"; then
-        echo "host    ${DB_NAME}    ${DB_USER}    127.0.0.1/32    scram-sha-256" >> "${PG_HBA}"
-        systemctl restart postgresql
+
+    # Add IPv4 rule if not present
+    if ! grep -q "^host.*${DB_NAME}.*${DB_USER}.*127.0.0.1" "${PG_HBA}"; then
+        sudo sed -i "/^host.*all.*all.*127.0.0.1\/32.*ident/i host    ${DB_NAME}          ${DB_USER}          127.0.0.1/32            scram-sha-256" "${PG_HBA}"
     fi
+
+    # Add IPv6 rule if not present
+    if ! grep -q "^host.*${DB_NAME}.*${DB_USER}.*::1" "${PG_HBA}"; then
+        sudo sed -i "/^host.*all.*all.*::1\/128.*ident/i host    ${DB_NAME}          ${DB_USER}          ::1/128                 scram-sha-256" "${PG_HBA}"
+    fi
+
+    # Reload PostgreSQL
+    systemctl reload postgresql
 
     log_success "PostgreSQL configured with database: ${DB_NAME}"
 }
