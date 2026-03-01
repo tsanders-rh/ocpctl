@@ -110,7 +110,7 @@ export default function ProfilesPage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Hourly Cost</span>
                   <span className="font-medium">
-                    {formatCurrency(profile.lifecycle.estimated_hourly_cost)}/hr
+                    {formatCurrency(profile.cost_controls?.estimated_hourly_cost || 0)}/hr
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">

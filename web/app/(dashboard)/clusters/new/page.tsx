@@ -134,7 +134,7 @@ export default function NewClusterPage() {
                     {profiles && profiles.length > 0 ? (
                       profiles.map((profile) => (
                         <SelectItem key={profile.name} value={profile.name}>
-                          {profile.display_name} (${profile.lifecycle.estimated_hourly_cost}/hr)
+                          {profile.display_name} (${profile.cost_controls?.estimated_hourly_cost || 0}/hr)
                         </SelectItem>
                       ))
                     ) : (

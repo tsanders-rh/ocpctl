@@ -164,8 +164,11 @@ export interface Profile {
     default_ttl_hours: number;
     allow_custom_ttl: boolean;
     warn_before_destroy_hours: number;
+  };
+  cost_controls?: {
     estimated_hourly_cost: number;
     max_monthly_cost: number;
+    budget_alert_threshold: number;
   };
   features: {
     off_hours_scaling: boolean;

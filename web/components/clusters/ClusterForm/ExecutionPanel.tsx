@@ -9,7 +9,7 @@ interface ExecutionPanelProps {
 }
 
 export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
-  const estimatedCost = profile?.lifecycle.estimated_hourly_cost || 0;
+  const estimatedCost = profile?.cost_controls?.estimated_hourly_cost || 0;
   const ttl = formValues.ttl_hours || profile?.lifecycle.default_ttl_hours || 0;
 
   return (
