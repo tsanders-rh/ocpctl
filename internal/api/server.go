@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -72,7 +73,7 @@ func NewServer(
 	e.HidePort = true
 
 	// Disable Echo's default logger, we'll use our own
-	e.Logger.SetOutput(nil)
+	e.Logger.SetOutput(io.Discard)
 
 	// Set custom validator
 	e.Validator = NewValidator()
