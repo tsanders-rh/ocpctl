@@ -104,9 +104,9 @@ type FeaturesConfig struct {
 
 // CostControlsConfig defines cost management settings
 type CostControlsConfig struct {
-	EstimatedHourlyCost  float64 `yaml:"estimatedHourlyCost"`
-	MaxMonthlyCost       float64 `yaml:"maxMonthlyCost"`
-	BudgetAlertThreshold float64 `yaml:"budgetAlertThreshold" validate:"min=0,max=1"`
+	EstimatedHourlyCost  float64 `yaml:"estimatedHourlyCost" json:"estimated_hourly_cost"`
+	MaxMonthlyCost       float64 `yaml:"maxMonthlyCost" json:"max_monthly_cost"`
+	BudgetAlertThreshold float64 `yaml:"budgetAlertThreshold" json:"budget_alert_threshold" validate:"min=0,max=1"`
 }
 
 // PlatformConfig contains platform-specific configuration
