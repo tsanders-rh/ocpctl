@@ -305,8 +305,8 @@ setup_database() {
 
     cd "${OCPCTL_DIR}"
 
-    # Check if migrations have already been run
-    if sudo -u ${OCPCTL_USER} /home/${OCPCTL_USER}/go/bin/goose -dir internal/store/migrations postgres "$(grep DATABASE_URL ${OCPCTL_DIR}/.env | cut -d= -f2)" status | grep -q "Applied"; then
+    # Check if migrations table exists (indicates migrations have been run)
+    if sudo -u postgres psql -d ${DB_NAME} -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='goose_db_version'" | grep -q 1; then
         log_warn "Database migrations already applied, skipping"
         return 0
     fi
