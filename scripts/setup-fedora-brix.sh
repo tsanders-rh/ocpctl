@@ -606,7 +606,7 @@ print_summary() {
     echo "   - API: http://$(hostname -I | awk '{print $1}')/api/v1"
     echo ""
     echo "🔑 Default Login:"
-    echo "   - Email: admin@localhost"
+    echo "   - Email: admin@example.com"
     echo "   - Password: changeme"
     echo "   ⚠️  Change this password after first login!"
     echo ""

@@ -41,7 +41,7 @@ CREATE INDEX idx_clusters_owner_id ON clusters(owner_id);
 INSERT INTO users (id, email, username, password_hash, role, active)
 VALUES (
     'a0000000-0000-0000-0000-000000000001',
-    'admin@localhost',
+    'admin@example.com',
     'Admin User',
     '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYb0UqRh.Ju', -- bcrypt hash of 'changeme'
     'ADMIN',
