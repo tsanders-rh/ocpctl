@@ -43,7 +43,7 @@ VALUES (
     'a0000000-0000-0000-0000-000000000001',
     'admin@example.com',
     'Admin User',
-    '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYb0UqRh.Ju', -- bcrypt hash of 'changeme'
+    '$2a$12$SePVaclw52G3J.HE/tRCpey0O27y15/SzWs5FUliAkQEv8SvXjpT.', -- bcrypt hash of 'changeme'
     'ADMIN',
     true
 )
