@@ -44,24 +44,16 @@ func (i *Installer) CreateCluster(ctx context.Context, workDir string) (string, 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Fetch AWS credentials from IMDS and export as environment variables
-	// This works around openshift-install not reliably using EC2 instance metadata
-	creds, err := getAWSCredentialsFromIMDS()
-	if err != nil {
-		return "", fmt.Errorf("fetch AWS credentials from IMDS: %w", err)
-	}
-
-	// Set environment variables with explicit AWS credentials
+	// Set environment variables
+	// Note: Not setting AWS credentials explicitly - let AWS SDK discover them from IMDS
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
-		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
-		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
-		fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
 		"AWS_REGION=us-east-1",
-		"AWS_STS_REGIONAL_ENDPOINTS=regional",
+		"AWS_SDK_LOAD_CONFIG=1",
+		"AWS_EC2_METADATA_DISABLED=false",
 	)
 
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		return stderr.String(), fmt.Errorf("openshift-install create cluster failed: %w\nStderr: %s", err, stderr.String())
 	}
@@ -81,23 +73,16 @@ func (i *Installer) DestroyCluster(ctx context.Context, workDir string) (string,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Fetch AWS credentials from IMDS and export as environment variables
-	creds, err := getAWSCredentialsFromIMDS()
-	if err != nil {
-		return "", fmt.Errorf("fetch AWS credentials from IMDS: %w", err)
-	}
-
-	// Set environment variables with explicit AWS credentials
+	// Set environment variables
+	// Note: Not setting AWS credentials explicitly - let AWS SDK discover them from IMDS
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
-		fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
-		fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
-		fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
 		"AWS_REGION=us-east-1",
-		"AWS_STS_REGIONAL_ENDPOINTS=regional",
+		"AWS_SDK_LOAD_CONFIG=1",
+		"AWS_EC2_METADATA_DISABLED=false",
 	)
 
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		return stderr.String(), fmt.Errorf("openshift-install destroy cluster failed: %w\nStderr: %s", err, stderr.String())
 	}
