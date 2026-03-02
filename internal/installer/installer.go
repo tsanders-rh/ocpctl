@@ -485,55 +485,62 @@ func getAWSCredentialsFromIMDS() (*IMDSCredentials, error) {
 
 // tagRoute53Zone tags the Route53 hosted zone for cluster discovery by the ingress operator
 func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
-	// Read metadata.json to get the cluster infrastructure ID
-	metadataPath := filepath.Join(workDir, "metadata.json")
-	metadataBytes, err := os.ReadFile(metadataPath)
+	// Read .openshift_install_state.json to get the cluster infrastructure ID
+	// This file is created during manifest generation and contains the infraID
+	stateFilePath := filepath.Join(workDir, ".openshift_install_state.json")
+	stateFileBytes, err := os.ReadFile(stateFilePath)
 	if err != nil {
-		return fmt.Errorf("read metadata.json: %w", err)
+		return fmt.Errorf("read .openshift_install_state.json: %w", err)
 	}
 
-	var metadata struct {
-		InfraID    string `json:"infraID"`
-		ClusterID  string `json:"clusterID"`
-	}
-	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
-		return fmt.Errorf("parse metadata.json: %w", err)
+	// Parse the state file to extract infraID and baseDomain
+	var state struct {
+		ClusterID string `json:"*installconfig.ClusterID"`
+		Config    struct {
+			BaseDomain string `json:"baseDomain"`
+			Metadata   struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"*installconfig.InstallConfig"`
 	}
 
-	infraID := metadata.InfraID
+	// The state file is a JSON object with keys like "*installconfig.ClusterID"
+	// We need to parse it as a map first
+	var stateMap map[string]json.RawMessage
+	if err := json.Unmarshal(stateFileBytes, &stateMap); err != nil {
+		return fmt.Errorf("parse state file: %w", err)
+	}
+
+	// Extract infraID from *installconfig.ClusterID
+	var clusterIDData struct {
+		InfraID string `json:"InfraID"`
+	}
+	if clusterIDRaw, ok := stateMap["*installconfig.ClusterID"]; ok {
+		if err := json.Unmarshal(clusterIDRaw, &clusterIDData); err != nil {
+			return fmt.Errorf("parse cluster ID: %w", err)
+		}
+	}
+
+	infraID := clusterIDData.InfraID
 	if infraID == "" {
-		return fmt.Errorf("no infraID found in metadata.json")
+		return fmt.Errorf("no infraID found in state file")
 	}
 
 	log.Printf("Found cluster infrastructure ID: %s", infraID)
 
-	// Read install-config.yaml backup to get base domain
-	installConfigPath := filepath.Join(workDir, ".openshift_install_state.json")
-	installConfigBytes, err := os.ReadFile(installConfigPath)
-	if err != nil {
-		// Try backup location
-		installConfigPath = filepath.Join(workDir, "install-config.yaml.backup")
-		installConfigBytes, err = os.ReadFile(installConfigPath)
-		if err != nil {
-			return fmt.Errorf("read install-config: %w", err)
+	// Extract baseDomain from *installconfig.InstallConfig
+	var installConfigData struct {
+		BaseDomain string `json:"baseDomain"`
+	}
+	if installConfigRaw, ok := stateMap["*installconfig.InstallConfig"]; ok {
+		if err := json.Unmarshal(installConfigRaw, &installConfigData); err != nil {
+			return fmt.Errorf("parse install config: %w", err)
 		}
 	}
 
-	// Parse to get base domain (simple extraction)
-	baseDomain := ""
-	lines := bytes.Split(installConfigBytes, []byte("\n"))
-	for _, line := range lines {
-		if bytes.Contains(line, []byte("baseDomain:")) {
-			parts := bytes.Split(line, []byte(":"))
-			if len(parts) >= 2 {
-				baseDomain = string(bytes.TrimSpace(parts[1]))
-				break
-			}
-		}
-	}
-
+	baseDomain := installConfigData.BaseDomain
 	if baseDomain == "" {
-		return fmt.Errorf("could not find baseDomain in install-config")
+		return fmt.Errorf("no baseDomain found in state file")
 	}
 
 	log.Printf("Found base domain: %s", baseDomain)
