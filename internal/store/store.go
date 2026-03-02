@@ -32,6 +32,7 @@ type Store struct {
 	Users          *UserStore
 	RefreshTokens  *RefreshTokenStore
 	IAMMappings    *IAMMappingStore
+	DeploymentLogs *DeploymentLogStore
 }
 
 // New creates a new Store with all sub-stores initialized
@@ -55,6 +56,7 @@ func New(pool *pgxpool.Pool) *Store {
 		pool:  pool,
 		cache: make(map[string]*types.IAMPrincipalMapping),
 	}
+	s.DeploymentLogs = &DeploymentLogStore{pool: pool}
 
 	return s
 }

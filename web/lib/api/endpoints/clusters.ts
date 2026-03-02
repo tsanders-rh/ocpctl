@@ -5,6 +5,7 @@ import type {
   ExtendClusterRequest,
   PaginatedResponse,
   ClusterOutputs,
+  DeploymentLogsResponse,
 } from "@/types/api";
 
 export interface ClusterFilters {
@@ -56,5 +57,31 @@ export const clustersApi = {
 
   getOutputs: async (id: string): Promise<ClusterOutputs> => {
     return apiClient.get<ClusterOutputs>(`/clusters/${id}/outputs`);
+  },
+
+  getDeploymentLogs: async (
+    id: string,
+    params?: {
+      job_id?: string;
+      after_sequence?: number;
+      limit?: number;
+    }
+  ): Promise<DeploymentLogsResponse> => {
+    const queryParams = new URLSearchParams();
+
+    if (params?.job_id) {
+      queryParams.append("job_id", params.job_id);
+    }
+    if (params?.after_sequence !== undefined) {
+      queryParams.append("after_sequence", String(params.after_sequence));
+    }
+    if (params?.limit) {
+      queryParams.append("limit", String(params.limit));
+    }
+
+    const query = queryParams.toString();
+    return apiClient.get<DeploymentLogsResponse>(
+      `/clusters/${id}/logs${query ? `?${query}` : ""}`
+    );
   },
 };

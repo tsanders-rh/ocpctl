@@ -7,6 +7,7 @@ import { useJobs } from "@/lib/hooks/useJobs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
+import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -343,6 +344,14 @@ export default function ClusterDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Deployment Logs Card */}
+      {(cluster.status === "CREATING" || cluster.status === "READY" || cluster.status === "FAILED" || cluster.status === "DESTROYING") && (
+        <DeploymentLogs
+          clusterId={cluster.id}
+          clusterStatus={cluster.status}
+        />
+      )}
 
       {/* Tags Card */}
       <Card>

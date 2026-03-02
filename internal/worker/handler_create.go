@@ -105,15 +105,33 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 
 	log.Printf("Generated install-config.yaml for cluster %s", cluster.Name)
 
+	// Start log streaming before running openshift-install
+	// This will tail .openshift_install.log and stream to database in real-time
+	logPath := filepath.Join(workDir, ".openshift_install.log")
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
+
 	// Run openshift-install create cluster
 	log.Printf("Running openshift-install create cluster for %s", cluster.Name)
 
 	output, err := h.installer.CreateCluster(ctx, workDir)
+
+	// Stop log streaming after installer completes
+	streamCancel()
+	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
 	if err != nil {
-		// Store error logs
-		logPath := filepath.Join(workDir, ".openshift_install.log")
+		// Logs are already streamed to database, but log the error
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
-			// TODO: Store log artifact in S3 or database
 			log.Printf("Install failed, logs:\n%s", string(logData))
 		}
 

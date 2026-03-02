@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -53,13 +54,31 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		return nil
 	}
 
+	// Start log streaming before running openshift-install destroy
+	logPath := filepath.Join(workDir, ".openshift_install.log")
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
+
 	// Run openshift-install destroy cluster
 	log.Printf("Running openshift-install destroy cluster for %s", cluster.Name)
 
 	output, err := h.installer.DestroyCluster(ctx, workDir)
+
+	// Stop log streaming after installer completes
+	streamCancel()
+	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
 	if err != nil {
-		// Store error logs
-		logPath := filepath.Join(workDir, ".openshift_install.log")
+		// Logs are already streamed to database
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
 			log.Printf("Destroy failed, logs:\n%s", string(logData))
 		}

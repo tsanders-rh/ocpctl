@@ -217,6 +217,37 @@ export interface Job {
   metadata: Record<string, any>;
 }
 
+// Deployment Log Types
+export interface DeploymentLog {
+  id: number;
+  cluster_id: string;
+  job_id: string;
+  sequence: number;
+  timestamp: string;
+  log_level?: string;
+  message: string;
+  source: string;
+}
+
+export interface DeploymentLogStats {
+  total_lines: number;
+  error_count: number;
+  warn_count: number;
+  last_updated: string;
+}
+
+export interface DeploymentLogsResponse {
+  logs: DeploymentLog[];
+  meta: {
+    cluster_id: string;
+    job_id: string;
+    after_sequence: number;
+    limit: number;
+    count: number;
+    stats: DeploymentLogStats;
+  };
+}
+
 // Pagination
 export interface PaginatedResponse<T> {
   data: T[];

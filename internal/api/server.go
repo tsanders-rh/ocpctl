@@ -193,6 +193,10 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 	clustersGroup.GET("/:id/kubeconfig/download-url", clusterHandler.GetKubeconfigDownloadURL)
 
+	// Deployment logs routes (require authentication, checked within handler)
+	logHandler := NewLogHandler(s.store)
+	clustersGroup.GET("/:id/logs", logHandler.GetClusterLogs)
+
 	// Profile routes (require authentication)
 	profileHandler := NewProfileHandler(s.registry)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))
