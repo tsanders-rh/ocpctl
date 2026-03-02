@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, ArrowDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import type { DeploymentLog } from "@/types/api";
 
 interface DeploymentLogsProps {
   clusterId: string;
@@ -20,6 +21,8 @@ export function DeploymentLogs({
 }: DeploymentLogsProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
+  const [accumulatedLogs, setAccumulatedLogs] = useState<DeploymentLog[]>([]);
+  const [lastSequence, setLastSequence] = useState(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Determine if we should poll based on cluster status
@@ -28,20 +31,30 @@ export function DeploymentLogs({
 
   const { data, isLoading, error } = useDeploymentLogs(clusterId, {
     jobId,
+    afterSequence: lastSequence,
     refreshInterval,
   });
+
+  // Accumulate new logs when data arrives
+  useEffect(() => {
+    if (data?.logs && data.logs.length > 0) {
+      setAccumulatedLogs(prev => [...prev, ...data.logs]);
+      const maxSeq = Math.max(...data.logs.map(l => l.sequence));
+      setLastSequence(maxSeq);
+    }
+  }, [data]);
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (autoScroll && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [data?.logs, autoScroll]);
+  }, [accumulatedLogs, autoScroll]);
 
   const handleDownload = () => {
-    if (!data?.logs) return;
+    if (!accumulatedLogs || accumulatedLogs.length === 0) return;
 
-    const content = data.logs
+    const content = accumulatedLogs
       .map((log) => {
         const timestamp = new Date(log.timestamp).toLocaleString();
         const level = log.log_level ? `[${log.log_level}]` : "";
@@ -58,10 +71,9 @@ export function DeploymentLogs({
     URL.revokeObjectURL(url);
   };
 
-  const filteredLogs =
-    data?.logs.filter(
-      (log) => !levelFilter || log.log_level === levelFilter
-    ) || [];
+  const filteredLogs = accumulatedLogs.filter(
+    (log) => !levelFilter || log.log_level === levelFilter
+  );
 
   return (
     <Card>
@@ -94,7 +106,7 @@ export function DeploymentLogs({
               size="sm"
               variant="outline"
               onClick={handleDownload}
-              disabled={!data?.logs || data.logs.length === 0}
+              disabled={accumulatedLogs.length === 0}
             >
               <Download className="h-4 w-4 mr-2" />
               Download
