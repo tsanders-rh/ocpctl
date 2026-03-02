@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -118,13 +119,20 @@ func (i *Installer) createClusterManualMode(ctx context.Context, workDir string)
 		return "", fmt.Errorf("create manifests: %w", err)
 	}
 
-	// Step 2: Run ccoctl to create IAM resources and generate credential manifests
+	// Step 2: Tag Route53 hosted zone for cluster discovery
+	fmt.Printf("Tagging Route53 hosted zone for cluster discovery...\n")
+	if err := i.tagRoute53Zone(ctx, workDir); err != nil {
+		log.Printf("Warning: failed to tag Route53 zone: %v", err)
+		// Don't fail - zone might already be tagged or might not be using Route53
+	}
+
+	// Step 3: Run ccoctl to create IAM resources and generate credential manifests
 	fmt.Printf("Running ccoctl to create IAM roles and credential manifests...\n")
 	if err := i.runCCOCtl(ctx, workDir); err != nil {
 		return "", fmt.Errorf("run ccoctl: %w", err)
 	}
 
-	// Step 3: Run create cluster
+	// Step 4: Run create cluster
 	fmt.Printf("Creating cluster with Manual credentials mode...\n")
 	return i.createClusterDirect(ctx, workDir)
 }
@@ -473,4 +481,107 @@ func getAWSCredentialsFromIMDS() (*IMDSCredentials, error) {
 	}
 
 	return &creds, nil
+}
+
+// tagRoute53Zone tags the Route53 hosted zone for cluster discovery by the ingress operator
+func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
+	// Read metadata.json to get the cluster infrastructure ID
+	metadataPath := filepath.Join(workDir, "metadata.json")
+	metadataBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return fmt.Errorf("read metadata.json: %w", err)
+	}
+
+	var metadata struct {
+		InfraID    string `json:"infraID"`
+		ClusterID  string `json:"clusterID"`
+	}
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		return fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	infraID := metadata.InfraID
+	if infraID == "" {
+		return fmt.Errorf("no infraID found in metadata.json")
+	}
+
+	log.Printf("Found cluster infrastructure ID: %s", infraID)
+
+	// Read install-config.yaml backup to get base domain
+	installConfigPath := filepath.Join(workDir, ".openshift_install_state.json")
+	installConfigBytes, err := os.ReadFile(installConfigPath)
+	if err != nil {
+		// Try backup location
+		installConfigPath = filepath.Join(workDir, "install-config.yaml.backup")
+		installConfigBytes, err = os.ReadFile(installConfigPath)
+		if err != nil {
+			return fmt.Errorf("read install-config: %w", err)
+		}
+	}
+
+	// Parse to get base domain (simple extraction)
+	baseDomain := ""
+	lines := bytes.Split(installConfigBytes, []byte("\n"))
+	for _, line := range lines {
+		if bytes.Contains(line, []byte("baseDomain:")) {
+			parts := bytes.Split(line, []byte(":"))
+			if len(parts) >= 2 {
+				baseDomain = string(bytes.TrimSpace(parts[1]))
+				break
+			}
+		}
+	}
+
+	if baseDomain == "" {
+		return fmt.Errorf("could not find baseDomain in install-config")
+	}
+
+	log.Printf("Found base domain: %s", baseDomain)
+
+	// Use AWS CLI to find and tag the hosted zone
+	// First, find the hosted zone ID for the base domain
+	cmd := exec.CommandContext(ctx, "aws", "route53", "list-hosted-zones-by-name",
+		"--dns-name", baseDomain,
+		"--max-items", "1",
+		"--query", "HostedZones[0].Id",
+		"--output", "text")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("list hosted zones: %w\nStderr: %s", err, stderr.String())
+	}
+
+	hostedZoneID := strings.TrimSpace(stdout.String())
+	if hostedZoneID == "" || hostedZoneID == "None" {
+		return fmt.Errorf("no hosted zone found for domain %s", baseDomain)
+	}
+
+	// Extract just the zone ID (remove /hostedzone/ prefix if present)
+	hostedZoneID = strings.TrimPrefix(hostedZoneID, "/hostedzone/")
+
+	log.Printf("Found hosted zone ID: %s for domain %s", hostedZoneID, baseDomain)
+
+	// Tag the hosted zone with cluster ownership tag
+	clusterTag := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+	cmd = exec.CommandContext(ctx, "aws", "route53", "change-tags-for-resource",
+		"--resource-type", "hostedzone",
+		"--resource-id", hostedZoneID,
+		"--add-tags", fmt.Sprintf("Key=%s,Value=owned", clusterTag))
+
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	stdout.Reset()
+	stderr.Reset()
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tag hosted zone: %w\nStderr: %s", err, stderr.String())
+	}
+
+	log.Printf("Successfully tagged hosted zone %s with %s=owned", hostedZoneID, clusterTag)
+
+	return nil
 }
