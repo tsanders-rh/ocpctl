@@ -776,6 +776,522 @@ sudo chmod +x /opt/ocpctl/backup-db.sh
 
 ---
 
+## Configure Worker IAM Permissions for Cluster Provisioning
+
+The worker service needs AWS permissions to provision OpenShift clusters. The recommended approach is to attach an IAM instance role to your EC2 instance.
+
+### Why IAM Instance Role?
+
+**IAM Instance Role (Recommended):**
+- ✅ No credentials to manage or rotate
+- ✅ Automatic credential refresh
+- ✅ More secure (credentials never stored on disk)
+- ✅ Follows AWS best practices
+- ✅ Easy to audit with CloudTrail
+
+**Environment Variables (Alternative):**
+- ❌ Credentials stored in plaintext config file
+- ❌ Must manually rotate credentials
+- ❌ Risk of credential leakage
+- ❌ More difficult to audit
+
+### Step 1: Create IAM Policy for OpenShift Provisioning
+
+The worker needs comprehensive AWS permissions to provision OpenShift clusters using the IPI (Installer Provisioned Infrastructure) method.
+
+```bash
+# Create IAM policy document
+cat > /tmp/ocpctl-worker-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AllocateAddress",
+        "ec2:AssociateAddress",
+        "ec2:AssociateDhcpOptions",
+        "ec2:AssociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:AttachNetworkInterface",
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CopyImage",
+        "ec2:CreateDhcpOptions",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateNatGateway",
+        "ec2:CreateNetworkInterface",
+        "ec2:CreateRoute",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSnapshot",
+        "ec2:CreateSubnet",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:CreateVpc",
+        "ec2:CreateVpcEndpoint",
+        "ec2:DeleteDhcpOptions",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DeleteRoute",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteTags",
+        "ec2:DeleteVolume",
+        "ec2:DeleteVpc",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:DeregisterImage",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeDhcpOptions",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeKeyPairs",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeNetworkAcls",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribePrefixLists",
+        "ec2:DescribeRegions",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeTags",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeVpcClassicLink",
+        "ec2:DescribeVpcClassicLinkDnsSupport",
+        "ec2:DescribeVpcEndpoints",
+        "ec2:DescribeVpcs",
+        "ec2:DetachInternetGateway",
+        "ec2:DetachNetworkInterface",
+        "ec2:DetachVolume",
+        "ec2:DisassociateAddress",
+        "ec2:DisassociateRouteTable",
+        "ec2:GetEbsDefaultKmsKeyId",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ModifyVpcAttribute",
+        "ec2:ReleaseAddress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RunInstances",
+        "ec2:TerminateInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+        "elasticloadbalancing:ConfigureHealthCheck",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancerListeners",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:DescribeInstanceHealth",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTags",
+        "elasticloadbalancing:DescribeTargetGroupAttributes",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:RemoveTags",
+        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "elasticloadbalancing:SetSubnets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:AddRoleToInstanceProfile",
+        "iam:CreateInstanceProfile",
+        "iam:CreateRole",
+        "iam:DeleteInstanceProfile",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:GetInstanceProfile",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:GetUser",
+        "iam:ListInstanceProfiles",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRoles",
+        "iam:ListUsers",
+        "iam:PassRole",
+        "iam:PutRolePolicy",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:SimulatePrincipalPolicy",
+        "iam:TagRole",
+        "iam:TagInstanceProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ChangeTagsForResource",
+        "route53:CreateHostedZone",
+        "route53:DeleteHostedZone",
+        "route53:GetChange",
+        "route53:GetHostedZone",
+        "route53:ListHostedZones",
+        "route53:ListHostedZonesByName",
+        "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource",
+        "route53:UpdateHostedZoneComment"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:DeleteObject",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCors",
+        "s3:GetBucketLocation",
+        "s3:GetBucketLogging",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketWebsite",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetObject",
+        "s3:GetObjectAcl",
+        "s3:GetObjectTagging",
+        "s3:GetObjectVersion",
+        "s3:GetReplicationConfiguration",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:PutBucketAcl",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketTagging",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:PutObjectTagging"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "servicequotas:GetServiceQuota",
+        "servicequotas:ListServiceQuotas"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "tag:GetResources",
+        "tag:GetTagKeys",
+        "tag:GetTagValues",
+        "tag:TagResources",
+        "tag:UntagResources"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+# Create the IAM policy
+aws iam create-policy \
+  --policy-name ocpctl-worker-openshift-provisioning \
+  --policy-document file:///tmp/ocpctl-worker-policy.json \
+  --description "Permissions for ocpctl worker to provision OpenShift clusters on AWS"
+
+# Save policy ARN
+export WORKER_POLICY_ARN=$(aws iam list-policies \
+  --query 'Policies[?PolicyName==`ocpctl-worker-openshift-provisioning`].Arn' \
+  --output text)
+
+echo "Policy ARN: $WORKER_POLICY_ARN"
+```
+
+### Step 2: Create IAM Role and Instance Profile
+
+```bash
+# Create trust policy for EC2
+cat > /tmp/trust-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# Create IAM role
+aws iam create-role \
+  --role-name ocpctl-worker-role \
+  --assume-role-policy-document file:///tmp/trust-policy.json \
+  --description "IAM role for ocpctl worker service"
+
+# Attach the OpenShift provisioning policy
+aws iam attach-role-policy \
+  --role-name ocpctl-worker-role \
+  --policy-arn $WORKER_POLICY_ARN
+
+# Create instance profile
+aws iam create-instance-profile \
+  --instance-profile-name ocpctl-worker-role
+
+# Add role to instance profile (there's a brief delay after creation)
+sleep 10
+aws iam add-role-to-instance-profile \
+  --instance-profile-name ocpctl-worker-role \
+  --role-name ocpctl-worker-role
+
+echo "IAM role and instance profile created successfully"
+```
+
+### Step 3: Attach Instance Profile to EC2 Instance
+
+```bash
+# If you haven't already, get your instance ID
+export INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=ocpctl-test" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].InstanceId' \
+  --output text \
+  --region $AWS_REGION)
+
+echo "Instance ID: $INSTANCE_ID"
+
+# Attach instance profile to EC2 instance
+aws ec2 associate-iam-instance-profile \
+  --instance-id $INSTANCE_ID \
+  --iam-instance-profile Name=ocpctl-worker-role \
+  --region $AWS_REGION
+
+echo "Instance profile attached successfully"
+```
+
+### Step 4: Verify IAM Role on EC2 Instance
+
+```bash
+# SSH into instance
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+
+# Verify AWS credentials are available via instance metadata
+aws sts get-caller-identity
+
+# You should see output like:
+# {
+#     "UserId": "AROAXXXXXXXXXXXXXXXXX:i-0123456789abcdef0",
+#     "Account": "123456789012",
+#     "Arn": "arn:aws:sts::123456789012:assumed-role/ocpctl-worker-role/i-0123456789abcdef0"
+# }
+
+# Test EC2 permissions
+aws ec2 describe-regions --region us-east-1
+
+# Test Route53 permissions (use your actual hosted zone ID)
+aws route53 list-hosted-zones
+
+# Exit SSH session
+exit
+```
+
+**Expected output:** If the role is properly attached, you should see your AWS account information and be able to list regions and Route53 hosted zones.
+
+### Step 5: Remove AWS Credentials from Worker Config (If Present)
+
+Since we're using IAM instance role, we should remove any AWS credentials from the worker environment file:
+
+```bash
+# SSH into instance
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+
+# Edit worker environment file
+sudo nano /etc/ocpctl/worker.env
+
+# Remove or comment out these lines if present:
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
+# AWS_REGION is OK to keep, but optional (worker can auto-detect)
+
+# Save and exit (Ctrl+X, Y, Enter)
+```
+
+### Step 6: Restart Worker Service
+
+```bash
+# Restart worker to pick up IAM credentials
+sudo systemctl restart ocpctl-worker
+
+# Check status
+sudo systemctl status ocpctl-worker
+
+# Verify worker can access AWS APIs
+sudo journalctl -u ocpctl-worker -n 50 --no-pager
+
+# Check worker health
+curl http://localhost:8081/health
+curl http://localhost:8081/ready
+
+# Exit SSH session
+exit
+```
+
+### Step 7: Test Cluster Creation (Optional)
+
+Now that the worker has AWS permissions, you can test cluster creation:
+
+1. **Login to web interface:** Navigate to `http://<EC2_IP>`
+2. **Navigate to Clusters** and click "Create Cluster"
+3. **Select profile:** Choose "AWS Standard Development Cluster" or "AWS Minimal Test Cluster"
+4. **Configure cluster:**
+   - Name: `test-cluster-001`
+   - Region: `us-east-1`
+   - Base domain: `mg.dog8code.com` (should be pre-selected)
+   - OpenShift version: `4.20.3` (or latest from profile)
+5. **Click Create**
+6. **Monitor progress:** Watch the cluster status change from "Pending" → "Creating" → "Ready"
+
+**Monitor worker logs during cluster creation:**
+
+```bash
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+sudo journalctl -u ocpctl-worker -f
+```
+
+**Important:** OpenShift cluster creation takes 30-45 minutes. The worker will:
+1. Download openshift-install binary
+2. Generate install-config.yaml
+3. Run `openshift-install create cluster`
+4. Create AWS resources (VPC, subnets, security groups, EC2 instances, load balancers)
+5. Create Route53 DNS records in your `mg.dog8code.com` hosted zone
+6. Wait for cluster bootstrap to complete
+7. Store kubeconfig and cluster details in database
+
+### Alternative: Using AWS Access Keys (Not Recommended)
+
+If you prefer to use AWS access keys instead of an IAM instance role:
+
+```bash
+# SSH into instance
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+
+# Edit worker environment file
+sudo nano /etc/ocpctl/worker.env
+
+# Add these lines (use your actual credentials):
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+
+# Save and exit
+
+# Restart worker
+sudo systemctl restart ocpctl-worker
+
+# Exit
+exit
+```
+
+**Security Warning:** This approach stores credentials in plaintext in `/etc/ocpctl/worker.env`. Use IAM instance roles instead for production deployments.
+
+### Troubleshooting IAM Role Issues
+
+**Worker can't access AWS APIs:**
+
+```bash
+# Check if instance profile is attached
+aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --query 'Reservations[0].Instances[0].IamInstanceProfile' \
+  --region $AWS_REGION
+
+# If empty, re-attach instance profile
+aws ec2 associate-iam-instance-profile \
+  --instance-id $INSTANCE_ID \
+  --iam-instance-profile Name=ocpctl-worker-role \
+  --region $AWS_REGION
+```
+
+**Permission denied errors in worker logs:**
+
+```bash
+# Check attached policies
+aws iam list-attached-role-policies --role-name ocpctl-worker-role
+
+# Verify policy document
+aws iam get-policy-version \
+  --policy-arn $WORKER_POLICY_ARN \
+  --version-id v1
+
+# Add missing permissions if needed
+```
+
+**Credentials not available on EC2:**
+
+```bash
+# Check instance metadata service (from EC2)
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+# Should show role name, then:
+curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/ocpctl-worker-role
+```
+
+### Cost Considerations
+
+**IAM Roles:** Free - no additional cost
+**OpenShift Clusters:** Each cluster will incur costs for:
+- EC2 instances (3 control plane + N workers)
+- EBS volumes
+- Load balancers (2 per cluster: API + Ingress)
+- Data transfer
+- Route53 queries
+
+**Estimated cost per cluster:**
+- Minimal test cluster (3 masters, no workers): ~$5-7/hour
+- Standard dev cluster (3 masters + 3 workers): ~$8-12/hour
+
+**Remember to delete test clusters when not in use!**
+
+---
+
 ## Clean Up (When Done Testing)
 
 ```bash
@@ -793,13 +1309,30 @@ aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID --region $AWS_REGIO
 # Delete security group (after instance is terminated)
 aws ec2 delete-security-group --group-id $APP_SG_ID --region $AWS_REGION
 
-# Delete IAM role (if created)
-# aws iam remove-role-from-instance-profile \
-#   --instance-profile-name ocpctl-ec2-role \
-#   --role-name ocpctl-ec2-role
-# aws iam delete-instance-profile --instance-profile-name ocpctl-ec2-role
-# aws iam delete-role-policy --role-name ocpctl-ec2-role --policy-name ocpctl-s3-access
-# aws iam delete-role --role-name ocpctl-ec2-role
+# Delete IAM role and instance profile (if created)
+# Remove role from instance profile
+aws iam remove-role-from-instance-profile \
+  --instance-profile-name ocpctl-worker-role \
+  --role-name ocpctl-worker-role
+
+# Delete instance profile
+aws iam delete-instance-profile \
+  --instance-profile-name ocpctl-worker-role
+
+# Detach managed policy
+export WORKER_POLICY_ARN=$(aws iam list-policies \
+  --query 'Policies[?PolicyName==`ocpctl-worker-openshift-provisioning`].Arn' \
+  --output text)
+
+aws iam detach-role-policy \
+  --role-name ocpctl-worker-role \
+  --policy-arn $WORKER_POLICY_ARN
+
+# Delete IAM role
+aws iam delete-role --role-name ocpctl-worker-role
+
+# Delete IAM policy
+aws iam delete-policy --policy-arn $WORKER_POLICY_ARN
 
 echo "Cleanup complete!"
 ```
