@@ -147,16 +147,12 @@ export default function EditUserPage() {
                 onValueChange={(value) => setValue("role", value as UserRole)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a role">
-                    {watchedRole === UserRole.ADMIN && "Admin (Full access)"}
-                    {watchedRole === UserRole.USER && "User (Standard access)"}
-                    {watchedRole === UserRole.VIEWER && "Viewer (Read-only)"}
-                  </SelectValue>
+                  <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UserRole.ADMIN}>Admin (Full access)</SelectItem>
-                  <SelectItem value={UserRole.USER}>User (Standard access)</SelectItem>
-                  <SelectItem value={UserRole.VIEWER}>Viewer (Read-only)</SelectItem>
+                  <SelectItem value="ADMIN">Admin (Full access)</SelectItem>
+                  <SelectItem value="USER">User (Standard access)</SelectItem>
+                  <SelectItem value="VIEWER">Viewer (Read-only)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
