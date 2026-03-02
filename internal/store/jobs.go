@@ -341,7 +341,7 @@ func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, err
 			error_code, error_message, started_at, ended_at,
 			created_at, updated_at, metadata
 		FROM jobs
-		WHERE status = 'PENDING'
+		WHERE status IN ('PENDING', 'RETRYING')
 		ORDER BY created_at ASC
 		LIMIT $1
 	`
