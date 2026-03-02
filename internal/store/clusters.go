@@ -406,6 +406,62 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 	return clusters, nil
 }
 
+// ListAll retrieves all clusters (used for orphan resource detection)
+func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
+	query := `
+		SELECT id, name, platform, version, profile, region, base_domain,
+			owner, team, cost_center, status, requested_by, ttl_hours,
+			destroy_at, created_at, updated_at, destroyed_at,
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+		FROM clusters
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query all clusters: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		var cluster types.Cluster
+		err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.Platform,
+			&cluster.Version,
+			&cluster.Profile,
+			&cluster.Region,
+			&cluster.BaseDomain,
+			&cluster.Owner,
+			&cluster.Team,
+			&cluster.CostCenter,
+			&cluster.Status,
+			&cluster.RequestedBy,
+			&cluster.TTLHours,
+			&cluster.DestroyAt,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.DestroyedAt,
+			&cluster.RequestTags,
+			&cluster.EffectiveTags,
+			&cluster.SSHPublicKey,
+			&cluster.OffhoursOptIn,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan cluster: %w", err)
+		}
+		clusters = append(clusters, &cluster)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters: %w", err)
+	}
+
+	return clusters, nil
+}
+
 // CheckNameExists checks if a cluster name already exists for the platform/domain
 func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platform types.Platform, baseDomain string) (bool, error) {
 	query := `

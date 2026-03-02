@@ -16,25 +16,30 @@ type Config struct {
 	StuckJobThreshold     time.Duration
 	ExpiredLockCleanup    bool
 	ExpiredKeyCleanup     bool
+	OrphanDetection       bool
+	OrphanCheckInterval   time.Duration
 }
 
 // DefaultConfig returns default janitor configuration
 func DefaultConfig() *Config {
 	return &Config{
-		CheckInterval:      5 * time.Minute,
-		StuckJobThreshold:  2 * time.Hour,
-		ExpiredLockCleanup: true,
-		ExpiredKeyCleanup:  true,
+		CheckInterval:       5 * time.Minute,
+		StuckJobThreshold:   2 * time.Hour,
+		ExpiredLockCleanup:  true,
+		ExpiredKeyCleanup:   true,
+		OrphanDetection:     true,
+		OrphanCheckInterval: 15 * time.Minute, // Less frequent to avoid AWS API rate limits
 	}
 }
 
 // Janitor performs periodic cleanup tasks
 type Janitor struct {
-	config  *Config
-	store   *store.Store
-	running bool
-	ctx     context.Context
-	cancel  context.CancelFunc
+	config           *Config
+	store            *store.Store
+	running          bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	lastOrphanCheck  time.Time
 }
 
 // NewJanitor creates a new janitor instance
@@ -111,6 +116,17 @@ func (j *Janitor) run() {
 	if j.config.ExpiredKeyCleanup {
 		if err := j.cleanupExpiredKeys(ctx); err != nil {
 			log.Printf("Error cleaning up expired keys: %v", err)
+		}
+	}
+
+	// Detect orphaned AWS resources (less frequently to avoid rate limits)
+	if j.config.OrphanDetection {
+		// Check if enough time has passed since last orphan check
+		if time.Since(j.lastOrphanCheck) >= j.config.OrphanCheckInterval {
+			if err := j.detectOrphanedResources(ctx); err != nil {
+				log.Printf("Error detecting orphaned resources: %v", err)
+			}
+			j.lastOrphanCheck = time.Now()
 		}
 	}
 
