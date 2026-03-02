@@ -124,17 +124,20 @@ export default function EditUserPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Display Name</Label>
               <Input
                 id="username"
                 placeholder="John Doe"
                 {...register("username", {
                   minLength: {
                     value: 2,
-                    message: "Username must be at least 2 characters",
+                    message: "Display name must be at least 2 characters",
                   },
                 })}
               />
+              <p className="text-sm text-muted-foreground">
+                Friendly name shown in the UI (e.g., &quot;John Smith&quot;)
+              </p>
               {errors.username && (
                 <p className="text-sm text-red-600">{errors.username.message}</p>
               )}
@@ -143,7 +146,7 @@ export default function EditUserPage() {
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
               <Select
-                value={watchedRole}
+                value={watchedRole || user.role}
                 onValueChange={(value) => setValue("role", value as UserRole)}
               >
                 <SelectTrigger>
@@ -156,9 +159,9 @@ export default function EditUserPage() {
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                {watchedRole === UserRole.ADMIN && "Full system access including user management"}
-                {watchedRole === UserRole.USER && "Can create and manage own clusters"}
-                {watchedRole === UserRole.VIEWER && "Read-only access to own clusters"}
+                {(watchedRole === UserRole.ADMIN || user.role === UserRole.ADMIN) && "Full system access including user management"}
+                {(watchedRole === UserRole.USER || user.role === UserRole.USER) && "Can create and manage own clusters"}
+                {(watchedRole === UserRole.VIEWER || user.role === UserRole.VIEWER) && "Read-only access to own clusters"}
               </p>
             </div>
 
