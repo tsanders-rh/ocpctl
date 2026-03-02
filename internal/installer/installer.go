@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -149,19 +151,157 @@ func (i *Installer) createManifests(ctx context.Context, workDir string) error {
 
 // runCCOCtl runs ccoctl to create IAM resources and generate credential manifests
 func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
-	// TODO: Implement ccoctl workflow
-	// For Phase 1, return an error with clear instructions
-	return fmt.Errorf("Manual credentials mode with ccoctl is not yet implemented.\n\n" +
-		"You are using STS/IMDS credentials (EC2 instance profile), which require Manual mode.\n" +
-		"Manual mode requires running 'ccoctl aws create-all' to provision IAM roles.\n\n" +
-		"To proceed:\n" +
-		"1. Install ccoctl (https://docs.openshift.com/container-platform/latest/installing/installing_aws/manually-creating-iam.html)\n" +
-		"2. Run: openshift-install create manifests --dir %s\n" +
-		"3. Extract CredentialsRequests: oc adm release extract --credentials-requests --cloud=aws\n" +
-		"4. Run: ccoctl aws create-all --name=<cluster> --region=<region> --credentials-requests-dir=<dir>\n" +
-		"5. Copy generated manifests to: %s/manifests/ and %s/openshift/\n" +
-		"6. Run: openshift-install create cluster --dir %s\n\n" +
-		"Full automation with ccoctl coming in a future update.", workDir, workDir, workDir, workDir)
+	// Read cluster name and region from install-config for ccoctl parameters
+	clusterName, region, err := i.getClusterInfo(workDir)
+	if err != nil {
+		return fmt.Errorf("get cluster info: %w", err)
+	}
+
+	// Create temporary directory for CredentialsRequests
+	credsReqDir := filepath.Join(workDir, "credentialsrequests")
+	if err := os.MkdirAll(credsReqDir, 0755); err != nil {
+		return fmt.Errorf("create credentials requests dir: %w", err)
+	}
+	defer os.RemoveAll(credsReqDir)
+
+	// Extract CredentialsRequests from release image
+	log.Printf("Extracting CredentialsRequests from manifests...")
+	if err := i.extractCredentialRequests(ctx, workDir, credsReqDir); err != nil {
+		return fmt.Errorf("extract credential requests: %w", err)
+	}
+
+	// Create output directory for ccoctl
+	ccoOutputDir := filepath.Join(workDir, "cco-output")
+	if err := os.MkdirAll(ccoOutputDir, 0755); err != nil {
+		return fmt.Errorf("create cco output dir: %w", err)
+	}
+	defer os.RemoveAll(ccoOutputDir)
+
+	// Run ccoctl to create IAM resources and manifests
+	log.Printf("Running ccoctl to create IAM roles for cluster %s in region %s...", clusterName, region)
+	if err := i.executeCCOCtl(ctx, clusterName, region, credsReqDir, ccoOutputDir); err != nil {
+		return fmt.Errorf("execute ccoctl: %w", err)
+	}
+
+	// Copy generated manifests back into install directory
+	log.Printf("Copying generated manifests to install directory...")
+	if err := i.copyManifests(ccoOutputDir, workDir); err != nil {
+		return fmt.Errorf("copy manifests: %w", err)
+	}
+
+	log.Printf("Successfully created IAM resources and credential manifests")
+	return nil
+}
+
+// getClusterInfo extracts cluster name and region from install-config.yaml
+func (i *Installer) getClusterInfo(workDir string) (string, string, error) {
+	// For now, default to reading from environment or standard AWS region
+	// TODO: Parse install-config.yaml to get actual cluster name and region
+	clusterName := filepath.Base(workDir) // Use work dir name as cluster name
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	if region == "" {
+		region = "us-east-1" // Default region
+	}
+
+	return clusterName, region, nil
+}
+
+// extractCredentialRequests extracts CredentialsRequest manifests from the manifests directory
+func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outputDir string) error {
+	// CredentialsRequests are in the manifests directory after create manifests
+	manifestsDir := filepath.Join(workDir, "manifests")
+
+	// Find all CredentialsRequest files
+	files, err := filepath.Glob(filepath.Join(manifestsDir, "*-credentials-request.yaml"))
+	if err != nil {
+		return fmt.Errorf("glob credentials requests: %w", err)
+	}
+
+	if len(files) == 0 {
+		return fmt.Errorf("no CredentialsRequest manifests found in %s", manifestsDir)
+	}
+
+	// Copy CredentialsRequest files to output directory
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("read file %s: %w", file, err)
+		}
+
+		outputFile := filepath.Join(outputDir, filepath.Base(file))
+		if err := os.WriteFile(outputFile, data, 0644); err != nil {
+			return fmt.Errorf("write file %s: %w", outputFile, err)
+		}
+	}
+
+	log.Printf("Extracted %d CredentialsRequest manifests", len(files))
+	return nil
+}
+
+// executeCCOCtl runs the ccoctl binary to create IAM resources
+func (i *Installer) executeCCOCtl(ctx context.Context, clusterName, region, credsReqDir, outputDir string) error {
+	// ccoctl aws create-all --name=<name> --region=<region> --credentials-requests-dir=<dir> --output-dir=<dir>
+	cmd := exec.CommandContext(ctx, i.ccoCtlPath,
+		"aws", "create-all",
+		"--name="+clusterName,
+		"--region="+region,
+		"--credentials-requests-dir="+credsReqDir,
+		"--output-dir="+outputDir,
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Inherit environment for AWS credentials
+	cmd.Env = os.Environ()
+
+	log.Printf("Executing: %s", cmd.String())
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("ccoctl failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	log.Printf("ccoctl output:\n%s", stdout.String())
+	return nil
+}
+
+// copyManifests copies generated manifests from ccoctl output to install directory
+func (i *Installer) copyManifests(ccoOutputDir, workDir string) error {
+	// ccoctl generates manifests in outputDir/manifests/
+	srcManifestsDir := filepath.Join(ccoOutputDir, "manifests")
+	dstManifestsDir := filepath.Join(workDir, "manifests")
+
+	// Copy all files from src to dst
+	files, err := os.ReadDir(srcManifestsDir)
+	if err != nil {
+		return fmt.Errorf("read cco manifests dir: %w", err)
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		srcFile := filepath.Join(srcManifestsDir, file.Name())
+		dstFile := filepath.Join(dstManifestsDir, file.Name())
+
+		data, err := os.ReadFile(srcFile)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", srcFile, err)
+		}
+
+		if err := os.WriteFile(dstFile, data, 0644); err != nil {
+			return fmt.Errorf("write %s: %w", dstFile, err)
+		}
+
+		log.Printf("Copied manifest: %s", file.Name())
+	}
+
+	return nil
 }
 
 // DestroyCluster runs openshift-install destroy cluster
