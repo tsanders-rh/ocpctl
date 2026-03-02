@@ -493,17 +493,6 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 		return fmt.Errorf("read .openshift_install_state.json: %w", err)
 	}
 
-	// Parse the state file to extract infraID and baseDomain
-	var state struct {
-		ClusterID string `json:"*installconfig.ClusterID"`
-		Config    struct {
-			BaseDomain string `json:"baseDomain"`
-			Metadata   struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-		} `json:"*installconfig.InstallConfig"`
-	}
-
 	// The state file is a JSON object with keys like "*installconfig.ClusterID"
 	// We need to parse it as a map first
 	var stateMap map[string]json.RawMessage
