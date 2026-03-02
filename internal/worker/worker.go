@@ -225,11 +225,46 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		// Schedule retry
 		log.Printf("Job %s will be retried (attempt %d/%d)", job.ID, job.Attempt+1, job.MaxAttempts)
 
+		// For CREATE jobs, clean up partial infrastructure before retry
+		if job.JobType == types.JobTypeCreate {
+			w.cleanupPartialDeployment(ctx, job)
+		}
+
 		// Update job status back to PENDING for retry
 		if err := w.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusPending); err != nil {
 			log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
 		}
 
 		// TODO: Implement exponential backoff delay
+	}
+}
+
+// cleanupPartialDeployment cleans up partial infrastructure from a failed CREATE job
+func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
+	workDir := fmt.Sprintf("%s/%s", w.config.WorkDir, job.ClusterID)
+
+	// Check if work directory exists
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		log.Printf("Work directory %s does not exist, skipping cleanup", workDir)
+		return
+	}
+
+	log.Printf("Cleaning up partial deployment for job %s (cluster %s)", job.ID, job.ClusterID)
+
+	// Run openshift-install destroy to clean up partial infrastructure
+	inst := w.processor.createHandler.installer
+	output, err := inst.DestroyCluster(ctx, workDir)
+
+	if err != nil {
+		// Log the error but don't fail - allow retry to proceed
+		log.Printf("Warning: cleanup failed for job %s: %v\nOutput: %s", job.ID, err, output)
+		log.Printf("Proceeding with retry despite cleanup failure")
+	} else {
+		log.Printf("Successfully cleaned up partial deployment for job %s", job.ID)
+	}
+
+	// Remove work directory to ensure clean slate for retry
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Printf("Warning: failed to remove work directory %s: %v", workDir, err)
 	}
 }
