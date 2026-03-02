@@ -157,6 +157,7 @@ func stringValue(s *string) string {
 // awsInstallConfigTemplate is the template for AWS install-config.yaml
 const awsInstallConfigTemplate = `apiVersion: v1
 baseDomain: {{.BaseDomain}}
+credentialsMode: Passthrough
 metadata:
   name: {{.ClusterName}}
 platform:
