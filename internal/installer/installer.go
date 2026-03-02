@@ -210,6 +210,7 @@ func (i *Installer) getClusterInfo(workDir string) (string, string, error) {
 }
 
 // extractCredentialRequests extracts CredentialsRequest manifests from the release image
+// using oc adm release extract (required for Manual credentials mode)
 func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outputDir string) error {
 	// Read the release image from install-config or detect from openshift-install
 	releaseImage, err := i.getReleaseImage(ctx)
@@ -219,73 +220,50 @@ func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outp
 
 	log.Printf("Extracting CredentialsRequests from release image: %s", releaseImage)
 
-	// Check if the manifests directory already has CredentialsRequest CRDs
-	// They should be in openshift/ directory with Manual mode
-	openshiftDir := filepath.Join(workDir, "openshift")
-	files, err := filepath.Glob(filepath.Join(openshiftDir, "*-credentials-request.yaml"))
+	// Get pull secret from environment
+	pullSecret := os.Getenv("OPENSHIFT_PULL_SECRET")
+	if pullSecret == "" {
+		return fmt.Errorf("OPENSHIFT_PULL_SECRET environment variable not set")
+	}
+
+	// Write pull secret to temporary file
+	pullSecretFile := filepath.Join(workDir, ".dockerconfigjson")
+	if err := os.WriteFile(pullSecretFile, []byte(pullSecret), 0600); err != nil {
+		return fmt.Errorf("write pull secret: %w", err)
+	}
+	defer os.Remove(pullSecretFile)
+
+	// Use oc adm release extract to get CredentialsRequests from the release image
+	cmd := exec.CommandContext(ctx, "oc", "adm", "release", "extract",
+		"--credentials-requests",
+		"--cloud=aws",
+		"--to="+outputDir,
+		"--from="+releaseImage,
+		"--registry-config="+pullSecretFile,
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	log.Printf("Running: oc adm release extract --credentials-requests --cloud=aws --to=%s --from=%s", outputDir, releaseImage)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("oc adm release extract failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	log.Printf("oc output:\n%s", stdout.String())
+
+	// Verify that CredentialsRequest files were extracted
+	files, err := os.ReadDir(outputDir)
 	if err != nil {
-		return fmt.Errorf("glob credentials requests: %w", err)
-	}
-
-	// Also check manifests directory
-	manifestsDir := filepath.Join(workDir, "manifests")
-	manifestFiles, err := filepath.Glob(filepath.Join(manifestsDir, "*-credentials*.yaml"))
-	if err == nil {
-		files = append(files, manifestFiles...)
+		return fmt.Errorf("read output dir: %w", err)
 	}
 
 	if len(files) == 0 {
-		// For Manual mode, we need to use the manifests that are generated
-		// The CredentialsRequests are embedded in the openshift/ directory
-		// Let's look for all credential-related manifests
-		allFiles, err := os.ReadDir(openshiftDir)
-		if err != nil {
-			return fmt.Errorf("read openshift dir: %w", err)
-		}
-
-		for _, file := range allFiles {
-			if file.IsDir() {
-				continue
-			}
-			// Copy all openshift manifests that might be CredentialsRequests
-			srcFile := filepath.Join(openshiftDir, file.Name())
-			dstFile := filepath.Join(outputDir, file.Name())
-
-			data, err := os.ReadFile(srcFile)
-			if err != nil {
-				continue // Skip files we can't read
-			}
-
-			// Check if this is a CredentialsRequest
-			if bytes.Contains(data, []byte("kind: CredentialsRequest")) ||
-				bytes.Contains(data, []byte("cloudcredential.openshift.io")) {
-				if err := os.WriteFile(dstFile, data, 0644); err != nil {
-					return fmt.Errorf("write file %s: %w", dstFile, err)
-				}
-				files = append(files, srcFile)
-				log.Printf("Found CredentialsRequest: %s", file.Name())
-			}
-		}
-	} else {
-		// Copy found CredentialsRequest files to output directory
-		for _, file := range files {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				return fmt.Errorf("read file %s: %w", file, err)
-			}
-
-			outputFile := filepath.Join(outputDir, filepath.Base(file))
-			if err := os.WriteFile(outputFile, data, 0644); err != nil {
-				return fmt.Errorf("write file %s: %w", outputFile, err)
-			}
-		}
+		return fmt.Errorf("no CredentialsRequest manifests extracted from release image")
 	}
 
-	if len(files) == 0 {
-		return fmt.Errorf("no CredentialsRequest manifests found in %s or %s", openshiftDir, manifestsDir)
-	}
-
-	log.Printf("Extracted %d CredentialsRequest manifests", len(files))
+	log.Printf("Successfully extracted %d CredentialsRequest manifests", len(files))
 	return nil
 }
 
