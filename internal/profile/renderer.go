@@ -155,9 +155,10 @@ func stringValue(s *string) string {
 }
 
 // awsInstallConfigTemplate is the template for AWS install-config.yaml
+// Uses Manual credentialsMode which works with both static and STS/IMDS credentials
 const awsInstallConfigTemplate = `apiVersion: v1
 baseDomain: {{.BaseDomain}}
-credentialsMode: Passthrough
+credentialsMode: Manual
 metadata:
   name: {{.ClusterName}}
 platform:
