@@ -140,7 +140,7 @@ func (w *Worker) processJob(job *types.Job) {
 	defer w.releaseLock(ctx, job.ClusterID, job.ID)
 
 	// Update job status to RUNNING
-	if err := w.store.Jobs.MarkStarted(ctx, nil, job.ID); err != nil {
+	if err := w.store.Jobs.MarkStarted(ctx, job.ID); err != nil {
 		log.Printf("Failed to mark job %s as started: %v", job.ID, err)
 		return
 	}

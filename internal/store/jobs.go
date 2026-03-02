@@ -205,14 +205,14 @@ func (s *JobStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, statu
 }
 
 // MarkStarted marks a job as running and sets started_at
-func (s *JobStore) MarkStarted(ctx context.Context, tx pgx.Tx, id string) error {
+func (s *JobStore) MarkStarted(ctx context.Context, id string) error {
 	query := `
 		UPDATE jobs
 		SET status = $1, started_at = NOW(), updated_at = NOW()
 		WHERE id = $2
 	`
 
-	result, err := tx.Exec(ctx, query, types.JobStatusRunning, id)
+	result, err := s.pool.Exec(ctx, query, types.JobStatusRunning, id)
 	if err != nil {
 		return fmt.Errorf("mark job started: %w", err)
 	}
