@@ -87,7 +87,7 @@ export default function UsersPage() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="p-4 text-left text-sm font-medium">Email</th>
-                <th className="p-4 text-left text-sm font-medium">Username</th>
+                <th className="p-4 text-left text-sm font-medium">Name</th>
                 <th className="p-4 text-left text-sm font-medium">Role</th>
                 <th className="p-4 text-left text-sm font-medium">Status</th>
                 <th className="p-4 text-left text-sm font-medium">Created</th>

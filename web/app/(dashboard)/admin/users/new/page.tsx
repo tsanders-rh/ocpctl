@@ -84,18 +84,21 @@ export default function NewUserPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="username">Username *</Label>
+              <Label htmlFor="username">Display Name *</Label>
               <Input
                 id="username"
                 placeholder="John Doe"
                 {...register("username", {
-                  required: "Username is required",
+                  required: "Display name is required",
                   minLength: {
                     value: 2,
-                    message: "Username must be at least 2 characters",
+                    message: "Display name must be at least 2 characters",
                   },
                 })}
               />
+              <p className="text-sm text-muted-foreground">
+                Friendly name shown in the UI (e.g., &quot;John Smith&quot;)
+              </p>
               {errors.username && (
                 <p className="text-sm text-red-600">{errors.username.message}</p>
               )}
