@@ -219,13 +219,6 @@ func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outp
 
 	log.Printf("Extracting CredentialsRequests from release image: %s", releaseImage)
 
-	// Use openshift-install to extract credential requests
-	// This uses the openshift-install binary's built-in extraction capability
-	cmd := exec.CommandContext(ctx, i.binaryPath,
-		"create", "manifests",
-		"--dir", workDir,
-	)
-
 	// Check if the manifests directory already has CredentialsRequest CRDs
 	// They should be in openshift/ directory with Manual mode
 	openshiftDir := filepath.Join(workDir, "openshift")
