@@ -67,9 +67,10 @@ type CreateUserRequest struct {
 
 // UpdateUserRequest represents a request to update a user
 type UpdateUserRequest struct {
-	Username *string   `json:"username,omitempty" validate:"omitempty,min=2,max=100"`
-	Role     *UserRole `json:"role,omitempty"`
-	Active   *bool     `json:"active,omitempty"`
+	Username    *string   `json:"username,omitempty" validate:"omitempty,min=2,max=100"`
+	Role        *UserRole `json:"role,omitempty"`
+	Active      *bool     `json:"active,omitempty"`
+	NewPassword *string   `json:"new_password,omitempty" validate:"omitempty,min=8"`
 }
 
 // UpdateMeRequest represents a request for a user to update their own profile

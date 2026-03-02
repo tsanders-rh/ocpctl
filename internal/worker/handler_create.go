@@ -25,7 +25,12 @@ type CreateHandler struct {
 // NewCreateHandler creates a new create handler
 func NewCreateHandler(config *Config, st *store.Store) *CreateHandler {
 	// Load profile registry
-	loader := profile.NewLoader("internal/profile/definitions")
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "internal/profile/definitions"
+	}
+
+	loader := profile.NewLoader(profilesDir)
 	registry, err := profile.NewRegistry(loader)
 	if err != nil {
 		log.Fatalf("Failed to load profile registry: %v", err)

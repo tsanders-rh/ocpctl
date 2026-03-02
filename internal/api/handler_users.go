@@ -182,6 +182,13 @@ func (h *UserHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid role")
 	}
 
+	// Validate and hash password if provided
+	if req.NewPassword != nil {
+		if err := auth.ValidatePasswordStrength(*req.NewPassword); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+	}
+
 	// Build update map
 	updates := make(map[string]interface{})
 	if req.Username != nil {
@@ -192,6 +199,13 @@ func (h *UserHandler) Update(c echo.Context) error {
 	}
 	if req.Active != nil {
 		updates["active"] = *req.Active
+	}
+	if req.NewPassword != nil {
+		passwordHash, err := auth.HashPassword(*req.NewPassword)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to hash password")
+		}
+		updates["password_hash"] = passwordHash
 	}
 
 	if len(updates) == 0 {

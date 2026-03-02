@@ -78,6 +78,7 @@ export interface UpdateUserRequest {
   username?: string;
   role?: UserRole;
   active?: boolean;
+  new_password?: string;
 }
 
 // Cluster Types

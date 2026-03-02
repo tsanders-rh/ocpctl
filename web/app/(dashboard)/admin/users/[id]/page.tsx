@@ -33,10 +33,12 @@ export default function EditUserPage() {
     watch,
     reset,
     formState: { errors },
-  } = useForm<UpdateUserRequest>();
+  } = useForm<UpdateUserRequest & { confirm_password?: string }>();
 
   const watchedRole = watch("role");
   const watchedActive = watch("active");
+  const watchedPassword = watch("new_password");
+  const watchedConfirmPassword = watch("confirm_password");
 
   // Populate form when user data loads
   useEffect(() => {
@@ -49,9 +51,31 @@ export default function EditUserPage() {
     }
   }, [user, reset]);
 
-  const onSubmit = async (data: UpdateUserRequest) => {
+  const onSubmit = async (data: UpdateUserRequest & { confirm_password?: string }) => {
     try {
-      await updateUser.mutateAsync({ id: userId, data });
+      // Validate password confirmation if password is being changed
+      if (data.new_password) {
+        if (data.new_password !== data.confirm_password) {
+          alert("Passwords do not match");
+          return;
+        }
+        if (data.new_password.length < 8) {
+          alert("Password must be at least 8 characters");
+          return;
+        }
+      }
+
+      // Remove confirm_password before sending to API
+      const { confirm_password, ...updateData } = data;
+
+      // Only send fields that have values
+      const cleanData: UpdateUserRequest = {};
+      if (updateData.username) cleanData.username = updateData.username;
+      if (updateData.role) cleanData.role = updateData.role;
+      if (updateData.active !== undefined) cleanData.active = updateData.active;
+      if (updateData.new_password) cleanData.new_password = updateData.new_password;
+
+      await updateUser.mutateAsync({ id: userId, data: cleanData });
       router.push("/admin/users");
     } catch (error) {
       console.error("Failed to update user:", error);
@@ -123,7 +147,11 @@ export default function EditUserPage() {
                 onValueChange={(value) => setValue("role", value as UserRole)}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select a role">
+                    {watchedRole === UserRole.ADMIN && "Admin (Full access)"}
+                    {watchedRole === UserRole.USER && "User (Standard access)"}
+                    {watchedRole === UserRole.VIEWER && "Viewer (Read-only)"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={UserRole.ADMIN}>Admin (Full access)</SelectItem>
@@ -149,6 +177,48 @@ export default function EditUserPage() {
               <Label htmlFor="active" className="cursor-pointer">
                 Active (User can log in)
               </Label>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Change Password</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Leave blank to keep current password
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="new_password">New Password</Label>
+              <Input
+                id="new_password"
+                type="password"
+                placeholder="••••••••"
+                {...register("new_password", {
+                  minLength: {
+                    value: 8,
+                    message: "Password must be at least 8 characters",
+                  },
+                })}
+              />
+              {errors.new_password && (
+                <p className="text-sm text-red-600">{errors.new_password.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirm_password">Confirm New Password</Label>
+              <Input
+                id="confirm_password"
+                type="password"
+                placeholder="••••••••"
+                {...register("confirm_password")}
+              />
+              {watchedPassword && watchedConfirmPassword && watchedPassword !== watchedConfirmPassword && (
+                <p className="text-sm text-red-600">Passwords do not match</p>
+              )}
             </div>
           </CardContent>
         </Card>
