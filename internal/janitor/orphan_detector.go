@@ -40,11 +40,21 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		clustersByName[cluster.Name] = cluster
 	}
 
-	// Initialize AWS SDK
+	// Initialize AWS SDK with default config
+	// This will use AWS_REGION env var, EC2 metadata, or shared config file
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("load AWS config: %w", err)
+		log.Printf("Failed to load AWS config: %v (skipping orphan detection)", err)
+		return nil // Don't fail janitor if AWS SDK can't be loaded
 	}
+
+	// If region is still empty, use a default
+	if cfg.Region == "" {
+		cfg.Region = "us-east-1"
+		log.Printf("No AWS region configured, defaulting to us-east-1")
+	}
+
+	log.Printf("Checking for orphaned resources in region: %s", cfg.Region)
 
 	orphans := []OrphanedResource{}
 
