@@ -145,7 +145,7 @@ export function DeploymentLogs({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="bg-black text-green-400 p-4 rounded-md h-[500px] overflow-y-auto font-mono text-sm">
+        <div className="bg-black text-green-400 p-4 rounded-md h-[500px] overflow-auto font-mono text-sm">
           {isLoading && (
             <div className="text-gray-500">Loading deployment logs...</div>
           )}
@@ -161,7 +161,7 @@ export function DeploymentLogs({
             </div>
           )}
           {filteredLogs.map((log) => (
-            <div key={log.sequence} className="mb-1">
+            <div key={log.sequence} className="mb-1 break-all">
               <span className="text-gray-500">
                 [{new Date(log.timestamp).toLocaleTimeString()}]
               </span>{" "}
