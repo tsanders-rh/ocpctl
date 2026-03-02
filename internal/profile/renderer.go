@@ -160,6 +160,10 @@ baseDomain: {{.BaseDomain}}
 credentialsMode: Manual
 metadata:
   name: {{.ClusterName}}
+{{- if eq .ControlPlaneReplicas 1}}
+bootstrapInPlace:
+  installationDisk: /dev/sda
+{{- end}}
 platform:
   aws:
     region: {{.Region}}
