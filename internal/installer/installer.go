@@ -45,12 +45,10 @@ func (i *Installer) CreateCluster(ctx context.Context, workDir string) (string, 
 	cmd.Stderr = &stderr
 
 	// Set environment variables
-	// Note: Not setting AWS credentials explicitly - let AWS SDK discover them from IMDS
+	// Note: For Passthrough mode, let AWS SDK discover everything from IMDS naturally
+	// Do not set AWS_REGION or other AWS env vars - let it discover from instance metadata
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
-		"AWS_REGION=us-east-1",
-		"AWS_SDK_LOAD_CONFIG=1",
-		"AWS_EC2_METADATA_DISABLED=false",
 	)
 
 	err := cmd.Run()
@@ -74,12 +72,10 @@ func (i *Installer) DestroyCluster(ctx context.Context, workDir string) (string,
 	cmd.Stderr = &stderr
 
 	// Set environment variables
-	// Note: Not setting AWS credentials explicitly - let AWS SDK discover them from IMDS
+	// Note: For Passthrough mode, let AWS SDK discover everything from IMDS naturally
+	// Do not set AWS_REGION or other AWS env vars - let it discover from instance metadata
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
-		"AWS_REGION=us-east-1",
-		"AWS_SDK_LOAD_CONFIG=1",
-		"AWS_EC2_METADATA_DISABLED=false",
 	)
 
 	err := cmd.Run()
