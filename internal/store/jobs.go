@@ -184,15 +184,15 @@ func (s *JobStore) List(ctx context.Context, offset, limit int) ([]*types.Job, i
 	return jobs, total, nil
 }
 
-// UpdateStatus updates job status within a transaction
-func (s *JobStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, status types.JobStatus) error {
+// UpdateStatus updates job status
+func (s *JobStore) UpdateStatus(ctx context.Context, id string, status types.JobStatus) error {
 	query := `
 		UPDATE jobs
 		SET status = $1, updated_at = NOW()
 		WHERE id = $2
 	`
 
-	result, err := tx.Exec(ctx, query, status, id)
+	result, err := s.pool.Exec(ctx, query, status, id)
 	if err != nil {
 		return fmt.Errorf("update job status: %w", err)
 	}
