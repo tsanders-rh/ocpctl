@@ -25,7 +25,7 @@ func NewInstaller() *Installer {
 
 	return &Installer{
 		binaryPath: binaryPath,
-		timeout:    60 * time.Minute, // Default 60 minute timeout
+		timeout:    120 * time.Minute, // Default 120 minute timeout for cluster installations
 	}
 }
 
