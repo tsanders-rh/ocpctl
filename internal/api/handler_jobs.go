@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // JobHandler handles job-related API endpoints
@@ -42,6 +44,9 @@ func (h *JobHandler) List(c echo.Context) error {
 		Status:    c.QueryParam("status"),
 	}
 
+	// Debug logging
+	log.Printf("[DEBUG] Jobs API called with cluster_id filter: '%s'", filters.ClusterID)
+
 	// Build filter map for response
 	filterMap := make(map[string]interface{})
 	if filters.ClusterID != "" {
@@ -55,13 +60,51 @@ func (h *JobHandler) List(c echo.Context) error {
 	}
 
 	// Get jobs with total count
-	jobs, total, err := h.store.Jobs.List(ctx, pagination.Offset, pagination.PerPage)
-	if err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to list jobs: %w", err))
+	var jobs []*types.Job
+	var total int
+	var err error
+
+	// If cluster_id filter is provided, use ListByClusterID
+	if filters.ClusterID != "" {
+		log.Printf("[DEBUG] Using filtered query for cluster_id: %s", filters.ClusterID)
+		jobs, err = h.store.Jobs.ListByClusterID(ctx, filters.ClusterID)
+		if err != nil {
+			return LogAndReturnGenericError(c, fmt.Errorf("failed to list jobs: %w", err))
+		}
+		total = len(jobs)
+		log.Printf("[DEBUG] Filtered query returned %d jobs", total)
+
+		// Apply manual pagination to filtered results
+		start := pagination.Offset
+		end := start + pagination.PerPage
+		if start > len(jobs) {
+			jobs = []*types.Job{}
+		} else {
+			if end > len(jobs) {
+				end = len(jobs)
+			}
+			jobs = jobs[start:end]
+		}
+	} else {
+		log.Printf("[DEBUG] Using unfiltered query (no cluster_id)")
+		jobs, total, err = h.store.Jobs.List(ctx, pagination.Offset, pagination.PerPage)
+		if err != nil {
+			return LogAndReturnGenericError(c, fmt.Errorf("failed to list jobs: %w", err))
+		}
+		log.Printf("[DEBUG] Unfiltered query returned %d jobs (total: %d)", len(jobs), total)
 	}
 
 	// Calculate pagination metadata
 	paginationMeta := CalculatePagination(pagination.Page, pagination.PerPage, total)
+
+	// Debug headers
+	if filters.ClusterID != "" {
+		c.Response().Header().Set("X-Debug-Filtered", "true")
+		c.Response().Header().Set("X-Debug-Cluster-ID", filters.ClusterID)
+	} else {
+		c.Response().Header().Set("X-Debug-Filtered", "false")
+	}
+	c.Response().Header().Set("X-Debug-Total-Jobs", fmt.Sprintf("%d", total))
 
 	return SuccessPaginated(c, jobs, paginationMeta, filterMap)
 }
