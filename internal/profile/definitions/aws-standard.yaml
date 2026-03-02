@@ -21,10 +21,8 @@ regions:
 
 baseDomains:
   allowlist:
-    - labs.example.com
-    - dev.example.com
-    - staging.example.com
-  default: labs.example.com
+    - mg.dog8code.com
+  default: mg.dog8code.com
 
 compute:
   controlPlane:
