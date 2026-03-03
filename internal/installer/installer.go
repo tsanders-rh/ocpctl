@@ -611,9 +611,11 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 
 	log.Printf("Found cluster infrastructure ID: %s", infraID)
 
-	// Extract baseDomain from *installconfig.InstallConfig
+	// Extract baseDomain from *installconfig.InstallConfig.config
 	var installConfigData struct {
-		BaseDomain string `json:"baseDomain"`
+		Config struct {
+			BaseDomain string `json:"baseDomain"`
+		} `json:"config"`
 	}
 	if installConfigRaw, ok := stateMap["*installconfig.InstallConfig"]; ok {
 		if err := json.Unmarshal(installConfigRaw, &installConfigData); err != nil {
@@ -621,7 +623,7 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 		}
 	}
 
-	baseDomain := installConfigData.BaseDomain
+	baseDomain := installConfigData.Config.BaseDomain
 	if baseDomain == "" {
 		return fmt.Errorf("no baseDomain found in state file")
 	}
