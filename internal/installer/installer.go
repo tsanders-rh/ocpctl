@@ -197,6 +197,14 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 		return fmt.Errorf("copy manifests: %w", err)
 	}
 
+	// Fix OIDC provider thumbprint (ccoctl generates incorrect thumbprint)
+	log.Printf("Fixing OIDC provider thumbprint...")
+	if err := i.fixOIDCThumbprint(ctx, clusterName, region); err != nil {
+		log.Printf("Warning: failed to fix OIDC thumbprint: %v", err)
+		// Don't fail the installation, but log the warning
+		// The cluster might still work or can be fixed manually
+	}
+
 	log.Printf("Successfully created IAM resources and credential manifests")
 	return nil
 }
@@ -364,6 +372,92 @@ func (i *Installer) copyManifests(ccoOutputDir, workDir string) error {
 	}
 
 	return nil
+}
+
+// fixOIDCThumbprint updates the OIDC provider thumbprint to the correct S3 certificate thumbprint
+// ccoctl generates an incorrect thumbprint, so we need to fix it after creation
+func (i *Installer) fixOIDCThumbprint(ctx context.Context, clusterName, region string) error {
+	// Get the correct S3 certificate thumbprint for the region
+	s3Endpoint := fmt.Sprintf("s3.%s.amazonaws.com", region)
+	thumbprint, err := i.getS3CertThumbprint(ctx, s3Endpoint)
+	if err != nil {
+		return fmt.Errorf("get S3 cert thumbprint: %w", err)
+	}
+
+	log.Printf("S3 certificate thumbprint for %s: %s", s3Endpoint, thumbprint)
+
+	// Get AWS account ID
+	accountID, err := i.getAWSAccountID(ctx)
+	if err != nil {
+		return fmt.Errorf("get AWS account ID: %w", err)
+	}
+
+	// Construct OIDC provider ARN
+	oidcProviderARN := fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s-oidc.s3.%s.amazonaws.com",
+		accountID, clusterName, region)
+
+	log.Printf("Updating OIDC provider thumbprint for %s", oidcProviderARN)
+
+	// Update the OIDC provider thumbprint
+	cmd := exec.CommandContext(ctx, "aws", "iam", "update-open-id-connect-provider-thumbprint",
+		"--open-id-connect-provider-arn", oidcProviderARN,
+		"--thumbprint-list", thumbprint)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("update OIDC thumbprint: %w\nStderr: %s", err, stderr.String())
+	}
+
+	log.Printf("Successfully updated OIDC provider thumbprint to %s", thumbprint)
+	return nil
+}
+
+// getS3CertThumbprint retrieves the TLS certificate thumbprint for an S3 endpoint
+func (i *Installer) getS3CertThumbprint(ctx context.Context, s3Endpoint string) (string, error) {
+	// Use openssl to get the certificate thumbprint
+	cmd := exec.CommandContext(ctx, "sh", "-c",
+		fmt.Sprintf("echo | openssl s_client -servername %s -showcerts -connect %s:443 2>/dev/null | openssl x509 -fingerprint -sha1 -noout | cut -d'=' -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]'",
+			s3Endpoint, s3Endpoint))
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("get certificate thumbprint: %w\nStderr: %s", err, stderr.String())
+	}
+
+	thumbprint := strings.TrimSpace(stdout.String())
+	if thumbprint == "" {
+		return "", fmt.Errorf("empty thumbprint returned")
+	}
+
+	return thumbprint, nil
+}
+
+// getAWSAccountID retrieves the current AWS account ID
+func (i *Installer) getAWSAccountID(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "aws", "sts", "get-caller-identity",
+		"--query", "Account",
+		"--output", "text")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("get caller identity: %w\nStderr: %s", err, stderr.String())
+	}
+
+	accountID := strings.TrimSpace(stdout.String())
+	if accountID == "" {
+		return "", fmt.Errorf("empty account ID returned")
+	}
+
+	return accountID, nil
 }
 
 // DestroyCluster runs openshift-install destroy cluster
