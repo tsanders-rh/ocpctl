@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -141,7 +142,7 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	log.Printf("Cluster %s created successfully", cluster.Name)
 
 	// Extract cluster outputs (API URL, console URL, etc.)
-	outputs, err := h.extractClusterOutputs(workDir, cluster.ID)
+	outputs, err := h.extractClusterOutputs(workDir, cluster)
 	if err != nil {
 		log.Printf("Warning: failed to extract cluster outputs: %v", err)
 	} else {
@@ -167,24 +168,50 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 }
 
 // extractClusterOutputs extracts cluster access information
-func (h *CreateHandler) extractClusterOutputs(workDir, clusterID string) (*types.ClusterOutputs, error) {
-	// TODO: Properly parse metadata.json to extract API URL, console URL, etc.
-
+func (h *CreateHandler) extractClusterOutputs(workDir string, cluster *types.Cluster) (*types.ClusterOutputs, error) {
 	outputs := &types.ClusterOutputs{
-		ID:        fmt.Sprintf("%s-outputs", clusterID),
-		ClusterID: clusterID,
+		ID:        uuid.New().String(),
+		ClusterID: cluster.ID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	// For now, just indicate we have metadata
-	metadataURI := fmt.Sprintf("file://%s/metadata.json", workDir)
-	outputs.MetadataS3URI = &metadataURI
+	// Construct API URL and Console URL from cluster name and base domain
+	if cluster.Name != "" && cluster.BaseDomain != "" {
+		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, cluster.BaseDomain)
+		outputs.APIURL = &apiURL
 
+		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, cluster.BaseDomain)
+		outputs.ConsoleURL = &consoleURL
+
+		log.Printf("Extracted cluster URLs - API: %s, Console: %s", apiURL, consoleURL)
+	}
+
+	// Set metadata S3 URI
+	metadataPath := filepath.Join(workDir, "metadata.json")
+	if _, err := os.Stat(metadataPath); err == nil {
+		metadataURI := fmt.Sprintf("file://%s", metadataPath)
+		outputs.MetadataS3URI = &metadataURI
+	}
+
+	// Set kubeconfig S3 URI
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 	if _, err := os.Stat(kubeconfigPath); err == nil {
 		kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
 		outputs.KubeconfigS3URI = &kubeconfigURI
+		log.Printf("Kubeconfig found at: %s", kubeconfigPath)
+	} else {
+		log.Printf("Warning: kubeconfig not found at %s", kubeconfigPath)
+	}
+
+	// Set kubeadmin secret reference (path to kubeadmin-password file)
+	kubeadminPasswordPath := filepath.Join(workDir, "auth", "kubeadmin-password")
+	if _, err := os.Stat(kubeadminPasswordPath); err == nil {
+		kubeadminRef := fmt.Sprintf("file://%s", kubeadminPasswordPath)
+		outputs.KubeadminSecretRef = &kubeadminRef
+		log.Printf("Kubeadmin password found at: %s", kubeadminPasswordPath)
+	} else {
+		log.Printf("Warning: kubeadmin password not found at %s", kubeadminPasswordPath)
 	}
 
 	return outputs, nil
@@ -203,7 +230,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 	if stat, err := os.Stat(kubeconfigPath); err == nil {
 		size := stat.Size()
 		artifacts = append(artifacts, types.ClusterArtifact{
-			ID:           fmt.Sprintf("%s-kubeconfig", clusterID),
+			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeAuthBundle,
 			S3URI:        fmt.Sprintf("file://%s", kubeconfigPath),
@@ -217,7 +244,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 	if stat, err := os.Stat(metadataPath); err == nil {
 		size := stat.Size()
 		artifacts = append(artifacts, types.ClusterArtifact{
-			ID:           fmt.Sprintf("%s-metadata", clusterID),
+			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeMetadata,
 			S3URI:        fmt.Sprintf("file://%s", metadataPath),
@@ -231,7 +258,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 	if stat, err := os.Stat(logPath); err == nil {
 		size := stat.Size()
 		artifacts = append(artifacts, types.ClusterArtifact{
-			ID:           fmt.Sprintf("%s-install-log", clusterID),
+			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeLog,
 			S3URI:        fmt.Sprintf("file://%s", logPath),

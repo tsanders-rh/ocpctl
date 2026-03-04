@@ -3,9 +3,11 @@ package installer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -113,11 +115,15 @@ func (i *Installer) createClusterDirect(ctx context.Context, workDir string) (st
 // createClusterManualMode implements the Manual credentials mode workflow with ccoctl
 // This is required when using STS/IMDS credentials which cannot be used with Mint/Passthrough modes
 func (i *Installer) createClusterManualMode(ctx context.Context, workDir string) (string, error) {
+	// Log initial state
+	i.logInstallState(workDir, "BEFORE create manifests")
+
 	// Step 1: Create manifests
 	fmt.Printf("Creating manifests for Manual mode (STS credentials detected)...\n")
 	if err := i.createManifests(ctx, workDir); err != nil {
 		return "", fmt.Errorf("create manifests: %w", err)
 	}
+	i.logInstallState(workDir, "AFTER create manifests")
 
 	// Step 2: Tag Route53 hosted zone for cluster discovery
 	fmt.Printf("Tagging Route53 hosted zone for cluster discovery...\n")
@@ -125,15 +131,18 @@ func (i *Installer) createClusterManualMode(ctx context.Context, workDir string)
 		log.Printf("Warning: failed to tag Route53 zone: %v", err)
 		// Don't fail - zone might already be tagged or might not be using Route53
 	}
+	i.logInstallState(workDir, "AFTER Route53 tagging")
 
 	// Step 3: Run ccoctl to create IAM resources and generate credential manifests
 	fmt.Printf("Running ccoctl to create IAM roles and credential manifests...\n")
 	if err := i.runCCOCtl(ctx, workDir); err != nil {
 		return "", fmt.Errorf("run ccoctl: %w", err)
 	}
+	i.logInstallState(workDir, "AFTER ccoctl")
 
 	// Step 4: Run create cluster
 	fmt.Printf("Creating cluster with Manual credentials mode...\n")
+	i.logInstallState(workDir, "BEFORE create cluster")
 	return i.createClusterDirect(ctx, workDir)
 }
 
@@ -159,11 +168,19 @@ func (i *Installer) createManifests(ctx context.Context, workDir string) error {
 
 // runCCOCtl runs ccoctl to create IAM resources and generate credential manifests
 func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
-	// Read cluster name and region from install-config for ccoctl parameters
-	clusterName, region, err := i.getClusterInfo(workDir)
+	// Get region for ccoctl
+	_, region, err := i.getClusterInfo(workDir)
 	if err != nil {
 		return fmt.Errorf("get cluster info: %w", err)
 	}
+
+	// Get infraID from state file (created by openshift-install create manifests)
+	// IMPORTANT: ccoctl MUST be called with infraID, not the human cluster name or workDir UUID
+	infraID, err := i.getInfraID(workDir)
+	if err != nil {
+		return fmt.Errorf("get infraID: %w", err)
+	}
+	log.Printf("Found infraID for ccoctl: %s", infraID)
 
 	// Create temporary directory for CredentialsRequests
 	credsReqDir := filepath.Join(workDir, "credentialsrequests")
@@ -186,8 +203,9 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 	defer os.RemoveAll(ccoOutputDir)
 
 	// Run ccoctl to create IAM resources and manifests
-	log.Printf("Running ccoctl to create IAM roles for cluster %s in region %s...", clusterName, region)
-	if err := i.executeCCOCtl(ctx, clusterName, region, credsReqDir, ccoOutputDir); err != nil {
+	// Use infraID as the name - ccoctl will create resources with this prefix
+	log.Printf("Running ccoctl to create IAM roles for cluster %s in region %s...", infraID, region)
+	if err := i.executeCCOCtl(ctx, infraID, region, credsReqDir, ccoOutputDir); err != nil {
 		return fmt.Errorf("execute ccoctl: %w", err)
 	}
 
@@ -198,11 +216,20 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 	}
 
 	// Fix OIDC provider thumbprint (ccoctl generates incorrect thumbprint)
-	log.Printf("Fixing OIDC provider thumbprint...")
-	if err := i.fixOIDCThumbprint(ctx, clusterName, region); err != nil {
+	// Use same infraID that was passed to ccoctl
+	log.Printf("Fixing OIDC provider thumbprint for %s...", infraID)
+	if err := i.fixOIDCThumbprint(ctx, infraID, region); err != nil {
 		log.Printf("Warning: failed to fix OIDC thumbprint: %v", err)
 		// Don't fail the installation, but log the warning
 		// The cluster might still work or can be fixed manually
+	} else {
+		log.Printf("Successfully updated OIDC provider thumbprint")
+	}
+
+	// Validate OIDC configuration before proceeding
+	log.Printf("Validating OIDC configuration...")
+	if err := i.validateOIDCConfiguration(ctx, infraID, region); err != nil {
+		return fmt.Errorf("OIDC validation failed: %w", err)
 	}
 
 	log.Printf("Successfully created IAM resources and credential manifests")
@@ -223,6 +250,43 @@ func (i *Installer) getClusterInfo(workDir string) (string, string, error) {
 	}
 
 	return clusterName, region, nil
+}
+
+// copyDir recursively copies a directory tree, preserving file modes
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+
+		// Read and write file, preserving mode
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, data, info.Mode()); err != nil {
+			return err
+		}
+		log.Printf("Copied: %s (mode %o)", rel, info.Mode())
+		return nil
+	})
 }
 
 // extractCredentialRequests extracts CredentialsRequest manifests from the release image
@@ -371,6 +435,30 @@ func (i *Installer) copyManifests(ccoOutputDir, workDir string) error {
 		log.Printf("Copied manifest: %s", file.Name())
 	}
 
+	// CRITICAL: Copy tls/ directory containing bound-service-account-signing-key.key
+	// These TLS assets are required for the installer to configure STS/bound-token behavior
+	// See: https://docs.openshift.com/container-platform/4.9/authentication/managing_cloud_provider_credentials/cco-mode-sts.html
+	srcTLSDir := filepath.Join(ccoOutputDir, "tls")
+	dstTLSDir := filepath.Join(workDir, "tls")
+
+	if st, err := os.Stat(srcTLSDir); err == nil && st.IsDir() {
+		log.Printf("Copying tls/ directory to install directory...")
+		if err := copyDir(srcTLSDir, dstTLSDir); err != nil {
+			return fmt.Errorf("copy tls dir: %w", err)
+		}
+		log.Printf("✓ Copied tls/ directory")
+
+		// Validate that the critical signing key exists
+		// This turns a 90-minute cluster failure into a 2-second error
+		keyPath := filepath.Join(dstTLSDir, "bound-service-account-signing-key.key")
+		if _, err := os.Stat(keyPath); err != nil {
+			return fmt.Errorf("missing required STS signing key %s: %w", keyPath, err)
+		}
+		log.Printf("✓ Validated STS signing key exists: %s", keyPath)
+	} else {
+		log.Printf("Warning: tls/ directory not found in ccoctl output (STS may fail)")
+	}
+
 	return nil
 }
 
@@ -458,6 +546,258 @@ func (i *Installer) getAWSAccountID(ctx context.Context) (string, error) {
 	}
 
 	return accountID, nil
+}
+
+// getInfraID extracts the infrastructure ID from the openshift install state file
+func (i *Installer) getInfraID(workDir string) (string, error) {
+	stateFile := filepath.Join(workDir, ".openshift_install_state.json")
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return "", fmt.Errorf("read state file: %w", err)
+	}
+
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(data, &state); err != nil {
+		return "", fmt.Errorf("parse state file: %w", err)
+	}
+
+	clusterIDRaw, ok := state["*installconfig.ClusterID"]
+	if !ok {
+		return "", fmt.Errorf("ClusterID not found in state file")
+	}
+
+	var clusterID struct {
+		InfraID string `json:"InfraID"`
+	}
+	if err := json.Unmarshal(clusterIDRaw, &clusterID); err != nil {
+		return "", fmt.Errorf("parse ClusterID: %w", err)
+	}
+
+	if clusterID.InfraID == "" {
+		return "", fmt.Errorf("InfraID is empty in state file")
+	}
+
+	return clusterID.InfraID, nil
+}
+
+// getMetadataInfraID reads infraID from metadata.json if it exists
+func (i *Installer) getMetadataInfraID(workDir string) (string, error) {
+	metadataFile := filepath.Join(workDir, "metadata.json")
+	data, err := os.ReadFile(metadataFile)
+	if err != nil {
+		return "", err // File might not exist yet
+	}
+
+	var metadata struct {
+		InfraID string `json:"infraID"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return "", fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	return metadata.InfraID, nil
+}
+
+// logInstallState logs the current state of the installation directory for debugging
+func (i *Installer) logInstallState(workDir string, phase string) {
+	log.Printf("=== Install State at %s ===", phase)
+	log.Printf("WorkDir (absolute): %s", workDir)
+
+	// Check install-config.yaml
+	installConfigPath := filepath.Join(workDir, "install-config.yaml")
+	if data, err := os.ReadFile(installConfigPath); err == nil {
+		hash := sha256.Sum256(data)
+		log.Printf("install-config.yaml SHA256: %x", hash[:8])
+	} else {
+		log.Printf("install-config.yaml: not found or unreadable")
+	}
+
+	// Check metadata.json
+	metadataPath := filepath.Join(workDir, "metadata.json")
+	if stat, err := os.Stat(metadataPath); err == nil {
+		log.Printf("metadata.json: exists (size=%d, mtime=%s)", stat.Size(), stat.ModTime().Format(time.RFC3339))
+		if infraID, err := i.getMetadataInfraID(workDir); err == nil {
+			log.Printf("metadata.json infraID: %s", infraID)
+		}
+	} else {
+		log.Printf("metadata.json: does not exist")
+	}
+
+	// Check state file infraID
+	if infraID, err := i.getInfraID(workDir); err == nil {
+		log.Printf("state file infraID: %s", infraID)
+	} else {
+		log.Printf("state file infraID: error reading (%v)", err)
+	}
+
+	// Check manifests directory
+	manifestsDir := filepath.Join(workDir, "manifests")
+	if stat, err := os.Stat(manifestsDir); err == nil {
+		log.Printf("manifests/: exists (mtime=%s)", stat.ModTime().Format(time.RFC3339))
+		if files, err := os.ReadDir(manifestsDir); err == nil {
+			log.Printf("manifests/ file count: %d", len(files))
+		}
+	} else {
+		log.Printf("manifests/: does not exist")
+	}
+	log.Printf("=== End Install State ===")
+}
+
+// validateOIDCConfiguration verifies OIDC provider and discovery documents are correctly configured
+// This catches configuration mismatches before cluster installation starts
+func (i *Installer) validateOIDCConfiguration(ctx context.Context, infraID, region string) error {
+	log.Printf("Validating OIDC configuration for infraID=%s, region=%s", infraID, region)
+
+	// Define canonical issuer URL (using infraID, not human cluster name)
+	issuerHost := fmt.Sprintf("%s-oidc.s3.%s.amazonaws.com", infraID, region)
+	canonicalIssuer := fmt.Sprintf("https://%s", issuerHost)
+
+	// Get AWS account ID
+	accountID, err := i.getAWSAccountID(ctx)
+	if err != nil {
+		return fmt.Errorf("get AWS account ID: %w", err)
+	}
+
+	// Check 1: Verify discovery document issuer
+	s3Bucket := fmt.Sprintf("%s-oidc", infraID)
+	s3Key := ".well-known/openid-configuration"
+
+	getDiscoveryCmd := exec.CommandContext(ctx, "aws", "s3", "cp",
+		fmt.Sprintf("s3://%s/%s", s3Bucket, s3Key),
+		"-",
+		"--region", region)
+
+	var discoveryOut, discoveryErr bytes.Buffer
+	getDiscoveryCmd.Stdout = &discoveryOut
+	getDiscoveryCmd.Stderr = &discoveryErr
+	if err := getDiscoveryCmd.Run(); err != nil {
+		return fmt.Errorf("fetch discovery document: %w\nStderr: %s", err, discoveryErr.String())
+	}
+
+	var discoveryDoc struct {
+		Issuer  string `json:"issuer"`
+		JwksURI string `json:"jwks_uri"`
+	}
+	if err := json.Unmarshal(discoveryOut.Bytes(), &discoveryDoc); err != nil {
+		return fmt.Errorf("parse discovery document: %w\nContent: %s", err, discoveryOut.String())
+	}
+
+	if discoveryDoc.Issuer != canonicalIssuer {
+		return fmt.Errorf("discovery doc issuer mismatch: expected %s, got %s",
+			canonicalIssuer, discoveryDoc.Issuer)
+	}
+	log.Printf("✓ Discovery document issuer correct: %s", discoveryDoc.Issuer)
+
+	// Verify jwks_uri host matches issuer host (optional sanity check)
+	expectedJwksURI := fmt.Sprintf("https://%s/keys.json", issuerHost)
+	if discoveryDoc.JwksURI != expectedJwksURI {
+		log.Printf("Warning: jwks_uri mismatch (expected %s, got %s)", expectedJwksURI, discoveryDoc.JwksURI)
+	}
+
+	// Check 2: Verify IAM OIDC provider exists and corresponds to canonical issuer
+	providerARN := fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s", accountID, issuerHost)
+
+	getProviderCmd := exec.CommandContext(ctx, "aws", "iam", "get-open-id-connect-provider",
+		"--open-id-connect-provider-arn", providerARN,
+		"--output", "json")
+
+	var providerOut, providerErr bytes.Buffer
+	getProviderCmd.Stdout = &providerOut
+	getProviderCmd.Stderr = &providerErr
+	if err := getProviderCmd.Run(); err != nil {
+		return fmt.Errorf("get OIDC provider %s: %w\nStderr: %s", providerARN, err, providerErr.String())
+	}
+
+	var providerInfo struct {
+		Url            string   `json:"Url"`
+		ClientIDList   []string `json:"ClientIDList"`
+		ThumbprintList []string `json:"ThumbprintList"`
+	}
+	if err := json.Unmarshal(providerOut.Bytes(), &providerInfo); err != nil {
+		return fmt.Errorf("parse provider info: %w", err)
+	}
+
+	// AWS displays Url without scheme - verify host/path matches
+	if providerInfo.Url != issuerHost {
+		return fmt.Errorf("OIDC provider URL mismatch: expected %s, got %s",
+			issuerHost, providerInfo.Url)
+	}
+	log.Printf("✓ IAM OIDC provider URL correct: %s", providerInfo.Url)
+
+	// Check 3: Verify client IDs include sts.amazonaws.com (required for AWS STS)
+	hasSTSAudience := false
+	for _, clientID := range providerInfo.ClientIDList {
+		if clientID == "sts.amazonaws.com" {
+			hasSTSAudience = true
+			break
+		}
+	}
+	if !hasSTSAudience {
+		return fmt.Errorf("OIDC provider missing required client ID: sts.amazonaws.com (has: %v)",
+			providerInfo.ClientIDList)
+	}
+	log.Printf("✓ OIDC provider has sts.amazonaws.com in client IDs: %v", providerInfo.ClientIDList)
+
+	// Check 4: Verify thumbprint is non-empty
+	// Note: Don't recompute thumbprint against wrong host - trust what fixOIDCThumbprint set
+	if len(providerInfo.ThumbprintList) == 0 {
+		return fmt.Errorf("OIDC provider has empty thumbprint list")
+	}
+	log.Printf("✓ OIDC provider thumbprint: %s", providerInfo.ThumbprintList[0])
+
+	// Check 5: Verify at least one IAM role trust policy is correctly configured
+	// Pick a deterministic role name that ccoctl always creates
+	testRoleName := fmt.Sprintf("%s-openshift-cloud-credential-", infraID)
+
+	getRoleCmd := exec.CommandContext(ctx, "aws", "iam", "get-role",
+		"--role-name", testRoleName,
+		"--output", "json")
+
+	var roleOut, roleErr bytes.Buffer
+	getRoleCmd.Stdout = &roleOut
+	getRoleCmd.Stderr = &roleErr
+	if err := getRoleCmd.Run(); err != nil {
+		log.Printf("Warning: could not verify role trust policy for %s: %v", testRoleName, err)
+	} else {
+		var roleInfo struct {
+			Role struct {
+				AssumeRolePolicyDocument struct {
+					Statement []struct {
+						Principal struct {
+							Federated string `json:"Federated"`
+						} `json:"Principal"`
+						Condition struct {
+							StringEquals map[string]string `json:"StringEquals"`
+						} `json:"Condition"`
+					} `json:"Statement"`
+				} `json:"AssumeRolePolicyDocument"`
+			} `json:"Role"`
+		}
+		if err := json.Unmarshal(roleOut.Bytes(), &roleInfo); err != nil {
+			log.Printf("Warning: could not parse role trust policy: %v", err)
+		} else if len(roleInfo.Role.AssumeRolePolicyDocument.Statement) > 0 {
+			stmt := roleInfo.Role.AssumeRolePolicyDocument.Statement[0]
+
+			// Verify Principal.Federated matches provider ARN
+			if stmt.Principal.Federated != providerARN {
+				return fmt.Errorf("role %s trust policy references wrong provider: expected %s, got %s",
+					testRoleName, providerARN, stmt.Principal.Federated)
+			}
+
+			// Verify condition includes aud check
+			audKey := fmt.Sprintf("%s:aud", issuerHost)
+			if audValue, ok := stmt.Condition.StringEquals[audKey]; !ok {
+				log.Printf("Warning: role trust policy missing %s condition", audKey)
+			} else if audValue != "sts.amazonaws.com" {
+				log.Printf("Warning: role trust policy %s=%s (expected sts.amazonaws.com)", audKey, audValue)
+			} else {
+				log.Printf("✓ Role trust policy correctly configured for %s", testRoleName)
+			}
+		}
+	}
+
+	log.Printf("✓ OIDC configuration validation passed")
+	return nil
 }
 
 // DestroyCluster runs openshift-install destroy cluster
