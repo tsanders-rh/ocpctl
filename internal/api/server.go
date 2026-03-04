@@ -189,6 +189,7 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id", clusterHandler.Get)
 	clustersGroup.DELETE("/:id", clusterHandler.Delete)
 	clustersGroup.PATCH("/:id/extend", clusterHandler.Extend)
+	clustersGroup.POST("/:id/refresh-outputs", clusterHandler.RefreshOutputs)
 	clustersGroup.GET("/:id/outputs", clusterHandler.GetOutputs)
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 	clustersGroup.GET("/:id/kubeconfig/download-url", clusterHandler.GetKubeconfigDownloadURL)

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -428,4 +430,94 @@ func (h *ClusterHandler) Extend(c echo.Context) error {
 	}
 
 	return SuccessOK(c, cluster)
+}
+
+// RefreshOutputs handles POST /api/v1/clusters/:id/refresh-outputs
+// This endpoint extracts cluster outputs from the install directory and updates the database
+func (h *ClusterHandler) RefreshOutputs(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Only refresh outputs for ready or failed clusters
+	if cluster.Status != types.ClusterStatusReady && cluster.Status != types.ClusterStatusFailed {
+		return ErrorBadRequest(c, "Can only refresh outputs for clusters in READY or FAILED status")
+	}
+
+	// Extract cluster outputs from the install directory
+	outputs, err := h.extractClusterOutputs(cluster)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to extract cluster outputs: %w", err))
+	}
+
+	// Upsert outputs (create or update)
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to upsert cluster outputs: %w", err))
+	}
+
+	LogInfo(c, "cluster outputs refreshed",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"api_url", outputs.APIURL,
+		"console_url", outputs.ConsoleURL)
+
+	return SuccessOK(c, outputs)
+}
+
+// extractClusterOutputs extracts cluster access information from the install directory
+func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.ClusterOutputs, error) {
+	// Get work directory from environment
+	workDir := os.Getenv("WORK_DIR")
+	if workDir == "" {
+		workDir = "/tmp/ocpctl"
+	}
+	clusterWorkDir := filepath.Join(workDir, cluster.ID)
+
+	outputs := &types.ClusterOutputs{
+		ID:        uuid.New().String(),
+		ClusterID: cluster.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Construct API URL and Console URL from cluster name and base domain
+	if cluster.Name != "" && cluster.BaseDomain != "" {
+		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, cluster.BaseDomain)
+		outputs.APIURL = &apiURL
+
+		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, cluster.BaseDomain)
+		outputs.ConsoleURL = &consoleURL
+	}
+
+	// Set metadata S3 URI
+	metadataPath := filepath.Join(clusterWorkDir, "metadata.json")
+	metadataURI := fmt.Sprintf("file://%s", metadataPath)
+	outputs.MetadataS3URI = &metadataURI
+
+	// Set kubeconfig S3 URI
+	kubeconfigPath := filepath.Join(clusterWorkDir, "auth", "kubeconfig")
+	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
+	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Set kubeadmin secret reference
+	kubeadminPasswordPath := filepath.Join(clusterWorkDir, "auth", "kubeadmin-password")
+	kubeadminRef := fmt.Sprintf("file://%s", kubeadminPasswordPath)
+	outputs.KubeadminSecretRef = &kubeadminRef
+
+	return outputs, nil
 }

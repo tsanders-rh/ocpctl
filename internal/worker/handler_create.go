@@ -146,8 +146,8 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	if err != nil {
 		log.Printf("Warning: failed to extract cluster outputs: %v", err)
 	} else {
-		// Store cluster outputs
-		if err := h.store.ClusterOutputs.Create(ctx, outputs); err != nil {
+		// Store cluster outputs (upsert to handle re-runs)
+		if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
 			log.Printf("Warning: failed to store cluster outputs: %v", err)
 		}
 	}

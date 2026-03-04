@@ -42,6 +42,75 @@ func (s *ClusterOutputsStore) Create(ctx context.Context, outputs *types.Cluster
 	return nil
 }
 
+// Update updates existing cluster outputs
+func (s *ClusterOutputsStore) Update(ctx context.Context, outputs *types.ClusterOutputs) error {
+	query := `
+		UPDATE cluster_outputs
+		SET api_url = $1,
+			console_url = $2,
+			kubeconfig_s3_uri = $3,
+			kubeadmin_secret_ref = $4,
+			metadata_s3_uri = $5,
+			updated_at = NOW()
+		WHERE cluster_id = $6
+	`
+
+	result, err := s.pool.Exec(ctx, query,
+		outputs.APIURL,
+		outputs.ConsoleURL,
+		outputs.KubeconfigS3URI,
+		outputs.KubeadminSecretRef,
+		outputs.MetadataS3URI,
+		outputs.ClusterID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("update cluster outputs: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// Upsert creates or updates cluster outputs (insert or update if exists)
+func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.ClusterOutputs) error {
+	query := `
+		INSERT INTO cluster_outputs (
+			id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
+			kubeadmin_secret_ref, metadata_s3_uri
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7
+		)
+		ON CONFLICT (cluster_id)
+		DO UPDATE SET
+			api_url = EXCLUDED.api_url,
+			console_url = EXCLUDED.console_url,
+			kubeconfig_s3_uri = EXCLUDED.kubeconfig_s3_uri,
+			kubeadmin_secret_ref = EXCLUDED.kubeadmin_secret_ref,
+			metadata_s3_uri = EXCLUDED.metadata_s3_uri,
+			updated_at = NOW()
+	`
+
+	_, err := s.pool.Exec(ctx, query,
+		outputs.ID,
+		outputs.ClusterID,
+		outputs.APIURL,
+		outputs.ConsoleURL,
+		outputs.KubeconfigS3URI,
+		outputs.KubeadminSecretRef,
+		outputs.MetadataS3URI,
+	)
+
+	if err != nil {
+		return fmt.Errorf("upsert cluster outputs: %w", err)
+	}
+
+	return nil
+}
+
 // GetByClusterID retrieves outputs for a cluster
 func (s *ClusterOutputsStore) GetByClusterID(ctx context.Context, clusterID string) (*types.ClusterOutputs, error) {
 	query := `
