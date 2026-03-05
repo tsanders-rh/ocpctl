@@ -426,7 +426,7 @@ sudo tee /etc/ocpctl/worker.env > /dev/null <<EOF
 DATABASE_URL=$DATABASE_URL
 
 # Worker
-WORKER_WORK_DIR=/tmp/ocpctl
+WORKER_WORK_DIR=/var/lib/ocpctl/clusters
 WORKER_HEALTH_PORT=8081
 
 # OpenShift Pull Secret
