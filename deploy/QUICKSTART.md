@@ -10,8 +10,17 @@ This is a condensed deployment guide. See [DEPLOYMENT.md](DEPLOYMENT.md) for det
 
 ## 1. Launch EC2 Instance
 
+**Disk Sizing Guide:**
+- **Small deployments (1-10 clusters):** 30GB root volume
+- **Medium deployments (10-25 clusters):** 50GB root volume
+- **Large deployments (25-50 clusters):** 100GB root volume
+
+Each cluster work directory uses ~50-250MB depending on install time and failures.
+The janitor automatically cleans up DESTROYED clusters after 30 days and FAILED directories after 7 days.
+
 ```bash
 # Launch t3.medium with Ubuntu 22.04
+# Adjust VolumeSize based on expected cluster count (50GB shown for 10-25 clusters)
 aws ec2 run-instances \
   --image-id ami-0c55b159cbfafe1f0 \
   --instance-type t3.medium \
@@ -19,6 +28,9 @@ aws ec2 run-instances \
   --security-group-ids sg-xxxxx \
   --iam-instance-profile Name=ocpctl-role \
   --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=50}'
+
+# For 50 active clusters, use VolumeSize=100
+# For 100+ clusters, consider dedicated EBS volume for /var/lib/ocpctl
 
 # Note the instance ID and public IP
 ```
@@ -189,8 +201,21 @@ psql ocpctl -c "SELECT id, job_type, status FROM jobs WHERE status='PENDING';"
 sudo tail -f /var/lib/ocpctl/clusters/<cluster-id>/.openshift_install.log
 
 # Check disk space
-df -h
+df -h /
+df -h /var/lib/ocpctl
+
+# Check cluster directory sizes
 du -sh /var/lib/ocpctl/clusters/*
+du -sh /var/lib/ocpctl/clusters/  # Total size
+
+# Monitor largest directories
+du -h /var/lib/ocpctl/clusters/ | sort -rh | head -20
+
+# Count active cluster directories
+ls -1 /var/lib/ocpctl/clusters/ | wc -l
+
+# Check inode usage (can also run out)
+df -i /var/lib/ocpctl
 ```
 
 ## Security Checklist
