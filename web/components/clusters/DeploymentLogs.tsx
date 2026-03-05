@@ -23,6 +23,7 @@ export function DeploymentLogs({
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [accumulatedLogs, setAccumulatedLogs] = useState<DeploymentLog[]>([]);
   const [lastSequence, setLastSequence] = useState(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Determine if we should poll based on cluster status
@@ -47,9 +48,18 @@ export function DeploymentLogs({
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (autoScroll && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+      // Use instant scroll on initial load to jump directly to bottom
+      // Use smooth scroll for subsequent updates
+      logsEndRef.current.scrollIntoView({
+        behavior: isInitialLoad ? "instant" : "smooth"
+      });
+
+      // After first scroll, disable initial load flag
+      if (isInitialLoad && accumulatedLogs.length > 0) {
+        setIsInitialLoad(false);
+      }
     }
-  }, [accumulatedLogs, autoScroll]);
+  }, [accumulatedLogs, autoScroll, isInitialLoad]);
 
   const handleDownload = () => {
     if (!accumulatedLogs || accumulatedLogs.length === 0) return;
