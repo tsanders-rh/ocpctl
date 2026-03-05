@@ -198,8 +198,12 @@ psql ocpctl -c "SELECT name, status, created_at FROM clusters ORDER BY created_a
 psql ocpctl -c "SELECT id, name, status, created_at FROM clusters WHERE status IN ('READY', 'CREATING') ORDER BY created_at DESC;"
 # Then manually verify these clusters exist in AWS Console
 
-# Check janitor logs for orphaned resources
-sudo journalctl -u ocpctl-worker -g "orphaned" -n 50
+# Check janitor logs for orphaned AWS resources (VPCs, LBs, EC2 instances without DB records)
+sudo journalctl -u ocpctl-worker -g "orphaned" -n 100
+sudo journalctl -u ocpctl-worker --since "1 hour ago" | grep -A 20 "orphaned AWS resources"
+
+# Watch for orphan detection in real-time
+sudo journalctl -u ocpctl-worker -f | grep -i orphan
 ```
 
 ## Troubleshooting
