@@ -133,7 +133,12 @@ export interface ClusterOutputs {
   cluster_id: string;
   api_url?: string;
   console_url?: string;
+  kubeconfig?: string; // Full kubeconfig content
   kubeconfig_s3_uri?: string;
+  kubeadmin?: {
+    username: string;
+    password: string;
+  };
   kubeadmin_secret_ref?: string;
   metadata_s3_uri?: string;
   created_at: string;

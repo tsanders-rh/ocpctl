@@ -15,14 +15,16 @@ import (
 
 // ClusterOutputsResponse represents the cluster outputs (kubeconfig, credentials, etc.)
 type ClusterOutputsResponse struct {
-	ClusterID   string                 `json:"cluster_id"`
-	ClusterName string                 `json:"cluster_name"`
-	Status      string                 `json:"status"`
-	APIUrl      string                 `json:"api_url,omitempty"`
-	ConsoleURL  string                 `json:"console_url,omitempty"`
-	Kubeconfig  string                 `json:"kubeconfig,omitempty"`
-	Kubeadmin   *KubeadminCredentials  `json:"kubeadmin,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	ClusterID           string                 `json:"cluster_id"`
+	ClusterName         string                 `json:"cluster_name"`
+	Status              string                 `json:"status"`
+	APIUrl              string                 `json:"api_url,omitempty"`
+	ConsoleURL          string                 `json:"console_url,omitempty"`
+	Kubeconfig          string                 `json:"kubeconfig,omitempty"`           // Full kubeconfig content
+	KubeconfigS3URI     string                 `json:"kubeconfig_s3_uri,omitempty"`    // S3 URI to kubeconfig file
+	Kubeadmin           *KubeadminCredentials  `json:"kubeadmin,omitempty"`            // Actual credentials
+	KubeadminSecretRef  string                 `json:"kubeadmin_secret_ref,omitempty"` // Reference to secret location
+	Metadata            map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // KubeadminCredentials holds the kubeadmin username and password
@@ -86,6 +88,12 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 	}
 	if outputs.ConsoleURL != nil {
 		response.ConsoleURL = *outputs.ConsoleURL
+	}
+	if outputs.KubeconfigS3URI != nil {
+		response.KubeconfigS3URI = *outputs.KubeconfigS3URI
+	}
+	if outputs.KubeadminSecretRef != nil {
+		response.KubeadminSecretRef = *outputs.KubeadminSecretRef
 	}
 
 	// Read kubeconfig from disk if path is available

@@ -297,14 +297,32 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeadmin_secret_ref && (
+            {outputs.kubeadmin && (
               <div className="space-y-2">
-                <Label>Kubeadmin Secret</Label>
-                <Input
-                  value={outputs.kubeadmin_secret_ref}
-                  readOnly
-                  className="font-mono text-sm"
-                />
+                <Label>Kubeadmin Credentials</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={`Username: ${outputs.kubeadmin.username}`}
+                      readOnly
+                      className="flex-1 font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={`Password: ${outputs.kubeadmin.password}`}
+                      readOnly
+                      className="flex-1 font-mono text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigator.clipboard.writeText(outputs.kubeadmin!.password)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>
