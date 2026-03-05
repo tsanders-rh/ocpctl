@@ -61,10 +61,19 @@ export function useExtendCluster() {
   });
 }
 
-export function useClusterOutputs(id: string) {
+export function useClusterOutputs(id: string, clusterStatus?: string) {
   return useQuery({
     queryKey: ["cluster", id, "outputs"],
     queryFn: () => clustersApi.getOutputs(id),
     enabled: !!id,
+    refetchInterval: (query) => {
+      // Poll every 3 seconds if cluster is READY but outputs aren't loaded yet
+      // This handles the case where cluster just became READY and outputs are being written
+      const data = query.state.data;
+      if (clusterStatus === "READY" && !data) {
+        return 3000;
+      }
+      return false;
+    },
   });
 }

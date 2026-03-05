@@ -20,7 +20,7 @@ export default function ClusterDetailPage() {
 
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
-  const { data: outputs } = useClusterOutputs(id);
+  const { data: outputs } = useClusterOutputs(id, cluster?.status);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();
 
@@ -188,11 +188,11 @@ export default function ClusterDetailPage() {
         </Card>
       </div>
 
-      {/* Outputs Card */}
+      {/* Cluster Information Card */}
       {cluster.status === "READY" && outputs && (
         <Card>
           <CardHeader>
-            <CardTitle>Cluster Outputs</CardTitle>
+            <CardTitle>Cluster Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {outputs.api_url && (
