@@ -193,9 +193,18 @@ curl http://localhost:8080/api/v1/clusters | jq
 
 # Check database
 psql ocpctl -c "SELECT name, status, created_at FROM clusters ORDER BY created_at DESC LIMIT 5;"
+
+# Check for clusters in DB but not in AWS (manually destroyed)
+psql ocpctl -c "SELECT id, name, status, created_at FROM clusters WHERE status IN ('READY', 'CREATING') ORDER BY created_at DESC;"
+# Then manually verify these clusters exist in AWS Console
+
+# Check janitor logs for orphaned resources
+sudo journalctl -u ocpctl-worker -g "orphaned" -n 50
 ```
 
 ## Troubleshooting
+
+### Common Issues
 
 ```bash
 # Service won't start
@@ -228,6 +237,32 @@ ls -1 /var/lib/ocpctl/clusters/ | wc -l
 # Check inode usage (can also run out)
 df -i /var/lib/ocpctl
 ```
+
+### Clusters Destroyed Outside of ocpctl
+
+If a cluster is manually destroyed in AWS (console, CLI, or Terraform) but still shows as READY in ocpctl:
+
+```bash
+# 1. Verify cluster is actually gone in AWS
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=*<cluster-name>*" --region us-east-1
+
+# 2. If confirmed gone, manually mark as destroyed
+psql ocpctl <<EOF
+UPDATE clusters
+SET status = 'DESTROYED',
+    destroyed_at = NOW(),
+    updated_at = NOW()
+WHERE id = '<cluster-id>';
+EOF
+
+# 3. Clean up work directory
+sudo rm -rf /var/lib/ocpctl/clusters/<cluster-id>
+
+# 4. Verify cleanup
+psql ocpctl -c "SELECT name, status, destroyed_at FROM clusters WHERE id = '<cluster-id>';"
+```
+
+**Prevention:** Use ocpctl's destroy functionality to ensure proper cleanup and database synchronization.
 
 ## Security Checklist
 
