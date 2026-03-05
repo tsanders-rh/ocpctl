@@ -92,12 +92,19 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 	if outputs.KubeconfigS3URI != nil && *outputs.KubeconfigS3URI != "" {
 		// Extract file path from file:// URI
 		kubeconfigPath := *outputs.KubeconfigS3URI
+		LogInfo(c, "kubeconfig URI from DB", "uri", kubeconfigPath, "has_prefix", strings.HasPrefix(kubeconfigPath, "file://"))
 		if strings.HasPrefix(kubeconfigPath, "file://") {
 			kubeconfigPath = kubeconfigPath[7:] // Remove "file://" prefix
 		}
+		LogInfo(c, "reading kubeconfig", "final_path", kubeconfigPath, "length", len(kubeconfigPath))
 		if kubeconfigData, err := os.ReadFile(kubeconfigPath); err == nil {
 			response.Kubeconfig = string(kubeconfigData)
+			LogInfo(c, "kubeconfig read successfully", "size", len(kubeconfigData))
+		} else {
+			LogInfo(c, "failed to read kubeconfig", "error", err.Error(), "path", kubeconfigPath)
 		}
+	} else {
+		LogInfo(c, "no kubeconfig URI in outputs")
 	}
 
 	// Read kubeadmin password from disk if path is available
@@ -107,11 +114,15 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		if strings.HasPrefix(passwordPath, "file://") {
 			passwordPath = passwordPath[7:] // Remove "file://" prefix
 		}
+		LogInfo(c, "reading kubeadmin password", "path", passwordPath)
 		if passwordData, err := os.ReadFile(passwordPath); err == nil {
 			response.Kubeadmin = &KubeadminCredentials{
 				Username: "kubeadmin",
 				Password: string(passwordData),
 			}
+			LogInfo(c, "kubeadmin password read successfully")
+		} else {
+			LogInfo(c, "failed to read kubeadmin password", "error", err.Error())
 		}
 	}
 
