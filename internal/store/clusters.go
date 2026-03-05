@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -481,4 +482,23 @@ func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platfor
 	}
 
 	return exists, nil
+}
+
+// DeleteDestroyedClusters deletes DESTROYED clusters older than the specified time
+// This is used by the janitor to cleanup old cluster records from the database
+// Returns the number of clusters deleted
+func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan time.Time) (int, error) {
+	query := `
+		DELETE FROM clusters
+		WHERE status = $1
+			AND destroyed_at IS NOT NULL
+			AND destroyed_at < $2
+	`
+
+	result, err := s.pool.Exec(ctx, query, types.ClusterStatusDestroyed, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("delete destroyed clusters: %w", err)
+	}
+
+	return int(result.RowsAffected()), nil
 }

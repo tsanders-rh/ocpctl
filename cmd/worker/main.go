@@ -160,7 +160,7 @@ func main() {
 
 	// Create janitor
 	janitorConfig := janitor.DefaultConfig()
-	j := janitor.NewJanitor(janitorConfig, st)
+	j := janitor.NewJanitor(janitorConfig, st, workDir)
 
 	// Start health check server
 	healthCheck := &HealthCheckServer{

@@ -3,6 +3,8 @@ package janitor
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,23 +14,29 @@ import (
 
 // Config holds janitor configuration
 type Config struct {
-	CheckInterval         time.Duration
-	StuckJobThreshold     time.Duration
-	ExpiredLockCleanup    bool
-	ExpiredKeyCleanup     bool
-	OrphanDetection       bool
-	OrphanCheckInterval   time.Duration
+	CheckInterval                  time.Duration
+	StuckJobThreshold              time.Duration
+	ExpiredLockCleanup             bool
+	ExpiredKeyCleanup              bool
+	OrphanDetection                bool
+	OrphanCheckInterval            time.Duration
+	DestroyedClusterRetentionDays  int  // Days to keep DESTROYED cluster records before deleting
+	FailedClusterDirRetentionDays  int  // Days to keep work directories for FAILED clusters
+	OrphanedDirCleanup             bool // Enable cleanup of orphaned work directories
 }
 
 // DefaultConfig returns default janitor configuration
 func DefaultConfig() *Config {
 	return &Config{
-		CheckInterval:       5 * time.Minute,
-		StuckJobThreshold:   2 * time.Hour,
-		ExpiredLockCleanup:  true,
-		ExpiredKeyCleanup:   true,
-		OrphanDetection:     true,
-		OrphanCheckInterval: 15 * time.Minute, // Less frequent to avoid AWS API rate limits
+		CheckInterval:                 5 * time.Minute,
+		StuckJobThreshold:             2 * time.Hour,
+		ExpiredLockCleanup:            true,
+		ExpiredKeyCleanup:             true,
+		OrphanDetection:               true,
+		OrphanCheckInterval:           15 * time.Minute, // Less frequent to avoid AWS API rate limits
+		DestroyedClusterRetentionDays: 30,               // Keep DESTROYED records for 30 days
+		FailedClusterDirRetentionDays: 7,                // Keep FAILED directories for 7 days
+		OrphanedDirCleanup:            true,             // Enable orphaned directory cleanup
 	}
 }
 
@@ -36,6 +44,7 @@ func DefaultConfig() *Config {
 type Janitor struct {
 	config           *Config
 	store            *store.Store
+	workDir          string
 	running          bool
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -43,7 +52,7 @@ type Janitor struct {
 }
 
 // NewJanitor creates a new janitor instance
-func NewJanitor(config *Config, st *store.Store) *Janitor {
+func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 	if config == nil {
 		config = DefaultConfig()
 	}
@@ -51,6 +60,7 @@ func NewJanitor(config *Config, st *store.Store) *Janitor {
 	return &Janitor{
 		config:  config,
 		store:   st,
+		workDir: workDir,
 		running: false,
 	}
 }
@@ -116,6 +126,23 @@ func (j *Janitor) run() {
 	if j.config.ExpiredKeyCleanup {
 		if err := j.cleanupExpiredKeys(ctx); err != nil {
 			log.Printf("Error cleaning up expired keys: %v", err)
+		}
+	}
+
+	// Cleanup old DESTROYED cluster records from database
+	if err := j.cleanupDestroyedClusters(ctx); err != nil {
+		log.Printf("Error cleaning up destroyed clusters: %v", err)
+	}
+
+	// Cleanup work directories for old FAILED clusters
+	if err := j.cleanupFailedClusterDirs(ctx); err != nil {
+		log.Printf("Error cleaning up failed cluster directories: %v", err)
+	}
+
+	// Cleanup orphaned work directories
+	if j.config.OrphanedDirCleanup {
+		if err := j.cleanupOrphanedDirs(ctx); err != nil {
+			log.Printf("Error cleaning up orphaned directories: %v", err)
 		}
 	}
 
@@ -264,6 +291,126 @@ func (j *Janitor) cleanupExpiredKeys(ctx context.Context) error {
 
 	if count > 0 {
 		log.Printf("Cleaned up %d expired idempotency keys", count)
+	}
+
+	return nil
+}
+
+// cleanupDestroyedClusters removes DESTROYED cluster records older than retention period
+func (j *Janitor) cleanupDestroyedClusters(ctx context.Context) error {
+	// Calculate cutoff time based on retention days
+	cutoff := time.Now().AddDate(0, 0, -j.config.DestroyedClusterRetentionDays)
+
+	count, err := j.store.Clusters.DeleteDestroyedClusters(ctx, cutoff)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		log.Printf("Deleted %d DESTROYED cluster records older than %d days", count, j.config.DestroyedClusterRetentionDays)
+	}
+
+	return nil
+}
+
+// cleanupFailedClusterDirs removes work directories for FAILED clusters older than retention period
+func (j *Janitor) cleanupFailedClusterDirs(ctx context.Context) error {
+	// Get all FAILED clusters
+	failedStatus := types.ClusterStatusFailed
+	filters := store.ListFilters{
+		Status: &failedStatus,
+		Limit:  1000,
+		Offset: 0,
+	}
+
+	clusters, _, err := j.store.Clusters.List(ctx, filters)
+	if err != nil {
+		return err
+	}
+
+	if len(clusters) == 0 {
+		return nil
+	}
+
+	// Calculate cutoff time
+	cutoff := time.Now().AddDate(0, 0, -j.config.FailedClusterDirRetentionDays)
+
+	deletedCount := 0
+	for _, cluster := range clusters {
+		// Only cleanup old FAILED clusters
+		if cluster.UpdatedAt.Before(cutoff) {
+			clusterDir := filepath.Join(j.workDir, cluster.ID)
+
+			// Check if directory exists
+			if _, err := os.Stat(clusterDir); err == nil {
+				// Remove directory
+				if err := os.RemoveAll(clusterDir); err != nil {
+					log.Printf("Failed to remove directory for FAILED cluster %s: %v", cluster.Name, err)
+					continue
+				}
+				deletedCount++
+				log.Printf("Removed work directory for FAILED cluster %s (failed %d days ago)", cluster.Name, int(time.Since(cluster.UpdatedAt).Hours()/24))
+			}
+		}
+	}
+
+	if deletedCount > 0 {
+		log.Printf("Cleaned up %d work directories for FAILED clusters older than %d days", deletedCount, j.config.FailedClusterDirRetentionDays)
+	}
+
+	return nil
+}
+
+// cleanupOrphanedDirs removes work directories that don't have matching cluster records
+func (j *Janitor) cleanupOrphanedDirs(ctx context.Context) error {
+	// Get all cluster IDs from database
+	clusters, err := j.store.Clusters.ListAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build set of valid cluster IDs
+	validClusterIDs := make(map[string]bool)
+	for _, cluster := range clusters {
+		validClusterIDs[cluster.ID] = true
+	}
+
+	// List all directories in workDir
+	entries, err := os.ReadDir(j.workDir)
+	if err != nil {
+		// If workDir doesn't exist, nothing to clean up
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	deletedCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		dirName := entry.Name()
+
+		// Skip if this cluster ID exists in database
+		if validClusterIDs[dirName] {
+			continue
+		}
+
+		// This is an orphaned directory - remove it
+		orphanedPath := filepath.Join(j.workDir, dirName)
+		if err := os.RemoveAll(orphanedPath); err != nil {
+			log.Printf("Failed to remove orphaned directory %s: %v", dirName, err)
+			continue
+		}
+
+		deletedCount++
+		log.Printf("Removed orphaned work directory: %s", dirName)
+	}
+
+	if deletedCount > 0 {
+		log.Printf("Cleaned up %d orphaned work directories", deletedCount)
 	}
 
 	return nil
