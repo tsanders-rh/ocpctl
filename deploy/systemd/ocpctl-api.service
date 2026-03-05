@@ -20,10 +20,10 @@ RestartSec=10s
 
 # Security hardening
 NoNewPrivileges=true
-PrivateTmp=true
+PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/ocpctl
+ReadWritePaths=/var/lib/ocpctl /var/log/ocpctl
 
 # Resource limits
 LimitNOFILE=65536
