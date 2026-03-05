@@ -60,6 +60,7 @@ func main() {
 
 	// IAM authentication configuration
 	enableIAMAuth := os.Getenv("ENABLE_IAM_AUTH") == "true"
+	iamAllowedGroup := os.Getenv("IAM_ALLOWED_GROUP")
 
 	// Initialize store
 	log.Println("Connecting to database...")
@@ -96,6 +97,7 @@ func main() {
 	config.JWTSecret = jwtSecret
 	config.AllowedOrigins = []string{corsOrigins}
 	config.EnableIAMAuth = enableIAMAuth
+	config.IAMAllowedGroup = iamAllowedGroup
 
 	log.Printf("Server configured:")
 	log.Printf("  Port: %d", config.Port)

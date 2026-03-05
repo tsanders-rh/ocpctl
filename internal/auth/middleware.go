@@ -197,6 +197,10 @@ func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc 
 
 				user, err := iamAuth.ValidateIAMRequest(c.Request().Context(), c.Request())
 				if err != nil {
+					// Check if error is access denied (group membership failure)
+					if strings.Contains(err.Error(), "access denied") {
+						return echo.NewHTTPError(http.StatusForbidden, err.Error())
+					}
 					return echo.NewHTTPError(http.StatusUnauthorized, "invalid IAM credentials: "+err.Error())
 				}
 

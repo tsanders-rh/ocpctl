@@ -23,6 +23,7 @@ type ServerConfig struct {
 	EnableCORS        bool
 	EnableAuth        bool
 	EnableIAMAuth     bool
+	IAMAllowedGroup   string // Optional IAM group name for restricting authentication
 	JWTSecret         string
 	JWTAccessTTL      time.Duration
 	JWTRefreshTTL     time.Duration
@@ -90,6 +91,7 @@ func NewServer(
 		store.IAMMappings,
 		store.Users,
 		config.EnableIAMAuth,
+		config.IAMAllowedGroup,
 	)
 	if err != nil {
 		// Log warning but continue (IAM auth will be disabled)

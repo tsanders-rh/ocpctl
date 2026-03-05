@@ -412,6 +412,10 @@ CORS_ALLOWED_ORIGINS=http://$EC2_IP,https://$EC2_IP
 # IAM Auth (optional)
 ENABLE_IAM_AUTH=false
 
+# IAM Group Membership (optional)
+# Restrict IAM auth to users in this group (requires iam:ListGroupsForUser permission)
+IAM_ALLOWED_GROUP=
+
 # Environment
 ENVIRONMENT=test
 LOG_LEVEL=info
@@ -797,6 +801,59 @@ sudo certbot renew --dry-run
 After enabling HTTPS, your ocpctl instance will be accessible at:
 - **HTTP:** http://opsctl.dog8code.com (redirects to HTTPS)
 - **HTTPS:** https://opsctl.dog8code.com
+
+### Restrict IAM Authentication by Group (Optional)
+
+To limit which IAM users can authenticate, require membership in a specific IAM group:
+
+```bash
+# 1. Create IAM group for ocpctl users
+aws iam create-group --group-name ocpctl-users
+
+# 2. Add users to the group
+aws iam add-user-to-group --user-name alice --group-name ocpctl-users
+aws iam add-user-to-group --user-name bob --group-name ocpctl-users
+
+# 3. Grant API server permission to check group membership
+# Update the API server's IAM role policy to include iam:ListGroupsForUser
+cat > /tmp/iam-group-check-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListGroupsForUser"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy \
+  --role-name ocpctl-api-role \
+  --policy-name IAMGroupChecking \
+  --policy-document file:///tmp/iam-group-check-policy.json
+
+# 4. Configure ocpctl API to enforce group membership
+# Add to /etc/ocpctl/api.env:
+echo "IAM_ALLOWED_GROUP=ocpctl-users" | sudo tee -a /etc/ocpctl/api.env
+
+# 5. Restart API service
+sudo systemctl restart ocpctl-api
+
+# 6. Verify in logs
+sudo journalctl -u ocpctl-api -f | grep "IAM auth:"
+```
+
+**Behavior:**
+- Only IAM users in the `ocpctl-users` group can authenticate
+- Users not in the group receive HTTP 403 Forbidden
+- Assumed roles (e.g., from CI/CD) bypass the group check
+- Leave `IAM_ALLOWED_GROUP` empty to allow all IAM users
+
+**Security Note:** Group membership is checked on every login, not just during initial auto-provisioning.
 
 ### Set Up S3 Bucket for Kubeconfigs
 

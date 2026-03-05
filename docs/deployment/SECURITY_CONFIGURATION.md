@@ -178,6 +178,37 @@ Users authenticating with IAM need:
 }
 ```
 
+**API Server IAM Permissions:**
+
+If using `IAM_ALLOWED_GROUP` to restrict authentication, the API server IAM role needs:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "iam:ListGroupsForUser"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+**IAM Group Membership Restriction (Optional):**
+
+To restrict IAM authentication to users in a specific IAM group:
+
+1. Set environment variable: `IAM_ALLOWED_GROUP=ocpctl-users`
+2. Create the IAM group: `aws iam create-group --group-name ocpctl-users`
+3. Add users to the group: `aws iam add-user-to-group --user-name alice --group-name ocpctl-users`
+4. Ensure API server IAM role has `iam:ListGroupsForUser` permission
+
+**Note:** Assumed roles (e.g., `arn:aws:sts::123:assumed-role/...`) bypass group membership checks automatically.
+
 ### Frontend Configuration
 
 **Next.js API Routes:**
