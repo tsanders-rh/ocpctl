@@ -72,10 +72,21 @@ cd ocpctl
 sudo bash deploy/setup.sh
 
 # Install OpenShift installer
-VERSION="4.14.0"
+# Browse available versions: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/
+# Choose version based on your needs (4.14, 4.15, 4.16, etc.)
+VERSION="4.16.0"
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${VERSION}/openshift-install-linux.tar.gz
 tar -xzf openshift-install-linux.tar.gz
 sudo mv openshift-install /usr/local/bin/
+sudo chmod +x /usr/local/bin/openshift-install
+rm openshift-install-linux.tar.gz
+
+# Verify installation
+openshift-install version
+
+# Output should show:
+# openshift-install 4.16.0
+# built from commit ...
 ```
 
 ## 4. Deploy Application
