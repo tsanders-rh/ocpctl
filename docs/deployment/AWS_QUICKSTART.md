@@ -711,17 +711,92 @@ sudo iptables -L -n
 
 ## Next Steps
 
+### Configure Custom Domain (Optional)
+
+If you want to access ocpctl via a custom domain instead of the EC2 IP address:
+
+```bash
+# Get your EC2 instance's public IP
+EC2_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "EC2 Public IP: $EC2_IP"
+
+# Create Route53 A record (replace with your hosted zone ID)
+# Example: opsctl.dog8code.com -> EC2 IP
+HOSTED_ZONE_ID="Z0123456789ABCDEFGHIJ"  # Your dog8code.com hosted zone ID
+DOMAIN_NAME="opsctl.dog8code.com"
+
+# Create change batch file
+cat > /tmp/route53-change.json <<EOF
+{
+  "Changes": [{
+    "Action": "UPSERT",
+    "ResourceRecordSet": {
+      "Name": "${DOMAIN_NAME}",
+      "Type": "A",
+      "TTL": 300,
+      "ResourceRecords": [{"Value": "${EC2_IP}"}]
+    }
+  }]
+}
+EOF
+
+# Create the DNS record
+aws route53 change-resource-record-sets \
+  --hosted-zone-id $HOSTED_ZONE_ID \
+  --change-batch file:///tmp/route53-change.json
+
+# Verify DNS propagation (may take a few minutes)
+dig +short $DOMAIN_NAME
+# Should return your EC2 IP
+
+# Update nginx to use the domain name
+sudo sed -i 's/server_name _;/server_name opsctl.dog8code.com;/' /etc/nginx/conf.d/ocpctl.conf
+
+# Test nginx config
+sudo nginx -t
+
+# Reload nginx
+sudo systemctl reload nginx
+
+# Clean up
+rm /tmp/route53-change.json
+```
+
+**To find your Route53 Hosted Zone ID:**
+```bash
+# List all hosted zones
+aws route53 list-hosted-zones --query 'HostedZones[*].[Name,Id]' --output table
+
+# Find dog8code.com zone
+aws route53 list-hosted-zones --query 'HostedZones[?Name==`dog8code.com.`].Id' --output text
+```
+
 ### Enable HTTPS (Recommended)
+
+Once you have a custom domain configured, enable HTTPS with Let's Encrypt:
 
 ```bash
 # Install certbot
 sudo dnf install -y certbot python3-certbot-nginx
 
-# Get certificate (requires domain name)
-sudo certbot --nginx -d your-domain.com
+# Get certificate (requires domain name to be already configured in nginx)
+sudo certbot --nginx -d opsctl.dog8code.com
 
-# Auto-renewal is configured automatically
+# Follow prompts to:
+# - Enter email for renewal notifications
+# - Agree to terms of service
+# - Choose whether to redirect HTTP to HTTPS (recommended: yes)
+
+# Auto-renewal is configured automatically via systemd timer
+sudo systemctl status certbot-renew.timer
+
+# Test auto-renewal
+sudo certbot renew --dry-run
 ```
+
+After enabling HTTPS, your ocpctl instance will be accessible at:
+- **HTTP:** http://opsctl.dog8code.com (redirects to HTTPS)
+- **HTTPS:** https://opsctl.dog8code.com
 
 ### Set Up S3 Bucket for Kubeconfigs
 
