@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/s3"
@@ -57,12 +58,11 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		return ErrorBadRequest(c, fmt.Sprintf("Cluster is not ready (status: %s). Outputs are only available for ready clusters.", cluster.Status))
 	}
 
-	// Get work directory for this cluster
-	workDir := os.Getenv("WORK_DIR")
-	if workDir == "" {
-		workDir = "/tmp/ocpctl"
+	// Get outputs from database
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, id)
+	if err != nil {
+		return ErrorBadRequest(c, "Cluster outputs are not yet available. The cluster may still be provisioning or outputs may have been cleaned up.")
 	}
-	clusterWorkDir := filepath.Join(workDir, cluster.ID)
 
 	// Build response
 	response := &ClusterOutputsResponse{
@@ -80,30 +80,39 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		},
 	}
 
-	// Construct URLs
-	if cluster.BaseDomain != "" {
-		response.APIUrl = fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, cluster.BaseDomain)
-		response.ConsoleURL = fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, cluster.BaseDomain)
+	// Use outputs from database
+	if outputs.APIURL != nil {
+		response.APIUrl = *outputs.APIURL
+	}
+	if outputs.ConsoleURL != nil {
+		response.ConsoleURL = *outputs.ConsoleURL
 	}
 
-	// Read kubeconfig if it exists
-	kubeconfigPath := filepath.Join(clusterWorkDir, "auth", "kubeconfig")
-	if kubeconfigData, err := os.ReadFile(kubeconfigPath); err == nil {
-		response.Kubeconfig = string(kubeconfigData)
-	}
-
-	// Read kubeadmin password if it exists
-	kubeadminPasswordPath := filepath.Join(clusterWorkDir, "auth", "kubeadmin-password")
-	if passwordData, err := os.ReadFile(kubeadminPasswordPath); err == nil {
-		response.Kubeadmin = &KubeadminCredentials{
-			Username: "kubeadmin",
-			Password: string(passwordData),
+	// Read kubeconfig from disk if path is available
+	if outputs.KubeconfigS3URI != nil && *outputs.KubeconfigS3URI != "" {
+		// Extract file path from file:// URI
+		kubeconfigPath := *outputs.KubeconfigS3URI
+		if strings.HasPrefix(kubeconfigPath, "file://") {
+			kubeconfigPath = kubeconfigPath[7:] // Remove "file://" prefix
+		}
+		if kubeconfigData, err := os.ReadFile(kubeconfigPath); err == nil {
+			response.Kubeconfig = string(kubeconfigData)
 		}
 	}
 
-	// If no outputs are available yet, inform the user
-	if response.Kubeconfig == "" && response.Kubeadmin == nil {
-		return ErrorBadRequest(c, "Cluster outputs are not yet available. The cluster may still be provisioning or outputs may have been cleaned up.")
+	// Read kubeadmin password from disk if path is available
+	if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
+		// Extract file path from file:// URI
+		passwordPath := *outputs.KubeadminSecretRef
+		if strings.HasPrefix(passwordPath, "file://") {
+			passwordPath = passwordPath[7:] // Remove "file://" prefix
+		}
+		if passwordData, err := os.ReadFile(passwordPath); err == nil {
+			response.Kubeadmin = &KubeadminCredentials{
+				Username: "kubeadmin",
+				Password: string(passwordData),
+			}
+		}
 	}
 
 	return SuccessOK(c, response)
