@@ -523,7 +523,30 @@ sudo systemctl enable ocpctl-worker
 sudo systemctl enable ocpctl-web
 ```
 
-### Step 8: Run Database Migrations
+### Step 8: Install OpenShift Installer Binary
+
+The worker needs the `openshift-install` binary to provision OpenShift clusters:
+
+```bash
+# Download openshift-install (adjust version as needed)
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.20.3/openshift-install-linux.tar.gz
+
+# Extract to /usr/local/bin
+sudo tar -xzf openshift-install-linux.tar.gz -C /usr/local/bin/ openshift-install
+
+# Make executable
+sudo chmod +x /usr/local/bin/openshift-install
+
+# Verify installation
+openshift-install version
+
+# Clean up
+rm openshift-install-linux.tar.gz
+```
+
+**Note:** You can find other versions at https://mirror.openshift.com/pub/openshift-v4/clients/ocp/
+
+### Step 9: Run Database Migrations
 
 ```bash
 # Start API temporarily to run migrations
@@ -536,7 +559,7 @@ sudo journalctl -u ocpctl-api -n 50 --no-pager
 # If migrations don't run automatically, you may need to run them manually
 ```
 
-### Step 9: Start All Services
+### Step 10: Start All Services
 
 ```bash
 # Start services
@@ -556,7 +579,7 @@ curl http://localhost:8081/ready
 curl http://localhost:3000
 ```
 
-### Step 10: Configure Nginx
+### Step 11: Configure Nginx
 
 ```bash
 # Copy nginx config or create new one
@@ -619,7 +642,7 @@ sudo systemctl status nginx
 
 ## Part 4: Verification (5 minutes)
 
-### Step 11: Test the Deployment
+### Step 12: Test the Deployment
 
 ```bash
 # Check all services are running
@@ -637,7 +660,7 @@ curl http://localhost/api/v1/health
 curl http://localhost
 ```
 
-### Step 12: Access the Web Interface
+### Step 13: Access the Web Interface
 
 1. **Open browser:** Navigate to `http://<EC2_IP>`
 2. **Login with default credentials:**
@@ -649,7 +672,7 @@ curl http://localhost
    - View available profiles
    - Create a test cluster (it will provision!)
 
-### Step 13: Monitor Logs
+### Step 14: Monitor Logs
 
 ```bash
 # API logs
