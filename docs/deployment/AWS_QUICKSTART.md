@@ -403,6 +403,10 @@ sudo -u ocpctl npm install --production
 ### Step 6: Configure Environment Variables
 
 ```bash
+# Get EC2 public IP (needed for CORS configuration)
+export EC2_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "EC2 Public IP: $EC2_IP"
+
 # Generate JWT secret
 export JWT_SECRET=$(openssl rand -base64 48)
 echo "JWT Secret: $JWT_SECRET" > ~/ocpctl-jwt-secret.txt
@@ -420,7 +424,7 @@ PROFILES_DIR=/opt/ocpctl/profiles
 
 # Authentication
 JWT_SECRET=$JWT_SECRET
-CORS_ALLOWED_ORIGINS=http://$EC2_IP,https://$EC2_IP
+CORS_ALLOWED_ORIGINS=http://$EC2_IP
 
 # IAM Auth (optional)
 ENABLE_IAM_AUTH=false
