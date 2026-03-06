@@ -569,7 +569,30 @@ rm openshift-client-linux.tar.gz
 
 **Note:** The download includes both `oc` and `kubectl` binaries. Both are installed to `/usr/local/bin/`.
 
-### Step 10: Run Database Migrations
+### Step 10: Install ccoctl (Cloud Credential Operator) Binary
+
+The worker needs the `ccoctl` binary to provision AWS IAM resources when deploying clusters in Manual mode (STS):
+
+```bash
+# Download ccoctl (use same version as openshift-install)
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.20.3/ccoctl-linux.tar.gz
+
+# Extract to /usr/local/bin
+sudo tar -xzf ccoctl-linux.tar.gz -C /usr/local/bin/ ccoctl
+
+# Make executable
+sudo chmod +x /usr/local/bin/ccoctl
+
+# Verify installation
+ccoctl --help | head -5
+
+# Clean up
+rm ccoctl-linux.tar.gz
+```
+
+**Note:** ccoctl creates IAM roles and policies for OpenShift cluster components to use AWS STS temporary credentials instead of long-lived access keys.
+
+### Step 11: Run Database Migrations
 
 ```bash
 # Start API temporarily to run migrations
@@ -582,7 +605,7 @@ sudo journalctl -u ocpctl-api -n 50 --no-pager
 # If migrations don't run automatically, you may need to run them manually
 ```
 
-### Step 11: Start All Services
+### Step 12: Start All Services
 
 ```bash
 # Start services
@@ -602,7 +625,7 @@ curl http://localhost:8081/ready
 curl http://localhost:3000
 ```
 
-### Step 12: Configure Nginx
+### Step 13: Configure Nginx
 
 ```bash
 # Copy nginx config or create new one
@@ -665,7 +688,7 @@ sudo systemctl status nginx
 
 ## Part 4: Verification (5 minutes)
 
-### Step 13: Test the Deployment
+### Step 14: Test the Deployment
 
 ```bash
 # Check all services are running
@@ -683,7 +706,7 @@ curl http://localhost/api/v1/health
 curl http://localhost
 ```
 
-### Step 14: Access the Web Interface
+### Step 15: Access the Web Interface
 
 1. **Open browser:** Navigate to `http://<EC2_IP>`
 2. **Login with default credentials:**
@@ -695,7 +718,7 @@ curl http://localhost
    - View available profiles
    - Create a test cluster (it will provision!)
 
-### Step 15: Monitor Logs
+### Step 16: Monitor Logs
 
 ```bash
 # API logs
