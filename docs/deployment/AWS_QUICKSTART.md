@@ -360,10 +360,11 @@ GOOS=linux GOARCH=amd64 go build -o bin/worker ./cmd/worker
 file bin/api
 file bin/worker
 
-# Build web frontend
+# Build web frontend with correct API URL
+# IMPORTANT: NEXT_PUBLIC_* variables are embedded at build time
 cd web
 npm install
-npm run build
+NEXT_PUBLIC_API_URL=http://$EC2_IP/api/v1 npm run build
 
 # Copy to server
 scp -i ~/.ssh/your-key.pem bin/api ec2-user@$EC2_IP:/tmp/
@@ -460,9 +461,10 @@ ENVIRONMENT=test
 EOF
 
 # Create Web environment file
+# NOTE: Web frontend runs in the browser, so it needs the public EC2 IP, not localhost
 sudo tee /etc/ocpctl/web.env > /dev/null <<EOF
-# API endpoint
-NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+# API endpoint (uses nginx reverse proxy on port 80)
+NEXT_PUBLIC_API_URL=http://$EC2_IP/api/v1
 
 # Auth mode
 NEXT_PUBLIC_AUTH_MODE=jwt
