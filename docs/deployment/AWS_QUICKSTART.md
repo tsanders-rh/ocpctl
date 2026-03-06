@@ -546,7 +546,30 @@ rm openshift-install-linux.tar.gz
 
 **Note:** You can find other versions at https://mirror.openshift.com/pub/openshift-v4/clients/ocp/
 
-### Step 9: Run Database Migrations
+### Step 9: Install OpenShift CLI (oc) Binary
+
+The worker needs the `oc` binary to extract credential requests from OpenShift release images when deploying clusters in Manual mode (STS):
+
+```bash
+# Download oc CLI (use same version as openshift-install)
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.20.3/openshift-client-linux.tar.gz
+
+# Extract to /usr/local/bin
+sudo tar -xzf openshift-client-linux.tar.gz -C /usr/local/bin/ oc kubectl
+
+# Make executable
+sudo chmod +x /usr/local/bin/oc /usr/local/bin/kubectl
+
+# Verify installation
+oc version --client
+
+# Clean up
+rm openshift-client-linux.tar.gz
+```
+
+**Note:** The download includes both `oc` and `kubectl` binaries. Both are installed to `/usr/local/bin/`.
+
+### Step 10: Run Database Migrations
 
 ```bash
 # Start API temporarily to run migrations
@@ -559,7 +582,7 @@ sudo journalctl -u ocpctl-api -n 50 --no-pager
 # If migrations don't run automatically, you may need to run them manually
 ```
 
-### Step 10: Start All Services
+### Step 11: Start All Services
 
 ```bash
 # Start services
@@ -579,7 +602,7 @@ curl http://localhost:8081/ready
 curl http://localhost:3000
 ```
 
-### Step 11: Configure Nginx
+### Step 12: Configure Nginx
 
 ```bash
 # Copy nginx config or create new one
@@ -642,7 +665,7 @@ sudo systemctl status nginx
 
 ## Part 4: Verification (5 minutes)
 
-### Step 12: Test the Deployment
+### Step 13: Test the Deployment
 
 ```bash
 # Check all services are running
@@ -660,7 +683,7 @@ curl http://localhost/api/v1/health
 curl http://localhost
 ```
 
-### Step 13: Access the Web Interface
+### Step 14: Access the Web Interface
 
 1. **Open browser:** Navigate to `http://<EC2_IP>`
 2. **Login with default credentials:**
@@ -672,7 +695,7 @@ curl http://localhost
    - View available profiles
    - Create a test cluster (it will provision!)
 
-### Step 14: Monitor Logs
+### Step 15: Monitor Logs
 
 ```bash
 # API logs
