@@ -267,8 +267,8 @@ ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
 # Update system
 sudo dnf update -y
 
-# Install PostgreSQL 15 server
-sudo dnf install -y postgresql15-server postgresql15
+# Install PostgreSQL 15 server and contrib package
+sudo dnf install -y postgresql15-server postgresql15 postgresql15-contrib
 
 # Install Node.js 18
 curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
@@ -308,6 +308,9 @@ GRANT ALL PRIVILEGES ON DATABASE ocpctl TO ocpctl;
 \q
 EOF
 
+# Enable uuid-ossp extension (required for migrations)
+sudo -u postgres psql -d ocpctl -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
 # Test connection
 psql "postgres://ocpctl:changeme-generate-secure-password@localhost:5432/ocpctl" -c "SELECT version();"
 
@@ -342,10 +345,20 @@ sudo chown -R ocpctl:ocpctl /opt/ocpctl
 **On your local machine:**
 
 ```bash
-# Build binaries
+# Build binaries for Linux (use cross-compilation if building on Mac/Windows)
 cd /path/to/ocpctl
+
+# For Linux build machine:
 go build -o bin/api ./cmd/api
 go build -o bin/worker ./cmd/worker
+
+# For Mac/Windows build machine (cross-compile for Linux):
+GOOS=linux GOARCH=amd64 go build -o bin/api ./cmd/api
+GOOS=linux GOARCH=amd64 go build -o bin/worker ./cmd/worker
+
+# Verify binaries are Linux ELF format (should show "ELF 64-bit LSB executable")
+file bin/api
+file bin/worker
 
 # Build web frontend
 cd web
@@ -430,6 +443,7 @@ sudo tee /etc/ocpctl/worker.env > /dev/null <<EOF
 DATABASE_URL=$DATABASE_URL
 
 # Worker
+PROFILES_DIR=/opt/ocpctl/profiles
 WORKER_WORK_DIR=/var/lib/ocpctl/clusters
 WORKER_HEALTH_PORT=8081
 
