@@ -368,9 +368,9 @@ rsync -avz -e "ssh -i ~/.ssh/your-key.pem" \
 **Back on EC2 instance:**
 
 ```bash
-# Move binaries to correct location
-sudo mv /tmp/api /opt/ocpctl/bin/
-sudo mv /tmp/worker /opt/ocpctl/bin/
+# Move binaries to correct location with proper names
+sudo mv /tmp/api /opt/ocpctl/bin/ocpctl-api
+sudo mv /tmp/worker /opt/ocpctl/bin/ocpctl-worker
 sudo chmod +x /opt/ocpctl/bin/*
 
 # Move profiles
