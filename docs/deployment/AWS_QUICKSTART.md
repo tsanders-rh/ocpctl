@@ -1168,7 +1168,13 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
         "iam:RemoveRoleFromInstanceProfile",
         "iam:SimulatePrincipalPolicy",
         "iam:TagRole",
-        "iam:TagInstanceProfile"
+        "iam:TagInstanceProfile",
+        "iam:CreateOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviders",
+        "iam:TagOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint"
       ],
       "Resource": "*"
     },
@@ -1217,6 +1223,8 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
         "s3:ListBucketVersions",
         "s3:PutBucketAcl",
         "s3:PutBucketPolicy",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketPublicAccessBlock",
         "s3:PutBucketTagging",
         "s3:PutEncryptionConfiguration",
         "s3:PutLifecycleConfiguration",
@@ -1262,6 +1270,28 @@ export WORKER_POLICY_ARN=$(aws iam list-policies \
 
 echo "Policy ARN: $WORKER_POLICY_ARN"
 ```
+
+**Key Permissions Explained:**
+
+This comprehensive policy includes permissions for:
+
+- **EC2**: Full cluster infrastructure management (VPC, subnets, instances, volumes, security groups, etc.)
+- **ELB**: Load balancer creation and management for cluster ingress
+- **IAM**:
+  - Role and instance profile management for cluster nodes
+  - **OpenID Connect (OIDC) Provider** management for STS token authentication:
+    - `CreateOpenIDConnectProvider`, `DeleteOpenIDConnectProvider`, `GetOpenIDConnectProvider`
+    - `ListOpenIDConnectProviders`, `TagOpenIDConnectProvider`
+    - `UpdateOpenIDConnectProviderThumbprint` (required by ocpctl to fix OIDC thumbprint after creation)
+- **Route53**: DNS zone and record management for cluster domains
+- **S3**:
+  - Bootstrap ignition and OIDC discovery document storage
+  - **Public Access Block** management for OIDC bucket configuration:
+    - `PutBucketPublicAccessBlock`, `GetBucketPublicAccessBlock`
+- **Service Quotas**: Checking AWS limits before provisioning
+- **Resource Tagging**: Cluster resource tagging for identification
+
+**Note:** These permissions are required for both standard IPI deployments and Manual mode (STS) deployments. The OIDC and S3 public access permissions are specifically needed for Manual mode where `ccoctl` creates an OIDC provider for service account token verification.
 
 ### Step 2: Create IAM Role and Instance Profile
 
