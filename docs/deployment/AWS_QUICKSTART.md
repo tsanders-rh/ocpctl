@@ -1169,6 +1169,7 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
         "iam:SimulatePrincipalPolicy",
         "iam:TagRole",
         "iam:TagInstanceProfile",
+        "iam:ListRolePolicies",
         "iam:CreateOpenIDConnectProvider",
         "iam:DeleteOpenIDConnectProvider",
         "iam:GetOpenIDConnectProvider",
@@ -1238,7 +1239,8 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
       "Effect": "Allow",
       "Action": [
         "servicequotas:GetServiceQuota",
-        "servicequotas:ListServiceQuotas"
+        "servicequotas:ListServiceQuotas",
+        "servicequotas:ListAWSDefaultServiceQuotas"
       ],
       "Resource": "*"
     },
