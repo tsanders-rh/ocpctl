@@ -1142,6 +1142,7 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
         "elasticloadbalancing:RegisterTargets",
         "elasticloadbalancing:RemoveTags",
         "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "elasticloadbalancing:SetSecurityGroups",
         "elasticloadbalancing:SetSubnets"
       ],
       "Resource": "*"
