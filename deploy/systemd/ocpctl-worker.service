@@ -23,7 +23,7 @@ NoNewPrivileges=true
 PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/ocpctl /var/log/ocpctl /tmp
+ReadWritePaths=/var/lib/ocpctl /var/log/ocpctl /tmp /run
 
 # Resource limits
 LimitNOFILE=65536
