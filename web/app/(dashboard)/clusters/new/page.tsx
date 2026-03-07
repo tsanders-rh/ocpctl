@@ -41,6 +41,7 @@ export default function NewClusterPage() {
     defaultValues: {
       platform: Platform.AWS,
       owner: user?.email || "",
+      cost_center: "733",
       offhours_opt_in: false,
     },
   });
@@ -239,11 +240,17 @@ export default function NewClusterPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="cost_center">Cost Center</Label>
-                  <Input
-                    id="cost_center"
-                    placeholder="eng-001"
-                    {...register("cost_center")}
-                  />
+                  <Select
+                    value={watchedValues.cost_center || ""}
+                    onValueChange={(value) => setValue("cost_center", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cost center" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="733">733</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {errors.cost_center && (
                     <p className="text-sm text-red-600">
                       {errors.cost_center.message}
