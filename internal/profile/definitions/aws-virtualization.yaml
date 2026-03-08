@@ -1,0 +1,80 @@
+name: aws-virtualization
+displayName: AWS OpenShift Virtualization
+description: Cluster optimized for OpenShift Virtualization with bare metal instances supporting nested virtualization
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: m6i.2xlarge
+    schedulable: false
+  workers:
+    replicas: 3
+    minReplicas: 2
+    maxReplicas: 6
+    instanceType: m6i.metal
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 168
+  defaultTTLHours: 72
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: virtualization
+    ManagedBy: cluster-control-plane
+    Workload: openshift-virtualization
+  allowUserTags: true
+
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 35.50
+  maxMonthlyCost: 25500
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 200
+      iops: 4000
