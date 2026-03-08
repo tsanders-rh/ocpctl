@@ -48,6 +48,16 @@ export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
               </li>
               <li>• Estimated cost: {formatCurrency(estimatedCost)}/hour</li>
               <li>• Time to live: {ttl} hours</li>
+              {formValues.extra_tags && Object.keys(formValues.extra_tags).length > 0 && (
+                <>
+                  <li className="mt-2 font-medium">Custom Tags:</li>
+                  {Object.entries(formValues.extra_tags).map(([key, value]) => (
+                    <li key={key} className="ml-4">
+                      • {key}: {value}
+                    </li>
+                  ))}
+                </>
+              )}
             </ul>
           </CardContent>
         </Card>
@@ -67,7 +77,9 @@ metadata:
   name: ${formValues.name}
 platform:
   ${formValues.platform}:
-    region: ${formValues.region || "<region>"}
+    region: ${formValues.region || "<region>"}${formValues.extra_tags && Object.keys(formValues.extra_tags).length > 0 ? `
+    userTags:${Object.entries(formValues.extra_tags).map(([key, value]) => `
+      ${key}: ${value}`).join('')}` : ''}
 controlPlane:
   name: master
   replicas: ${profile.compute.control_plane.replicas}

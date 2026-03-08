@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TagsInput } from "@/components/ui/tags-input";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ export default function NewClusterPage() {
     defaultValues: {
       platform: Platform.AWS,
       owner: user?.email || "",
+      team: "Migration Feature Team",
       cost_center: "733",
       offhours_opt_in: false,
     },
@@ -228,11 +230,21 @@ export default function NewClusterPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="team">Team</Label>
-                  <Input
-                    id="team"
-                    placeholder="engineering"
-                    {...register("team")}
-                  />
+                  <Select
+                    value={watchedValues.team || ""}
+                    onValueChange={(value) => setValue("team", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Migration Feature Team">Migration Feature Team</SelectItem>
+                      <SelectItem value="Application Inventory Management">Application Inventory Management</SelectItem>
+                      <SelectItem value="Insights Discovery">Insights Discovery</SelectItem>
+                      <SelectItem value="Application Modification">Application Modification</SelectItem>
+                      <SelectItem value="Staff">Staff</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {errors.team && (
                     <p className="text-sm text-red-600">{errors.team.message}</p>
                   )}
@@ -292,6 +304,17 @@ export default function NewClusterPage() {
                     rows={3}
                     {...register("ssh_public_key")}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Custom Tags (Optional)</Label>
+                  <TagsInput
+                    value={watchedValues.extra_tags || {}}
+                    onChange={(tags) => setValue("extra_tags", tags)}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Add custom tags to apply to all deployed AWS resources
+                  </p>
                 </div>
 
                 <div className="flex items-center space-x-2">

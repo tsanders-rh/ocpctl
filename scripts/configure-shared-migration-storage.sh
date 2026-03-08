@@ -1,0 +1,264 @@
+#!/bin/bash
+#
+# Configure Shared Storage for Application Migration Testing
+# Creates a shared EFS filesystem accessible from multiple clusters
+#
+# Usage: ./configure-shared-migration-storage.sh <source-cluster> <target-cluster> <region>
+#
+
+set -e
+
+SOURCE_CLUSTER="${1}"
+TARGET_CLUSTER="${2}"
+REGION="${3:-us-east-1}"
+
+if [ -z "$SOURCE_CLUSTER" ] || [ -z "$TARGET_CLUSTER" ]; then
+    echo "Usage: $0 <source-cluster> <target-cluster> [region]"
+    echo "Example: $0 source-ocp target-ocp us-east-1"
+    exit 1
+fi
+
+echo "========================================="
+echo "Configuring Shared Migration Storage"
+echo "========================================="
+echo "Source Cluster: $SOURCE_CLUSTER"
+echo "Target Cluster: $TARGET_CLUSTER"
+echo "Region: $REGION"
+echo ""
+
+# Get VPC IDs for both clusters
+echo "→ Getting cluster VPC information..."
+SOURCE_VPC=$(aws ec2 describe-vpcs \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$SOURCE_CLUSTER,Values=owned" \
+    --query 'Vpcs[0].VpcId' \
+    --output text)
+
+TARGET_VPC=$(aws ec2 describe-vpcs \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$TARGET_CLUSTER,Values=owned" \
+    --query 'Vpcs[0].VpcId' \
+    --output text)
+
+echo "  Source VPC: $SOURCE_VPC"
+echo "  Target VPC: $TARGET_VPC"
+
+# Check if clusters are in same VPC
+if [ "$SOURCE_VPC" == "$TARGET_VPC" ]; then
+    echo "  ✓ Clusters are in the same VPC"
+    SHARED_VPC=$SOURCE_VPC
+else
+    echo "  ⚠ Clusters are in different VPCs - will require VPC peering"
+    echo "  This script currently only supports same-VPC setups"
+    exit 1
+fi
+
+# Get all private subnets from both clusters
+echo "→ Getting subnet information..."
+SOURCE_SUBNETS=$(aws ec2 describe-subnets \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$SOURCE_CLUSTER,Values=owned" \
+              "Name=tag:kubernetes.io/role/internal-elb,Values=1" \
+    --query 'Subnets[*].SubnetId' \
+    --output text)
+
+TARGET_SUBNETS=$(aws ec2 describe-subnets \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$TARGET_CLUSTER,Values=owned" \
+              "Name=tag:kubernetes.io/role/internal-elb,Values=1" \
+    --query 'Subnets[*].SubnetId' \
+    --output text)
+
+ALL_SUBNETS="$SOURCE_SUBNETS $TARGET_SUBNETS"
+UNIQUE_SUBNETS=$(echo $ALL_SUBNETS | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+echo "  Subnets: $UNIQUE_SUBNETS"
+
+# Get security groups for both clusters
+echo "→ Getting security groups..."
+SOURCE_SG=$(aws ec2 describe-security-groups \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$SOURCE_CLUSTER,Values=owned" \
+              "Name=tag-key,Values=Name" \
+    --query 'SecurityGroups[?contains(GroupName, `worker`)].GroupId' \
+    --output text | awk '{print $1}')
+
+TARGET_SG=$(aws ec2 describe-security-groups \
+    --region $REGION \
+    --filters "Name=tag:kubernetes.io/cluster/$TARGET_CLUSTER,Values=owned" \
+              "Name=tag-key,Values=Name" \
+    --query 'SecurityGroups[?contains(GroupName, `worker`)].GroupId' \
+    --output text | awk '{print $1}')
+
+echo "  Source SG: $SOURCE_SG"
+echo "  Target SG: $TARGET_SG"
+
+# Create shared EFS security group
+echo "→ Creating shared EFS security group..."
+SHARED_SG_NAME="migration-shared-efs-sg"
+SHARED_SG=$(aws ec2 create-security-group \
+    --region $REGION \
+    --group-name "$SHARED_SG_NAME" \
+    --description "Shared EFS security group for migration between $SOURCE_CLUSTER and $TARGET_CLUSTER" \
+    --vpc-id $SHARED_VPC \
+    --output text 2>/dev/null || \
+    aws ec2 describe-security-groups --region $REGION --filters "Name=group-name,Values=$SHARED_SG_NAME" --query 'SecurityGroups[0].GroupId' --output text)
+
+echo "  Shared SG: $SHARED_SG"
+
+# Allow NFS access from both clusters
+echo "→ Configuring NFS access rules..."
+for SG in $SOURCE_SG $TARGET_SG; do
+    echo "  Allowing access from $SG..."
+    aws ec2 authorize-security-group-ingress \
+        --region $REGION \
+        --group-id $SHARED_SG \
+        --protocol tcp \
+        --port 2049 \
+        --source-group $SG \
+        2>/dev/null || echo "    Rule already exists"
+done
+
+# Tag security group
+aws ec2 create-tags \
+    --region $REGION \
+    --resources $SHARED_SG \
+    --tags "Key=Name,Value=$SHARED_SG_NAME" \
+           "Key=Purpose,Value=migration-storage" \
+           "Key=SourceCluster,Value=$SOURCE_CLUSTER" \
+           "Key=TargetCluster,Value=$TARGET_CLUSTER" \
+           "Key=ManagedBy,Value=ocpctl"
+
+# Create shared EFS file system
+echo "→ Creating shared EFS file system..."
+SHARED_EFS_NAME="migration-shared-storage"
+SHARED_EFS_ID=$(aws efs create-file-system \
+    --region $REGION \
+    --performance-mode generalPurpose \
+    --throughput-mode bursting \
+    --encrypted \
+    --tags "Key=Name,Value=$SHARED_EFS_NAME" \
+           "Key=Purpose,Value=migration-storage" \
+           "Key=SourceCluster,Value=$SOURCE_CLUSTER" \
+           "Key=TargetCluster,Value=$TARGET_CLUSTER" \
+           "Key=ManagedBy,Value=ocpctl" \
+    --query 'FileSystemId' \
+    --output text 2>/dev/null || \
+    aws efs describe-file-systems --region $REGION --query "FileSystems[?Tags[?Key=='Name' && Value=='$SHARED_EFS_NAME']].FileSystemId" --output text)
+
+echo "  Shared EFS ID: $SHARED_EFS_ID"
+
+# Wait for EFS to be available
+echo "→ Waiting for EFS to become available..."
+aws efs wait file-system-available --region $REGION --file-system-id $SHARED_EFS_ID
+
+# Create mount targets
+echo "→ Creating mount targets in all subnets..."
+for SUBNET in $UNIQUE_SUBNETS; do
+    echo "  Creating mount target in subnet: $SUBNET"
+    aws efs create-mount-target \
+        --region $REGION \
+        --file-system-id $SHARED_EFS_ID \
+        --subnet-id $SUBNET \
+        --security-groups $SHARED_SG \
+        2>/dev/null || echo "    Mount target already exists"
+done
+
+# Create access point for migration data
+echo "→ Creating EFS access point for migration data..."
+MIGRATION_AP=$(aws efs create-access-point \
+    --region $REGION \
+    --file-system-id $SHARED_EFS_ID \
+    --posix-user Uid=1000,Gid=1000 \
+    --root-directory "Path=/migration-data,CreationInfo={OwnerUid=1000,OwnerGid=1000,Permissions=755}" \
+    --tags "Key=Name,Value=migration-data-ap" \
+    --query 'AccessPointId' \
+    --output text 2>/dev/null || echo "already exists")
+
+echo "  Access Point: $MIGRATION_AP"
+
+# Create S3 bucket for object storage backups
+echo "→ Creating S3 bucket for migration backups..."
+BUCKET_NAME="ocpctl-migration-${SOURCE_CLUSTER}-${TARGET_CLUSTER}-$(date +%s)"
+aws s3 mb "s3://$BUCKET_NAME" --region $REGION 2>/dev/null || echo "  Bucket already exists"
+
+# Enable versioning and encryption
+aws s3api put-bucket-versioning \
+    --bucket $BUCKET_NAME \
+    --versioning-configuration Status=Enabled
+
+aws s3api put-bucket-encryption \
+    --bucket $BUCKET_NAME \
+    --server-side-encryption-configuration '{
+        "Rules": [{
+            "ApplyServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+            }
+        }]
+    }'
+
+# Tag bucket
+aws s3api put-bucket-tagging \
+    --bucket $BUCKET_NAME \
+    --tagging "TagSet=[
+        {Key=Name,Value=migration-backup-storage},
+        {Key=SourceCluster,Value=$SOURCE_CLUSTER},
+        {Key=TargetCluster,Value=$TARGET_CLUSTER},
+        {Key=ManagedBy,Value=ocpctl}
+    ]"
+
+echo "  S3 Bucket: s3://$BUCKET_NAME"
+
+echo ""
+echo "========================================="
+echo "✅ Shared Migration Storage Complete!"
+echo "========================================="
+echo ""
+echo "Shared EFS:"
+echo "  File System ID: $SHARED_EFS_ID"
+echo "  Access Point: $MIGRATION_AP"
+echo "  Security Group: $SHARED_SG"
+echo ""
+echo "S3 Backup Storage:"
+echo "  Bucket: s3://$BUCKET_NAME"
+echo ""
+echo "Next Steps:"
+echo "1. Mount shared EFS in both clusters using StorageClass"
+echo "2. Configure migration tools to use:"
+echo "   - EFS for shared state/staging: $SHARED_EFS_ID"
+echo "   - S3 for backups: s3://$BUCKET_NAME"
+echo ""
+echo "Example PersistentVolume for shared storage:"
+echo ""
+cat <<YAML
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: migration-shared-pv
+spec:
+  capacity:
+    storage: 100Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-shared
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: ${SHARED_EFS_ID}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: migration-shared-pvc
+  namespace: migration-tools
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-shared
+  resources:
+    requests:
+      storage: 100Gi
+YAML
+echo ""

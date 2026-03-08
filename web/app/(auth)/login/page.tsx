@@ -22,24 +22,37 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [iamError, setIamError] = useState<string | null>(null);
   const [iamLoading, setIamLoading] = useState(false);
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState("");
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState("");
+  const [awsSessionToken, setAwsSessionToken] = useState("");
+  const [awsRegion, setAwsRegion] = useState("us-east-1");
+  const [showIamLogin, setShowIamLogin] = useState(false);
   const login = useLogin();
-  const { authMode, setUser } = useAuthStore();
+  const { setUser } = useAuthStore();
 
   const handleJwtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     login.mutate({ email, password });
   };
 
-  const handleIamLogin = async () => {
+  const handleIamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIamLoading(true);
     setIamError(null);
 
     try {
-      // Verify AWS credentials
+      // Set credentials in IAM provider
+      iamAuthProvider.setCredentials({
+        accessKeyId: awsAccessKeyId,
+        secretAccessKey: awsSecretAccessKey,
+        sessionToken: awsSessionToken || undefined,
+        region: awsRegion,
+      });
+
+      // Verify credentials via backend
       const identity = await iamAuthProvider.verifyCredentials();
 
-      // Make request to backend to get/create user from IAM identity
-      // For now, we'll just set a placeholder user
+      // Set user in store (backend will auto-provision on first API call)
       setUser({
         id: identity.userId,
         email: `${identity.arn}`,
@@ -55,57 +68,13 @@ export default function LoginPage() {
       setIamError(
         error instanceof Error
           ? error.message
-          : "Failed to authenticate with AWS IAM. Please ensure AWS credentials are configured."
+          : "Failed to authenticate with AWS IAM. Please check your credentials."
       );
     } finally {
       setIamLoading(false);
     }
   };
 
-  // IAM Mode - Show AWS IAM login
-  if (authMode === "iam") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-3xl font-bold text-center">
-              ocpctl
-            </CardTitle>
-            <CardDescription className="text-center">
-              Sign in with AWS IAM
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm text-muted-foreground text-center">
-              Authentication uses your AWS credentials configured on this machine.
-            </div>
-            {iamError && (
-              <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
-                {iamError}
-              </div>
-            )}
-            <Button
-              onClick={handleIamLogin}
-              className="w-full"
-              disabled={iamLoading}
-            >
-              {iamLoading ? "Verifying AWS Credentials..." : "Sign in with AWS IAM"}
-            </Button>
-            <div className="mt-4 text-xs text-muted-foreground text-center space-y-2">
-              <p>Ensure you have AWS credentials configured:</p>
-              <ul className="list-disc list-inside text-left space-y-1">
-                <li>Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)</li>
-                <li>AWS credentials file (~/.aws/credentials)</li>
-                <li>EC2 instance role (if running on EC2)</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // JWT Mode - Show email/password login
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <Card className="w-full max-w-md">
@@ -114,53 +83,146 @@ export default function LoginPage() {
             ocpctl
           </CardTitle>
           <CardDescription className="text-center">
-            OpenShift Cluster Control
+            {showIamLogin ? "Sign in with AWS IAM" : "OpenShift Cluster Control"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleJwtSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            {login.isError && (
-              <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
-                {login.error instanceof Error
-                  ? login.error.message
-                  : "Invalid email or password"}
+          {!showIamLogin ? (
+            // JWT Login Form
+            <>
+              <form onSubmit={handleJwtSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="admin@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                </div>
+                {login.isError && (
+                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+                    {login.error instanceof Error
+                      ? login.error.message
+                      : "Invalid email or password"}
+                  </div>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={login.isPending}
+                >
+                  {login.isPending ? "Signing in..." : "Sign in"}
+                </Button>
+              </form>
+              <div className="mt-4 text-center text-sm text-muted-foreground">
+                Default credentials: admin@example.com / changeme
               </div>
-            )}
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={login.isPending}
-            >
-              {login.isPending ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            Default credentials: admin@example.com / changeme
-          </div>
+              <div className="mt-4 text-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowIamLogin(true)}
+                  className="text-sm"
+                >
+                  Or sign in with AWS IAM →
+                </Button>
+              </div>
+            </>
+          ) : (
+            // IAM Login Form
+            <>
+              <form onSubmit={handleIamSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="accessKeyId">AWS Access Key ID</Label>
+                  <Input
+                    id="accessKeyId"
+                    type="text"
+                    placeholder="AKIA..."
+                    value={awsAccessKeyId}
+                    onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                    required
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="secretAccessKey">AWS Secret Access Key</Label>
+                  <Input
+                    id="secretAccessKey"
+                    type="password"
+                    placeholder="••••••••"
+                    value={awsSecretAccessKey}
+                    onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+                    required
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sessionToken">Session Token (Optional)</Label>
+                  <Input
+                    id="sessionToken"
+                    type="password"
+                    placeholder="For temporary credentials"
+                    value={awsSessionToken}
+                    onChange={(e) => setAwsSessionToken(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="region">AWS Region</Label>
+                  <Input
+                    id="region"
+                    type="text"
+                    placeholder="us-east-1"
+                    value={awsRegion}
+                    onChange={(e) => setAwsRegion(e.target.value)}
+                    required
+                    autoComplete="off"
+                  />
+                </div>
+                {iamError && (
+                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+                    {iamError}
+                  </div>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={iamLoading}
+                >
+                  {iamLoading ? "Verifying AWS Credentials..." : "Sign in with AWS IAM"}
+                </Button>
+              </form>
+              <div className="mt-4 text-xs text-muted-foreground text-center">
+                Your AWS credentials are only used for authentication and are not stored.
+              </div>
+              <div className="mt-4 text-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowIamLogin(false)}
+                  className="text-sm"
+                >
+                  ← Back to email/password login
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
