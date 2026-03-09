@@ -45,9 +45,13 @@ func (h *ConfigureEFSHandler) Handle(ctx context.Context, job *types.Job) error 
 
 	log.Printf("Configuring EFS storage for cluster %s", cluster.Name)
 
-	// Verify cluster is READY
+	// Verify cluster is READY - if not, return NotReadyError to defer job
 	if cluster.Status != types.ClusterStatusReady {
-		return fmt.Errorf("cluster must be in READY state, current state: %s", cluster.Status)
+		return &types.NotReadyError{
+			Resource: "cluster",
+			Current:  string(cluster.Status),
+			Required: string(types.ClusterStatusReady),
+		}
 	}
 
 	// Get kubeconfig path from cluster workdir

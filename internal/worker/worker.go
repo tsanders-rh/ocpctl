@@ -200,7 +200,18 @@ func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job) {
 
 // handleJobFailure handles job failure with retry logic
 func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr error) {
-	// Increment attempt counter
+	// Check if this is a "not ready" error - defer without incrementing attempts
+	if types.IsNotReadyError(jobErr) {
+		log.Printf("Job %s deferred: %v (will retry when ready)", job.ID, jobErr)
+
+		// Reset to PENDING without incrementing attempts
+		if err := w.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusPending); err != nil {
+			log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
+		}
+		return
+	}
+
+	// For all other errors, increment attempt counter
 	if err := w.store.Jobs.IncrementAttempt(ctx, job.ID); err != nil {
 		log.Printf("Failed to increment attempt for job %s: %v", job.ID, err)
 		return
