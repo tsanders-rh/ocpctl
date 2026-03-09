@@ -53,20 +53,21 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
-	Name          string            `json:"name" validate:"required,min=3,max=63"`
-	Platform      string            `json:"platform" validate:"required,oneof=aws ibmcloud"`
-	Version       string            `json:"version" validate:"required"`
-	Profile       string            `json:"profile" validate:"required"`
-	Region        string            `json:"region" validate:"required"`
-	BaseDomain    string            `json:"base_domain" validate:"required"`
-	Owner         string            `json:"owner" validate:"required,email"`
-	Team          string            `json:"team" validate:"required"`
-	CostCenter    string            `json:"cost_center" validate:"required"`
-	TTLHours      *int              `json:"ttl_hours,omitempty"`
-	SSHPublicKey  *string           `json:"ssh_public_key,omitempty"`
-	ExtraTags     map[string]string `json:"extra_tags,omitempty"`
-	OffhoursOptIn bool              `json:"offhours_opt_in,omitempty"`
-	IdempotencyKey string           `json:"idempotency_key,omitempty"`
+	Name             string            `json:"name" validate:"required,min=3,max=63"`
+	Platform         string            `json:"platform" validate:"required,oneof=aws ibmcloud"`
+	Version          string            `json:"version" validate:"required"`
+	Profile          string            `json:"profile" validate:"required"`
+	Region           string            `json:"region" validate:"required"`
+	BaseDomain       string            `json:"base_domain" validate:"required"`
+	Owner            string            `json:"owner" validate:"required,email"`
+	Team             string            `json:"team" validate:"required"`
+	CostCenter       string            `json:"cost_center" validate:"required"`
+	TTLHours         *int              `json:"ttl_hours,omitempty"`
+	SSHPublicKey     *string           `json:"ssh_public_key,omitempty"`
+	ExtraTags        map[string]string `json:"extra_tags,omitempty"`
+	OffhoursOptIn    bool              `json:"offhours_opt_in,omitempty"`
+	EnableEFSStorage bool              `json:"enable_efs_storage,omitempty"`
+	IdempotencyKey   string            `json:"idempotency_key,omitempty"`
 }
 
 // ExtendClusterRequest represents the API request to extend cluster TTL
@@ -191,6 +192,32 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	if err := h.store.Jobs.Create(ctx, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create provision job: %w", err))
+	}
+
+	// Create EFS configuration job if requested
+	if req.EnableEFSStorage {
+		efsJob := &types.Job{
+			ID:          uuid.New().String(),
+			ClusterID:   cluster.ID,
+			JobType:     types.JobTypeConfigureEFS,
+			Status:      types.JobStatusPending,
+			Metadata:    types.JobMetadata{},
+			MaxAttempts: 3,
+			Attempt:     0,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		if err := h.store.Jobs.Create(ctx, efsJob); err != nil {
+			LogWarning(c, "failed to create EFS configuration job",
+				"cluster_id", cluster.ID,
+				"error", err.Error())
+			// Don't fail cluster creation if EFS job creation fails
+		} else {
+			LogInfo(c, "EFS configuration job created",
+				"cluster_id", cluster.ID,
+				"job_id", efsJob.ID)
+		}
 	}
 
 	// Log successful cluster creation

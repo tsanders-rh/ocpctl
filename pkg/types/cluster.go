@@ -87,6 +87,7 @@ type Cluster struct {
 	EffectiveTags  Tags          `db:"effective_tags" json:"effective_tags"`
 	SSHPublicKey   *string       `db:"ssh_public_key" json:"ssh_public_key"`
 	OffhoursOptIn  bool          `db:"offhours_opt_in" json:"offhours_opt_in"`
+	StorageConfig  *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 }
 
 // ClusterOutputs represents cluster access information

@@ -6,8 +6,11 @@
 *.dylib
 bin/
 dist/
-api
-worker
+/api
+/worker
+*-linux
+*-darwin
+*-windows.exe
 
 # Test binary, built with `go test -c`
 *.test

@@ -10,19 +10,25 @@ import (
 
 // JobProcessor processes jobs by type
 type JobProcessor struct {
-	config         *Config
-	store          *store.Store
-	createHandler  *CreateHandler
-	destroyHandler *DestroyHandler
+	config                          *Config
+	store                           *store.Store
+	createHandler                   *CreateHandler
+	destroyHandler                  *DestroyHandler
+	configureEFSHandler             *ConfigureEFSHandler
+	provisionSharedStorageHandler   *ProvisionSharedStorageHandler
+	unlinkSharedStorageHandler      *UnlinkSharedStorageHandler
 }
 
 // NewJobProcessor creates a new job processor
 func NewJobProcessor(config *Config, st *store.Store) *JobProcessor {
 	return &JobProcessor{
-		config:         config,
-		store:          st,
-		createHandler:  NewCreateHandler(config, st),
-		destroyHandler: NewDestroyHandler(config, st),
+		config:                        config,
+		store:                         st,
+		createHandler:                 NewCreateHandler(config, st),
+		destroyHandler:                NewDestroyHandler(config, st),
+		configureEFSHandler:           NewConfigureEFSHandler(config, st),
+		provisionSharedStorageHandler: NewProvisionSharedStorageHandler(config, st),
+		unlinkSharedStorageHandler:    NewUnlinkSharedStorageHandler(config, st),
 	}
 }
 
@@ -43,6 +49,15 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 
 	case types.JobTypeOrphanSweep:
 		return fmt.Errorf("orphan sweep not implemented yet")
+
+	case types.JobTypeConfigureEFS:
+		return p.configureEFSHandler.Handle(ctx, job)
+
+	case types.JobTypeProvisionSharedStorage:
+		return p.provisionSharedStorageHandler.Handle(ctx, job)
+
+	case types.JobTypeUnlinkSharedStorage:
+		return p.unlinkSharedStorageHandler.Handle(ctx, job)
 
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)

@@ -45,6 +45,7 @@ export default function NewClusterPage() {
       team: "Migration Feature Team",
       cost_center: "733",
       offhours_opt_in: false,
+      enable_efs_storage: false,
     },
   });
 
@@ -293,41 +294,89 @@ export default function NewClusterPage() {
 
             {/* Advanced Section */}
             {selectedProfile && (
-              <div className="rounded-lg border bg-card p-6 space-y-4">
+              <div className="rounded-lg border bg-card p-6 space-y-6">
                 <h2 className="text-lg font-semibold">Advanced</h2>
 
-                <div className="space-y-2">
-                  <Label htmlFor="ssh_public_key">SSH Public Key (Optional)</Label>
-                  <Textarea
-                    id="ssh_public_key"
-                    placeholder="ssh-rsa AAAA..."
-                    rows={3}
-                    {...register("ssh_public_key")}
-                  />
+                {/* Access & Security */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Access & Security
+                  </h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="ssh_public_key">SSH Public Key (Optional)</Label>
+                    <Textarea
+                      id="ssh_public_key"
+                      placeholder="ssh-rsa AAAA..."
+                      rows={3}
+                      {...register("ssh_public_key")}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Add SSH public key for direct node access
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Custom Tags (Optional)</Label>
-                  <TagsInput
-                    value={watchedValues.extra_tags || {}}
-                    onChange={(tags) => setValue("extra_tags", tags)}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Add custom tags to apply to all deployed AWS resources
-                  </p>
+                {/* Resource Tagging */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Resource Tagging
+                  </h3>
+                  <div className="space-y-2">
+                    <Label>Custom Tags (Optional)</Label>
+                    <TagsInput
+                      value={watchedValues.extra_tags || {}}
+                      onChange={(tags) => setValue("extra_tags", tags)}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Add custom tags to apply to all deployed AWS resources
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="offhours_opt_in"
-                    checked={watchedValues.offhours_opt_in}
-                    onCheckedChange={(checked) =>
-                      setValue("offhours_opt_in", checked as boolean)
-                    }
-                  />
-                  <Label htmlFor="offhours_opt_in" className="cursor-pointer">
-                    Enable off-hours scaling
-                  </Label>
+                {/* Cluster Features */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Cluster Features
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="offhours_opt_in"
+                        checked={watchedValues.offhours_opt_in}
+                        onCheckedChange={(checked) =>
+                          setValue("offhours_opt_in", checked as boolean)
+                        }
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="offhours_opt_in" className="cursor-pointer">
+                          Enable off-hours scaling
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Automatically scale down workers during non-business hours to reduce costs
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="enable_efs_storage"
+                        checked={watchedValues.enable_efs_storage}
+                        onCheckedChange={(checked) =>
+                          setValue("enable_efs_storage", checked as boolean)
+                        }
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="enable_efs_storage" className="cursor-pointer">
+                          Enable EFS shared storage (RWX)
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Provisions EFS file system with CSI driver for ReadWriteMany (RWX) storage class
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

@@ -207,18 +207,15 @@ echo "EFS File System ID: $EFS_ID"
 echo "EFS Security Group: $EFS_SG"
 echo "StorageClass: efs-sc"
 echo ""
-echo "Test with:"
-echo "  kubectl apply -f - <<EOF"
-echo "  apiVersion: v1"
-echo "  kind: PersistentVolumeClaim"
-echo "  metadata:"
-echo "    name: test-efs-pvc"
-echo "  spec:"
-echo "    accessModes:"
-echo "      - ReadWriteMany"
-echo "    storageClassName: efs-sc"
-echo "    resources:"
-echo "      requests:"
-echo "        storage: 10Gi"
-echo "  EOF"
-echo ""
+
+# Output JSON for programmatic parsing (OCPCTL_OUTPUT marker)
+echo "OCPCTL_OUTPUT_START"
+cat <<JSON_OUTPUT
+{
+  "efs_id": "$EFS_ID",
+  "efs_security_group_id": "$EFS_SG",
+  "region": "$REGION",
+  "storage_class": "efs-sc"
+}
+JSON_OUTPUT
+echo "OCPCTL_OUTPUT_END"

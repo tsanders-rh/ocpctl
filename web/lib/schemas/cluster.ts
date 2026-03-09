@@ -21,6 +21,7 @@ export const createClusterSchema = z.object({
   ssh_public_key: z.string().optional(),
   extra_tags: z.record(z.string()).optional(),
   offhours_opt_in: z.boolean().default(false),
+  enable_efs_storage: z.boolean().default(false),
 });
 
 export type CreateClusterFormData = z.infer<typeof createClusterSchema>;

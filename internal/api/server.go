@@ -200,6 +200,12 @@ func (s *Server) setupRoutes() {
 	logHandler := NewLogHandler(s.store)
 	clustersGroup.GET("/:id/logs", logHandler.GetClusterLogs)
 
+	// Storage routes (require authentication, checked within handler)
+	storageHandler := NewStorageHandler(s.store, s.policy)
+	clustersGroup.POST("/:id/storage/link", storageHandler.LinkToCluster)
+	clustersGroup.GET("/:id/storage", storageHandler.GetStorage)
+	clustersGroup.DELETE("/:id/storage/link/:group_id", storageHandler.UnlinkStorage)
+
 	// Profile routes (require authentication)
 	profileHandler := NewProfileHandler(s.registry)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))

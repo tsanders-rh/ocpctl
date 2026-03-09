@@ -222,43 +222,18 @@ echo ""
 echo "S3 Backup Storage:"
 echo "  Bucket: s3://$BUCKET_NAME"
 echo ""
-echo "Next Steps:"
-echo "1. Mount shared EFS in both clusters using StorageClass"
-echo "2. Configure migration tools to use:"
-echo "   - EFS for shared state/staging: $SHARED_EFS_ID"
-echo "   - S3 for backups: s3://$BUCKET_NAME"
-echo ""
-echo "Example PersistentVolume for shared storage:"
-echo ""
-cat <<YAML
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: migration-shared-pv
-spec:
-  capacity:
-    storage: 100Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: efs-shared
-  csi:
-    driver: efs.csi.aws.com
-    volumeHandle: ${SHARED_EFS_ID}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: migration-shared-pvc
-  namespace: migration-tools
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: efs-shared
-  resources:
-    requests:
-      storage: 100Gi
-YAML
-echo ""
+
+# Output JSON for programmatic parsing (OCPCTL_OUTPUT marker)
+echo "OCPCTL_OUTPUT_START"
+cat <<JSON_OUTPUT
+{
+  "efs_id": "$SHARED_EFS_ID",
+  "efs_access_point_id": "$MIGRATION_AP",
+  "efs_security_group_id": "$SHARED_SG",
+  "s3_bucket": "$BUCKET_NAME",
+  "region": "$REGION",
+  "source_cluster": "$SOURCE_CLUSTER",
+  "target_cluster": "$TARGET_CLUSTER"
+}
+JSON_OUTPUT
+echo "OCPCTL_OUTPUT_END"

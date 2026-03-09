@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
+import { StorageTab } from "@/components/clusters/StorageTab";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -325,6 +326,18 @@ export default function ClusterDetailPage() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Storage Card */}
+      {cluster.status === "READY" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Storage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StorageTab clusterId={cluster.id} />
           </CardContent>
         </Card>
       )}
