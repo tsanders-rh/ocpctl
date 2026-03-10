@@ -252,11 +252,27 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 
 // cleanupPartialDeployment cleans up partial infrastructure from a failed CREATE job
 func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
+	// Get cluster metadata for DNS cleanup
+	cluster, err := w.store.Clusters.GetByID(ctx, job.ClusterID)
+	if err != nil {
+		log.Printf("Warning: failed to get cluster for DNS cleanup: %v", err)
+	} else {
+		// Clean up DNS records before openshift-install destroy
+		// This ensures DNS cleanup happens even if workDir doesn't exist
+		log.Printf("Cleaning up DNS records for cluster %s.%s", cluster.Name, cluster.BaseDomain)
+		dnsCleaner := NewDNSCleaner(cluster.Region)
+		if err := dnsCleaner.CleanupClusterDNS(ctx, cluster.Name, cluster.BaseDomain); err != nil {
+			log.Printf("Warning: DNS cleanup failed: %v", err)
+		} else {
+			log.Printf("Successfully cleaned up DNS records")
+		}
+	}
+
 	workDir := fmt.Sprintf("%s/%s", w.config.WorkDir, job.ClusterID)
 
 	// Check if work directory exists
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		log.Printf("Work directory %s does not exist, skipping cleanup", workDir)
+		log.Printf("Work directory %s does not exist, skipping openshift-install destroy", workDir)
 		return
 	}
 

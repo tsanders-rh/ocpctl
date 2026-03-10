@@ -5,6 +5,39 @@
 #
 # Usage: ./configure-efs-storage.sh <cluster-name> <kubeconfig-path>
 #
+# IMPORTANT: For STS-enabled clusters, you must create an IAM role for the EFS CSI
+# operator BEFORE running this script. The role needs:
+#
+#   1. IAM Policy with permissions:
+#      - elasticfilesystem:*
+#      - ec2:DescribeSubnets
+#      - ec2:DescribeNetworkInterfaces
+#      - ec2:DescribeSecurityGroups
+#      - ec2:CreateNetworkInterface
+#      - ec2:DeleteNetworkInterface
+#      - kms:Decrypt (if using encrypted EFS)
+#
+#   2. Trust relationship with cluster's OIDC provider:
+#      {
+#        "Effect": "Allow",
+#        "Principal": {
+#          "Federated": "arn:aws:iam::<account>:oidc-provider/<oidc-endpoint>"
+#        },
+#        "Action": "sts:AssumeRoleWithWebIdentity",
+#        "Condition": {
+#          "StringEquals": {
+#            "<oidc-endpoint>:sub": "system:serviceaccount:openshift-cluster-csi-drivers:aws-efs-csi-driver-operator"
+#          }
+#        }
+#      }
+#
+#   3. Create credentials Secret before installing the operator:
+#      oc create secret generic aws-efs-cloud-credentials \
+#        -n openshift-cluster-csi-drivers \
+#        --from-literal=credentials="[default]\nsts_regional_endpoints = regional\nrole_arn = <IAM_ROLE_ARN>\nweb_identity_token_file = /var/run/secrets/openshift/serviceaccount/token"
+#
+# Without these prerequisites, the operator will install but fail to provision EFS volumes.
+#
 
 set -e
 
@@ -23,37 +56,49 @@ echo "========================================="
 echo "Configuring EFS Storage for: $CLUSTER_NAME"
 echo "========================================="
 
-# Get cluster VPC and subnets
+# Get cluster infrastructure details
 echo "→ Getting cluster infrastructure details..."
-VPC_ID=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.resourceTags[?(@.key=="kubernetes.io/cluster/'$CLUSTER_NAME'")].key}' | sed 's/kubernetes.io\/cluster\///')
+INFRA_NAME=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')
 REGION=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}')
 
-echo "  VPC ID: (will be detected)"
+echo "  Cluster Name: $CLUSTER_NAME"
+echo "  Infrastructure Name: $INFRA_NAME"
 echo "  Region: $REGION"
 
-# Get private subnets
-echo "→ Detecting private subnets..."
+# Get private subnets using infrastructure name (one per AZ)
+echo "→ Detecting private subnets (one per AZ)..."
 SUBNET_IDS=$(aws ec2 describe-subnets \
     --region $REGION \
-    --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" \
+    --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
               "Name=tag:kubernetes.io/role/internal-elb,Values=1" \
-    --query 'Subnets[*].SubnetId' \
-    --output text)
+    --query 'Subnets | sort_by(@, &AvailabilityZone)[].{id:SubnetId, az:AvailabilityZone}' \
+    --output json | jq -r 'unique_by(.az) | .[].id')
 
 if [ -z "$SUBNET_IDS" ]; then
-    echo "ERROR: Could not find private subnets for cluster $CLUSTER_NAME"
+    echo "ERROR: Could not find private subnets for infrastructure $INFRA_NAME"
     exit 1
 fi
 
 echo "  Subnets: $SUBNET_IDS"
 
-# Get cluster security group
-echo "→ Getting cluster security group..."
+# Get cluster worker node security group
+echo "→ Getting cluster worker node security group..."
 CLUSTER_SG=$(aws ec2 describe-security-groups \
     --region $REGION \
-    --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" \
+    --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
+              "Name=tag:Name,Values=$INFRA_NAME-node" \
     --query 'SecurityGroups[0].GroupId' \
     --output text)
+
+# Fallback to any cluster-owned SG if worker-node SG not found
+if [ -z "$CLUSTER_SG" ] || [ "$CLUSTER_SG" = "None" ]; then
+    echo "  Worker node SG not found, using first cluster-owned SG"
+    CLUSTER_SG=$(aws ec2 describe-security-groups \
+        --region $REGION \
+        --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
+        --query 'SecurityGroups[0].GroupId' \
+        --output text)
+fi
 
 echo "  Security Group: $CLUSTER_SG"
 
@@ -65,6 +110,7 @@ EFS_SG=$(aws ec2 create-security-group \
     --group-name "$EFS_SG_NAME" \
     --description "Security group for EFS access from $CLUSTER_NAME" \
     --vpc-id $(aws ec2 describe-subnets --subnet-ids $(echo $SUBNET_IDS | awk '{print $1}') --query 'Subnets[0].VpcId' --output text --region $REGION) \
+    --query 'GroupId' \
     --output text 2>/dev/null || \
     aws ec2 describe-security-groups --region $REGION --filters "Name=group-name,Values=$EFS_SG_NAME" --query 'SecurityGroups[0].GroupId' --output text)
 
@@ -83,29 +129,76 @@ aws ec2 create-tags \
     --region $REGION \
     --resources $EFS_SG \
     --tags "Key=Name,Value=$EFS_SG_NAME" \
-           "Key=kubernetes.io/cluster/$CLUSTER_NAME,Value=owned" \
+           "Key=kubernetes.io/cluster/$INFRA_NAME,Value=owned" \
+           "Key=ClusterName,Value=$CLUSTER_NAME" \
            "Key=ManagedBy,Value=ocpctl"
 
-# Create EFS file system
+# Create EFS file system (idempotent with creation-token)
 echo "→ Creating EFS file system..."
+CREATION_TOKEN="${INFRA_NAME}-efs"
+
+# Use creation-token for idempotency - AWS will return existing FS if token matches
 EFS_ID=$(aws efs create-file-system \
     --region $REGION \
+    --creation-token "$CREATION_TOKEN" \
     --performance-mode generalPurpose \
     --throughput-mode bursting \
     --encrypted \
     --tags "Key=Name,Value=$CLUSTER_NAME-efs" \
-           "Key=kubernetes.io/cluster/$CLUSTER_NAME,Value=owned" \
+           "Key=kubernetes.io/cluster/$INFRA_NAME,Value=owned" \
+           "Key=ClusterName,Value=$CLUSTER_NAME" \
            "Key=ManagedBy,Value=ocpctl" \
     --query 'FileSystemId' \
-    --output text 2>/dev/null || \
-    aws efs describe-file-systems --region $REGION --query "FileSystems[?Tags[?Key=='Name' && Value=='$CLUSTER_NAME-efs']].FileSystemId" --output text)
+    --output text 2>&1)
+
+# Check if creation failed
+if [ $? -ne 0 ]; then
+    # Check if it failed due to duplicate token (filesystem already exists)
+    if echo "$EFS_ID" | grep -q "FileSystemAlreadyExists"; then
+        # Extract filesystem ID from error or query by creation token
+        EFS_ID=$(aws efs describe-file-systems \
+            --region $REGION \
+            --creation-token "$CREATION_TOKEN" \
+            --query 'FileSystems[0].FileSystemId' \
+            --output text)
+        echo "  Found existing EFS: $EFS_ID"
+    else
+        echo "ERROR: Failed to create EFS filesystem: $EFS_ID"
+        exit 1
+    fi
+else
+    echo "  Created EFS: $EFS_ID"
+fi
+
+# Wait for filesystem to become available (manual poll since aws efs wait doesn't exist)
+echo "→ Waiting for EFS to become available..."
+for i in {1..60}; do
+    STATE=$(aws efs describe-file-systems \
+        --region $REGION \
+        --file-system-id $EFS_ID \
+        --query 'FileSystems[0].LifeCycleState' \
+        --output text 2>/dev/null)
+
+    if [ "$STATE" = "available" ]; then
+        echo "  EFS is available"
+        break
+    fi
+
+    if [ $i -eq 1 ]; then
+        echo -n "  Current state: $STATE, waiting"
+    else
+        echo -n "."
+    fi
+    sleep 5
+done
+echo ""
+
+if [ "$STATE" != "available" ]; then
+    echo "ERROR: EFS did not become available within 5 minutes (state: $STATE)"
+    exit 1
+fi
 
 echo "  EFS ID: $EFS_ID"
-
-# Wait for EFS to be available
-echo "→ Waiting for EFS to become available..."
-aws efs wait file-system-available --region $REGION --file-system-id $EFS_ID
-echo "  EFS is available"
 
 # Create mount targets in each subnet
 echo "→ Creating EFS mount targets..."
@@ -134,9 +227,7 @@ kind: OperatorGroup
 metadata:
   name: openshift-cluster-csi-drivers
   namespace: openshift-cluster-csi-drivers
-spec:
-  targetNamespaces:
-  - openshift-cluster-csi-drivers
+spec: {}
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -152,7 +243,19 @@ spec:
 EOF
 
 echo "→ Waiting for EFS CSI Driver Operator to be ready..."
-sleep 30
+# Wait for deployment to be created by OLM (can take 1-2 minutes)
+for i in {1..60}; do
+    if oc get deployment aws-efs-csi-driver-operator -n openshift-cluster-csi-drivers &>/dev/null; then
+        echo "  Operator deployment created"
+        break
+    fi
+    [ $i -eq 1 ] && echo -n "  Waiting for operator deployment to be created"
+    echo -n "."
+    sleep 5
+done
+echo ""
+
+# Now wait for it to become available
 oc wait --for=condition=Available --timeout=300s \
     -n openshift-cluster-csi-drivers \
     deployment/aws-efs-csi-driver-operator
@@ -170,11 +273,19 @@ spec:
   operatorLogLevel: Normal
 EOF
 
-# Wait for CSI driver to be ready
+# Wait for CSI driver to be ready (per Red Hat docs)
 echo "→ Waiting for EFS CSI Driver to be ready..."
-sleep 30
-oc wait --for=condition=Available --timeout=300s \
-    csidriver efs.csi.aws.com
+echo "  Waiting for AWSEFSDriverNodeServiceControllerAvailable..."
+oc wait clustercsidriver/efs.csi.aws.com \
+    --for=jsonpath='{.status.conditions[?(@.type=="AWSEFSDriverNodeServiceControllerAvailable")].status}'=True \
+    --timeout=300s
+
+echo "  Waiting for AWSEFSDriverControllerServiceControllerAvailable..."
+oc wait clustercsidriver/efs.csi.aws.com \
+    --for=jsonpath='{.status.conditions[?(@.type=="AWSEFSDriverControllerServiceControllerAvailable")].status}'=True \
+    --timeout=300s
+
+echo "  EFS CSI Driver is ready"
 
 # Create StorageClass
 echo "→ Creating EFS StorageClass..."
