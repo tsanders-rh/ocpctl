@@ -5,38 +5,9 @@
 #
 # Usage: ./configure-efs-storage.sh <cluster-name> <kubeconfig-path>
 #
-# IMPORTANT: For STS-enabled clusters, you must create an IAM role for the EFS CSI
-# operator BEFORE running this script. The role needs:
-#
-#   1. IAM Policy with permissions:
-#      - elasticfilesystem:*
-#      - ec2:DescribeSubnets
-#      - ec2:DescribeNetworkInterfaces
-#      - ec2:DescribeSecurityGroups
-#      - ec2:CreateNetworkInterface
-#      - ec2:DeleteNetworkInterface
-#      - kms:Decrypt (if using encrypted EFS)
-#
-#   2. Trust relationship with cluster's OIDC provider:
-#      {
-#        "Effect": "Allow",
-#        "Principal": {
-#          "Federated": "arn:aws:iam::<account>:oidc-provider/<oidc-endpoint>"
-#        },
-#        "Action": "sts:AssumeRoleWithWebIdentity",
-#        "Condition": {
-#          "StringEquals": {
-#            "<oidc-endpoint>:sub": "system:serviceaccount:openshift-cluster-csi-drivers:aws-efs-csi-driver-operator"
-#          }
-#        }
-#      }
-#
-#   3. Create credentials Secret before installing the operator:
-#      oc create secret generic aws-efs-cloud-credentials \
-#        -n openshift-cluster-csi-drivers \
-#        --from-literal=credentials="[default]\nsts_regional_endpoints = regional\nrole_arn = <IAM_ROLE_ARN>\nweb_identity_token_file = /var/run/secrets/openshift/serviceaccount/token"
-#
-# Without these prerequisites, the operator will install but fail to provision EFS volumes.
+# NOTE: For STS-enabled clusters, the IAM role and credentials for the EFS CSI operator
+# are automatically created during cluster provisioning via ccoctl. The credentials secret
+# (aws-efs-cloud-credentials) should already exist in the openshift-cluster-csi-drivers namespace.
 #
 
 set -e

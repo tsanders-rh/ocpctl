@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -193,6 +194,14 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 	log.Printf("Extracting CredentialsRequests from manifests...")
 	if err := i.extractCredentialRequests(ctx, workDir, credsReqDir); err != nil {
 		return fmt.Errorf("extract credential requests: %w", err)
+	}
+
+	// Add EFS CSI Driver CredentialsRequest for optional EFS storage support
+	// This allows ccoctl to create the IAM role for the EFS operator if the user enables it
+	log.Printf("Adding EFS CSI Driver CredentialsRequest...")
+	if err := i.addEFSCredentialsRequest(credsReqDir); err != nil {
+		log.Printf("Warning: failed to add EFS CredentialsRequest: %v", err)
+		// Don't fail - EFS is optional, cluster can still be created
 	}
 
 	// Create output directory for ccoctl
@@ -1015,5 +1024,21 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 
 	log.Printf("Successfully tagged hosted zone %s with %s=owned", hostedZoneID, clusterTag)
 
+	return nil
+}
+
+//go:embed credreqs/efs-csi-driver.yaml
+var efsCredentialsRequestYAML string
+
+// addEFSCredentialsRequest adds the EFS CSI Driver CredentialsRequest to the credentials requests directory
+// This allows ccoctl to create the IAM role needed for the EFS CSI operator
+func (i *Installer) addEFSCredentialsRequest(credsReqDir string) error {
+	efsCredReqPath := filepath.Join(credsReqDir, "efs-csi-driver.yaml")
+
+	if err := os.WriteFile(efsCredReqPath, []byte(efsCredentialsRequestYAML), 0644); err != nil {
+		return fmt.Errorf("write EFS CredentialsRequest: %w", err)
+	}
+
+	log.Printf("Added EFS CSI driver CredentialsRequest")
 	return nil
 }

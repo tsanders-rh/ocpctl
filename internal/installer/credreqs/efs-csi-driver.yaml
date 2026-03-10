@@ -1,0 +1,36 @@
+apiVersion: cloudcredential.openshift.io/v1
+kind: CredentialsRequest
+metadata:
+  name: openshift-efs-csi-driver
+  namespace: openshift-cloud-credential-operator
+spec:
+  providerSpec:
+    apiVersion: cloudcredential.openshift.io/v1
+    kind: AWSProviderSpec
+    statementEntries:
+    - effect: Allow
+      action:
+      - elasticfilesystem:CreateAccessPoint
+      - elasticfilesystem:CreateFileSystem
+      - elasticfilesystem:CreateMountTarget
+      - elasticfilesystem:DeleteAccessPoint
+      - elasticfilesystem:DeleteFileSystem
+      - elasticfilesystem:DeleteMountTarget
+      - elasticfilesystem:DescribeAccessPoints
+      - elasticfilesystem:DescribeFileSystems
+      - elasticfilesystem:DescribeMountTargets
+      - elasticfilesystem:DescribeMountTargetSecurityGroups
+      - elasticfilesystem:ModifyMountTargetSecurityGroups
+      - elasticfilesystem:TagResource
+      - ec2:DescribeSubnets
+      - ec2:DescribeNetworkInterfaces
+      - ec2:DescribeSecurityGroups
+      - ec2:CreateNetworkInterface
+      - ec2:DeleteNetworkInterface
+      resource: "*"
+  secretRef:
+    name: aws-efs-cloud-credentials
+    namespace: openshift-cluster-csi-drivers
+  serviceAccountNames:
+  - aws-efs-csi-driver-operator
+  - aws-efs-csi-driver-controller-sa
