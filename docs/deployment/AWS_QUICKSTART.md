@@ -1239,6 +1239,20 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
     {
       "Effect": "Allow",
       "Action": [
+        "elasticfilesystem:CreateFileSystem",
+        "elasticfilesystem:CreateMountTarget",
+        "elasticfilesystem:CreateTags",
+        "elasticfilesystem:DeleteFileSystem",
+        "elasticfilesystem:DeleteMountTarget",
+        "elasticfilesystem:DescribeFileSystems",
+        "elasticfilesystem:DescribeMountTargets",
+        "elasticfilesystem:DescribeMountTargetSecurityGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
         "servicequotas:GetServiceQuota",
         "servicequotas:ListServiceQuotas",
         "servicequotas:ListAWSDefaultServiceQuotas"
@@ -1291,6 +1305,10 @@ This comprehensive policy includes permissions for:
   - Bootstrap ignition and OIDC discovery document storage
   - **Public Access Block** management for OIDC bucket configuration:
     - `PutBucketPublicAccessBlock`, `GetBucketPublicAccessBlock`
+- **EFS (Elastic File System)**: Shared file storage (RWX) configuration for clusters
+  - File system and mount target creation/deletion
+  - Required when "Enable EFS storage" option is selected during cluster creation
+  - Enables ReadWriteMany (RWX) persistent volumes for multi-pod access
 - **Service Quotas**: Checking AWS limits before provisioning
 - **Resource Tagging**: Cluster resource tagging for identification
 
@@ -1457,6 +1475,105 @@ sudo journalctl -u ocpctl-worker -f
 5. Create Route53 DNS records in your `mg.dog8code.com` hosted zone
 6. Wait for cluster bootstrap to complete
 7. Store kubeconfig and cluster details in database
+
+### Updating Existing IAM Policy for EFS Support
+
+If you already have ocpctl deployed and want to add EFS storage support, you need to update your existing IAM policy to include EFS permissions.
+
+**Option 1: Update the Managed Policy (Recommended)**
+
+If you used a managed policy (`ocpctl-worker-openshift-provisioning`), create a new policy version:
+
+```bash
+# Create updated policy document with EFS permissions
+cat > /tmp/ocpctl-worker-policy-v2.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:CreateFileSystem",
+        "elasticfilesystem:CreateMountTarget",
+        "elasticfilesystem:CreateTags",
+        "elasticfilesystem:DeleteFileSystem",
+        "elasticfilesystem:DeleteMountTarget",
+        "elasticfilesystem:DescribeFileSystems",
+        "elasticfilesystem:DescribeMountTargets",
+        "elasticfilesystem:DescribeMountTargetSecurityGroups"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+# Get your existing policy ARN
+export POLICY_ARN=$(aws iam list-policies \
+  --query 'Policies[?PolicyName==`ocpctl-worker-openshift-provisioning`].Arn' \
+  --output text)
+
+# Create a new policy version (this will add to existing permissions)
+aws iam create-policy-version \
+  --policy-arn $POLICY_ARN \
+  --policy-document file:///tmp/ocpctl-worker-policy-v2.json \
+  --set-as-default
+
+echo "EFS permissions added to existing policy"
+```
+
+**Option 2: Add Inline Policy to Role**
+
+Alternatively, you can add EFS permissions as an inline policy to your worker role:
+
+```bash
+# Create EFS policy
+cat > /tmp/efs-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:CreateFileSystem",
+        "elasticfilesystem:CreateMountTarget",
+        "elasticfilesystem:CreateTags",
+        "elasticfilesystem:DeleteFileSystem",
+        "elasticfilesystem:DeleteMountTarget",
+        "elasticfilesystem:DescribeFileSystems",
+        "elasticfilesystem:DescribeMountTargets",
+        "elasticfilesystem:DescribeMountTargetSecurityGroups"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+# Add inline policy to worker role
+aws iam put-role-policy \
+  --role-name ocpctl-worker-role \
+  --policy-name EFSStorageSupport \
+  --policy-document file:///tmp/efs-policy.json
+
+echo "EFS inline policy added to ocpctl-worker-role"
+```
+
+**Verify Permissions:**
+
+```bash
+# SSH into your instance
+ssh -i ~/.ssh/your-key.pem ec2-user@$EC2_IP
+
+# Test EFS permissions
+aws efs describe-file-systems --region us-east-1
+
+# Should return empty list (or existing EFS) without permission errors
+# Exit SSH session
+exit
+```
+
+No restart is required - IAM permissions take effect immediately. You can now enable EFS storage when creating clusters.
 
 ### Alternative: Using AWS Access Keys (Not Recommended)
 
