@@ -36,6 +36,42 @@ echo "  Cluster Name: $CLUSTER_NAME"
 echo "  Infrastructure Name: $INFRA_NAME"
 echo "  Region: $REGION"
 
+# Detect if cluster is using STS mode (check for OIDC configuration)
+echo "→ Detecting authentication mode..."
+USE_STS="false"
+
+# Check if cluster has OIDC configured (indicates STS mode)
+OIDC_ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}' 2>/dev/null || echo "")
+if [ -n "$OIDC_ISSUER" ] && [ "$OIDC_ISSUER" != "null" ]; then
+    echo "  Detected STS mode (OIDC issuer: $OIDC_ISSUER)"
+    USE_STS="true"
+
+    # Verify the EFS credentials secret exists
+    echo "→ Verifying EFS CSI driver credentials..."
+    if ! oc get namespace openshift-cluster-csi-drivers &>/dev/null; then
+        echo "  WARNING: Namespace openshift-cluster-csi-drivers does not exist yet"
+        echo "  Creating namespace..."
+        oc create namespace openshift-cluster-csi-drivers
+    fi
+
+    if oc get secret aws-efs-cloud-credentials -n openshift-cluster-csi-drivers &>/dev/null; then
+        # Check if secret contains role ARN (STS) or access keys (static)
+        if oc get secret aws-efs-cloud-credentials -n openshift-cluster-csi-drivers -o jsonpath='{.data.credentials}' 2>/dev/null | base64 -d | grep -q "role_arn"; then
+            ROLE_ARN=$(oc get secret aws-efs-cloud-credentials -n openshift-cluster-csi-drivers -o jsonpath='{.data.credentials}' | base64 -d | grep "role_arn" | awk -F'=' '{print $2}' | tr -d ' ')
+            echo "  ✓ Found STS credentials secret with role: $ROLE_ARN"
+        else
+            echo "  ✓ Found static credentials secret"
+            USE_STS="false"
+        fi
+    else
+        echo "  ⚠ WARNING: EFS credentials secret (aws-efs-cloud-credentials) not found"
+        echo "  This secret should have been created by ccoctl during cluster installation"
+        echo "  EFS CSI driver will attempt to use instance profile or ambient credentials"
+    fi
+else
+    echo "  Detected static credentials mode (no OIDC issuer)"
+fi
+
 # Get private subnets using infrastructure name (one per AZ)
 echo "→ Detecting private subnets (one per AZ)..."
 SUBNET_IDS=$(aws ec2 describe-subnets \
@@ -233,7 +269,27 @@ oc wait --for=condition=Available --timeout=300s \
 
 # Create ClusterCSIDriver
 echo "→ Creating ClusterCSIDriver instance..."
-oc apply -f - <<EOF
+if [ "$USE_STS" = "true" ]; then
+    echo "  Using STS configuration with service account token projection"
+    oc apply -f - <<EOF
+apiVersion: operator.openshift.io/v1
+kind: ClusterCSIDriver
+metadata:
+  name: efs.csi.aws.com
+spec:
+  managementState: Managed
+  logLevel: Normal
+  operatorLogLevel: Normal
+  driverConfig:
+    driverType: AWS
+    aws:
+      efsVolumeMetrics:
+        state: RecursiveWalk
+        refreshPeriod: 1h
+EOF
+else
+    echo "  Using static credentials configuration"
+    oc apply -f - <<EOF
 apiVersion: operator.openshift.io/v1
 kind: ClusterCSIDriver
 metadata:
@@ -243,6 +299,38 @@ spec:
   logLevel: Normal
   operatorLogLevel: Normal
 EOF
+fi
+
+# For STS clusters, verify service account annotations
+if [ "$USE_STS" = "true" ] && [ -n "$ROLE_ARN" ]; then
+    echo "→ Verifying service account IAM role annotations..."
+
+    # Wait for service accounts to be created by the operator
+    for i in {1..30}; do
+        if oc get serviceaccount aws-efs-csi-driver-controller-sa -n openshift-cluster-csi-drivers &>/dev/null; then
+            break
+        fi
+        [ $i -eq 1 ] && echo -n "  Waiting for service accounts to be created"
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+
+    # Verify and add annotation if missing
+    for SA in aws-efs-csi-driver-controller-sa aws-efs-csi-driver-node-sa; do
+        if oc get serviceaccount $SA -n openshift-cluster-csi-drivers &>/dev/null; then
+            CURRENT_ANNOTATION=$(oc get serviceaccount $SA -n openshift-cluster-csi-drivers -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
+            if [ -z "$CURRENT_ANNOTATION" ]; then
+                echo "  Adding IAM role annotation to $SA"
+                oc annotate serviceaccount $SA -n openshift-cluster-csi-drivers \
+                    eks.amazonaws.com/role-arn="$ROLE_ARN" \
+                    --overwrite
+            else
+                echo "  ✓ Service account $SA already has role annotation: $CURRENT_ANNOTATION"
+            fi
+        fi
+    done
+fi
 
 # Wait for CSI driver to be ready (per Red Hat docs)
 echo "→ Waiting for EFS CSI Driver to be ready..."
@@ -288,16 +376,36 @@ echo ""
 echo "EFS File System ID: $EFS_ID"
 echo "EFS Security Group: $EFS_SG"
 echo "StorageClass: efs-sc"
+if [ "$USE_STS" = "true" ]; then
+    echo "Authentication Mode: STS (IAM Roles for Service Accounts)"
+    [ -n "$ROLE_ARN" ] && echo "IAM Role: $ROLE_ARN"
+else
+    echo "Authentication Mode: Static Credentials"
+fi
 echo ""
 
 # Output JSON for programmatic parsing (OCPCTL_OUTPUT marker)
 echo "OCPCTL_OUTPUT_START"
+if [ "$USE_STS" = "true" ] && [ -n "$ROLE_ARN" ]; then
 cat <<JSON_OUTPUT
 {
   "efs_id": "$EFS_ID",
   "efs_security_group_id": "$EFS_SG",
   "region": "$REGION",
-  "storage_class": "efs-sc"
+  "storage_class": "efs-sc",
+  "auth_mode": "sts",
+  "iam_role_arn": "$ROLE_ARN"
 }
 JSON_OUTPUT
+else
+cat <<JSON_OUTPUT
+{
+  "efs_id": "$EFS_ID",
+  "efs_security_group_id": "$EFS_SG",
+  "region": "$REGION",
+  "storage_class": "efs-sc",
+  "auth_mode": "static"
+}
+JSON_OUTPUT
+fi
 echo "OCPCTL_OUTPUT_END"

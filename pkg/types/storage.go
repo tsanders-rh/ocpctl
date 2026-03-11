@@ -15,6 +15,8 @@ type StorageConfig struct {
 	SharedS3Bucket  *string `json:"shared_s3_bucket,omitempty"`
 	StorageGroupID  *string `json:"storage_group_id,omitempty"`
 	SecurityGroupID *string `json:"security_group_id,omitempty"`
+	AuthMode        *string `json:"auth_mode,omitempty"`        // "sts" or "static"
+	IAMRoleARN      *string `json:"iam_role_arn,omitempty"`     // For STS-enabled clusters
 }
 
 // Value implements driver.Valuer for database serialization

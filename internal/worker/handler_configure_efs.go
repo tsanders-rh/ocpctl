@@ -29,10 +29,12 @@ func NewConfigureEFSHandler(config *Config, st *store.Store) *ConfigureEFSHandle
 
 // EFSScriptOutput represents the JSON output from configure-efs-storage.sh
 type EFSScriptOutput struct {
-	EFSID               string `json:"efs_id"`
-	EFSSecurityGroupID  string `json:"efs_security_group_id"`
-	Region              string `json:"region"`
-	StorageClass        string `json:"storage_class"`
+	EFSID               string  `json:"efs_id"`
+	EFSSecurityGroupID  string  `json:"efs_security_group_id"`
+	Region              string  `json:"region"`
+	StorageClass        string  `json:"storage_class"`
+	AuthMode            *string `json:"auth_mode,omitempty"`
+	IAMRoleARN          *string `json:"iam_role_arn,omitempty"`
 }
 
 // Handle configures EFS storage for a cluster
@@ -91,14 +93,16 @@ func (h *ConfigureEFSHandler) Handle(ctx context.Context, job *types.Job) error 
 		return fmt.Errorf("parse EFS script output: %w", err)
 	}
 
-	log.Printf("Parsed EFS output: EFS ID=%s, Security Group=%s",
-		scriptOutput.EFSID, scriptOutput.EFSSecurityGroupID)
+	log.Printf("Parsed EFS output: EFS ID=%s, Security Group=%s, Auth Mode=%v",
+		scriptOutput.EFSID, scriptOutput.EFSSecurityGroupID, scriptOutput.AuthMode)
 
 	// Update cluster's storage_config
 	storageConfig := types.StorageConfig{
 		EFSEnabled:   true,
 		LocalEFSID:   &scriptOutput.EFSID,
 		LocalEFSSGID: &scriptOutput.EFSSecurityGroupID,
+		AuthMode:     scriptOutput.AuthMode,
+		IAMRoleARN:   scriptOutput.IAMRoleARN,
 	}
 
 	// Convert to JSON for database update

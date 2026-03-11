@@ -2234,3 +2234,227 @@ curl -s http://localhost:8080/api/clusters/$TARGET_ID | jq '.storage_config'
 - Eliminates duplicate VPC creation (~$32/month per NAT Gateway)
 - Shared storage resources instead of per-cluster storage
 - Ideal for temporary migration testing scenarios
+
+## EFS Storage Configuration on STS-Enabled Clusters
+
+### Overview
+
+OpenShift clusters deployed with STS (AWS Security Token Service) use IAM Roles for Service Accounts (IRSA) instead of static AWS credentials. ocpctl automatically detects STS mode and configures the EFS CSI driver appropriately.
+
+### STS Detection
+
+The CONFIGURE_EFS job automatically detects STS mode by:
+1. Checking if the cluster has an OIDC issuer configured (`oc get authentication cluster`)
+2. Verifying the `aws-efs-cloud-credentials` secret exists in `openshift-cluster-csi-drivers` namespace
+3. Checking if the secret contains an IAM role ARN (STS) vs static access keys
+
+### Prerequisites for STS Clusters
+
+For STS-enabled clusters, the following must be in place:
+
+**1. OIDC Provider**
+- Created automatically by `openshift-install` in Manual mode
+- Hosted in S3 with public bucket policy for discovery
+- Thumbprint configured with correct certificate chain
+
+**2. EFS IAM Role**
+- Created automatically during cluster installation via `ccoctl`
+- Includes the EFS CredentialsRequest from `internal/installer/credreqs/efs-csi-driver.yaml`
+- Grants permissions for EFS operations (CreateFileSystem, CreateAccessPoint, etc.)
+- Trust policy allows OIDC-authenticated service accounts
+
+**3. Credentials Secret**
+- Name: `aws-efs-cloud-credentials`
+- Namespace: `openshift-cluster-csi-drivers`
+- Contains role ARN instead of static credentials
+- Created by `ccoctl` during cluster installation
+
+### How It Works
+
+**During Cluster Installation:**
+1. Installer detects STS credentials (session token or IMDS)
+2. Uses Manual mode workflow instead of direct `openshift-install`
+3. Runs `ccoctl` with EFS CredentialsRequest included
+4. Creates IAM role with EFS permissions
+5. Creates secret with role ARN in cluster
+
+**During EFS Configuration (CONFIGURE_EFS job):**
+1. Script detects OIDC issuer to identify STS mode
+2. Verifies credentials secret exists and contains role ARN
+3. Installs EFS CSI Driver Operator
+4. Creates ClusterCSIDriver with STS configuration:
+   ```yaml
+   spec:
+     managementState: Managed
+     driverConfig:
+       driverType: AWS
+       aws:
+         efsVolumeMetrics:
+           state: RecursiveWalk
+           refreshPeriod: 1h
+   ```
+5. Annotates service accounts with IAM role ARN
+6. Driver pods use service account token projection to assume IAM role
+
+### Service Account Configuration
+
+For STS mode, the following service accounts receive IAM role annotations:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-efs-csi-driver-controller-sa
+  namespace: openshift-cluster-csi-drivers
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/cluster-abc123-openshift-efs-csi-driver
+```
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-efs-csi-driver-node-sa
+  namespace: openshift-cluster-csi-drivers
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/cluster-abc123-openshift-efs-csi-driver
+```
+
+### Verification
+
+**1. Check cluster is using STS:**
+```bash
+# Should return an OIDC URL
+oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}'
+```
+
+**2. Verify EFS credentials secret exists:**
+```bash
+oc get secret aws-efs-cloud-credentials -n openshift-cluster-csi-drivers
+
+# Check if it contains a role ARN (STS) or access keys (static)
+oc get secret aws-efs-cloud-credentials -n openshift-cluster-csi-drivers \
+  -o jsonpath='{.data.credentials}' | base64 -d
+```
+
+**3. Verify IAM role exists:**
+```bash
+# Get infrastructure name
+INFRA_ID=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')
+
+# Check IAM role exists
+aws iam get-role --role-name "${INFRA_ID}-openshift-efs-csi-driver"
+```
+
+**4. Check service account annotations:**
+```bash
+oc get serviceaccount aws-efs-csi-driver-controller-sa \
+  -n openshift-cluster-csi-drivers \
+  -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
+```
+
+**5. Verify EFS CSI driver is working:**
+```bash
+# Check ClusterCSIDriver status
+oc get clustercsidriver efs.csi.aws.com -o yaml
+
+# Check driver pods are running
+oc get pods -n openshift-cluster-csi-drivers | grep efs
+
+# Verify storage class exists
+oc get storageclass efs-sc
+```
+
+### Troubleshooting STS EFS Issues
+
+**Secret not found:**
+```bash
+# ERROR: EFS credentials secret (aws-efs-cloud-credentials) not found
+
+# Cause: ccoctl didn't include EFS CredentialsRequest during installation
+# Solution: This shouldn't happen with ocpctl - check installer logs
+sudo journalctl -u ocpctl-worker | grep "Adding EFS CredentialsRequest"
+```
+
+**IAM role doesn't exist:**
+```bash
+# Verify role was created by ccoctl
+aws iam list-roles | grep openshift-efs-csi-driver
+
+# Check role trust policy allows OIDC
+aws iam get-role --role-name "${INFRA_ID}-openshift-efs-csi-driver" \
+  --query 'Role.AssumeRolePolicyDocument'
+```
+
+**OIDC provider issues:**
+```bash
+# Get OIDC issuer
+OIDC_ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}')
+
+# Verify provider exists in AWS
+aws iam list-open-id-connect-providers
+
+# Check provider URL matches cluster
+aws iam get-open-id-connect-provider \
+  --open-id-connect-provider-arn arn:aws:iam::ACCOUNT:oidc-provider/...
+```
+
+**Driver pods can't create EFS resources:**
+```bash
+# Check pod logs for permission errors
+oc logs -n openshift-cluster-csi-drivers \
+  deployment/aws-efs-csi-driver-controller-sa
+
+# Look for:
+# - "AccessDenied" errors → IAM role policy missing permissions
+# - "AssumeRole" errors → OIDC trust policy misconfigured
+# - "InvalidToken" errors → Service account annotation missing
+```
+
+**Storage Config Verification:**
+
+After successful EFS configuration, the cluster's storage_config will include:
+
+```json
+{
+  "efs_enabled": true,
+  "local_efs_id": "fs-0abc123def456789",
+  "local_efs_sg_id": "sg-0xyz789abc123456",
+  "auth_mode": "sts",
+  "iam_role_arn": "arn:aws:iam::123456789012:role/cluster-abc123-openshift-efs-csi-driver"
+}
+```
+
+For non-STS clusters, the `auth_mode` will be `"static"` and `iam_role_arn` will be absent.
+
+### EFS Permissions Required
+
+The IAM role created by ccoctl includes these permissions:
+
+**EFS Operations:**
+- `elasticfilesystem:CreateAccessPoint`
+- `elasticfilesystem:CreateFileSystem`
+- `elasticfilesystem:CreateMountTarget`
+- `elasticfilesystem:DeleteAccessPoint`
+- `elasticfilesystem:DeleteFileSystem`
+- `elasticfilesystem:DeleteMountTarget`
+- `elasticfilesystem:DescribeAccessPoints`
+- `elasticfilesystem:DescribeFileSystems`
+- `elasticfilesystem:DescribeMountTargets`
+- `elasticfilesystem:DescribeMountTargetSecurityGroups`
+- `elasticfilesystem:ModifyMountTargetSecurityGroups`
+- `elasticfilesystem:TagResource`
+
+**EC2 Operations (for network interface management):**
+- `ec2:DescribeSubnets`
+- `ec2:DescribeNetworkInterfaces`
+- `ec2:DescribeSecurityGroups`
+- `ec2:CreateNetworkInterface`
+- `ec2:DeleteNetworkInterface`
+
+### References
+
+- [OpenShift EFS CSI Driver Documentation](https://docs.openshift.com/container-platform/latest/storage/container_storage_interface/persistent-storage-csi-aws-efs.html)
+- [AWS EFS CSI Driver GitHub](https://github.com/kubernetes-sigs/aws-efs-csi-driver)
+- [OpenShift Cloud Credential Operator](https://docs.openshift.com/container-platform/latest/authentication/managing_cloud_provider_credentials/about-cloud-credential-operator.html)
+- [AWS IAM Roles for Service Accounts (IRSA)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
