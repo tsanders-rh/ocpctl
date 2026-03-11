@@ -44,6 +44,10 @@ export function useLinkStorage() {
       queryClient.invalidateQueries({
         queryKey: ["cluster", clusterId],
       });
+      // Invalidate jobs to show the new PROVISION_SHARED_STORAGE job
+      queryClient.invalidateQueries({
+        queryKey: ["jobs"],
+      });
     },
   });
 }
@@ -70,6 +74,10 @@ export function useUnlinkStorage() {
       // Also invalidate cluster detail
       queryClient.invalidateQueries({
         queryKey: ["cluster", clusterId],
+      });
+      // Invalidate jobs to show the new UNLINK_SHARED_STORAGE job
+      queryClient.invalidateQueries({
+        queryKey: ["jobs"],
       });
     },
   });
