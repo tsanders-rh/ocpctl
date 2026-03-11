@@ -1,0 +1,100 @@
+name: aws-sno-shared-vpc
+displayName: AWS Single Node OpenShift (Shared VPC Template)
+description: Template for deploying SNO clusters in a persistent shared VPC. Copy and customize with your VPC subnets.
+platform: aws
+enabled: false  # This is a template - copy and customize to enable
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 1
+    instanceType: m6i.2xlarge
+    schedulable: true
+  workers:
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 0
+    instanceType: m6i.2xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 24
+  defaultTTLHours: 8
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 1
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: test
+  defaults:
+    Purpose: migration-testing
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 0.80
+  maxMonthlyCost: 576
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000
+    # IMPORTANT: This profile is a TEMPLATE
+    #
+    # To use shared VPC mode, you must:
+    # 1. Create a persistent shared VPC using scripts/create-shared-vpc.sh
+    # 2. Copy this profile to a new file (e.g., my-shared-vpc.yaml)
+    # 3. Add your VPC's subnet IDs below
+    # 4. Enable and use your custom profile
+    #
+    # Example subnets configuration:
+    # IMPORTANT: Include BOTH private and public subnets
+    # subnets:
+    #   - subnet-0abc123def456789a  # us-east-1a private
+    #   - subnet-0def456abc789012b  # us-east-1b private
+    #   - subnet-0ghi789jkl012345c  # us-east-1c private
+    #   - subnet-0jkl012mno345678d  # us-east-1a public
+    #   - subnet-0mno345pqr678901e  # us-east-1b public
+    #   - subnet-0pqr678stu901234f  # us-east-1c public
+    #
+    # Without subnets, clusters will create their own VPC (default behavior)
+    #
+    # See: docs/deployment/AWS_QUICKSTART.md for detailed instructions

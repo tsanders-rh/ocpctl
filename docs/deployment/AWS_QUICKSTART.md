@@ -1228,6 +1228,7 @@ cat > /tmp/ocpctl-worker-policy.json <<'EOF'
         "s3:PutBucketPublicAccessBlock",
         "s3:GetBucketPublicAccessBlock",
         "s3:PutBucketTagging",
+        "s3:PutBucketVersioning",
         "s3:PutEncryptionConfiguration",
         "s3:PutLifecycleConfiguration",
         "s3:PutObject",
@@ -1868,3 +1869,368 @@ aws ec2 delete-security-group --group-id $DB_SG_ID --region $AWS_REGION
 - Long-term deployments (6+ months)
 - Need for multi-AZ failover or read replicas
 - Compliance requirements for managed databases
+
+---
+
+## Creating Clusters in a Shared VPC
+
+For migration testing with shared storage, create both clusters in the same VPC. This enables clusters to share an EFS filesystem and S3 bucket for testing migration scenarios.
+
+### Why Shared VPC?
+
+**Problem**: By default, each OpenShift cluster creates its own VPC. This prevents shared storage between clusters because:
+- EFS filesystems are VPC-specific
+- S3 access requires network connectivity
+- Clusters in different VPCs cannot share resources without VPC peering
+
+**Solution**: Deploy multiple clusters into the same persistent VPC using BYOVPC (Bring Your Own VPC) mode.
+
+### VPC Requirements
+
+Your VPC must have:
+
+1. **At least 3 availability zones** with both private and public subnets in each AZ
+2. **Internet Gateway** attached to the VPC
+3. **NAT Gateways** in public subnets (at least one per AZ)
+4. **Route Tables** properly configured:
+   - Public subnets route 0.0.0.0/0 to Internet Gateway
+   - Private subnets route 0.0.0.0/0 to NAT Gateway
+5. **DNS Settings** enabled:
+   - DNS resolution enabled
+   - DNS hostnames enabled
+6. **Non-overlapping CIDR** ranges:
+   - VPC CIDR must not overlap with 10.128.0.0/14 (OpenShift pod network)
+   - VPC CIDR must not overlap with 172.30.0.0/16 (OpenShift service network)
+7. **Persistence**: VPC should be independent of any cluster lifecycle
+
+### Step 1: Create Persistent Shared VPC
+
+**Option A: Automated Script (Recommended)**
+
+Use the provided script to create a properly configured VPC:
+
+```bash
+# SSH to your ocpctl server (or run locally with AWS credentials)
+ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@<your-ec2-ip>
+cd /opt/ocpctl
+
+# Run the VPC creation script
+chmod +x scripts/create-shared-vpc.sh
+
+# For testing/dev (single NAT gateway, saves ~$64/month)
+./scripts/create-shared-vpc.sh ocpctl-shared-vpc us-east-1 single
+
+# For production (3 NAT gateways, high availability)
+./scripts/create-shared-vpc.sh ocpctl-shared-vpc us-east-1 ha
+```
+
+The script will create:
+- VPC with CIDR 10.0.0.0/16
+- 3 larger private subnets (/22 each, ~1,000 IPs) for multiple clusters:
+  - 10.0.0.0/22 (us-east-1a)
+  - 10.0.4.0/22 (us-east-1b)
+  - 10.0.8.0/22 (us-east-1c)
+- 3 public subnets (/24 each, 256 IPs):
+  - 10.0.64.0/24 (us-east-1a)
+  - 10.0.65.0/24 (us-east-1b)
+  - 10.0.66.0/24 (us-east-1c)
+- Internet Gateway
+- NAT Gateways (1 in single mode, 3 in ha mode)
+- Properly configured route tables
+- OpenShift/Kubernetes subnet tags for ELB discovery
+- Machine-readable outputs (JSON + YAML profile snippet)
+
+**Features:**
+- **Idempotency**: Fails if VPC with same name already exists
+- **Cleanup on failure**: Automatically removes partially created resources
+- **Cost optimization**: Single NAT mode saves ~$64/month vs high-availability mode
+
+**Option B: Manual VPC Creation**
+
+If you prefer manual control or have an existing VPC:
+
+```bash
+# List available VPCs
+aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock,Tags[?Key==`Name`].Value|[0]]' --output table
+
+# List subnets in a VPC
+VPC_ID=vpc-xxxxx
+aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'Subnets[*].[SubnetId,AvailabilityZone,CidrBlock,Tags[?Key==`Name`].Value|[0]]' \
+  --output table
+```
+
+**IMPORTANT**: Do NOT use a VPC created by a cluster - those are destroyed with the cluster!
+
+### Step 2: Get Subnet IDs from Your VPC
+
+After creating or identifying your shared VPC, note the subnet IDs:
+
+```bash
+VPC_ID=vpc-xxxxx  # Your shared VPC ID
+
+# Get private subnet IDs
+aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Type,Values=private" \
+  --query 'Subnets[*].[SubnetId,AvailabilityZone]' \
+  --output table
+```
+
+Save these subnet IDs - you'll need them for the profile.
+
+### Step 3: Create Custom Profile
+
+Create a custom profile with your VPC subnet configuration:
+
+```bash
+# Create profile file
+cat > internal/profile/definitions/aws-sno-my-vpc.yaml <<'EOF'
+name: aws-sno-my-vpc
+displayName: AWS Single Node OpenShift (My Shared VPC)
+description: Single node cluster for shared VPC migration testing
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 1
+    instanceType: m6i.2xlarge
+    schedulable: true
+  workers:
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 0
+    instanceType: m6i.2xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 24
+  defaultTTLHours: 8
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 1
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: test
+  defaults:
+    Purpose: migration-testing
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 0.80
+  maxMonthlyCost: 576
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000
+    # Replace with your VPC subnet IDs
+    subnets:
+      - subnet-071b5b7ad916b433c  # us-east-1a private
+      - subnet-0f522e488c8d000a8  # us-east-1b private
+      - subnet-0631a08791cb1b0f3  # us-east-1c private
+      - subnet-064c667ddd75250d7  # us-east-1d private
+      - subnet-096732a8ab8147452  # us-east-1f private
+EOF
+
+# Restart ocpctl-server to load new profile
+sudo systemctl restart ocpctl-server
+```
+
+### Step 4: Create Clusters in Shared VPC
+
+Create two clusters using the same profile to ensure they're in the same VPC:
+
+```bash
+# Create first cluster
+curl -X POST http://localhost:8080/api/clusters \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "migration-source",
+    "platform": "aws",
+    "version": "4.20.3",
+    "profile": "aws-sno-my-vpc",
+    "region": "us-east-1",
+    "base_domain": "mg.dog8code.com",
+    "owner": "your-name",
+    "team": "platform-team",
+    "cost_center": "733",
+    "ttl_hours": 24,
+    "ssh_public_key": "ssh-ed25519 AAAA... your-key",
+    "pull_secret": "YOUR_PULL_SECRET_JSON",
+    "tags": {
+      "Purpose": "migration-source"
+    }
+  }'
+
+# Wait for first cluster to reach READY status (30-45 minutes)
+watch -n 30 'curl -s http://localhost:8080/api/clusters | jq ".[] | select(.name==\"migration-source\") | {name, status}"'
+
+# Create second cluster
+curl -X POST http://localhost:8080/api/clusters \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "migration-target",
+    "platform": "aws",
+    "version": "4.20.3",
+    "profile": "aws-sno-my-vpc",
+    "region": "us-east-1",
+    "base_domain": "mg.dog8code.com",
+    "owner": "your-name",
+    "team": "platform-team",
+    "cost_center": "733",
+    "ttl_hours": 24,
+    "ssh_public_key": "ssh-ed25519 AAAA... your-key",
+    "pull_secret": "YOUR_PULL_SECRET_JSON",
+    "tags": {
+      "Purpose": "migration-target"
+    }
+  }'
+
+# Wait for second cluster to reach READY status
+watch -n 30 'curl -s http://localhost:8080/api/clusters | jq ".[] | select(.name==\"migration-target\") | {name, status}"'
+```
+
+### Step 5: Verify Clusters in Same VPC
+
+Once both clusters are READY, verify they're in the same VPC:
+
+```bash
+# Get cluster IDs
+SOURCE_ID=$(curl -s http://localhost:8080/api/clusters | jq -r '.[] | select(.name=="migration-source") | .id')
+TARGET_ID=$(curl -s http://localhost:8080/api/clusters | jq -r '.[] | select(.name=="migration-target") | .id')
+
+# Get infraID from metadata.json for each cluster
+SOURCE_INFRA=$(jq -r '.infraID' ~/.ocpctl/clusters/$SOURCE_ID/metadata.json)
+TARGET_INFRA=$(jq -r '.infraID' ~/.ocpctl/clusters/$TARGET_ID/metadata.json)
+
+# Get VPC ID for each cluster
+SOURCE_VPC=$(aws ec2 describe-vpcs \
+  --filters "Name=tag:kubernetes.io/cluster/$SOURCE_INFRA,Values=owned" \
+  --query 'Vpcs[0].VpcId' --output text)
+
+TARGET_VPC=$(aws ec2 describe-vpcs \
+  --filters "Name=tag:kubernetes.io/cluster/$TARGET_INFRA,Values=owned" \
+  --query 'Vpcs[0].VpcId' --output text)
+
+echo "Source cluster VPC: $SOURCE_VPC"
+echo "Target cluster VPC: $TARGET_VPC"
+
+# Should show the same VPC ID for both clusters
+if [ "$SOURCE_VPC" == "$TARGET_VPC" ]; then
+  echo "✅ Both clusters are in the same VPC!"
+else
+  echo "❌ Clusters are in different VPCs - shared storage will not work"
+fi
+```
+
+### Step 6: Configure Shared Storage
+
+Once both clusters are READY and in the same VPC, configure shared storage for migration testing:
+
+```bash
+# Link clusters for shared storage
+curl -X POST "http://localhost:8080/api/clusters/$SOURCE_ID/storage/link" \
+  -H "Content-Type: application/json" \
+  -d "{\"target_cluster_id\": \"$TARGET_ID\"}"
+
+# Monitor shared storage provisioning job
+sudo journalctl -u ocpctl-worker -f | grep -A 10 "PROVISION_SHARED_STORAGE"
+
+# Expected output:
+# Provisioning shared storage between migration-source and migration-target
+# Source VPC: vpc-0299b53877cffb78a
+# Target VPC: vpc-0299b53877cffb78a
+# ✅ Clusters are in the same VPC
+# Creating EFS file system...
+# Creating S3 bucket...
+# Successfully provisioned shared storage
+```
+
+### Step 7: Verify Shared Storage Configuration
+
+Check that both clusters have shared storage configured:
+
+```bash
+# Get storage configuration for both clusters
+curl -s http://localhost:8080/api/clusters/$SOURCE_ID | jq '.storage_config'
+curl -s http://localhost:8080/api/clusters/$TARGET_ID | jq '.storage_config'
+
+# Both should show:
+# {
+#   "shared_efs_id": "fs-xxxxxxxxx",
+#   "shared_s3_bucket": "ocpctl-shared-storage-...",
+#   "storage_group_id": "..."
+# }
+```
+
+### Troubleshooting
+
+**Clusters created in different VPCs:**
+- Verify profile has correct `subnets` field in `platformConfig.aws`
+- Check that profile was reloaded (restart ocpctl-server)
+- Ensure subnets exist and are in the same VPC
+
+**Shared storage provisioning fails:**
+- Verify both clusters are READY status
+- Check clusters are in same region
+- Verify VPC has proper security group rules for EFS
+- Check worker logs: `sudo journalctl -u ocpctl-worker -n 100`
+
+**Profile not available:**
+- Check profile file is in `internal/profile/definitions/`
+- Verify YAML syntax is correct
+- Restart ocpctl-server to reload profiles
+- Check server logs: `sudo journalctl -u ocpctl-server -n 50`
+
+### Cost Considerations
+
+**Shared VPC deployment costs:**
+- **VPC infrastructure:** $0 (existing VPC)
+- **NAT Gateway:** ~$32/month per AZ (if not already present)
+- **Cluster compute:** Same as standard deployment
+- **Shared EFS:** ~$0.30/GB-month for Standard storage
+- **Shared S3:** ~$0.023/GB-month for Standard storage
+
+**Cost savings:**
+- Eliminates duplicate VPC creation (~$32/month per NAT Gateway)
+- Shared storage resources instead of per-cluster storage
+- Ideal for temporary migration testing scenarios

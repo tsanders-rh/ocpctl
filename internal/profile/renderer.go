@@ -50,6 +50,7 @@ type InstallConfigData struct {
 	AWSRootVolumeType string
 	AWSRootVolumeSize int
 	AWSRootVolumeIOPS int
+	AWSSubnets        []string
 
 	// IBM Cloud-specific
 	IBMResourceGroup string
@@ -108,6 +109,7 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 			data.AWSRootVolumeSize = prof.PlatformConfig.AWS.RootVolume.Size
 			data.AWSRootVolumeIOPS = prof.PlatformConfig.AWS.RootVolume.IOPS
 		}
+		data.AWSSubnets = prof.PlatformConfig.AWS.Subnets
 	}
 
 	if prof.Platform == "ibmcloud" && prof.PlatformConfig.IBMCloud != nil {
@@ -164,6 +166,12 @@ metadata:
 platform:
   aws:
     region: {{.Region}}
+{{- if .AWSSubnets}}
+    subnets:
+{{- range .AWSSubnets}}
+      - {{.}}
+{{- end}}
+{{- end}}
 {{- if .UserTags}}
     userTags:
 {{- range $key, $value := .UserTags}}

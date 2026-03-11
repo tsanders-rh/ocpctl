@@ -65,10 +65,13 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
-	// Run openshift-install destroy cluster
-	log.Printf("Running openshift-install destroy cluster for %s", cluster.Name)
+	// Run openshift-install destroy cluster with explicit timeout
+	// Use 45-minute timeout to ensure destroy completes or fails definitively
+	log.Printf("Running openshift-install destroy cluster for %s (timeout: 45m)", cluster.Name)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer destroyCancel()
 
-	output, err := h.installer.DestroyCluster(ctx, workDir)
+	output, err := h.installer.DestroyCluster(destroyCtx, workDir)
 
 	// Stop log streaming after installer completes
 	streamCancel()
@@ -80,11 +83,18 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 	if err != nil {
 		// Logs are already streamed to database
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
-			log.Printf("Destroy failed, logs:\n%s", string(logData))
+			log.Printf("Destroy failed or timed out, logs:\n%s", string(logData))
 		}
 
-		// Don't fail the job if destroy encounters errors - infrastructure might already be gone
-		log.Printf("Warning: openshift-install destroy cluster returned error: %v\nOutput: %s", err, output)
+		// Check if this was a timeout
+		if destroyCtx.Err() == context.DeadlineExceeded {
+			log.Printf("WARNING: openshift-install destroy timed out after 45 minutes for %s", cluster.Name)
+			log.Printf("Marking cluster as destroyed anyway to prevent infinite hanging")
+			log.Printf("Manual cleanup may be required for orphaned AWS resources")
+		} else {
+			// Don't fail the job if destroy encounters errors - infrastructure might already be gone
+			log.Printf("Warning: openshift-install destroy cluster returned error: %v\nOutput: %s", err, output)
+		}
 	} else {
 		log.Printf("Cluster %s destroyed successfully", cluster.Name)
 	}

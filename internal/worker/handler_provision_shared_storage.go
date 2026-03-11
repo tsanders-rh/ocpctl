@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -101,13 +103,26 @@ func (h *ProvisionSharedStorageHandler) Handle(ctx context.Context, job *types.J
 
 	log.Printf("Created storage group: %s", storageGroupID)
 
+	// Get infraID for both clusters from metadata.json
+	sourceInfraID, err := h.getClusterInfraID(sourceCluster.ID)
+	if err != nil {
+		return fmt.Errorf("get source cluster infraID: %w", err)
+	}
+
+	targetInfraID, err := h.getClusterInfraID(targetCluster.ID)
+	if err != nil {
+		return fmt.Errorf("get target cluster infraID: %w", err)
+	}
+
+	log.Printf("Source infraID: %s, Target infraID: %s", sourceInfraID, targetInfraID)
+
 	// Execute configure-shared-migration-storage.sh script
 	scriptPath := "scripts/configure-shared-migration-storage.sh"
 	log.Printf("Executing shared storage script: %s", scriptPath)
 
 	cmd := exec.CommandContext(ctx, "bash", scriptPath,
-		sourceCluster.Name,
-		targetCluster.Name,
+		sourceInfraID,
+		targetInfraID,
 		sourceCluster.Region)
 
 	output, err := cmd.CombinedOutput()
@@ -259,4 +274,28 @@ func (h *ProvisionSharedStorageHandler) updateClusterStorageConfig(
 	}
 
 	return nil
+}
+
+// getClusterInfraID reads the infraID from a cluster's metadata.json file
+func (h *ProvisionSharedStorageHandler) getClusterInfraID(clusterID string) (string, error) {
+	metadataPath := filepath.Join(h.config.WorkDir, clusterID, "metadata.json")
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return "", fmt.Errorf("read metadata.json: %w", err)
+	}
+
+	var metadata struct {
+		InfraID string `json:"infraID"`
+	}
+
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return "", fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	if metadata.InfraID == "" {
+		return "", fmt.Errorf("infraID not found in metadata.json")
+	}
+
+	return metadata.InfraID, nil
 }

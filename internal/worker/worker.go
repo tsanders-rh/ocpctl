@@ -139,6 +139,29 @@ func (w *Worker) processJob(job *types.Job) {
 	// Ensure lock is released
 	defer w.releaseLock(ctx, job.ClusterID, job.ID)
 
+	// Check if cluster still exists and is in a valid state for this job
+	cluster, err := w.store.Clusters.GetByID(ctx, job.ClusterID)
+	if err != nil {
+		log.Printf("Failed to get cluster %s for job %s: %v", job.ClusterID, job.ID, err)
+		// Mark job as failed if cluster doesn't exist
+		errorMsg := fmt.Sprintf("Cluster not found: %v", err)
+		if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_NOT_FOUND", errorMsg); markErr != nil {
+			log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
+		}
+		return
+	}
+
+	// Auto-cancel jobs for DESTROYED clusters (except DESTROY jobs themselves)
+	if cluster.Status == types.ClusterStatusDestroyed && job.JobType != types.JobTypeDestroy {
+		log.Printf("Auto-cancelling job %s (type=%s): cluster %s is already DESTROYED",
+			job.ID, job.JobType, cluster.Name)
+		errorMsg := fmt.Sprintf("Cluster %s was destroyed before job could execute", cluster.Name)
+		if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_DESTROYED", errorMsg); markErr != nil {
+			log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
+		}
+		return
+	}
+
 	// Update job status to RUNNING
 	if err := w.store.Jobs.MarkStarted(ctx, job.ID); err != nil {
 		log.Printf("Failed to mark job %s as started: %v", job.ID, err)

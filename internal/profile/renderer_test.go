@@ -230,4 +230,76 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("includes subnets when specified in profile", func(t *testing.T) {
+		req := &policy.CreateClusterRequest{
+			Name:       "test-shared-vpc",
+			Platform:   "aws",
+			Version:    "4.20.3",
+			Profile:    "aws-sno-shared-vpc",
+			Region:     "us-east-1",
+			BaseDomain: "mg.dog8code.com",
+			Owner:      "test-user",
+			Team:       "platform-team",
+			CostCenter: "engineering",
+			TTLHours:   24,
+		}
+
+		pullSecret := `{"auths":{}}`
+		tags := map[string]string{}
+
+		config, err := renderer.RenderInstallConfig(req, pullSecret, tags)
+		require.NoError(t, err)
+
+		configStr := string(config)
+		// Should contain subnets array
+		assert.Contains(t, configStr, "subnets:")
+		assert.Contains(t, configStr, "subnet-071b5b7ad916b433c")
+		assert.Contains(t, configStr, "subnet-0f522e488c8d000a8")
+
+		// Verify YAML structure
+		var installConfig map[string]interface{}
+		err = yaml.Unmarshal(config, &installConfig)
+		require.NoError(t, err)
+
+		platform := installConfig["platform"].(map[string]interface{})
+		aws := platform["aws"].(map[string]interface{})
+		subnets := aws["subnets"].([]interface{})
+		assert.Len(t, subnets, 5, "should have 5 subnets configured")
+	})
+
+	t.Run("omits subnets when not specified in profile", func(t *testing.T) {
+		req := &policy.CreateClusterRequest{
+			Name:       "test-cluster-01",
+			Platform:   "aws",
+			Version:    "4.20.3",
+			Profile:    "aws-minimal-test",
+			Region:     "us-east-1",
+			BaseDomain: "labs.example.com",
+			Owner:      "test-user",
+			Team:       "platform-team",
+			CostCenter: "engineering",
+			TTLHours:   24,
+		}
+
+		pullSecret := `{"auths":{}}`
+		tags := map[string]string{}
+
+		config, err := renderer.RenderInstallConfig(req, pullSecret, tags)
+		require.NoError(t, err)
+
+		configStr := string(config)
+		// Should NOT contain subnets array
+		assert.NotContains(t, configStr, "subnets:")
+
+		// Verify YAML structure
+		var installConfig map[string]interface{}
+		err = yaml.Unmarshal(config, &installConfig)
+		require.NoError(t, err)
+
+		platform := installConfig["platform"].(map[string]interface{})
+		aws := platform["aws"].(map[string]interface{})
+		_, hasSubnets := aws["subnets"]
+		assert.False(t, hasSubnets, "should not have subnets field")
+	})
 }

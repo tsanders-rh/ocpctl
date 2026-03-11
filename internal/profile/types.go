@@ -119,6 +119,7 @@ type PlatformConfig struct {
 type AWSConfig struct {
 	InstanceMetadataService string          `yaml:"instanceMetadataService"`
 	RootVolume              *AWSRootVolume  `yaml:"rootVolume"`
+	Subnets                 []string        `yaml:"subnets,omitempty"`
 }
 
 // AWSRootVolume defines root volume configuration
