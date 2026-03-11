@@ -74,6 +74,8 @@ fi
 
 # Get private subnets using infrastructure name (one per AZ)
 echo "→ Detecting private subnets (one per AZ)..."
+
+# Try tag-based detection first (for standard IPI deployments)
 SUBNET_IDS=$(aws ec2 describe-subnets \
     --region $REGION \
     --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
@@ -81,15 +83,43 @@ SUBNET_IDS=$(aws ec2 describe-subnets \
     --query 'Subnets | sort_by(@, &AvailabilityZone)[].{id:SubnetId, az:AvailabilityZone}' \
     --output json | jq -r 'unique_by(.az) | .[].id')
 
+# If tag-based detection fails (BYOVPC), get subnets from VPC private subnets
 if [ -z "$SUBNET_IDS" ]; then
-    echo "ERROR: Could not find private subnets for infrastructure $INFRA_NAME"
-    exit 1
+    echo "  Standard subnet tags not found, detecting BYOVPC deployment..."
+
+    # Get VPC ID from cluster instances
+    VPC_ID=$(aws ec2 describe-instances \
+        --region $REGION \
+        --filters "Name=tag:Name,Values=${INFRA_NAME}*" "Name=instance-state-name,Values=running,stopped" \
+        --query 'Reservations[0].Instances[0].VpcId' \
+        --output text 2>/dev/null)
+
+    if [ -z "$VPC_ID" ] || [ "$VPC_ID" == "None" ]; then
+        echo "ERROR: Could not find VPC for infrastructure $INFRA_NAME"
+        exit 1
+    fi
+
+    echo "  Using BYOVPC mode, VPC: $VPC_ID"
+
+    # Get all private subnets from the VPC (one per AZ)
+    SUBNET_IDS=$(aws ec2 describe-subnets \
+        --region $REGION \
+        --filters "Name=vpc-id,Values=$VPC_ID" \
+        --query 'Subnets[?MapPublicIpOnLaunch==`false`] | sort_by(@, &AvailabilityZone)[].{id:SubnetId, az:AvailabilityZone}' \
+        --output json | jq -r 'unique_by(.az) | .[].id')
+
+    if [ -z "$SUBNET_IDS" ]; then
+        echo "ERROR: Could not find private subnets in VPC $VPC_ID"
+        exit 1
+    fi
 fi
 
 echo "  Subnets: $SUBNET_IDS"
 
 # Get cluster worker node security group
 echo "→ Getting cluster worker node security group..."
+
+# Try tag-based detection first (for standard IPI deployments)
 CLUSTER_SG=$(aws ec2 describe-security-groups \
     --region $REGION \
     --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
@@ -99,12 +129,27 @@ CLUSTER_SG=$(aws ec2 describe-security-groups \
 
 # Fallback to any cluster-owned SG if worker-node SG not found
 if [ -z "$CLUSTER_SG" ] || [ "$CLUSTER_SG" = "None" ]; then
-    echo "  Worker node SG not found, using first cluster-owned SG"
+    echo "  Worker node SG not found, trying any cluster-owned SG..."
     CLUSTER_SG=$(aws ec2 describe-security-groups \
         --region $REGION \
         --filters "Name=tag:kubernetes.io/cluster/$INFRA_NAME,Values=owned" \
         --query 'SecurityGroups[0].GroupId' \
         --output text)
+fi
+
+# If still not found (BYOVPC), get security group from cluster instances
+if [ -z "$CLUSTER_SG" ] || [ "$CLUSTER_SG" = "None" ]; then
+    echo "  Cluster tags not found, getting security group from instances (BYOVPC)..."
+    CLUSTER_SG=$(aws ec2 describe-instances \
+        --region $REGION \
+        --filters "Name=tag:Name,Values=${INFRA_NAME}*" "Name=instance-state-name,Values=running,stopped" \
+        --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
+        --output text 2>/dev/null)
+
+    if [ -z "$CLUSTER_SG" ] || [ "$CLUSTER_SG" = "None" ]; then
+        echo "ERROR: Could not find security group for infrastructure $INFRA_NAME"
+        exit 1
+    fi
 fi
 
 echo "  Security Group: $CLUSTER_SG"
