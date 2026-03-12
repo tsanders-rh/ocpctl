@@ -332,6 +332,7 @@ export default function NewClusterPage() {
                       <SelectItem value="Application Inventory Management">Application Inventory Management</SelectItem>
                       <SelectItem value="Insights Discovery">Insights Discovery</SelectItem>
                       <SelectItem value="Application Modification">Application Modification</SelectItem>
+                      <SelectItem value="OADP Team">OADP Team</SelectItem>
                       <SelectItem value="Staff">Staff</SelectItem>
                     </SelectContent>
                   </Select>
