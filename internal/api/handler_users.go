@@ -118,6 +118,7 @@ func (h *UserHandler) Create(c echo.Context) error {
 		Username:     req.Username,
 		PasswordHash: passwordHash,
 		Role:         req.Role,
+		Timezone:     "UTC", // Default timezone
 		Active:       true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),

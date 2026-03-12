@@ -28,6 +28,7 @@ type User struct {
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"` // Never expose in JSON
 	Role         UserRole  `json:"role"`
+	Timezone     string    `json:"timezone"`
 	Active       bool      `json:"active"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -39,6 +40,7 @@ type UserResponse struct {
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
 	Role      UserRole  `json:"role"`
+	Timezone  string    `json:"timezone"`
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -51,6 +53,7 @@ func (u *User) ToResponse() *UserResponse {
 		Email:     u.Email,
 		Username:  u.Username,
 		Role:      u.Role,
+		Timezone:  u.Timezone,
 		Active:    u.Active,
 		CreatedAt: u.CreatedAt,
 		UpdatedAt: u.UpdatedAt,
@@ -76,6 +79,7 @@ type UpdateUserRequest struct {
 // UpdateMeRequest represents a request for a user to update their own profile
 type UpdateMeRequest struct {
 	Username *string `json:"username,omitempty" validate:"omitempty,min=2,max=100"`
+	Timezone *string `json:"timezone,omitempty"`
 }
 
 // ChangePasswordRequest represents a password change request

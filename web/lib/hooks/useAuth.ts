@@ -30,9 +30,24 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: (data: LoginRequest) => authApi.login(data),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       setUser(response.user);
       setAccessToken(response.access_token);
+
+      // Auto-update timezone if still using default UTC
+      if (response.user.timezone === "UTC") {
+        const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTimezone && browserTimezone !== "UTC") {
+          try {
+            const updatedUser = await authApi.updateMe({ timezone: browserTimezone });
+            setUser(updatedUser);
+          } catch (error) {
+            // Silent fail - user can update manually in profile if needed
+            console.warn("Failed to auto-update timezone:", error);
+          }
+        }
+      }
+
       router.push("/clusters");
     },
   });

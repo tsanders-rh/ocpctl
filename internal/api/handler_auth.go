@@ -233,6 +233,9 @@ func (h *AuthHandler) UpdateMe(c echo.Context) error {
 	if req.Username != nil {
 		updates["username"] = *req.Username
 	}
+	if req.Timezone != nil {
+		updates["timezone"] = *req.Timezone
+	}
 
 	if len(updates) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")

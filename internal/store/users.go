@@ -18,8 +18,8 @@ type UserStore struct {
 // Create creates a new user
 func (s *UserStore) Create(ctx context.Context, user *types.User) error {
 	query := `
-		INSERT INTO users (id, email, username, password_hash, role, active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users (id, email, username, password_hash, role, timezone, active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	_, err := s.pool.Exec(ctx, query,
@@ -28,6 +28,7 @@ func (s *UserStore) Create(ctx context.Context, user *types.User) error {
 		user.Username,
 		user.PasswordHash,
 		user.Role,
+		user.Timezone,
 		user.Active,
 		user.CreatedAt,
 		user.UpdatedAt,
@@ -43,7 +44,7 @@ func (s *UserStore) Create(ctx context.Context, user *types.User) error {
 // GetByID retrieves a user by ID
 func (s *UserStore) GetByID(ctx context.Context, id string) (*types.User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, active, created_at, updated_at
+		SELECT id, email, username, password_hash, role, timezone, active, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -55,6 +56,7 @@ func (s *UserStore) GetByID(ctx context.Context, id string) (*types.User, error)
 		&user.Username,
 		&user.PasswordHash,
 		&user.Role,
+		&user.Timezone,
 		&user.Active,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -73,7 +75,7 @@ func (s *UserStore) GetByID(ctx context.Context, id string) (*types.User, error)
 // GetByEmail retrieves a user by email
 func (s *UserStore) GetByEmail(ctx context.Context, email string) (*types.User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, active, created_at, updated_at
+		SELECT id, email, username, password_hash, role, timezone, active, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -85,6 +87,7 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*types.User, 
 		&user.Username,
 		&user.PasswordHash,
 		&user.Role,
+		&user.Timezone,
 		&user.Active,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -106,7 +109,7 @@ func (s *UserStore) Update(ctx context.Context, user *types.User) error {
 
 	query := `
 		UPDATE users
-		SET email = $2, username = $3, password_hash = $4, role = $5, active = $6, updated_at = $7
+		SET email = $2, username = $3, password_hash = $4, role = $5, timezone = $6, active = $7, updated_at = $8
 		WHERE id = $1
 	`
 
@@ -116,6 +119,7 @@ func (s *UserStore) Update(ctx context.Context, user *types.User) error {
 		user.Username,
 		user.PasswordHash,
 		user.Role,
+		user.Timezone,
 		user.Active,
 		user.UpdatedAt,
 	)
@@ -188,7 +192,7 @@ func (s *UserStore) Delete(ctx context.Context, id string) error {
 // List retrieves all users
 func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, active, created_at, updated_at
+		SELECT id, email, username, password_hash, role, timezone, active, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -208,6 +212,7 @@ func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 			&user.Username,
 			&user.PasswordHash,
 			&user.Role,
+			&user.Timezone,
 			&user.Active,
 			&user.CreatedAt,
 			&user.UpdatedAt,

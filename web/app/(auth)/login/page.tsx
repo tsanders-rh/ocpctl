@@ -52,12 +52,16 @@ export default function LoginPage() {
       // Verify credentials via backend
       const identity = await iamAuthProvider.verifyCredentials();
 
+      // Detect browser timezone
+      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
       // Set user in store (backend will auto-provision on first API call)
       setUser({
         id: identity.userId,
         email: `${identity.arn}`,
         username: identity.arn.split("/").pop() || identity.userId,
         role: "USER" as any,
+        timezone: browserTimezone,
         active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

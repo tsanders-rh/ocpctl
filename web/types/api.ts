@@ -42,6 +42,7 @@ export interface User {
   email: string;
   username: string;
   role: UserRole;
+  timezone: string;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -65,6 +66,7 @@ export interface ChangePasswordRequest {
 
 export interface UpdateMeRequest {
   username?: string;
+  timezone?: string;
 }
 
 export interface CreateUserRequest {
