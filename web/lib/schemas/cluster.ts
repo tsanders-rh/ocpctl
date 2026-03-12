@@ -22,6 +22,11 @@ export const createClusterSchema = z.object({
   extra_tags: z.record(z.string()).optional(),
   offhours_opt_in: z.boolean().default(false),
   enable_efs_storage: z.boolean().default(false),
+  override_work_hours: z.boolean().default(false),
+  work_hours_enabled: z.boolean().optional(),
+  work_hours_start: z.string().optional(),
+  work_hours_end: z.string().optional(),
+  work_days: z.array(z.string()).optional(),
 });
 
 export type CreateClusterFormData = z.infer<typeof createClusterSchema>;

@@ -11,14 +11,16 @@ import (
 type JobType string
 
 const (
-	JobTypeCreate                  JobType = "CREATE"
-	JobTypeDestroy                 JobType = "DESTROY"
-	JobTypeScaleWorkers            JobType = "SCALE_WORKERS"
-	JobTypeJanitorDestroy          JobType = "JANITOR_DESTROY"
-	JobTypeOrphanSweep             JobType = "ORPHAN_SWEEP"
-	JobTypeConfigureEFS            JobType = "CONFIGURE_EFS"
-	JobTypeProvisionSharedStorage  JobType = "PROVISION_SHARED_STORAGE"
-	JobTypeUnlinkSharedStorage     JobType = "UNLINK_SHARED_STORAGE"
+	JobTypeCreate                 JobType = "CREATE"
+	JobTypeDestroy                JobType = "DESTROY"
+	JobTypeScaleWorkers           JobType = "SCALE_WORKERS"
+	JobTypeJanitorDestroy         JobType = "JANITOR_DESTROY"
+	JobTypeOrphanSweep            JobType = "ORPHAN_SWEEP"
+	JobTypeConfigureEFS           JobType = "CONFIGURE_EFS"
+	JobTypeProvisionSharedStorage JobType = "PROVISION_SHARED_STORAGE"
+	JobTypeUnlinkSharedStorage    JobType = "UNLINK_SHARED_STORAGE"
+	JobTypeHibernate              JobType = "HIBERNATE"
+	JobTypeResume                 JobType = "RESUME"
 )
 
 // JobStatus represents the current state of a job

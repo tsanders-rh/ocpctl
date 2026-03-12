@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useCreateUser } from "@/lib/hooks/useUsers";
@@ -34,12 +35,20 @@ export default function NewUserPage() {
 
   const watchedRole = watch("role");
 
+  const [errorMessage, setErrorMessage] = useState<string>("");
+
   const onSubmit = async (data: CreateUserRequest) => {
     try {
+      setErrorMessage(""); // Clear previous errors
       await createUser.mutateAsync(data);
       router.push("/admin/users");
     } catch (error) {
       console.error("Failed to create user:", error);
+      if (error instanceof Error) {
+        setErrorMessage(error.message);
+      } else {
+        setErrorMessage("Failed to create user. Please check all fields and try again.");
+      }
     }
   };
 
@@ -163,9 +172,9 @@ export default function NewUserPage() {
           </Button>
         </div>
 
-        {createUser.isError && (
+        {errorMessage && (
           <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md">
-            Failed to create user. Please check all fields and try again.
+            {errorMessage}
           </div>
         )}
       </form>

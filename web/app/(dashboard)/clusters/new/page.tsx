@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { TagsInput } from "@/components/ui/tags-input";
 import {
   Select,
@@ -24,7 +25,17 @@ import {
 import { ExecutionPanel } from "@/components/clusters/ClusterForm/ExecutionPanel";
 import { Platform, type ValidationError } from "@/types/api";
 import { ApiError } from "@/lib/api/client";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Clock } from "lucide-react";
+
+const DAYS_OF_WEEK = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 export default function NewClusterPage() {
   const router = useRouter();
@@ -50,6 +61,11 @@ export default function NewClusterPage() {
       cost_center: "733",
       offhours_opt_in: false,
       enable_efs_storage: false,
+      override_work_hours: false,
+      work_hours_enabled: user?.work_hours_enabled || false,
+      work_hours_start: user?.work_hours?.start_time || "09:00",
+      work_hours_end: user?.work_hours?.end_time || "17:00",
+      work_days: user?.work_hours?.work_days || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     },
   });
 
@@ -78,7 +94,36 @@ export default function NewClusterPage() {
     setGeneralError("");
 
     try {
-      const result = await createCluster.mutateAsync(data);
+      // Prepare the payload
+      const payload: any = { ...data };
+
+      // Remove override_work_hours from payload (it's only for UI)
+      delete payload.override_work_hours;
+
+      // Only include work hours if override is enabled
+      if (!data.override_work_hours) {
+        delete payload.work_hours_enabled;
+        delete payload.work_hours_start;
+        delete payload.work_hours_end;
+        delete payload.work_days;
+      } else if (data.work_hours_enabled) {
+        // Convert work hours to API format
+        payload.work_hours = {
+          start_time: data.work_hours_start,
+          end_time: data.work_hours_end,
+          work_days: data.work_days,
+        };
+        delete payload.work_hours_start;
+        delete payload.work_hours_end;
+        delete payload.work_days;
+      } else {
+        // User enabled override but disabled work hours
+        delete payload.work_hours_start;
+        delete payload.work_hours_end;
+        delete payload.work_days;
+      }
+
+      const result = await createCluster.mutateAsync(payload);
       router.push(`/clusters/${result.id}`);
     } catch (error) {
       console.error("Failed to create cluster:", error);
@@ -411,6 +456,125 @@ export default function NewClusterPage() {
                           <p className="text-sm text-red-600 mt-1">
                             {getFieldError("enable_efs_storage")}
                           </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="override_work_hours"
+                        checked={watchedValues.override_work_hours}
+                        onCheckedChange={(checked) =>
+                          setValue("override_work_hours", checked as boolean)
+                        }
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="override_work_hours" className="cursor-pointer">
+                          Override my default work hours
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Configure custom work hours for automatic hibernation of this cluster
+                        </p>
+
+                        {watchedValues.override_work_hours && (
+                          <div className="mt-4 space-y-4 pl-4 border-l-2 border-muted">
+                            {/* Work Hours Toggle */}
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <Label htmlFor="work_hours_enabled" className="flex items-center gap-2">
+                                  <Clock className="h-4 w-4" />
+                                  Enable Automatic Hibernation
+                                </Label>
+                                <p className="text-sm text-muted-foreground">
+                                  Hibernate cluster outside of work hours
+                                </p>
+                              </div>
+                              <Switch
+                                id="work_hours_enabled"
+                                checked={watchedValues.work_hours_enabled}
+                                onCheckedChange={(checked) => setValue("work_hours_enabled", checked)}
+                              />
+                            </div>
+
+                            {watchedValues.work_hours_enabled && (
+                              <div className="space-y-4">
+                                {/* Time Range */}
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="work_hours_start">Start Time</Label>
+                                    <Input
+                                      id="work_hours_start"
+                                      type="time"
+                                      value={watchedValues.work_hours_start}
+                                      onChange={(e) => setValue("work_hours_start", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="work_hours_end">End Time</Label>
+                                    <Input
+                                      id="work_hours_end"
+                                      type="time"
+                                      value={watchedValues.work_hours_end}
+                                      onChange={(e) => setValue("work_hours_end", e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Days Selector */}
+                                <div className="space-y-2">
+                                  <Label>Work Days</Label>
+                                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                                    {DAYS_OF_WEEK.map((day) => (
+                                      <div key={day} className="flex items-center space-x-2">
+                                        <Checkbox
+                                          id={`day-${day}`}
+                                          checked={watchedValues.work_days?.includes(day)}
+                                          onCheckedChange={(checked) => {
+                                            const currentDays = watchedValues.work_days || [];
+                                            const newDays = checked
+                                              ? [...currentDays, day]
+                                              : currentDays.filter((d) => d !== day);
+                                            setValue("work_days", newDays);
+                                          }}
+                                        />
+                                        <Label
+                                          htmlFor={`day-${day}`}
+                                          className="text-sm font-normal cursor-pointer"
+                                        >
+                                          {day.substring(0, 3)}
+                                        </Label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Cluster will be active during these hours and days
+                                  </p>
+                                </div>
+
+                                {/* Schedule Preview */}
+                                <div className="bg-muted/50 rounded-md p-3 text-sm">
+                                  <p className="font-medium mb-1">Schedule:</p>
+                                  <p className="text-muted-foreground">
+                                    Active from{" "}
+                                    <span className="font-medium text-foreground">
+                                      {watchedValues.work_hours_start}
+                                    </span>{" "}
+                                    to{" "}
+                                    <span className="font-medium text-foreground">
+                                      {watchedValues.work_hours_end}
+                                    </span>{" "}
+                                    on{" "}
+                                    <span className="font-medium text-foreground">
+                                      {watchedValues.work_days?.length === 7
+                                        ? "all days"
+                                        : watchedValues.work_days?.join(", ")}
+                                    </span>
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

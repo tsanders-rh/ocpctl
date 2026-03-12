@@ -53,21 +53,23 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
-	Name             string            `json:"name" validate:"required,min=3,max=63"`
-	Platform         string            `json:"platform" validate:"required,oneof=aws ibmcloud"`
-	Version          string            `json:"version" validate:"required"`
-	Profile          string            `json:"profile" validate:"required"`
-	Region           string            `json:"region" validate:"required"`
-	BaseDomain       string            `json:"base_domain" validate:"required"`
-	Owner            string            `json:"owner" validate:"required,email"`
-	Team             string            `json:"team" validate:"required"`
-	CostCenter       string            `json:"cost_center" validate:"required"`
-	TTLHours         *int              `json:"ttl_hours,omitempty"`
-	SSHPublicKey     *string           `json:"ssh_public_key,omitempty"`
-	ExtraTags        map[string]string `json:"extra_tags,omitempty"`
-	OffhoursOptIn    bool              `json:"offhours_opt_in,omitempty"`
-	EnableEFSStorage bool              `json:"enable_efs_storage,omitempty"`
-	IdempotencyKey   string            `json:"idempotency_key,omitempty"`
+	Name             string                    `json:"name" validate:"required,min=3,max=63"`
+	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud"`
+	Version          string                    `json:"version" validate:"required"`
+	Profile          string                    `json:"profile" validate:"required"`
+	Region           string                    `json:"region" validate:"required"`
+	BaseDomain       string                    `json:"base_domain" validate:"required"`
+	Owner            string                    `json:"owner" validate:"required,email"`
+	Team             string                    `json:"team" validate:"required"`
+	CostCenter       string                    `json:"cost_center" validate:"required"`
+	TTLHours         *int                      `json:"ttl_hours,omitempty"`
+	SSHPublicKey     *string                   `json:"ssh_public_key,omitempty"`
+	ExtraTags        map[string]string         `json:"extra_tags,omitempty"`
+	OffhoursOptIn    bool                      `json:"offhours_opt_in,omitempty"`
+	WorkHoursEnabled *bool                     `json:"work_hours_enabled,omitempty"`
+	WorkHours        *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
+	EnableEFSStorage bool                      `json:"enable_efs_storage,omitempty"`
+	IdempotencyKey   string                    `json:"idempotency_key,omitempty"`
 }
 
 // ExtendClusterRequest represents the API request to extend cluster TTL
@@ -171,6 +173,34 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		OffhoursOptIn: req.OffhoursOptIn,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
+	}
+
+	// Handle work hours override if provided
+	if req.WorkHoursEnabled != nil {
+		cluster.WorkHoursEnabled = req.WorkHoursEnabled
+
+		// If work hours are provided, parse and store them
+		if req.WorkHours != nil {
+			// Parse "09:00" format to time.Time
+			startTime, err := time.Parse("15:04", req.WorkHours.StartTime)
+			if err != nil {
+				return ErrorBadRequest(c, "invalid work hours start time format, use HH:MM")
+			}
+			endTime, err := time.Parse("15:04", req.WorkHours.EndTime)
+			if err != nil {
+				return ErrorBadRequest(c, "invalid work hours end time format, use HH:MM")
+			}
+
+			// Convert day names to bitmask
+			workDaysMask := types.WorkDaysFromStrings(req.WorkHours.WorkDays)
+			if workDaysMask == 0 {
+				return ErrorBadRequest(c, "at least one work day must be selected")
+			}
+
+			cluster.WorkHoursStart = &startTime
+			cluster.WorkHoursEnd = &endTime
+			cluster.WorkDays = &workDaysMask
+		}
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
@@ -547,4 +577,166 @@ func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.C
 	outputs.KubeadminSecretRef = &kubeadminRef
 
 	return outputs, nil
+}
+
+// Hibernate handles POST /api/v1/clusters/:id/hibernate
+// Hibernates a cluster by stopping its instances (platform-dependent)
+func (h *ClusterHandler) Hibernate(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Can only hibernate READY clusters
+	if cluster.Status != types.ClusterStatusReady {
+		return ErrorBadRequest(c, "Can only hibernate clusters in READY status")
+	}
+
+	// Check for existing HIBERNATE job
+	existingJobs, err := h.store.Jobs.GetByClusterIDAndType(ctx, id, types.JobTypeHibernate)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to check for existing hibernate jobs: %w", err))
+	}
+
+	// Check if there's already a pending or running hibernate job
+	for _, job := range existingJobs {
+		if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning {
+			return ErrorBadRequest(c, "A hibernate job is already in progress for this cluster")
+		}
+	}
+
+	// Get user ID for logging
+	userID, _ := auth.GetUserID(c)
+
+	// Update cluster status to HIBERNATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, id, types.ClusterStatusHibernating); err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
+	}
+
+	// Create HIBERNATE job
+	job := &types.Job{
+		ID:          uuid.New().String(),
+		ClusterID:   cluster.ID,
+		JobType:     types.JobTypeHibernate,
+		Status:      types.JobStatusPending,
+		Attempt:     0,
+		MaxAttempts: 3,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Metadata:    make(types.JobMetadata),
+	}
+
+	if err := h.store.Jobs.Create(ctx, job); err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create hibernate job: %w", err))
+	}
+
+	// Log successful hibernation initiation
+	LogInfo(c, "cluster hibernation initiated",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"job_id", job.ID,
+		"user_id", userID)
+
+	// Refresh cluster data
+	cluster, err = h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve updated cluster: %w", err))
+	}
+
+	return SuccessOK(c, cluster)
+}
+
+// Resume handles POST /api/v1/clusters/:id/resume
+// Resumes a hibernated cluster by starting its instances (platform-dependent)
+func (h *ClusterHandler) Resume(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Can only resume HIBERNATED clusters
+	if cluster.Status != types.ClusterStatusHibernated {
+		return ErrorBadRequest(c, "Can only resume clusters in HIBERNATED status")
+	}
+
+	// Check for existing RESUME job
+	existingJobs, err := h.store.Jobs.GetByClusterIDAndType(ctx, id, types.JobTypeResume)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to check for existing resume jobs: %w", err))
+	}
+
+	// Check if there's already a pending or running resume job
+	for _, job := range existingJobs {
+		if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning {
+			return ErrorBadRequest(c, "A resume job is already in progress for this cluster")
+		}
+	}
+
+	// Get user ID for logging
+	userID, _ := auth.GetUserID(c)
+
+	// Update cluster status to RESUMING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, id, types.ClusterStatusResuming); err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
+	}
+
+	// Create RESUME job
+	job := &types.Job{
+		ID:          uuid.New().String(),
+		ClusterID:   cluster.ID,
+		JobType:     types.JobTypeResume,
+		Status:      types.JobStatusPending,
+		Attempt:     0,
+		MaxAttempts: 3,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Metadata:    make(types.JobMetadata),
+	}
+
+	if err := h.store.Jobs.Create(ctx, job); err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to create resume job: %w", err))
+	}
+
+	// Log successful resume initiation
+	LogInfo(c, "cluster resume initiated",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"job_id", job.ID,
+		"user_id", userID)
+
+	// Refresh cluster data
+	cluster, err = h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve updated cluster: %w", err))
+	}
+
+	return SuccessOK(c, cluster)
 }

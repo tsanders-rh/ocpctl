@@ -17,7 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { User, Save, AlertCircle, CheckCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { User, Save, AlertCircle, CheckCircle, Clock } from "lucide-react";
 import type { UpdateMeRequest } from "@/types/api";
 
 // Common timezones list
@@ -42,6 +44,16 @@ const TIMEZONES = [
   { value: "Pacific/Auckland", label: "Auckland (NZDT/NZST)" },
 ];
 
+const DAYS_OF_WEEK = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 export default function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useAuthStore();
@@ -59,6 +71,10 @@ export default function ProfilePage() {
     defaultValues: {
       username: user?.username || "",
       timezone: user?.timezone || "UTC",
+      work_hours_enabled: user?.work_hours_enabled || false,
+      work_hours_start: user?.work_hours?.start_time || "09:00",
+      work_hours_end: user?.work_hours?.end_time || "17:00",
+      work_days: user?.work_hours?.work_days || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     },
   });
 
@@ -89,6 +105,26 @@ export default function ProfilePage() {
     }
     if (data.timezone !== user?.timezone) {
       updates.timezone = data.timezone;
+    }
+    if (data.work_hours_enabled !== user?.work_hours_enabled) {
+      updates.work_hours_enabled = data.work_hours_enabled;
+    }
+
+    // Include work hours if enabled and changed
+    if (data.work_hours_enabled) {
+      const currentWorkHours = user?.work_hours;
+      const hasWorkHoursChanged =
+        data.work_hours_start !== currentWorkHours?.start_time ||
+        data.work_hours_end !== currentWorkHours?.end_time ||
+        JSON.stringify(data.work_days.sort()) !== JSON.stringify(currentWorkHours?.work_days?.sort() || []);
+
+      if (hasWorkHoursChanged || data.work_hours_enabled !== user?.work_hours_enabled) {
+        updates.work_hours = {
+          start_time: data.work_hours_start,
+          end_time: data.work_hours_end,
+          work_days: data.work_days,
+        };
+      }
     }
 
     if (Object.keys(updates).length === 0) {
@@ -182,8 +218,106 @@ export default function ProfilePage() {
                     </SelectContent>
                   </Select>
                   <p className="text-sm text-muted-foreground">
-                    Used for displaying times throughout the application
+                    Used for displaying times and work hours enforcement
                   </p>
+                </div>
+
+                {/* Work Hours */}
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="work_hours_enabled" className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Automatic Cluster Hibernation
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically hibernate clusters outside of work hours to save costs
+                      </p>
+                    </div>
+                    <Switch
+                      id="work_hours_enabled"
+                      checked={watchedValues.work_hours_enabled}
+                      onCheckedChange={(checked) => setValue("work_hours_enabled", checked, { shouldDirty: true })}
+                    />
+                  </div>
+
+                  {watchedValues.work_hours_enabled && (
+                    <div className="space-y-4 pl-6 border-l-2 border-muted">
+                      {/* Time Range */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="work_hours_start">Start Time</Label>
+                          <Input
+                            id="work_hours_start"
+                            type="time"
+                            {...register("work_hours_start")}
+                            onChange={(e) => setValue("work_hours_start", e.target.value, { shouldDirty: true })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="work_hours_end">End Time</Label>
+                          <Input
+                            id="work_hours_end"
+                            type="time"
+                            {...register("work_hours_end")}
+                            onChange={(e) => setValue("work_hours_end", e.target.value, { shouldDirty: true })}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Days Selector */}
+                      <div className="space-y-2">
+                        <Label>Work Days</Label>
+                        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                          {DAYS_OF_WEEK.map((day) => (
+                            <div key={day} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`day-${day}`}
+                                checked={watchedValues.work_days?.includes(day)}
+                                onCheckedChange={(checked) => {
+                                  const currentDays = watchedValues.work_days || [];
+                                  const newDays = checked
+                                    ? [...currentDays, day]
+                                    : currentDays.filter((d) => d !== day);
+                                  setValue("work_days", newDays, { shouldDirty: true });
+                                }}
+                              />
+                              <Label
+                                htmlFor={`day-${day}`}
+                                className="text-sm font-normal cursor-pointer"
+                              >
+                                {day.substring(0, 3)}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Clusters will be hibernated outside these hours and days
+                        </p>
+                      </div>
+
+                      {/* Schedule Preview */}
+                      <div className="bg-muted/50 rounded-md p-3 text-sm">
+                        <p className="font-medium mb-1">Schedule Preview:</p>
+                        <p className="text-muted-foreground">
+                          Clusters will be active from{" "}
+                          <span className="font-medium text-foreground">
+                            {watchedValues.work_hours_start}
+                          </span>{" "}
+                          to{" "}
+                          <span className="font-medium text-foreground">
+                            {watchedValues.work_hours_end}
+                          </span>{" "}
+                          on{" "}
+                          <span className="font-medium text-foreground">
+                            {watchedValues.work_days?.length === 7
+                              ? "all days"
+                              : watchedValues.work_days?.join(", ")}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Role (read-only) */}

@@ -17,6 +17,8 @@ type JobProcessor struct {
 	configureEFSHandler             *ConfigureEFSHandler
 	provisionSharedStorageHandler   *ProvisionSharedStorageHandler
 	unlinkSharedStorageHandler      *UnlinkSharedStorageHandler
+	hibernateHandler                *HibernateHandler
+	resumeHandler                   *ResumeHandler
 }
 
 // NewJobProcessor creates a new job processor
@@ -29,6 +31,8 @@ func NewJobProcessor(config *Config, st *store.Store) *JobProcessor {
 		configureEFSHandler:           NewConfigureEFSHandler(config, st),
 		provisionSharedStorageHandler: NewProvisionSharedStorageHandler(config, st),
 		unlinkSharedStorageHandler:    NewUnlinkSharedStorageHandler(config, st),
+		hibernateHandler:              NewHibernateHandler(config, st),
+		resumeHandler:                 NewResumeHandler(config, st),
 	}
 }
 
@@ -58,6 +62,12 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 
 	case types.JobTypeUnlinkSharedStorage:
 		return p.unlinkSharedStorageHandler.Handle(ctx, job)
+
+	case types.JobTypeHibernate:
+		return p.hibernateHandler.Handle(ctx, job)
+
+	case types.JobTypeResume:
+		return p.resumeHandler.Handle(ctx, job)
 
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)

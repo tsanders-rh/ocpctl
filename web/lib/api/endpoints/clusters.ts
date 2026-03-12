@@ -84,4 +84,12 @@ export const clustersApi = {
       `/clusters/${id}/logs${query ? `?${query}` : ""}`
     );
   },
+
+  hibernate: async (id: string): Promise<{ message: string; job_id: string }> => {
+    return apiClient.post<{ message: string; job_id: string }>(`/clusters/${id}/hibernate`, {});
+  },
+
+  resume: async (id: string): Promise<{ message: string; job_id: string }> => {
+    return apiClient.post<{ message: string; job_id: string }>(`/clusters/${id}/resume`, {});
+  },
 };

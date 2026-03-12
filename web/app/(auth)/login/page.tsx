@@ -62,6 +62,7 @@ export default function LoginPage() {
         username: identity.arn.split("/").pop() || identity.userId,
         role: "USER" as any,
         timezone: browserTimezone,
+        work_hours_enabled: false,
         active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

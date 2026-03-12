@@ -236,6 +236,30 @@ func (h *AuthHandler) UpdateMe(c echo.Context) error {
 	if req.Timezone != nil {
 		updates["timezone"] = *req.Timezone
 	}
+	if req.WorkHoursEnabled != nil {
+		updates["work_hours_enabled"] = *req.WorkHoursEnabled
+	}
+	if req.WorkHours != nil {
+		// Parse "09:00" format to time.Time
+		startTime, err := time.Parse("15:04", req.WorkHours.StartTime)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid start time format, use HH:MM")
+		}
+		endTime, err := time.Parse("15:04", req.WorkHours.EndTime)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid end time format, use HH:MM")
+		}
+
+		// Convert day names to bitmask
+		workDaysMask := types.WorkDaysFromStrings(req.WorkHours.WorkDays)
+		if workDaysMask == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "at least one work day must be selected")
+		}
+
+		updates["work_hours_start"] = startTime
+		updates["work_hours_end"] = endTime
+		updates["work_days"] = workDaysMask
+	}
 
 	if len(updates) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")

@@ -127,6 +127,54 @@ func (s *JobStore) ListByClusterID(ctx context.Context, clusterID string) ([]*ty
 	return jobs, nil
 }
 
+// GetByClusterIDAndType retrieves all jobs for a cluster with a specific job type
+func (s *JobStore) GetByClusterIDAndType(ctx context.Context, clusterID string, jobType types.JobType) ([]*types.Job, error) {
+	query := `
+		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
+			error_code, error_message, started_at, ended_at,
+			created_at, updated_at, metadata
+		FROM jobs
+		WHERE cluster_id = $1 AND job_type = $2
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query, clusterID, jobType)
+	if err != nil {
+		return nil, fmt.Errorf("query jobs by cluster and type: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := []*types.Job{}
+	for rows.Next() {
+		var job types.Job
+		err := rows.Scan(
+			&job.ID,
+			&job.ClusterID,
+			&job.JobType,
+			&job.Status,
+			&job.Attempt,
+			&job.MaxAttempts,
+			&job.ErrorCode,
+			&job.ErrorMessage,
+			&job.StartedAt,
+			&job.EndedAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+			&job.Metadata,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan job: %w", err)
+		}
+		jobs = append(jobs, &job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate jobs: %w", err)
+	}
+
+	return jobs, nil
+}
+
 // List retrieves jobs with pagination and returns total count
 func (s *JobStore) List(ctx context.Context, offset, limit int) ([]*types.Job, int, error) {
 	// Get total count

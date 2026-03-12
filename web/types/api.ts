@@ -9,6 +9,9 @@ export enum ClusterStatus {
   PENDING = "PENDING",
   CREATING = "CREATING",
   READY = "READY",
+  HIBERNATING = "HIBERNATING",
+  HIBERNATED = "HIBERNATED",
+  RESUMING = "RESUMING",
   DESTROYING = "DESTROYING",
   DESTROYED = "DESTROYED",
   FAILED = "FAILED",
@@ -26,6 +29,11 @@ export enum JobType {
   SCALE_WORKERS = "SCALE_WORKERS",
   JANITOR_DESTROY = "JANITOR_DESTROY",
   ORPHAN_SWEEP = "ORPHAN_SWEEP",
+  CONFIGURE_EFS = "CONFIGURE_EFS",
+  PROVISION_SHARED_STORAGE = "PROVISION_SHARED_STORAGE",
+  UNLINK_SHARED_STORAGE = "UNLINK_SHARED_STORAGE",
+  HIBERNATE = "HIBERNATE",
+  RESUME = "RESUME",
 }
 
 export enum JobStatus {
@@ -37,12 +45,20 @@ export enum JobStatus {
 }
 
 // User Types
+export interface WorkHoursSchedule {
+  start_time: string; // "09:00" format
+  end_time: string; // "17:00" format
+  work_days: string[]; // ["Monday", "Tuesday", ...]
+}
+
 export interface User {
   id: string;
   email: string;
   username: string;
   role: UserRole;
   timezone: string;
+  work_hours_enabled: boolean;
+  work_hours?: WorkHoursSchedule;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -67,6 +83,8 @@ export interface ChangePasswordRequest {
 export interface UpdateMeRequest {
   username?: string;
   timezone?: string;
+  work_hours_enabled?: boolean;
+  work_hours?: WorkHoursSchedule;
 }
 
 export interface CreateUserRequest {
@@ -98,6 +116,8 @@ export interface CreateClusterRequest {
   ssh_public_key?: string;
   extra_tags?: Record<string, string>;
   offhours_opt_in?: boolean;
+  work_hours_enabled?: boolean;
+  work_hours?: WorkHoursSchedule;
   idempotency_key?: string;
 }
 
@@ -124,6 +144,11 @@ export interface Cluster {
   effective_tags: Record<string, string>;
   ssh_public_key?: string;
   offhours_opt_in: boolean;
+  work_hours_enabled?: boolean | null; // NULL = use user default
+  work_hours_start?: string;
+  work_hours_end?: string;
+  work_days?: number; // Bitmask
+  last_work_hours_check?: string;
 }
 
 export interface ExtendClusterRequest {

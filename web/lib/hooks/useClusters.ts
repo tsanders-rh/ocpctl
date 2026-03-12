@@ -16,10 +16,10 @@ export function useCluster(id: string) {
     queryFn: () => clustersApi.get(id),
     enabled: !!id,
     refetchInterval: (query) => {
-      // Poll every 5 seconds if status is PENDING, CREATING, or DESTROYING
+      // Poll every 5 seconds if status is transitioning
       const data = query.state.data;
       if (!data) return false;
-      const activeStatuses = ["PENDING", "CREATING", "DESTROYING"];
+      const activeStatuses = ["PENDING", "CREATING", "DESTROYING", "HIBERNATING", "RESUMING"];
       return activeStatuses.includes(data.status) ? 5000 : false;
     },
   });
@@ -74,6 +74,32 @@ export function useClusterOutputs(id: string, clusterStatus?: string) {
         return 3000;
       }
       return false;
+    },
+  });
+}
+
+export function useHibernateCluster() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => clustersApi.hibernate(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["cluster", id] });
+      queryClient.invalidateQueries({ queryKey: ["clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}
+
+export function useResumeCluster() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => clustersApi.resume(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["cluster", id] });
+      queryClient.invalidateQueries({ queryKey: ["clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 }

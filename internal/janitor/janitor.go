@@ -146,6 +146,11 @@ func (j *Janitor) run() {
 		}
 	}
 
+	// Enforce work hours (hibernate/resume clusters)
+	if err := j.enforceWorkHours(ctx); err != nil {
+		log.Printf("Error enforcing work hours: %v", err)
+	}
+
 	// Detect orphaned AWS resources (less frequently to avoid rate limits)
 	if j.config.OrphanDetection {
 		// Check if enough time has passed since last orphan check
@@ -414,4 +419,176 @@ func (j *Janitor) cleanupOrphanedDirs(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// enforceWorkHours enforces work hours by hibernating/resuming clusters
+func (j *Janitor) enforceWorkHours(ctx context.Context) error {
+	// Get clusters with work hours enabled
+	clusters, err := j.store.Clusters.GetClustersForWorkHoursEnforcement(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(clusters) == 0 {
+		return nil
+	}
+
+	log.Printf("Checking work hours for %d clusters", len(clusters))
+
+	actionsCount := 0
+	for _, cluster := range clusters {
+		// Get the user to access their timezone and default work hours
+		user, err := j.store.Users.GetByID(ctx, cluster.OwnerID)
+		if err != nil {
+			log.Printf("Failed to get user for cluster %s: %v", cluster.Name, err)
+			continue
+		}
+
+		// Determine effective work hours (cluster override or user default)
+		var workHoursEnabled bool
+		var workHoursStart, workHoursEnd time.Time
+		var workDays int16
+
+		if cluster.WorkHoursEnabled != nil {
+			// Cluster has explicit override
+			workHoursEnabled = *cluster.WorkHoursEnabled
+			if workHoursEnabled {
+				if cluster.WorkHoursStart != nil && cluster.WorkHoursEnd != nil && cluster.WorkDays != nil {
+					workHoursStart = *cluster.WorkHoursStart
+					workHoursEnd = *cluster.WorkHoursEnd
+					workDays = *cluster.WorkDays
+				} else {
+					log.Printf("Cluster %s has work_hours_enabled=true but missing work hours config, skipping", cluster.Name)
+					continue
+				}
+			} else {
+				// Cluster explicitly disabled work hours
+				continue
+			}
+		} else {
+			// Use user's default work hours
+			workHoursEnabled = user.WorkHoursEnabled
+			if !workHoursEnabled {
+				continue
+			}
+			workHoursStart = user.WorkHoursStart
+			workHoursEnd = user.WorkHoursEnd
+			workDays = user.WorkDays
+		}
+
+		// Load user's timezone
+		location, err := time.LoadLocation(user.Timezone)
+		if err != nil {
+			log.Printf("Failed to load timezone %s for user %s: %v", user.Timezone, user.Email, err)
+			continue
+		}
+
+		// Get current time in user's timezone
+		nowInTZ := time.Now().In(location)
+
+		// Check if within work hours
+		withinWorkHours := isWithinWorkHours(nowInTZ, workHoursStart, workHoursEnd, workDays)
+
+		// Determine action needed
+		var action string
+		var jobType types.JobType
+		var newStatus types.ClusterStatus
+
+		if cluster.Status == types.ClusterStatusReady && !withinWorkHours {
+			action = "hibernate"
+			jobType = types.JobTypeHibernate
+			newStatus = types.ClusterStatusHibernating
+		} else if cluster.Status == types.ClusterStatusHibernated && withinWorkHours {
+			action = "resume"
+			jobType = types.JobTypeResume
+			newStatus = types.ClusterStatusResuming
+		} else {
+			// No action needed, just update the check timestamp
+			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+			}
+			continue
+		}
+
+		// Check for existing pending/running jobs of this type
+		existingJobs, err := j.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, jobType)
+		if err != nil {
+			log.Printf("Failed to check for existing %s jobs for cluster %s: %v", action, cluster.Name, err)
+			continue
+		}
+
+		hasActiveJob := false
+		for _, job := range existingJobs {
+			if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning {
+				hasActiveJob = true
+				break
+			}
+		}
+
+		if hasActiveJob {
+			log.Printf("Cluster %s already has a pending/running %s job, skipping", cluster.Name, action)
+			continue
+		}
+
+		// Create the job
+		job := &types.Job{
+			ID:          uuid.New().String(),
+			ClusterID:   cluster.ID,
+			JobType:     jobType,
+			Status:      types.JobStatusPending,
+			Metadata:    types.JobMetadata{"reason": "WORK_HOURS_ENFORCEMENT", "triggered_by": "janitor"},
+			MaxAttempts: 3,
+			Attempt:     0,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		if err := j.store.Jobs.Create(ctx, job); err != nil {
+			log.Printf("Failed to create %s job for cluster %s: %v", action, cluster.Name, err)
+			continue
+		}
+
+		// Update cluster status
+		if err := j.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, newStatus); err != nil {
+			log.Printf("Failed to update cluster %s status to %s: %v", cluster.Name, newStatus, err)
+			continue
+		}
+
+		// Update last check timestamp
+		if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+			log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+		}
+
+		actionsCount++
+		log.Printf("Created %s job for cluster %s (outside work hours: %v, current time: %s %s)",
+			action, cluster.Name, !withinWorkHours, nowInTZ.Format("15:04"), user.Timezone)
+	}
+
+	if actionsCount > 0 {
+		log.Printf("Work hours enforcement: created %d jobs", actionsCount)
+	}
+
+	return nil
+}
+
+// isWithinWorkHours checks if the given time is within work hours
+func isWithinWorkHours(now time.Time, start, end time.Time, workDaysMask int16) bool {
+	// Check if today is a work day
+	if !types.IsWorkDay(workDaysMask, now.Weekday()) {
+		return false
+	}
+
+	// Extract current time in minutes since midnight
+	currentMinutes := now.Hour()*60 + now.Minute()
+	startMinutes := start.Hour()*60 + start.Minute()
+	endMinutes := end.Hour()*60 + end.Minute()
+
+	// Handle normal case (start < end, e.g., 09:00 - 17:00)
+	if startMinutes < endMinutes {
+		return currentMinutes >= startMinutes && currentMinutes < endMinutes
+	}
+
+	// Handle wraparound case (start > end, e.g., 22:00 - 06:00 night shift)
+	// Current time is within work hours if it's >= start OR < end
+	return currentMinutes >= startMinutes || currentMinutes < endMinutes
 }

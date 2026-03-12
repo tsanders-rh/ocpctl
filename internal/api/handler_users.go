@@ -111,17 +111,25 @@ func (h *UserHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to hash password")
 	}
 
+	// Parse default work hours times
+	defaultStartTime, _ := time.Parse("15:04", "09:00")
+	defaultEndTime, _ := time.Parse("15:04", "17:00")
+
 	// Create user
 	user := &types.User{
-		ID:           uuid.New().String(),
-		Email:        req.Email,
-		Username:     req.Username,
-		PasswordHash: passwordHash,
-		Role:         req.Role,
-		Timezone:     "UTC", // Default timezone
-		Active:       true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:               uuid.New().String(),
+		Email:            req.Email,
+		Username:         req.Username,
+		PasswordHash:     passwordHash,
+		Role:             req.Role,
+		Timezone:         "UTC", // Default timezone
+		WorkHoursEnabled: false,
+		WorkHoursStart:   defaultStartTime,
+		WorkHoursEnd:     defaultEndTime,
+		WorkDays:         62, // Monday-Friday (binary: 0111110)
+		Active:           true,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := h.store.Users.Create(c.Request().Context(), user); err != nil {

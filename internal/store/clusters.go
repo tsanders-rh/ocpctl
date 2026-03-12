@@ -23,10 +23,10 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 			id, name, platform, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
-			offhours_opt_in
+			offhours_opt_in, work_hours_enabled, work_hours_start, work_hours_end, work_days
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19
+			$15, $16, $17, $18, $19, $20, $21, $22, $23
 		)
 	`
 
@@ -50,6 +50,10 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.EffectiveTags,
 		cluster.SSHPublicKey,
 		cluster.OffhoursOptIn,
+		cluster.WorkHoursEnabled,
+		cluster.WorkHoursStart,
+		cluster.WorkHoursEnd,
+		cluster.WorkDays,
 	)
 
 	if err != nil {
@@ -63,9 +67,10 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
 		FROM clusters
 		WHERE id = $1
 	`
@@ -80,6 +85,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.Region,
 		&cluster.BaseDomain,
 		&cluster.Owner,
+		&cluster.OwnerID,
 		&cluster.Team,
 		&cluster.CostCenter,
 		&cluster.Status,
@@ -93,6 +99,11 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.EffectiveTags,
 		&cluster.SSHPublicKey,
 		&cluster.OffhoursOptIn,
+		&cluster.WorkHoursEnabled,
+		&cluster.WorkHoursStart,
+		&cluster.WorkHoursEnd,
+		&cluster.WorkDays,
+		&cluster.LastWorkHoursCheck,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -109,9 +120,10 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id string) (*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
 		FROM clusters
 		WHERE id = $1
 		FOR UPDATE
@@ -127,6 +139,7 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.Region,
 		&cluster.BaseDomain,
 		&cluster.Owner,
+		&cluster.OwnerID,
 		&cluster.Team,
 		&cluster.CostCenter,
 		&cluster.Status,
@@ -140,6 +153,11 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.EffectiveTags,
 		&cluster.SSHPublicKey,
 		&cluster.OffhoursOptIn,
+		&cluster.WorkHoursEnabled,
+		&cluster.WorkHoursStart,
+		&cluster.WorkHoursEnd,
+		&cluster.WorkDays,
+		&cluster.LastWorkHoursCheck,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -171,7 +189,8 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 		SELECT id, name, platform, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
 		FROM clusters
 		WHERE 1=1
 	`
@@ -267,6 +286,11 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.EffectiveTags,
 			&cluster.SSHPublicKey,
 			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan cluster: %w", err)
@@ -353,9 +377,10 @@ func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) e
 func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
 		FROM clusters
 		WHERE destroy_at <= NOW()
 			AND status IN ('READY', 'FAILED')
@@ -380,6 +405,7 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 			&cluster.Region,
 			&cluster.BaseDomain,
 			&cluster.Owner,
+			&cluster.OwnerID,
 			&cluster.Team,
 			&cluster.CostCenter,
 			&cluster.Status,
@@ -393,6 +419,11 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 			&cluster.EffectiveTags,
 			&cluster.SSHPublicKey,
 			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan expired cluster: %w", err)
@@ -411,9 +442,10 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, version, profile, region, base_domain,
-			owner, team, cost_center, status, requested_by, ttl_hours,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
 		FROM clusters
 		ORDER BY created_at DESC
 	`
@@ -436,6 +468,7 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			&cluster.Region,
 			&cluster.BaseDomain,
 			&cluster.Owner,
+			&cluster.OwnerID,
 			&cluster.Team,
 			&cluster.CostCenter,
 			&cluster.Status,
@@ -449,6 +482,11 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			&cluster.EffectiveTags,
 			&cluster.SSHPublicKey,
 			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)
@@ -461,6 +499,13 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	}
 
 	return clusters, nil
+}
+
+// UpdateLastWorkHoursCheck updates the last_work_hours_check timestamp for a cluster
+func (s *ClusterStore) UpdateLastWorkHoursCheck(ctx context.Context, clusterID string) error {
+	query := `UPDATE clusters SET last_work_hours_check = NOW() WHERE id = $1`
+	_, err := s.pool.Exec(ctx, query, clusterID)
+	return err
 }
 
 // CheckNameExists checks if a cluster name already exists for the platform/domain
@@ -501,4 +546,75 @@ func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan ti
 	}
 
 	return int(result.RowsAffected()), nil
+}
+
+// GetClustersForWorkHoursEnforcement returns clusters that need work hours enforcement
+// Returns clusters where:
+// - work_hours_enabled = TRUE (cluster-level override), OR
+// - work_hours_enabled IS NULL AND user has work_hours_enabled = TRUE (use user default)
+// - AND status IN ('READY', 'HIBERNATED')
+// Ordered by last_work_hours_check ASC NULLS FIRST for efficient processing
+func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) ([]*types.Cluster, error) {
+	query := `
+		SELECT DISTINCT c.id, c.name, c.platform, c.version, c.profile, c.region, c.base_domain,
+			c.owner, c.owner_id, c.team, c.cost_center, c.status, c.requested_by, c.ttl_hours,
+			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
+			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
+			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check
+		FROM clusters c
+		JOIN users u ON c.owner_id = u.id
+		WHERE c.status IN ('READY', 'HIBERNATED')
+			AND (c.work_hours_enabled = TRUE OR (c.work_hours_enabled IS NULL AND u.work_hours_enabled = TRUE))
+		ORDER BY c.last_work_hours_check ASC NULLS FIRST
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query clusters for work hours enforcement: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		var cluster types.Cluster
+		err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.Platform,
+			&cluster.Version,
+			&cluster.Profile,
+			&cluster.Region,
+			&cluster.BaseDomain,
+			&cluster.Owner,
+			&cluster.OwnerID,
+			&cluster.Team,
+			&cluster.CostCenter,
+			&cluster.Status,
+			&cluster.RequestedBy,
+			&cluster.TTLHours,
+			&cluster.DestroyAt,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.DestroyedAt,
+			&cluster.RequestTags,
+			&cluster.EffectiveTags,
+			&cluster.SSHPublicKey,
+			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan cluster for work hours enforcement: %w", err)
+		}
+		clusters = append(clusters, &cluster)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters for work hours enforcement: %w", err)
+	}
+
+	return clusters, nil
 }

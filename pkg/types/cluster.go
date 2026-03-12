@@ -10,12 +10,15 @@ import (
 type ClusterStatus string
 
 const (
-	ClusterStatusPending    ClusterStatus = "PENDING"
-	ClusterStatusCreating   ClusterStatus = "CREATING"
-	ClusterStatusReady      ClusterStatus = "READY"
-	ClusterStatusDestroying ClusterStatus = "DESTROYING"
-	ClusterStatusDestroyed  ClusterStatus = "DESTROYED"
-	ClusterStatusFailed     ClusterStatus = "FAILED"
+	ClusterStatusPending     ClusterStatus = "PENDING"
+	ClusterStatusCreating    ClusterStatus = "CREATING"
+	ClusterStatusReady       ClusterStatus = "READY"
+	ClusterStatusHibernating ClusterStatus = "HIBERNATING"
+	ClusterStatusHibernated  ClusterStatus = "HIBERNATED"
+	ClusterStatusResuming    ClusterStatus = "RESUMING"
+	ClusterStatusDestroying  ClusterStatus = "DESTROYING"
+	ClusterStatusDestroyed   ClusterStatus = "DESTROYED"
+	ClusterStatusFailed      ClusterStatus = "FAILED"
 )
 
 // Platform represents the cloud platform
@@ -83,11 +86,16 @@ type Cluster struct {
 	CreatedAt      time.Time     `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time     `db:"updated_at" json:"updated_at"`
 	DestroyedAt    *time.Time    `db:"destroyed_at" json:"destroyed_at"`
-	RequestTags    Tags          `db:"request_tags" json:"request_tags"`
-	EffectiveTags  Tags          `db:"effective_tags" json:"effective_tags"`
-	SSHPublicKey   *string       `db:"ssh_public_key" json:"ssh_public_key"`
-	OffhoursOptIn  bool          `db:"offhours_opt_in" json:"offhours_opt_in"`
-	StorageConfig  *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
+	RequestTags         Tags           `db:"request_tags" json:"request_tags"`
+	EffectiveTags       Tags           `db:"effective_tags" json:"effective_tags"`
+	SSHPublicKey        *string        `db:"ssh_public_key" json:"ssh_public_key"`
+	OffhoursOptIn       bool           `db:"offhours_opt_in" json:"offhours_opt_in"`
+	WorkHoursEnabled    *bool          `db:"work_hours_enabled" json:"work_hours_enabled"`       // NULL = use user default
+	WorkHoursStart      *time.Time     `db:"work_hours_start" json:"work_hours_start"`
+	WorkHoursEnd        *time.Time     `db:"work_hours_end" json:"work_hours_end"`
+	WorkDays            *int16         `db:"work_days" json:"work_days"`
+	LastWorkHoursCheck  *time.Time     `db:"last_work_hours_check" json:"last_work_hours_check"`
+	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 }
 
 // ClusterOutputs represents cluster access information

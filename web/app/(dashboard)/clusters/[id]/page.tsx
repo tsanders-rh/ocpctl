@@ -2,28 +2,189 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs } from "@/lib/hooks/useClusters";
+import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs, useHibernateCluster, useResumeCluster } from "@/lib/hooks/useClusters";
 import { useJobs } from "@/lib/hooks/useJobs";
+import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { StorageTab } from "@/components/clusters/StorageTab";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+// Helper to convert work_days bitmask to day names
+function workDaysBitmaskToNames(mask: number): string[] {
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    if (mask & (1 << i)) {
+      days.push(dayNames[i]);
+    }
+  }
+  return days;
+}
+
+// Helper to check if a given day is a work day
+function isWorkDay(workDaysMask: number, dayOfWeek: number): boolean {
+  return (workDaysMask & (1 << dayOfWeek)) !== 0;
+}
+
+// Helper to calculate next action (hibernate or resume time)
+function calculateNextAction(
+  clusterStatus: string,
+  workHoursStart: string,
+  workHoursEnd: string,
+  workDays: number,
+  timezone: string
+): { action: string; timeDescription: string } | null {
+  try {
+    // Get current time in user's timezone
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      weekday: 'long',
+    });
+
+    const parts = formatter.formatToParts(now);
+    const currentDay = parts.find(p => p.type === 'weekday')?.value;
+    const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    const currentMinutes = currentHour * 60 + currentMinute;
+
+    const dayMap: { [key: string]: number } = {
+      'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+      'Thursday': 4, 'Friday': 5, 'Saturday': 6
+    };
+    const currentDayOfWeek = dayMap[currentDay || 'Sunday'];
+
+    // Parse work hours
+    const [startHour, startMinute] = workHoursStart.split(':').map(Number);
+    const [endHour, endMinute] = workHoursEnd.split(':').map(Number);
+    const startMinutes = startHour * 60 + startMinute;
+    const endMinutes = endHour * 60 + endMinute;
+
+    // Check if currently within work hours
+    const isCurrentlyWorkDay = isWorkDay(workDays, currentDayOfWeek);
+    let isWithinWorkHours = false;
+
+    if (startMinutes < endMinutes) {
+      // Normal case: 09:00 - 17:00
+      isWithinWorkHours = isCurrentlyWorkDay && currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    } else {
+      // Wraparound case: 22:00 - 06:00
+      isWithinWorkHours = isCurrentlyWorkDay && (currentMinutes >= startMinutes || currentMinutes < endMinutes);
+    }
+
+    if (clusterStatus === 'READY') {
+      if (!isWithinWorkHours) {
+        return { action: 'hibernate', timeDescription: 'Will hibernate on next janitor cycle (within 5 min)' };
+      }
+
+      // Calculate time until work hours end
+      let minutesUntilEnd: number;
+      if (startMinutes < endMinutes) {
+        minutesUntilEnd = endMinutes - currentMinutes;
+      } else {
+        // Wraparound case
+        if (currentMinutes >= startMinutes) {
+          minutesUntilEnd = (24 * 60) - currentMinutes + endMinutes;
+        } else {
+          minutesUntilEnd = endMinutes - currentMinutes;
+        }
+      }
+
+      const hours = Math.floor(minutesUntilEnd / 60);
+      const minutes = minutesUntilEnd % 60;
+
+      if (hours > 0) {
+        return { action: 'active', timeDescription: `Hibernates in ${hours}h ${minutes}m` };
+      } else {
+        return { action: 'active', timeDescription: `Hibernates in ${minutes} minutes` };
+      }
+    }
+
+    if (clusterStatus === 'HIBERNATED') {
+      if (isWithinWorkHours) {
+        return { action: 'resume', timeDescription: 'Will resume on next janitor cycle (within 5 min)' };
+      }
+
+      // Calculate time until work hours start
+      let minutesUntilStart: number;
+
+      if (startMinutes < endMinutes) {
+        // Normal case
+        if (currentMinutes < startMinutes) {
+          minutesUntilStart = startMinutes - currentMinutes;
+        } else {
+          // After work hours today, resume tomorrow or next work day
+          let daysToAdd = 1;
+          let nextDay = (currentDayOfWeek + daysToAdd) % 7;
+          while (!isWorkDay(workDays, nextDay) && daysToAdd < 7) {
+            daysToAdd++;
+            nextDay = (currentDayOfWeek + daysToAdd) % 7;
+          }
+          minutesUntilStart = ((24 * 60) - currentMinutes) + (daysToAdd - 1) * 24 * 60 + startMinutes;
+        }
+      } else {
+        // Wraparound case: 22:00 - 06:00
+        if (currentMinutes < endMinutes) {
+          // Currently in the early morning portion (before 06:00)
+          // Work hours started yesterday at 22:00, shouldn't be hibernated
+          minutesUntilStart = 0;
+        } else if (currentMinutes < startMinutes) {
+          // Between end and start (e.g., 10:00, between 06:00 and 22:00)
+          minutesUntilStart = startMinutes - currentMinutes;
+        } else {
+          // After start time today (e.g., 23:00, after 22:00)
+          // Already in work hours
+          minutesUntilStart = 0;
+        }
+      }
+
+      if (minutesUntilStart === 0) {
+        return { action: 'resume', timeDescription: 'Should be resumed (check janitor logs)' };
+      }
+
+      const hours = Math.floor(minutesUntilStart / 60);
+      const minutes = minutesUntilStart % 60;
+
+      if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        return { action: 'hibernated', timeDescription: `Resumes in ${days}d ${remainingHours}h` };
+      } else if (hours > 0) {
+        return { action: 'hibernated', timeDescription: `Resumes in ${hours}h ${minutes}m` };
+      } else {
+        return { action: 'hibernated', timeDescription: `Resumes in ${minutes} minutes` };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error calculating next action:', error);
+    return null;
+  }
+}
 
 export default function ClusterDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
 
+  const { user } = useAuthStore();
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
   const { data: outputs } = useClusterOutputs(id, cluster?.status);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();
+  const hibernateCluster = useHibernateCluster();
+  const resumeCluster = useResumeCluster();
 
   const [extendHours, setExtendHours] = useState<number>(24);
 
@@ -331,13 +492,186 @@ export default function ClusterDetailPage() {
       )}
 
       {/* Storage Card */}
-      {cluster.status === "READY" && (
+      {(cluster.status === "READY" || cluster.status === "HIBERNATED") && (
         <Card>
           <CardHeader>
             <CardTitle>Storage</CardTitle>
           </CardHeader>
           <CardContent>
             <StorageTab clusterId={cluster.id} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Work Hours Schedule Card */}
+      {user && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Work Hours Schedule
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Work Hours Status */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">Status</div>
+                  <div className="text-lg font-medium">
+                    {cluster.work_hours_enabled === null || cluster.work_hours_enabled === undefined ? (
+                      user.work_hours_enabled ? (
+                        <span className="text-green-600">Using profile defaults (enabled)</span>
+                      ) : (
+                        <span className="text-muted-foreground">Using profile defaults (disabled)</span>
+                      )
+                    ) : cluster.work_hours_enabled ? (
+                      <span className="text-green-600">Hibernation enabled (cluster override)</span>
+                    ) : (
+                      <span className="text-muted-foreground">Always active (cluster override)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Show schedule if work hours are enabled (either from cluster or user profile) */}
+              {((cluster.work_hours_enabled === null || cluster.work_hours_enabled === undefined) && user.work_hours_enabled) ||
+               cluster.work_hours_enabled ? (
+                <>
+                  {/* Active Hours */}
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground">Active Hours</div>
+                    <div className="text-lg">
+                      {cluster.work_hours_start && cluster.work_hours_end ? (
+                        `${cluster.work_hours_start} - ${cluster.work_hours_end}`
+                      ) : user.work_hours ? (
+                        `${user.work_hours.start_time} - ${user.work_hours.end_time}`
+                      ) : (
+                        "Not configured"
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Work Days */}
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground">Work Days</div>
+                    <div className="text-lg">
+                      {cluster.work_days !== null && cluster.work_days !== undefined ? (
+                        workDaysBitmaskToNames(cluster.work_days).join(", ")
+                      ) : user.work_hours?.work_days ? (
+                        user.work_hours.work_days.join(", ")
+                      ) : (
+                        "Not configured"
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Timezone */}
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground">Timezone</div>
+                    <div className="text-lg">{user.timezone}</div>
+                  </div>
+
+                  {/* Next Action */}
+                  {(() => {
+                    const workStart = cluster.work_hours_start || user.work_hours?.start_time;
+                    const workEnd = cluster.work_hours_end || user.work_hours?.end_time;
+                    const workDaysMask = cluster.work_days ?? (user.work_hours?.work_days ?
+                      user.work_hours.work_days.reduce((mask, day) => {
+                        const dayMap: { [key: string]: number } = {
+                          'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+                          'Thursday': 4, 'Friday': 5, 'Saturday': 6
+                        };
+                        return mask | (1 << dayMap[day]);
+                      }, 0) : 0
+                    );
+
+                    if (workStart && workEnd && workDaysMask !== null && workDaysMask !== undefined) {
+                      const nextAction = calculateNextAction(
+                        cluster.status,
+                        workStart,
+                        workEnd,
+                        workDaysMask,
+                        user.timezone
+                      );
+
+                      if (nextAction) {
+                        return (
+                          <div>
+                            <div className="text-sm font-medium text-muted-foreground">Next Action</div>
+                            <div className="text-lg font-medium">
+                              {nextAction.action === 'hibernate' && (
+                                <span className="text-yellow-600">{nextAction.timeDescription}</span>
+                              )}
+                              {nextAction.action === 'resume' && (
+                                <span className="text-green-600">{nextAction.timeDescription}</span>
+                              )}
+                              {nextAction.action === 'active' && (
+                                <span className="text-blue-600">{nextAction.timeDescription}</span>
+                              )}
+                              {nextAction.action === 'hibernated' && (
+                                <span className="text-muted-foreground">{nextAction.timeDescription}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
+
+                  {/* Platform Support Notice */}
+                  {cluster.platform !== "aws" && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Note:</strong> Automatic hibernation is only supported for AWS clusters.
+                        This cluster will not be automatically hibernated.
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : null}
+
+              {/* Manual Controls */}
+              {cluster.platform === "aws" && ["READY", "HIBERNATED"].includes(cluster.status) && (
+                <div className="pt-4 border-t">
+                  <div className="text-sm font-medium text-muted-foreground mb-3">Manual Controls</div>
+                  <div className="flex gap-2">
+                    {cluster.status === "READY" && (
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          if (confirm(`Are you sure you want to hibernate cluster "${cluster.name}"? This will stop all EC2 instances.`)) {
+                            await hibernateCluster.mutateAsync(id);
+                          }
+                        }}
+                        disabled={hibernateCluster.isPending}
+                      >
+                        <Moon className="mr-2 h-4 w-4" />
+                        {hibernateCluster.isPending ? "Hibernating..." : "Hibernate Now"}
+                      </Button>
+                    )}
+                    {cluster.status === "HIBERNATED" && (
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          await resumeCluster.mutateAsync(id);
+                        }}
+                        disabled={resumeCluster.isPending}
+                      >
+                        <Sunrise className="mr-2 h-4 w-4" />
+                        {resumeCluster.isPending ? "Resuming..." : "Resume Now"}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {cluster.status === "READY"
+                      ? "Hibernate cluster to stop EC2 instances and save costs. Cluster can be resumed later."
+                      : "Resume cluster to restart EC2 instances and restore access."}
+                  </p>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
