@@ -75,6 +75,13 @@ Implementation phase tracking (historical):
 - **[DATA-LAYER-COMPLETE.md](phases/DATA-LAYER-COMPLETE.md)** - Data layer completion
 - **[IMPLEMENTATION-GUIDE.md](phases/IMPLEMENTATION-GUIDE.md)** - Implementation guide
 
+### 🔬 [issues/](issues/)
+
+Feature specifications and technical documentation:
+
+- **[off-hours-scaling.md](issues/off-hours-scaling.md)** - Complete technical specification for off-hours worker scaling feature
+- **[github-issue-off-hours-scaling.md](issues/github-issue-off-hours-scaling.md)** - GitHub issue summary for off-hours scaling
+
 ## Quick Links
 
 ### Getting Started

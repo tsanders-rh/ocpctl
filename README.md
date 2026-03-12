@@ -30,6 +30,8 @@ Self-service provisioning and lifecycle management for ephemeral OpenShift clust
 - **Standardized profiles**: Pre-configured cluster templates with policy controls
 - **State preservation**: S3-backed artifact storage ensures clean destroy operations
 - **Auto-cleanup**: TTL janitor and orphan resource detection
+- **Work hours hibernation**: Automatic cluster hibernation outside business hours (AWS)
+- **Orphaned resource management**: Track and clean up AWS resources without database entries
 - **Cost attribution**: Tag-based tracking and FinOps reporting
 - **Multi-cloud ready**: AWS (active), IBM Cloud (planned)
 
@@ -177,25 +179,49 @@ ocpctl/
 
 ## Cluster Profiles
 
+### aws-sno-test (Default)
+- 1 control-plane node (schedulable, Single Node OpenShift)
+- 0 worker nodes
+- Max TTL: 24 hours, Default: 8 hours
+- Cost: ~$0.80/hour
+- Use case: Rapid testing and development (fastest deployment, lowest cost)
+
 ### aws-minimal-test
 - 3 control-plane nodes (schedulable)
 - 0 worker nodes
 - Max TTL: 72 hours
-- Use case: Quick testing and development
+- Use case: Quick testing without dedicated worker nodes
 
 ### aws-standard
 - 3 control-plane nodes
-- 3 worker nodes
+- 3 worker nodes (m6i.2xlarge)
 - Max TTL: 168 hours
 - Use case: Standard development and integration testing
 
-### ibm-minimal-test
+### aws-virtualization
+- 3 control-plane nodes (m6i.2xlarge)
+- 3 worker nodes (m6i.metal with nested virtualization)
+- Max TTL: 168 hours, Default: 72 hours
+- Cost: ~$35.50/hour
+- Use case: OpenShift Virtualization workloads
+
+### aws-sno-shared-vpc
+- 1 control-plane node (template for shared VPC deployments)
+- Enabled: false (template - copy and customize)
+- Use case: Template for deploying SNO clusters in persistent shared VPCs
+
+### aws-sno-shared-vpc-custom
+- Custom shared VPC configuration
+- Pre-configured subnets for specific VPC
+- Use case: Production shared VPC deployments
+
+### ibmcloud-minimal-test
 - 3 control-plane nodes (schedulable)
 - 0 worker nodes
 - Max TTL: 72 hours
 - Use case: IBM Cloud testing
 
-### ibm-standard
+### ibmcloud-standard
 - 3 control-plane nodes
 - 3 worker nodes
 - Max TTL: 168 hours
@@ -390,6 +416,8 @@ See [Development](#development) section above.
 - [x] Security headers (HSTS, CSP, X-Frame-Options)
 - [x] Production deployment guides
 - [x] Security configuration documentation
+- [x] Work hours hibernation (automatic cluster hibernation)
+- [x] Orphaned resource management (admin UI and cleanup)
 
 ### Phase 3 (Production Operations) 🚧 IN PROGRESS
 - [ ] CloudWatch/monitoring integration
@@ -401,7 +429,7 @@ See [Development](#development) section above.
 - [ ] IBM Cloud implementation (profiles ready, execution pending)
 - [ ] Multi-region support
 - [ ] Cost reporting and analytics
-- [ ] Off-hours worker scaling
+- [ ] Off-hours worker scaling ([Issue #11](https://github.com/tsanders-rh/ocpctl/issues/11))
 - [ ] Admin policy configuration UI
 - [ ] Advanced filtering and search
 - [ ] Bulk operations

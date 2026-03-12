@@ -261,21 +261,17 @@ The web UI will be available at `http://localhost:3000`
 
 ### Start Worker Service (Optional)
 
-For cluster provisioning to work, you need the worker service:
+For cluster provisioning and automatic cleanup to work, you need the worker service (includes janitor):
 
 ```bash
 # In a new terminal
 make run-worker
 ```
 
-### Start Janitor Service (Optional)
-
-For automatic cluster cleanup:
-
-```bash
-# In a new terminal
-make run-janitor
-```
+The worker service includes:
+- Cluster provisioning (create/destroy operations)
+- Job processing
+- Janitor for automatic TTL-based cleanup and orphan detection
 
 ### Default Login Credentials
 
@@ -586,9 +582,8 @@ make build-linux        # Build for Linux
 ocpctl/
 ├── cmd/
 │   ├── api/            # API server entry point
-│   ├── worker/         # Worker service entry point
-│   ├── janitor/        # Janitor service entry point
-│   └── cli/            # CLI tool entry point
+│   ├── worker/         # Worker service entry point (includes janitor)
+│   └── cli/            # CLI tool entry point (not implemented)
 ├── internal/
 │   ├── api/            # API handlers and routes
 │   ├── auth/           # Authentication logic
