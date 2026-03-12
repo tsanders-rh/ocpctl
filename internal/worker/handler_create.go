@@ -17,10 +17,9 @@ import (
 
 // CreateHandler handles cluster creation jobs
 type CreateHandler struct {
-	config    *Config
-	store     *store.Store
-	installer *installer.Installer
-	registry  *profile.Registry
+	config   *Config
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewCreateHandler creates a new create handler
@@ -38,10 +37,9 @@ func NewCreateHandler(config *Config, st *store.Store) *CreateHandler {
 	}
 
 	return &CreateHandler{
-		config:    config,
-		store:     st,
-		installer: installer.NewInstaller(),
-		registry:  registry,
+		config:   config,
+		store:    st,
+		registry: registry,
 	}
 }
 
@@ -118,10 +116,17 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
-	// Run openshift-install create cluster
-	log.Printf("Running openshift-install create cluster for %s", cluster.Name)
+	// Create version-specific installer for this cluster
+	log.Printf("Creating installer for OpenShift version %s", cluster.Version)
+	inst, err := installer.NewInstallerForVersion(cluster.Version)
+	if err != nil {
+		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
+	}
 
-	output, err := h.installer.CreateCluster(ctx, workDir)
+	// Run openshift-install create cluster
+	log.Printf("Running openshift-install create cluster for %s (version %s)", cluster.Name, cluster.Version)
+
+	output, err := inst.CreateCluster(ctx, workDir)
 
 	// Stop log streaming after installer completes
 	streamCancel()

@@ -34,7 +34,8 @@ const (
 	CredentialTypeSTSIMDS
 )
 
-// NewInstaller creates a new installer instance
+// NewInstaller creates a new installer instance for the latest supported version
+// Deprecated: Use NewInstallerForVersion instead
 func NewInstaller() *Installer {
 	// Get binary path from environment or use default
 	binaryPath := os.Getenv("OPENSHIFT_INSTALL_BINARY")
@@ -56,6 +57,79 @@ func NewInstaller() *Installer {
 		timeout:     120 * time.Minute, // Default 120 minute timeout for cluster installations
 		useSTSCreds: useSTSCreds,
 	}
+}
+
+// NewInstallerForVersion creates a new installer instance for a specific OpenShift version
+// Supports versions 4.18, 4.19, and 4.20
+func NewInstallerForVersion(version string) (*Installer, error) {
+	// Extract major.minor version (e.g., "4.20.3" -> "4.20")
+	majorMinor := extractMajorMinor(version)
+	if majorMinor == "" {
+		return nil, fmt.Errorf("invalid version format: %s", version)
+	}
+
+	// Validate supported version
+	supportedVersions := []string{"4.18", "4.19", "4.20"}
+	isSupported := false
+	for _, v := range supportedVersions {
+		if majorMinor == v {
+			isSupported = true
+			break
+		}
+	}
+	if !isSupported {
+		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.18, 4.19, 4.20)", version)
+	}
+
+	// Check for version-specific binaries in environment
+	binaryEnvKey := fmt.Sprintf("OPENSHIFT_INSTALL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+	binaryPath := os.Getenv(binaryEnvKey)
+
+	// Fall back to version-suffixed binary in standard location
+	if binaryPath == "" {
+		binaryPath = fmt.Sprintf("/usr/local/bin/openshift-install-%s", majorMinor)
+	}
+
+	// Check for version-specific ccoctl
+	ccoCtlEnvKey := fmt.Sprintf("CCOCTL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+	ccoCtlPath := os.Getenv(ccoCtlEnvKey)
+
+	if ccoCtlPath == "" {
+		ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s", majorMinor)
+	}
+
+	// Verify binaries exist
+	if _, err := os.Stat(binaryPath); err != nil {
+		return nil, fmt.Errorf("openshift-install binary not found for version %s at %s: %w", version, binaryPath, err)
+	}
+
+	if _, err := os.Stat(ccoCtlPath); err != nil {
+		log.Printf("Warning: ccoctl binary not found for version %s at %s (Manual mode may not work): %v", version, ccoCtlPath, err)
+		// Don't fail - ccoctl is only needed for Manual/STS mode
+	}
+
+	// Detect if we're using STS/IMDS credentials
+	useSTSCreds := detectSTSCredentials()
+
+	log.Printf("Using OpenShift installer version %s: %s", majorMinor, binaryPath)
+	log.Printf("Using ccoctl version %s: %s", majorMinor, ccoCtlPath)
+
+	return &Installer{
+		binaryPath:  binaryPath,
+		ccoCtlPath:  ccoCtlPath,
+		timeout:     120 * time.Minute,
+		useSTSCreds: useSTSCreds,
+	}, nil
+}
+
+// extractMajorMinor extracts the major.minor version from a full version string
+// Examples: "4.20.3" -> "4.20", "4.19" -> "4.19", "4.18.15" -> "4.18"
+func extractMajorMinor(version string) string {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s", parts[0], parts[1])
 }
 
 // detectSTSCredentials checks if we're using temporary STS credentials (IMDS or explicit session token)

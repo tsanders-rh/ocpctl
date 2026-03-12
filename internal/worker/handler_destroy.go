@@ -15,17 +15,15 @@ import (
 
 // DestroyHandler handles cluster destruction jobs
 type DestroyHandler struct {
-	config    *Config
-	store     *store.Store
-	installer *installer.Installer
+	config *Config
+	store  *store.Store
 }
 
 // NewDestroyHandler creates a new destroy handler
 func NewDestroyHandler(config *Config, st *store.Store) *DestroyHandler {
 	return &DestroyHandler{
-		config:    config,
-		store:     st,
-		installer: installer.NewInstaller(),
+		config: config,
+		store:  st,
 	}
 }
 
@@ -65,13 +63,20 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
+	// Create version-specific installer for this cluster
+	log.Printf("Creating installer for OpenShift version %s", cluster.Version)
+	inst, err := installer.NewInstallerForVersion(cluster.Version)
+	if err != nil {
+		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
+	}
+
 	// Run openshift-install destroy cluster with explicit timeout
 	// Use 45-minute timeout to ensure destroy completes or fails definitively
-	log.Printf("Running openshift-install destroy cluster for %s (timeout: 45m)", cluster.Name)
+	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: 45m)", cluster.Name, cluster.Version)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer destroyCancel()
 
-	output, err := h.installer.DestroyCluster(destroyCtx, workDir)
+	output, err := inst.DestroyCluster(destroyCtx, workDir)
 
 	// Stop log streaming after installer completes
 	streamCancel()

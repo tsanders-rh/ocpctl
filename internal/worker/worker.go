@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -302,16 +303,27 @@ func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
 
 	log.Printf("Cleaning up partial deployment for job %s (cluster %s)", job.ID, job.ClusterID)
 
-	// Run openshift-install destroy to clean up partial infrastructure
-	inst := w.processor.createHandler.installer
-	output, err := inst.DestroyCluster(ctx, workDir)
+	// Get cluster version for version-specific installer
+	if cluster != nil {
+		// Create version-specific installer
+		inst, err := installer.NewInstallerForVersion(cluster.Version)
+		if err != nil {
+			log.Printf("Warning: failed to create installer for version %s: %v", cluster.Version, err)
+			log.Printf("Skipping openshift-install destroy, proceeding with directory cleanup")
+		} else {
+			// Run openshift-install destroy to clean up partial infrastructure
+			output, err := inst.DestroyCluster(ctx, workDir)
 
-	if err != nil {
-		// Log the error but don't fail - allow retry to proceed
-		log.Printf("Warning: cleanup failed for job %s: %v\nOutput: %s", job.ID, err, output)
-		log.Printf("Proceeding with retry despite cleanup failure")
+			if err != nil {
+				// Log the error but don't fail - allow retry to proceed
+				log.Printf("Warning: cleanup failed for job %s: %v\nOutput: %s", job.ID, err, output)
+				log.Printf("Proceeding with retry despite cleanup failure")
+			} else {
+				log.Printf("Successfully cleaned up partial deployment for job %s", job.ID)
+			}
+		}
 	} else {
-		log.Printf("Successfully cleaned up partial deployment for job %s", job.ID)
+		log.Printf("Cannot create installer without cluster metadata, skipping destroy")
 	}
 
 	// Remove work directory to ensure clean slate for retry
