@@ -35,6 +35,7 @@ type Store struct {
 	DeploymentLogs      *DeploymentLogStore
 	StorageGroups       *StorageGroupStore
 	ClusterStorageLinks *ClusterStorageLinkStore
+	OrphanedResources   *OrphanedResourceStore
 }
 
 // New creates a new Store with all sub-stores initialized
@@ -61,6 +62,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.DeploymentLogs = &DeploymentLogStore{pool: pool}
 	s.StorageGroups = &StorageGroupStore{pool: pool}
 	s.ClusterStorageLinks = &ClusterStorageLinkStore{pool: pool}
+	s.OrphanedResources = &OrphanedResourceStore{pool: pool}
 
 	return s
 }

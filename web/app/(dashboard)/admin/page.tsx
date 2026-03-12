@@ -72,6 +72,9 @@ export default function AdminDashboardPage() {
           <div className="text-sm text-muted-foreground">
             • View all clusters: <a href="/clusters" className="text-blue-600 hover:underline">All Clusters</a>
           </div>
+          <div className="text-sm text-muted-foreground">
+            • Orphaned resources: <a href="/admin/orphaned-resources" className="text-blue-600 hover:underline">AWS Orphans</a>
+          </div>
         </CardContent>
       </Card>
     </div>

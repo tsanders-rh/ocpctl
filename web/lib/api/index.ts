@@ -4,3 +4,4 @@ export { clustersApi } from "./endpoints/clusters";
 export { profilesApi } from "./endpoints/profiles";
 export { jobsApi } from "./endpoints/jobs";
 export { usersApi } from "./users";
+export { orphanedResourcesApi } from "./endpoints/orphaned-resources";

@@ -181,6 +181,15 @@ func (s *Server) setupRoutes() {
 	usersGroup.PATCH("/:id", userHandler.Update)
 	usersGroup.DELETE("/:id", userHandler.Delete)
 
+	// Orphaned resources routes (admin only)
+	orphanedHandler := NewOrphanedResourceHandler(s.store, s.policy)
+	adminGroup := v1.Group("/admin", auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireAdmin())
+	adminGroup.GET("/orphaned-resources", orphanedHandler.List)
+	adminGroup.GET("/orphaned-resources/stats", orphanedHandler.GetStats)
+	adminGroup.PATCH("/orphaned-resources/:id/resolve", orphanedHandler.MarkResolved)
+	adminGroup.PATCH("/orphaned-resources/:id/ignore", orphanedHandler.MarkIgnored)
+	adminGroup.DELETE("/orphaned-resources/:id", orphanedHandler.Delete)
+
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy)
 	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
