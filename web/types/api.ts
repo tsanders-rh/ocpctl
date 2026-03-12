@@ -266,8 +266,14 @@ export interface PaginatedResponse<T> {
 }
 
 // API Error
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
 export interface APIError {
   error: string;
   message: string;
   status_code: number;
+  details?: ValidationError[];
 }

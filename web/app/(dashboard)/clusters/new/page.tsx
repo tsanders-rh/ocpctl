@@ -22,7 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ExecutionPanel } from "@/components/clusters/ClusterForm/ExecutionPanel";
-import { Platform } from "@/types/api";
+import { Platform, type ValidationError } from "@/types/api";
+import { ApiError } from "@/lib/api/client";
+import { AlertCircle } from "lucide-react";
 
 export default function NewClusterPage() {
   const router = useRouter();
@@ -30,6 +32,8 @@ export default function NewClusterPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>(Platform.AWS);
   const { data: profiles } = useProfiles(selectedPlatform);
   const createCluster = useCreateCluster();
+  const [apiValidationErrors, setApiValidationErrors] = useState<ValidationError[]>([]);
+  const [generalError, setGeneralError] = useState<string>("");
 
   const {
     register,
@@ -52,6 +56,12 @@ export default function NewClusterPage() {
   const watchedValues = watch();
   const selectedProfile = profiles?.find((p) => p.name === watchedValues.profile);
 
+  // Helper to get field-specific validation error
+  const getFieldError = (fieldName: string): string | undefined => {
+    const error = apiValidationErrors.find((e) => e.field === fieldName);
+    return error?.message;
+  };
+
   // Update form defaults when profile changes
   useEffect(() => {
     if (selectedProfile) {
@@ -63,11 +73,26 @@ export default function NewClusterPage() {
   }, [selectedProfile, setValue]);
 
   const onSubmit = async (data: CreateClusterFormData) => {
+    // Clear previous errors
+    setApiValidationErrors([]);
+    setGeneralError("");
+
     try {
       const result = await createCluster.mutateAsync(data);
       router.push(`/clusters/${result.id}`);
     } catch (error) {
       console.error("Failed to create cluster:", error);
+
+      // Check if this is an ApiError with validation details
+      if (error instanceof ApiError && error.response?.details) {
+        setApiValidationErrors(error.response.details);
+      } else if (error instanceof ApiError && error.response?.message) {
+        setGeneralError(error.response.message);
+      } else if (error instanceof Error) {
+        setGeneralError(error.message);
+      } else {
+        setGeneralError("Failed to create cluster. Please try again.");
+      }
     }
   };
 
@@ -197,6 +222,9 @@ export default function NewClusterPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {getFieldError("region") && (
+                    <p className="text-sm text-red-600">{getFieldError("region")}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -355,6 +383,11 @@ export default function NewClusterPage() {
                         <p className="text-sm text-muted-foreground">
                           Automatically scale down workers during non-business hours to reduce costs
                         </p>
+                        {getFieldError("offhours_opt_in") && (
+                          <p className="text-sm text-red-600 mt-1">
+                            {getFieldError("offhours_opt_in")}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -374,6 +407,11 @@ export default function NewClusterPage() {
                         <p className="text-sm text-muted-foreground">
                           Provisions EFS file system with CSI driver for ReadWriteMany (RWX) storage class
                         </p>
+                        {getFieldError("enable_efs_storage") && (
+                          <p className="text-sm text-red-600 mt-1">
+                            {getFieldError("enable_efs_storage")}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -398,9 +436,31 @@ export default function NewClusterPage() {
               </Button>
             </div>
 
-            {createCluster.isError && (
-              <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
-                Failed to create cluster. Please try again.
+            {/* Error Display */}
+            {(apiValidationErrors.length > 0 || generalError) && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <p className="font-semibold text-red-900">
+                      {apiValidationErrors.length > 0
+                        ? "Failed to create cluster - please fix the following errors:"
+                        : "Failed to create cluster"}
+                    </p>
+                    {apiValidationErrors.length > 0 && (
+                      <ul className="list-disc list-inside space-y-1 text-sm text-red-800">
+                        {apiValidationErrors.map((error, index) => (
+                          <li key={index}>
+                            <span className="font-medium">{error.field}:</span> {error.message}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {generalError && (
+                      <p className="text-sm text-red-800">{generalError}</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
