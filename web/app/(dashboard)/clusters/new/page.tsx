@@ -70,13 +70,29 @@ export default function NewClusterPage() {
   });
 
   const watchedValues = watch();
-  const selectedProfile = profiles?.find((p) => p.name === watchedValues.profile);
+
+  // Sort profiles alphabetically by display_name for consistent ordering
+  const sortedProfiles = profiles?.slice().sort((a, b) =>
+    a.display_name.localeCompare(b.display_name)
+  );
+
+  const selectedProfile = sortedProfiles?.find((p) => p.name === watchedValues.profile);
 
   // Helper to get field-specific validation error
   const getFieldError = (fieldName: string): string | undefined => {
     const error = apiValidationErrors.find((e) => e.field === fieldName);
     return error?.message;
   };
+
+  // Set default profile to "AWS Single Node OpenShift (SNO)" when profiles load
+  useEffect(() => {
+    if (sortedProfiles && sortedProfiles.length > 0 && !watchedValues.profile) {
+      const defaultProfile = sortedProfiles.find(p => p.name === "aws-sno-test");
+      if (defaultProfile) {
+        setValue("profile", defaultProfile.name);
+      }
+    }
+  }, [sortedProfiles, setValue]);
 
   // Update form defaults when profile changes
   useEffect(() => {
@@ -205,8 +221,8 @@ export default function NewClusterPage() {
                     <SelectValue placeholder="Select profile" />
                   </SelectTrigger>
                   <SelectContent>
-                    {profiles && profiles.length > 0 ? (
-                      profiles.map((profile) => (
+                    {sortedProfiles && sortedProfiles.length > 0 ? (
+                      sortedProfiles.map((profile) => (
                         <SelectItem key={profile.name} value={profile.name}>
                           {profile.display_name} (${profile.cost_controls?.estimated_hourly_cost || 0}/hr)
                         </SelectItem>
