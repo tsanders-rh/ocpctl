@@ -109,6 +109,9 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: failed to clean up work directory %s: %v", workDir, err)
 	}
 
+	// Clean up temporary files created by openshift-install
+	h.cleanupTempFiles(cluster.ID)
+
 	// Mark cluster as destroyed in database
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
@@ -138,4 +141,49 @@ func (h *DestroyHandler) storeDestroyLog(ctx context.Context, workDir, clusterID
 	}
 
 	return h.store.Artifacts.Create(ctx, artifact)
+}
+
+// cleanupTempFiles removes temporary files created by openshift-install
+func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
+	tmpDir := os.Getenv("TMPDIR")
+	if tmpDir == "" {
+		tmpDir = "/tmp"
+	}
+
+	// Pattern: openshift-install creates files like:
+	// - /tmp/openshift-install-bootstrap-*.ign
+	// - /tmp/openshift-cluster-api-system-components*
+	// We can't match by cluster ID, so we clean up old temp files (>1 hour old)
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		log.Printf("Warning: failed to read temp directory %s: %v", tmpDir, err)
+		return
+	}
+
+	now := time.Now()
+	for _, entry := range entries {
+		// Only clean openshift-related temp files
+		if !entry.IsDir() && !filepath.HasPrefix(entry.Name(), "openshift-") {
+			continue
+		}
+		if entry.IsDir() && !filepath.HasPrefix(entry.Name(), "openshift-") {
+			continue
+		}
+
+		fullPath := filepath.Join(tmpDir, entry.Name())
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+
+		// Remove files/dirs older than 1 hour
+		if now.Sub(info.ModTime()) > 1*time.Hour {
+			if err := os.RemoveAll(fullPath); err != nil {
+				log.Printf("Warning: failed to remove temp file %s: %v", fullPath, err)
+			} else {
+				log.Printf("Cleaned up old temp file: %s", fullPath)
+			}
+		}
+	}
 }

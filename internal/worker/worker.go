@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -316,5 +317,51 @@ func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
 	// Remove work directory to ensure clean slate for retry
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to remove work directory %s: %v", workDir, err)
+	}
+
+	// Clean up temporary files created by openshift-install
+	w.cleanupTempFiles()
+}
+
+// cleanupTempFiles removes temporary files created by openshift-install
+func (w *Worker) cleanupTempFiles() {
+	tmpDir := os.Getenv("TMPDIR")
+	if tmpDir == "" {
+		tmpDir = "/tmp"
+	}
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		log.Printf("Warning: failed to read temp directory %s: %v", tmpDir, err)
+		return
+	}
+
+	now := time.Now()
+	cleaned := 0
+	for _, entry := range entries {
+		// Only clean openshift-related temp files
+		name := entry.Name()
+		if !filepath.HasPrefix(name, "openshift-") {
+			continue
+		}
+
+		fullPath := filepath.Join(tmpDir, name)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+
+		// Remove files/dirs older than 1 hour
+		if now.Sub(info.ModTime()) > 1*time.Hour {
+			if err := os.RemoveAll(fullPath); err != nil {
+				log.Printf("Warning: failed to remove temp file %s: %v", fullPath, err)
+			} else {
+				cleaned++
+			}
+		}
+	}
+
+	if cleaned > 0 {
+		log.Printf("Cleaned up %d old temp files from %s", cleaned, tmpDir)
 	}
 }
