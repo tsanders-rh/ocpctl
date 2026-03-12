@@ -93,15 +93,15 @@ export default function ProfilesPage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Workers</span>
                   <span className="font-medium">
-                    {profile.compute.workers.replicas} ×{" "}
+                    {profile.compute.workers.replicas ?? "?"} ×{" "}
                     {profile.compute.workers.instance_type}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Range</span>
                   <span className="font-medium">
-                    {profile.compute.workers.min_replicas}-
-                    {profile.compute.workers.max_replicas} workers
+                    {profile.compute.workers.min_replicas ?? "?"}-
+                    {profile.compute.workers.max_replicas ?? "?"} workers
                   </span>
                 </div>
               </div>

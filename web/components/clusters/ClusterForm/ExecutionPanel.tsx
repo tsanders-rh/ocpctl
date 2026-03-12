@@ -41,8 +41,8 @@ export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
                 {profile.compute?.control_plane?.instance_type || "?"}
               </li>
               <li>
-                • Workers: {profile.compute?.workers?.min_replicas || "?"}-
-                {profile.compute?.workers?.max_replicas || "?"} ×{" "}
+                • Workers: {profile.compute?.workers?.min_replicas ?? "?"}-
+                {profile.compute?.workers?.max_replicas ?? "?"} ×{" "}
                 {profile.compute?.workers?.instance_type || "?"}
                 {profile.compute?.workers?.autoscaling && " (autoscaling)"}
               </li>
