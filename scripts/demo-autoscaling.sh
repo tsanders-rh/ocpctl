@@ -38,7 +38,7 @@ fi
 CLUSTER_COUNT=10
 PLATFORM="aws"
 VERSION="4.17.8"
-PROFILE="aws-minimal-test"
+PROFILE="aws-sno-test"  # Single Node OpenShift for faster/cheaper demo
 REGION="us-east-1"
 BASE_DOMAIN="${BASE_DOMAIN:-demo.ocpctl.io}"
 TEAM="demo"
