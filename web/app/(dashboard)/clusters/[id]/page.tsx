@@ -424,10 +424,16 @@ export default function ClusterDetailPage() {
                     size="sm"
                     onClick={async () => {
                       try {
+                        const token = useAuthStore.getState().accessToken;
+                        if (!token) {
+                          alert('You are not authenticated. Please log in again.');
+                          return;
+                        }
+
                         // Get pre-signed download URL from API
                         const response = await fetch(`/api/v1/clusters/${cluster.id}/kubeconfig/download-url`, {
                           headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Authorization': `Bearer ${token}`,
                           },
                         });
 
@@ -437,13 +443,37 @@ export default function ClusterDetailPage() {
 
                         const data = await response.json();
 
-                        // Create a temporary anchor element and trigger download
-                        const link = document.createElement('a');
-                        link.href = data.download_url;
-                        link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
+                        // For local storage (IBM Cloud), need to fetch with auth and create blob
+                        if (data.storage_type === 'local') {
+                          const kubeconfigResponse = await fetch(data.download_url, {
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                            },
+                          });
+
+                          if (!kubeconfigResponse.ok) {
+                            throw new Error('Failed to fetch kubeconfig');
+                          }
+
+                          // Create blob from response and download
+                          const blob = await kubeconfigResponse.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          window.URL.revokeObjectURL(url);
+                        } else {
+                          // For S3, use presigned URL directly (no auth needed)
+                          const link = document.createElement('a');
+                          link.href = data.download_url;
+                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }
                       } catch (error) {
                         console.error('Failed to download kubeconfig:', error);
                         alert('Failed to download kubeconfig. Please try again.');
