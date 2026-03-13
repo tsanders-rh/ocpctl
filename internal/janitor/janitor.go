@@ -510,6 +510,16 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			continue
 		}
 
+		// Skip hibernation for non-AWS platforms (only AWS supports hibernate/resume)
+		if cluster.Platform != types.PlatformAWS {
+			log.Printf("Skipping %s for cluster %s: platform %s does not support hibernation (AWS only)", action, cluster.Name, cluster.Platform)
+			// Update the check timestamp so we don't log this repeatedly
+			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+			}
+			continue
+		}
+
 		// Check for existing pending/running jobs of this type
 		existingJobs, err := j.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, jobType)
 		if err != nil {
