@@ -19,11 +19,16 @@ export function DeploymentLogs({
   jobId,
   clusterStatus,
 }: DeploymentLogsProps) {
-  const [autoScroll, setAutoScroll] = useState(true);
+  // Only enable auto-scroll if cluster is actively deploying
+  const [autoScroll, setAutoScroll] = useState(
+    clusterStatus !== "READY" && clusterStatus !== "FAILED"
+  );
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [accumulatedLogs, setAccumulatedLogs] = useState<DeploymentLog[]>([]);
   const [lastSequence, setLastSequence] = useState(0);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(
+    clusterStatus !== "READY" && clusterStatus !== "FAILED"
+  );
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Determine if we should poll based on cluster status
@@ -45,13 +50,22 @@ export function DeploymentLogs({
     }
   }, [data]);
 
+  // Disable auto-scroll when cluster deployment completes
+  useEffect(() => {
+    if (clusterStatus === "READY" || clusterStatus === "FAILED") {
+      setAutoScroll(false);
+      setIsInitialLoad(false); // Also disable initial scroll jump
+    }
+  }, [clusterStatus]);
+
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (autoScroll && logsEndRef.current) {
       // Use instant scroll on initial load to jump directly to bottom
       // Use smooth scroll for subsequent updates
       logsEndRef.current.scrollIntoView({
-        behavior: isInitialLoad ? "instant" : "smooth"
+        behavior: isInitialLoad ? "instant" : "smooth",
+        block: "nearest" // Don't scroll the page, just the container
       });
 
       // After first scroll, disable initial load flag

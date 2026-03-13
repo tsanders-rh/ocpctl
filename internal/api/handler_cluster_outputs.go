@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -164,16 +163,25 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 		return ErrorBadRequest(c, fmt.Sprintf("Cluster is not ready (status: %s)", cluster.Status))
 	}
 
-	// Get work directory
-	workDir := os.Getenv("WORK_DIR")
-	if workDir == "" {
-		workDir = "/tmp/ocpctl"
+	// Get kubeconfig path from database
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, id)
+	if err != nil {
+		return ErrorNotFound(c, "Cluster outputs not found")
 	}
-	kubeconfigPath := filepath.Join(workDir, cluster.ID, "auth", "kubeconfig")
+
+	if outputs.KubeconfigS3URI == nil || *outputs.KubeconfigS3URI == "" {
+		return ErrorNotFound(c, "Kubeconfig not available for this cluster")
+	}
+
+	// Extract file path from file:// URI
+	kubeconfigPath := *outputs.KubeconfigS3URI
+	if strings.HasPrefix(kubeconfigPath, "file://") {
+		kubeconfigPath = kubeconfigPath[7:] // Remove "file://" prefix
+	}
 
 	// Check if kubeconfig exists
 	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
-		return ErrorNotFound(c, "Kubeconfig not found for this cluster")
+		return ErrorNotFound(c, "Kubeconfig file not found at path")
 	}
 
 	// Set headers for file download
@@ -218,12 +226,27 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 		return ErrorNotFound(c, "Cluster outputs not found")
 	}
 
+	LogInfo(c, "GetKubeconfigDownloadURL called",
+		"cluster_id", cluster.ID)
+
 	// Check if S3 URI is available
 	if outputs.KubeconfigS3URI == nil || *outputs.KubeconfigS3URI == "" {
+		LogInfo(c, "no kubeconfig URI found")
 		return ErrorNotFound(c, "Kubeconfig S3 URI not available for this cluster")
 	}
 
 	kubeconfigURI := *outputs.KubeconfigS3URI
+
+	prefix := kubeconfigURI
+	if len(kubeconfigURI) > 20 {
+		prefix = kubeconfigURI[:20]
+	}
+
+	LogInfo(c, "checking kubeconfig URI type",
+		"uri", kubeconfigURI,
+		"len", len(kubeconfigURI),
+		"hasFilePrefix", strings.HasPrefix(kubeconfigURI, "file://"),
+		"prefix", prefix)
 
 	// Check if this is a file:// URI (IBM Cloud, local storage)
 	// For file:// URIs, return the direct API download endpoint instead of S3 presigned URL
