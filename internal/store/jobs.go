@@ -430,3 +430,20 @@ func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, err
 
 	return jobs, nil
 }
+
+// CountPending returns the total count of pending jobs in the queue
+func (s *JobStore) CountPending(ctx context.Context) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM jobs
+		WHERE status IN ('PENDING', 'RETRYING')
+	`
+
+	var count int
+	err := s.pool.QueryRow(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count pending jobs: %w", err)
+	}
+
+	return count, nil
+}

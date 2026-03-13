@@ -3,13 +3,16 @@ package worker
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -28,8 +31,15 @@ type Config struct {
 // DefaultConfig returns default worker configuration
 func DefaultConfig() *Config {
 	hostname, _ := os.Hostname()
+	workerID := fmt.Sprintf("%s-%s", hostname, uuid.New().String()[:8])
+
+	// Try to get EC2 instance ID if running on EC2
+	if instanceID := getEC2InstanceID(); instanceID != "" {
+		workerID = fmt.Sprintf("i-%s", instanceID)
+	}
+
 	return &Config{
-		WorkerID:      fmt.Sprintf("%s-%s", hostname, uuid.New().String()[:8]),
+		WorkerID:      workerID,
 		PollInterval:  10 * time.Second,
 		LockTimeout:   30 * time.Minute,
 		WorkDir:       "/tmp/ocpctl",
@@ -39,11 +49,69 @@ func DefaultConfig() *Config {
 	}
 }
 
+// getEC2InstanceID retrieves the EC2 instance ID from metadata service
+func getEC2InstanceID() string {
+	// Use IMDSv2 (more secure)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Get token first (IMDSv2)
+	tokenReq, err := http.NewRequestWithContext(ctx, "PUT",
+		"http://169.254.169.254/latest/api/token", nil)
+	if err != nil {
+		return ""
+	}
+	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return ""
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != 200 {
+		return ""
+	}
+
+	tokenBytes, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return ""
+	}
+	token := string(tokenBytes)
+
+	// Get instance ID using token
+	idReq, err := http.NewRequestWithContext(ctx, "GET",
+		"http://169.254.169.254/latest/meta-data/instance-id", nil)
+	if err != nil {
+		return ""
+	}
+	idReq.Header.Set("X-aws-ec2-metadata-token", token)
+
+	idResp, err := client.Do(idReq)
+	if err != nil {
+		return ""
+	}
+	defer idResp.Body.Close()
+
+	if idResp.StatusCode != 200 {
+		return ""
+	}
+
+	instanceIDBytes, err := io.ReadAll(idResp.Body)
+	if err != nil {
+		return ""
+	}
+
+	return string(instanceIDBytes)
+}
+
 // Worker processes background jobs
 type Worker struct {
 	config    *Config
 	store     *store.Store
 	processor *JobProcessor
+	metrics   *metrics.Publisher
 	running   bool
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -55,10 +123,17 @@ func NewWorker(config *Config, st *store.Store) *Worker {
 		config = DefaultConfig()
 	}
 
+	// Initialize metrics publisher (non-fatal if it fails)
+	metricsPublisher, err := metrics.NewPublisher(context.Background())
+	if err != nil {
+		log.Printf("Warning: Failed to initialize CloudWatch metrics: %v", err)
+	}
+
 	return &Worker{
 		config:    config,
 		store:     st,
 		processor: NewJobProcessor(config, st),
+		metrics:   metricsPublisher,
 		running:   false,
 	}
 }
@@ -70,6 +145,16 @@ func (w *Worker) Start(ctx context.Context) error {
 
 	log.Printf("Worker %s starting (poll=%s, max_concurrent=%d)",
 		w.config.WorkerID, w.config.PollInterval, w.config.MaxConcurrent)
+
+	// Publish worker active metric
+	if w.metrics != nil {
+		dims := map[string]string{
+			"WorkerID": w.config.WorkerID,
+		}
+		if err := w.metrics.PublishGauge(ctx, metrics.MetricWorkerActive, 1, dims); err != nil {
+			log.Printf("Warning: Failed to publish worker active metric: %v", err)
+		}
+	}
 
 	// Create work directory
 	if err := os.MkdirAll(w.config.WorkDir, 0755); err != nil {
@@ -84,6 +169,13 @@ func (w *Worker) Start(ctx context.Context) error {
 		select {
 		case <-w.ctx.Done():
 			log.Printf("Worker %s shutting down", w.config.WorkerID)
+			// Publish worker inactive metric
+			if w.metrics != nil {
+				dims := map[string]string{
+					"WorkerID": w.config.WorkerID,
+				}
+				_ = w.metrics.PublishGauge(ctx, metrics.MetricWorkerActive, 0, dims)
+			}
 			return w.ctx.Err()
 
 		case <-ticker.C:
@@ -104,7 +196,20 @@ func (w *Worker) Stop() {
 func (w *Worker) poll() {
 	ctx := context.Background()
 
-	// Get pending jobs
+	// Get total count of all pending jobs in the queue
+	// This is used for auto-scaling metrics
+	totalPending, err := w.store.Jobs.CountPending(ctx)
+	if err != nil {
+		log.Printf("Error counting pending jobs: %v", err)
+	} else if w.metrics != nil {
+		// Publish pending jobs metric for auto-scaling
+		dims := map[string]string{}
+		if err := w.metrics.PublishGauge(ctx, metrics.MetricPendingJobs, float64(totalPending), dims); err != nil {
+			log.Printf("Warning: Failed to publish pending jobs metric: %v", err)
+		}
+	}
+
+	// Get pending jobs for this worker to process
 	jobs, err := w.store.Jobs.GetPending(ctx, w.config.MaxConcurrent)
 	if err != nil {
 		log.Printf("Error fetching pending jobs: %v", err)
