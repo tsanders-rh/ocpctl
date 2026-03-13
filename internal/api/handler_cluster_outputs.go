@@ -223,26 +223,50 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 		return ErrorNotFound(c, "Kubeconfig S3 URI not available for this cluster")
 	}
 
-	// Create S3 client
+	kubeconfigURI := *outputs.KubeconfigS3URI
+
+	// Check if this is a file:// URI (IBM Cloud, local storage)
+	// For file:// URIs, return the direct API download endpoint instead of S3 presigned URL
+	if strings.HasPrefix(kubeconfigURI, "file://") {
+		// Construct direct download URL
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		directDownloadURL := fmt.Sprintf("%s/api/v1/clusters/%s/kubeconfig", baseURL, cluster.ID)
+
+		LogInfo(c, "kubeconfig download URL generated (direct API)",
+			"cluster_id", cluster.ID,
+			"cluster_name", cluster.Name,
+			"storage", "local")
+
+		return SuccessOK(c, map[string]interface{}{
+			"download_url": directDownloadURL,
+			"expires_in":   "session-based",
+			"filename":     fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name),
+			"storage_type": "local",
+		})
+	}
+
+	// S3 URI - generate presigned URL
 	s3Client, err := s3.NewClient(ctx)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create S3 client: %w", err))
 	}
 
 	// Generate presigned URL (valid for 15 minutes)
-	presignedURL, err := s3Client.GeneratePresignedURL(ctx, *outputs.KubeconfigS3URI, 15)
+	presignedURL, err := s3Client.GeneratePresignedURL(ctx, kubeconfigURI, 15)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to generate presigned URL: %w", err))
 	}
 
 	// Log the download request
-	LogInfo(c, "kubeconfig download URL generated",
+	LogInfo(c, "kubeconfig download URL generated (S3 presigned)",
 		"cluster_id", cluster.ID,
-		"cluster_name", cluster.Name)
+		"cluster_name", cluster.Name,
+		"storage", "s3")
 
 	return SuccessOK(c, map[string]interface{}{
 		"download_url": presignedURL,
 		"expires_in":   "15 minutes",
 		"filename":     fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name),
+		"storage_type": "s3",
 	})
 }
