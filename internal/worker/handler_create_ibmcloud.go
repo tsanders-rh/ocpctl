@@ -21,6 +21,13 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 
 	log.Printf("IBM Cloud cluster creation: starting CCO workflow for %s", cluster.Name)
 
+	// Step 1: Create manifests (required to get infraID for CCO)
+	log.Printf("Creating manifests for IBM Cloud cluster...")
+	if err := inst.CreateManifests(ctx, workDir); err != nil {
+		return fmt.Errorf("create manifests: %w", err)
+	}
+	log.Printf("✓ Manifests created successfully")
+
 	// Detect IBM Cloud credentials
 	creds, err := ibmcloud.DetectCredentials()
 	if err != nil {
@@ -52,10 +59,16 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 
 	log.Printf("✓ IBM Cloud credentials validated")
 
-	// Get or use default resource group
-	resourceGroup, err := ibmcloud.GetDefaultResourceGroup(ctx, ibmClient)
+	// Get profile to extract resource group
+	prof, err := h.registry.Get(cluster.Profile)
 	if err != nil {
-		return fmt.Errorf("get resource group: %w", err)
+		return fmt.Errorf("get profile %s: %w", cluster.Profile, err)
+	}
+
+	// Use resource group from profile
+	resourceGroup := "Default" // fallback default
+	if prof.PlatformConfig.IBMCloud != nil && prof.PlatformConfig.IBMCloud.ResourceGroup != "" {
+		resourceGroup = prof.PlatformConfig.IBMCloud.ResourceGroup
 	}
 
 	log.Printf("Using resource group: %s", resourceGroup)

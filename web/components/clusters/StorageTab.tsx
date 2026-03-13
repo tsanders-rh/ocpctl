@@ -5,18 +5,31 @@ import { useClusterStorage, useUnlinkStorage } from "@/lib/hooks/useStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Database, Link2, Trash2, HardDrive, FolderOpen } from "lucide-react";
 import type { StorageGroupResponse } from "@/lib/api/endpoints/storage";
 import { LinkStorageDialog } from "./LinkStorageDialog";
 
 interface StorageTabProps {
   clusterId: string;
+  platform: string;
 }
 
-export function StorageTab({ clusterId }: StorageTabProps) {
+export function StorageTab({ clusterId, platform }: StorageTabProps) {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const { data: storageGroups, isLoading, error } = useClusterStorage(clusterId);
   const unlinkMutation = useUnlinkStorage();
+
+  // Shared storage is AWS-only (uses EFS and S3)
+  const isAWS = platform === "aws";
+  const disabledReason = !isAWS
+    ? `Shared storage is only available for AWS clusters (uses EFS and S3). This cluster is ${platform.toUpperCase()}.`
+    : "";
 
   const handleUnlink = (storageGroupId: string) => {
     if (!confirm("Are you sure you want to unlink this storage? This will remove access to the shared storage for this cluster.")) {
@@ -74,14 +87,28 @@ export function StorageTab({ clusterId }: StorageTabProps) {
           <p className="text-sm text-muted-foreground">
             Manage shared storage for migration testing between clusters
           </p>
-          <Button
-            onClick={() => setShowLinkDialog(true)}
-            size="sm"
-            className="gap-2"
-          >
-            <Link2 className="h-4 w-4" />
-            Link to Cluster
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    onClick={() => setShowLinkDialog(true)}
+                    size="sm"
+                    className="gap-2"
+                    disabled={!isAWS}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Link to Cluster
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!isAWS && (
+                <TooltipContent>
+                  <p className="max-w-xs">{disabledReason}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {!storageGroups || storageGroups.length === 0 ? (
@@ -90,12 +117,31 @@ export function StorageTab({ clusterId }: StorageTabProps) {
               <Database className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Storage Configured</h3>
               <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-                Link this cluster to another cluster to create shared EFS and S3 storage for migration testing.
+                {isAWS
+                  ? "Link this cluster to another cluster to create shared EFS and S3 storage for migration testing."
+                  : `Shared storage is only available for AWS clusters. This ${platform.toUpperCase()} cluster cannot use shared storage.`}
               </p>
-              <Button onClick={() => setShowLinkDialog(true)} className="gap-2">
-                <Link2 className="h-4 w-4" />
-                Link to Cluster
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        onClick={() => setShowLinkDialog(true)}
+                        className="gap-2"
+                        disabled={!isAWS}
+                      >
+                        <Link2 className="h-4 w-4" />
+                        Link to Cluster
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!isAWS && (
+                    <TooltipContent>
+                      <p className="max-w-xs">{disabledReason}</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             </CardContent>
           </Card>
         ) : (

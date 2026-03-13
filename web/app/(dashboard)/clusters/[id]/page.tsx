@@ -498,7 +498,7 @@ export default function ClusterDetailPage() {
             <CardTitle>Storage</CardTitle>
           </CardHeader>
           <CardContent>
-            <StorageTab clusterId={cluster.id} />
+            <StorageTab clusterId={cluster.id} platform={cluster.platform} />
           </CardContent>
         </Card>
       )}

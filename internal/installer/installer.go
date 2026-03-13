@@ -164,11 +164,12 @@ func (i *Installer) CreateCluster(ctx context.Context, workDir string) (string, 
 	}
 
 	// Static credentials - direct cluster creation
-	return i.createClusterDirect(ctx, workDir)
+	return i.CreateClusterDirect(ctx, workDir)
 }
 
-// createClusterDirect runs openshift-install create cluster directly (for static credentials)
-func (i *Installer) createClusterDirect(ctx context.Context, workDir string) (string, error) {
+// CreateClusterDirect runs openshift-install create cluster directly without CCO workflow
+// Used for IBM Cloud (CCO already done) or static credentials
+func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (string, error) {
 	cmd := exec.CommandContext(ctx, i.binaryPath, "create", "cluster", "--dir", workDir, "--log-level=debug")
 
 	var stdout, stderr bytes.Buffer
@@ -195,7 +196,7 @@ func (i *Installer) createClusterManualMode(ctx context.Context, workDir string)
 
 	// Step 1: Create manifests
 	fmt.Printf("Creating manifests for Manual mode (STS credentials detected)...\n")
-	if err := i.createManifests(ctx, workDir); err != nil {
+	if err := i.CreateManifests(ctx, workDir); err != nil {
 		return "", fmt.Errorf("create manifests: %w", err)
 	}
 	i.logInstallState(workDir, "AFTER create manifests")
@@ -218,11 +219,16 @@ func (i *Installer) createClusterManualMode(ctx context.Context, workDir string)
 	// Step 4: Run create cluster
 	fmt.Printf("Creating cluster with Manual credentials mode...\n")
 	i.logInstallState(workDir, "BEFORE create cluster")
-	return i.createClusterDirect(ctx, workDir)
+	return i.CreateClusterDirect(ctx, workDir)
 }
 
-// createManifests runs openshift-install create manifests
-func (i *Installer) createManifests(ctx context.Context, workDir string) error {
+// CCOCtlPath returns the path to the ccoctl binary
+func (i *Installer) CCOCtlPath() string {
+	return i.ccoCtlPath
+}
+
+// CreateManifests runs openshift-install create manifests
+func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	cmd := exec.CommandContext(ctx, i.binaryPath, "create", "manifests", "--dir", workDir, "--log-level=debug")
 
 	var stdout, stderr bytes.Buffer

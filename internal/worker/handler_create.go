@@ -135,7 +135,15 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Run openshift-install create cluster
 	log.Printf("Running openshift-install create cluster for %s (version %s)", cluster.Name, cluster.Version)
 
-	output, err := inst.CreateCluster(ctx, workDir)
+	var output string
+
+	if cluster.Platform == types.PlatformIBMCloud {
+		// IBM Cloud: use direct cluster creation (CCO already done)
+		output, err = inst.CreateClusterDirect(ctx, workDir)
+	} else {
+		// AWS and other platforms: use standard workflow
+		output, err = inst.CreateCluster(ctx, workDir)
+	}
 
 	// Stop log streaming after installer completes
 	streamCancel()

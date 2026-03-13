@@ -38,7 +38,7 @@ func (i *Installer) RunCCOCtlIBMCloud(ctx context.Context, workDir string, confi
 
 	// Extract CredentialsRequests from release image
 	log.Printf("Extracting CredentialsRequests from release image...")
-	if err := i.extractCredentialsRequests(ctx, workDir, credsReqDir); err != nil {
+	if err := i.extractCredentialRequestsIBMCloud(ctx, credsReqDir); err != nil {
 		return fmt.Errorf("extract credentials requests: %w", err)
 	}
 
@@ -84,7 +84,6 @@ func (i *Installer) executeCCOCtlIBMCloud(ctx context.Context, clusterName strin
 		"--credentials-requests-dir=" + credsReqDir,
 		"--name=" + clusterName,
 		"--output-dir=" + outputDir,
-		"--region=" + config.Region,
 	}
 
 	// Add resource group if specified
@@ -194,7 +193,6 @@ func (i *Installer) executeCCOCtlIBMCloudDelete(ctx context.Context, clusterName
 	args := []string{
 		"ibmcloud", "delete-service-id",
 		"--name=" + clusterName,
-		"--region=" + config.Region,
 	}
 
 	if config.ResourceGroup != "" {
@@ -228,6 +226,63 @@ func (i *Installer) executeCCOCtlIBMCloudDelete(ctx context.Context, clusterName
 	}
 
 	log.Printf("ccoctl delete output:\n%s", stdout.String())
+	return nil
+}
+
+// extractCredentialRequestsIBMCloud extracts CredentialsRequest manifests for IBM Cloud
+func (i *Installer) extractCredentialRequestsIBMCloud(ctx context.Context, outputDir string) error {
+	// Read the release image from install-config or detect from openshift-install
+	releaseImage, err := i.getReleaseImage(ctx)
+	if err != nil {
+		return fmt.Errorf("get release image: %w", err)
+	}
+
+	log.Printf("Extracting CredentialsRequests from release image: %s", releaseImage)
+
+	// Get pull secret from environment
+	pullSecret := os.Getenv("OPENSHIFT_PULL_SECRET")
+	if pullSecret == "" {
+		return fmt.Errorf("OPENSHIFT_PULL_SECRET environment variable not set")
+	}
+
+	// Write pull secret to temporary file for oc command
+	pullSecretFile := filepath.Join(os.TempDir(), fmt.Sprintf("pull-secret-%d.json", os.Getpid()))
+	if err := os.WriteFile(pullSecretFile, []byte(pullSecret), 0600); err != nil {
+		return fmt.Errorf("write pull secret: %w", err)
+	}
+	defer os.Remove(pullSecretFile)
+
+	// Use oc adm release extract to get CredentialsRequests for IBM Cloud
+	cmd := exec.CommandContext(ctx, "oc", "adm", "release", "extract",
+		"--credentials-requests",
+		"--cloud=ibmcloud",
+		"--to="+outputDir,
+		"--from="+releaseImage,
+		"--registry-config="+pullSecretFile,
+	)
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	log.Printf("Running: oc adm release extract --credentials-requests --cloud=ibmcloud --to=%s --from=%s", outputDir, releaseImage)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("oc adm release extract failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	log.Printf("oc output:\n%s", stdout.String())
+
+	// Verify that CredentialsRequest files were extracted
+	files, err := os.ReadDir(outputDir)
+	if err != nil {
+		return fmt.Errorf("read output dir: %w", err)
+	}
+
+	if len(files) == 0 {
+		return fmt.Errorf("no CredentialsRequest manifests extracted")
+	}
+
+	log.Printf("Successfully extracted %d CredentialsRequest manifests", len(files))
 	return nil
 }
 

@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/tsanders-rh/ocpctl/internal/ibmcloud"
