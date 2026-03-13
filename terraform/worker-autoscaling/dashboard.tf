@@ -34,7 +34,7 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
         type = "metric"
         properties = {
           metrics = [
-            ["OCPCTL", "WorkerActive", { stat = "Sum", label = "Active Workers" }]
+            [{ expression = "SEARCH('{OCPCTL,WorkerID} MetricName=\"WorkerActive\"', 'Sum', 60)", id = "e1", label = "Active Workers" }]
           ]
           period = 60
           stat   = "Sum"
@@ -57,10 +57,10 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/AutoScaling", "GroupDesiredCapacity", { stat = "Average", label = "Desired Capacity" }, { "AutoScalingGroupName" = aws_autoscaling_group.worker.name }],
-            [".", "GroupInServiceInstances", { stat = "Average", label = "In Service" }, { "AutoScalingGroupName" = aws_autoscaling_group.worker.name }],
-            [".", "GroupMinSize", { stat = "Average", label = "Min Size" }, { "AutoScalingGroupName" = aws_autoscaling_group.worker.name }],
-            [".", "GroupMaxSize", { stat = "Average", label = "Max Size" }, { "AutoScalingGroupName" = aws_autoscaling_group.worker.name }]
+            ["AWS/AutoScaling", "GroupDesiredCapacity", "AutoScalingGroupName", aws_autoscaling_group.worker.name, { stat = "Average", label = "Desired Capacity" }],
+            [".", "GroupInServiceInstances", ".", ".", { stat = "Average", label = "In Service" }],
+            [".", "GroupMinSize", ".", ".", { stat = "Average", label = "Min Size" }],
+            [".", "GroupMaxSize", ".", ".", { stat = "Average", label = "Max Size" }]
           ]
           period = 60
           stat   = "Average"
@@ -85,7 +85,7 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
           metrics = [
             [
               {
-                expression = "m1 / m2"
+                expression = "m1 / MAX([FILL(m2, 1)])"
                 label      = "Jobs per Worker"
                 id         = "e1"
               }
@@ -93,6 +93,8 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
             [
               "OCPCTL",
               "PendingJobs",
+              "AutoScalingGroupName",
+              aws_autoscaling_group.worker.name,
               {
                 id      = "m1"
                 visible = false
@@ -100,12 +102,11 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
               }
             ],
             [
-              "OCPCTL",
-              "WorkerActive",
               {
-                id      = "m2"
-                visible = false
-                stat    = "Sum"
+                expression = "SEARCH('{OCPCTL,WorkerID} MetricName=\"WorkerActive\"', 'Sum', 60)"
+                id         = "m2"
+                visible    = false
+                label      = ""
               }
             ]
           ]
@@ -160,27 +161,6 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
         y      = 12
       },
 
-      # Scaling Activity Log
-      {
-        type = "log"
-        properties = {
-          query   = <<-EOT
-            SOURCE '/aws/lambda/${var.project_name}-worker'
-            | fields @timestamp, @message
-            | filter @message like /scaling/
-            | sort @timestamp desc
-            | limit 20
-          EOT
-          region  = var.aws_region
-          title   = "Recent Scaling Activity"
-          stacked = false
-        }
-        width  = 24
-        height = 6
-        x      = 0
-        y      = 18
-      },
-
       # Alarm Status
       {
         type = "alarm"
@@ -194,7 +174,7 @@ resource "aws_cloudwatch_dashboard" "worker_metrics" {
         width  = 24
         height = 4
         x      = 0
-        y      = 24
+        y      = 18
       }
     ]
   })

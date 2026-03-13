@@ -107,9 +107,25 @@ func main() {
 		healthCheckPort = "8081"
 	}
 
-	// Validate OPENSHIFT_PULL_SECRET
+	// Validate OPENSHIFT_PULL_SECRET (prefer file, fall back to env var)
 	pullSecret := os.Getenv("OPENSHIFT_PULL_SECRET")
+	pullSecretFile := os.Getenv("OPENSHIFT_PULL_SECRET_FILE")
 	environment := os.Getenv("ENVIRONMENT")
+
+	// If a file path is specified, read from file
+	if pullSecretFile != "" {
+		fileData, err := os.ReadFile(pullSecretFile)
+		if err != nil {
+			if environment == "production" {
+				log.Fatalf("CRITICAL: Failed to read OPENSHIFT_PULL_SECRET_FILE (%s): %v", pullSecretFile, err)
+			}
+			log.Printf("WARNING: Failed to read OPENSHIFT_PULL_SECRET_FILE (%s): %v", pullSecretFile, err)
+			pullSecret = "" // Clear any env var value
+		} else {
+			pullSecret = string(fileData)
+			log.Printf("Loaded pull secret from file: %s", pullSecretFile)
+		}
+	}
 
 	if pullSecret == "" {
 		if environment == "production" {

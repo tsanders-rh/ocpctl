@@ -106,12 +106,70 @@ func getEC2InstanceID() string {
 	return string(instanceIDBytes)
 }
 
+// getEC2ASGName retrieves the Auto Scaling Group name from EC2 tags
+func getEC2ASGName() string {
+	// Use IMDSv2
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Get token first (IMDSv2)
+	tokenReq, err := http.NewRequestWithContext(ctx, "PUT",
+		"http://169.254.169.254/latest/api/token", nil)
+	if err != nil {
+		return ""
+	}
+	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return ""
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != 200 {
+		return ""
+	}
+
+	tokenBytes, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return ""
+	}
+	token := string(tokenBytes)
+
+	// Get instance tags to find ASG name
+	tagsReq, err := http.NewRequestWithContext(ctx, "GET",
+		"http://169.254.169.254/latest/meta-data/tags/instance/aws:autoscaling:groupName", nil)
+	if err != nil {
+		return ""
+	}
+	tagsReq.Header.Set("X-aws-ec2-metadata-token", token)
+
+	tagsResp, err := client.Do(tagsReq)
+	if err != nil {
+		return ""
+	}
+	defer tagsResp.Body.Close()
+
+	if tagsResp.StatusCode != 200 {
+		return ""
+	}
+
+	asgNameBytes, err := io.ReadAll(tagsResp.Body)
+	if err != nil {
+		return ""
+	}
+
+	return string(asgNameBytes)
+}
+
 // Worker processes background jobs
 type Worker struct {
 	config    *Config
 	store     *store.Store
 	processor *JobProcessor
 	metrics   *metrics.Publisher
+	asgName   string
 	running   bool
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -129,11 +187,18 @@ func NewWorker(config *Config, st *store.Store) *Worker {
 		log.Printf("Warning: Failed to initialize CloudWatch metrics: %v", err)
 	}
 
+	// Get ASG name if running in an Auto Scaling Group
+	asgName := getEC2ASGName()
+	if asgName != "" {
+		log.Printf("Running in Auto Scaling Group: %s", asgName)
+	}
+
 	return &Worker{
 		config:    config,
 		store:     st,
 		processor: NewJobProcessor(config, st),
 		metrics:   metricsPublisher,
+		asgName:   asgName,
 		running:   false,
 	}
 }
@@ -204,6 +269,10 @@ func (w *Worker) poll() {
 	} else if w.metrics != nil {
 		// Publish pending jobs metric for auto-scaling
 		dims := map[string]string{}
+		// Include ASG name dimension if running in an Auto Scaling Group
+		if w.asgName != "" {
+			dims["AutoScalingGroupName"] = w.asgName
+		}
 		if err := w.metrics.PublishGauge(ctx, metrics.MetricPendingJobs, float64(totalPending), dims); err != nil {
 			log.Printf("Warning: Failed to publish pending jobs metric: %v", err)
 		}

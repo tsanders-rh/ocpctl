@@ -88,3 +88,4 @@ terraform.tfstate*
 tmp/
 temp/
 *.tmp
+ocpctl-worker

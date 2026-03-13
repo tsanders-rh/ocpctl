@@ -91,6 +91,13 @@ variable "sns_topic_arn" {
   default     = ""
 }
 
+variable "openshift_pull_secret" {
+  description = "OpenShift pull secret for cluster provisioning"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

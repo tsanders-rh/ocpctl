@@ -25,11 +25,6 @@ data "aws_subnets" "private" {
     name   = "vpc-id"
     values = [data.aws_vpc.main.id]
   }
-
-  filter {
-    name   = "tag:Type"
-    values = ["private"]
-  }
 }
 
 data "aws_security_group" "worker" {
@@ -51,6 +46,7 @@ resource "aws_launch_template" "worker" {
   description   = "Launch template for OCPCTL worker instances"
   image_id      = var.ami_id
   instance_type = var.instance_type
+  key_name      = "ocpctl-test-key"
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.worker.arn
@@ -77,11 +73,12 @@ resource "aws_launch_template" "worker" {
 
   # User data script to start worker service
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    database_url          = var.database_url
-    work_dir              = var.work_dir
-    worker_poll_interval  = var.worker_poll_interval
-    worker_max_concurrent = var.worker_max_concurrent
-    worker_binary_url     = var.worker_binary_url
+    database_url           = var.database_url
+    work_dir               = var.work_dir
+    worker_poll_interval   = var.worker_poll_interval
+    worker_max_concurrent  = var.worker_max_concurrent
+    worker_binary_url      = var.worker_binary_url
+    openshift_pull_secret  = var.openshift_pull_secret
   }))
 
   tag_specifications {
