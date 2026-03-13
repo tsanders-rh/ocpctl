@@ -215,8 +215,10 @@ sshKey: '{{.SSHKey}}'
 `
 
 // ibmCloudInstallConfigTemplate is the template for IBM Cloud install-config.yaml
+// Uses Manual credentialsMode which requires ccoctl to create service IDs
 const ibmCloudInstallConfigTemplate = `apiVersion: v1
 baseDomain: {{.BaseDomain}}
+credentialsMode: Manual
 metadata:
   name: {{.ClusterName}}
 platform:

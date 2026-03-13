@@ -109,6 +109,16 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: failed to store destroy log: %v", err)
 	}
 
+	// Platform-specific post-destruction cleanup
+	if cluster.Platform == types.PlatformIBMCloud {
+		// IBM Cloud requires CCO cleanup - delete service IDs created during installation
+		log.Printf("Running IBM Cloud post-destruction cleanup (CCO service IDs)...")
+		if err := h.HandleIBMCloudDestroy(ctx, cluster, inst, workDir); err != nil {
+			// Don't fail the job - just log the warning
+			log.Printf("Warning: IBM Cloud cleanup encountered issues: %v", err)
+		}
+	}
+
 	// Clean up work directory
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to clean up work directory %s: %v", workDir, err)

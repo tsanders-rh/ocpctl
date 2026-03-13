@@ -2,7 +2,7 @@ name: ibmcloud-minimal-test
 displayName: IBM Cloud Minimal Test Cluster
 description: Compact 3-node cluster for IBM Cloud testing (masters schedulable, no workers)
 platform: ibmcloud
-enabled: false  # Will be enabled in Phase 2
+enabled: true
 
 openshiftVersions:
   allowlist:
@@ -22,9 +22,8 @@ regions:
 
 baseDomains:
   allowlist:
-    - labs.example.com
-    - ibm.example.com
-  default: labs.example.com
+    - ibm.mg.dog8code.com
+  default: ibm.mg.dog8code.com
 
 compute:
   controlPlane:

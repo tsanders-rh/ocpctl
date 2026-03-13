@@ -123,6 +123,15 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
 	}
 
+	// Platform-specific pre-installation steps
+	if cluster.Platform == types.PlatformIBMCloud {
+		// IBM Cloud requires CCO manual mode - run ccoctl before cluster creation
+		log.Printf("Running IBM Cloud pre-installation (CCO workflow)...")
+		if err := h.HandleIBMCloudCreate(ctx, job, inst, workDir); err != nil {
+			return fmt.Errorf("IBM Cloud pre-installation: %w", err)
+		}
+	}
+
 	// Run openshift-install create cluster
 	log.Printf("Running openshift-install create cluster for %s (version %s)", cluster.Name, cluster.Version)
 
