@@ -2,7 +2,7 @@ name: ibmcloud-standard
 displayName: IBM Cloud Standard Development Cluster
 description: Standard 6-node cluster with dedicated workers for IBM Cloud development
 platform: ibmcloud
-enabled: false  # Will be enabled in Phase 2
+enabled: true
 
 openshiftVersions:
   allowlist:
@@ -22,10 +22,8 @@ regions:
 
 baseDomains:
   allowlist:
-    - labs.example.com
-    - ibm.example.com
-    - staging.example.com
-  default: labs.example.com
+    - ibm.mg.dog8code.com
+  default: ibm.mg.dog8code.com
 
 compute:
   controlPlane:

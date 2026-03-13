@@ -108,7 +108,8 @@ func ValidateIAMPermissions(ctx context.Context, client *Client) error {
 // testVPCAccess tests if credentials have VPC access
 func testVPCAccess(ctx context.Context, client *Client) error {
 	// Try to list VPCs
-	_, err := client.VPCService().ListVpcs(&client.VPCService().NewListVpcsOptions())
+	listOptions := client.VPCService().NewListVpcsOptions()
+	_, _, err := client.VPCService().ListVpcs(listOptions)
 	if err != nil {
 		return fmt.Errorf("cannot list VPCs: %w", err)
 	}

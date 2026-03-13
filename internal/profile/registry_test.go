@@ -25,11 +25,13 @@ func TestRegistry_Get(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("returns error for disabled profile", func(t *testing.T) {
-		// IBM profiles are disabled in Phase 1
-		_, err := registry.Get("ibmcloud-minimal-test")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "disabled")
+	t.Run("retrieves enabled IBM Cloud profile", func(t *testing.T) {
+		// IBM Cloud profiles are now enabled
+		prof, err := registry.Get("ibmcloud-minimal-test")
+		assert.NoError(t, err)
+		assert.Equal(t, "ibmcloud-minimal-test", prof.Name)
+		assert.Equal(t, types.PlatformIBMCloud, prof.Platform)
+		assert.True(t, prof.Enabled)
 	})
 }
 
@@ -64,8 +66,14 @@ func TestRegistry_ListByPlatform(t *testing.T) {
 
 	t.Run("lists IBM Cloud profiles", func(t *testing.T) {
 		profiles := registry.ListByPlatform(types.PlatformIBMCloud)
-		// IBM profiles are disabled in Phase 1
-		assert.Empty(t, profiles)
+		// IBM profiles are now enabled
+		assert.NotEmpty(t, profiles)
+		assert.Len(t, profiles, 2) // ibmcloud-minimal-test and ibmcloud-standard
+
+		for _, prof := range profiles {
+			assert.Equal(t, types.PlatformIBMCloud, prof.Platform)
+			assert.True(t, prof.Enabled)
+		}
 	})
 }
 
@@ -76,8 +84,9 @@ func TestRegistry_Exists(t *testing.T) {
 
 	assert.True(t, registry.Exists("aws-minimal-test"))
 	assert.True(t, registry.Exists("aws-standard"))
+	assert.True(t, registry.Exists("ibmcloud-minimal-test")) // Now enabled
+	assert.True(t, registry.Exists("ibmcloud-standard"))     // Now enabled
 	assert.False(t, registry.Exists("non-existent"))
-	assert.False(t, registry.Exists("ibmcloud-minimal-test")) // Disabled
 }
 
 func TestRegistry_Count(t *testing.T) {
