@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -18,7 +19,7 @@ import (
 
 // OrphanedResource represents an AWS resource without a matching cluster
 type OrphanedResource struct {
-	Type         string // "VPC", "LoadBalancer", "DNSRecord", "EC2Instance"
+	Type         string // "VPC", "LoadBalancer", "DNSRecord", "EC2Instance", "HostedZone", "IAMRole", "OIDCProvider"
 	ResourceID   string
 	ResourceName string
 	Region       string
@@ -99,6 +100,22 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		orphans = append(orphans, hostedZoneOrphans...)
 	}
 
+	// Check IAM Roles
+	iamRoleOrphans, err := j.detectOrphanedIAMRoles(ctx, cfg, clustersByName)
+	if err != nil {
+		log.Printf("Error detecting orphaned IAM roles: %v", err)
+	} else {
+		orphans = append(orphans, iamRoleOrphans...)
+	}
+
+	// Check OIDC Providers
+	oidcOrphans, err := j.detectOrphanedOIDCProviders(ctx, cfg, clustersByName)
+	if err != nil {
+		log.Printf("Error detecting orphaned OIDC providers: %v", err)
+	} else {
+		orphans = append(orphans, oidcOrphans...)
+	}
+
 	// Report findings
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned AWS resources:", len(orphans))
@@ -109,6 +126,13 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 			clusterName := extractClusterName(orphan.ResourceName)
 			if orphan.Type == "DNSRecord" || orphan.Type == "HostedZone" {
 				clusterName = extractClusterNameFromDNS(orphan.ResourceName)
+			} else if orphan.Type == "IAMRole" {
+				clusterName = extractClusterNameFromIAMRole(orphan.ResourceName)
+			} else if orphan.Type == "OIDCProvider" {
+				// OIDC providers should have ClusterName in tags
+				if cn, ok := orphan.Tags["ClusterName"]; ok {
+					clusterName = cn
+				}
 			}
 
 			dbOrphan := &types.OrphanedResource{
@@ -453,6 +477,140 @@ func (j *Janitor) detectOrphanedHostedZones(ctx context.Context, cfg aws.Config,
 	return orphans, nil
 }
 
+// detectOrphanedIAMRoles finds IAM roles created by ccoctl for clusters that don't exist
+func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+	iamClient := iam.NewFromConfig(cfg)
+
+	// List all IAM roles
+	result, err := iamClient.ListRoles(ctx, &iam.ListRolesInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	orphans := []OrphanedResource{}
+
+	for _, role := range result.Roles {
+		roleName := aws.ToString(role.RoleName)
+
+		// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
+		// Examples:
+		// - sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden
+		// - sanders12-9hfvt-openshift-ingress-operator-cloud-credentials
+		// - sanders12-9hfvt-openshift-cluster-csi-drivers-ebs-cloud-credenti
+		// Also creates master/worker roles: <cluster-name>-<infra-id>-master-role
+
+		// Check if role name contains "-openshift-" pattern or ends with "-master-role" or "-worker-role"
+		if !strings.Contains(roleName, "-openshift-") &&
+			!strings.HasSuffix(roleName, "-master-role") &&
+			!strings.HasSuffix(roleName, "-worker-role") {
+			continue
+		}
+
+		// Extract cluster name by removing the infra ID suffix
+		// Pattern: <cluster-name>-<5-char-infra-id>-...
+		clusterName := extractClusterNameFromIAMRole(roleName)
+		if clusterName == "" {
+			continue
+		}
+
+		// Check if cluster exists and is not destroyed
+		cluster, exists := clustersByName[clusterName]
+		if !exists || cluster.Status == types.ClusterStatusDestroyed {
+			// Get role tags for additional metadata
+			tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+				RoleName: role.RoleName,
+			})
+
+			tags := make(map[string]string)
+			if err == nil {
+				for _, tag := range tagsResult.Tags {
+					tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+				}
+			}
+
+			orphans = append(orphans, OrphanedResource{
+				Type:         "IAMRole",
+				ResourceID:   aws.ToString(role.Arn),
+				ResourceName: roleName,
+				Region:       "global", // IAM is global
+				Tags:         tags,
+			})
+		}
+	}
+
+	return orphans, nil
+}
+
+// detectOrphanedOIDCProviders finds OIDC providers created for clusters that don't exist
+func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+	iamClient := iam.NewFromConfig(cfg)
+
+	// List all OIDC providers
+	result, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	orphans := []OrphanedResource{}
+
+	for _, provider := range result.OpenIDConnectProviderList {
+		providerArn := aws.ToString(provider.Arn)
+
+		// Get provider details including tags
+		detailsResult, err := iamClient.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+			OpenIDConnectProviderArn: provider.Arn,
+		})
+		if err != nil {
+			log.Printf("Warning: failed to get OIDC provider details for %s: %v", providerArn, err)
+			continue
+		}
+
+		providerURL := aws.ToString(detailsResult.Url)
+
+		// OIDC providers have URLs like:
+		// - rh-oidc.s3.us-east-1.amazonaws.com/29avu8o05l9g7lq97vbcsgqfgmklqqh3 (cluster infra ID)
+		// - oidc.s3.us-east-1.amazonaws.com/29avu8o05l9g7lq97vbcsgqfgmklqqh3
+
+		// Check if this is an OpenShift OIDC provider
+		if !strings.Contains(providerURL, "rh-oidc.s3.") && !strings.Contains(providerURL, "oidc.s3.") {
+			continue
+		}
+
+		// Look for ClusterName in tags
+		clusterName := ""
+		tags := make(map[string]string)
+		for _, tag := range detailsResult.Tags {
+			tagKey := aws.ToString(tag.Key)
+			tagValue := aws.ToString(tag.Value)
+			tags[tagKey] = tagValue
+
+			if tagKey == "ClusterName" {
+				clusterName = tagValue
+			}
+		}
+
+		// If we found a ClusterName tag, check if cluster exists
+		if clusterName != "" {
+			cluster, exists := clustersByName[clusterName]
+			if !exists || cluster.Status == types.ClusterStatusDestroyed {
+				orphans = append(orphans, OrphanedResource{
+					Type:         "OIDCProvider",
+					ResourceID:   providerArn,
+					ResourceName: providerURL,
+					Region:       "global", // IAM is global
+					Tags:         tags,
+				})
+			}
+		} else {
+			// No ClusterName tag - this provider might be orphaned but we can't be sure
+			// Extract the infra ID from the URL and log a warning
+			log.Printf("Warning: OIDC provider %s has no ClusterName tag, skipping", providerURL)
+		}
+	}
+
+	return orphans, nil
+}
+
 // Helper functions
 
 func getTagValue(tags []ec2types.Tag, key string) string {
@@ -518,5 +676,49 @@ func extractClusterNameFromDNS(dnsName string) string {
 		return parts[0]
 	}
 
+	return ""
+}
+
+// extractClusterNameFromIAMRole extracts cluster name from IAM role name
+// Examples:
+//   "sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden" -> "sanders12"
+//   "sanders12-9hfvt-master-role" -> "sanders12"
+//   "d-cluster-lqrc7-openshift-ingress-operator-cloud-credentials" -> "d-cluster"
+func extractClusterNameFromIAMRole(roleName string) string {
+	// IAM roles follow pattern: <cluster-name>-<5-char-infra-id>-openshift-* or <cluster-name>-<5-char-infra-id>-master-role
+
+	// First, try to split on "-openshift-" or "-master-role" or "-worker-role"
+	var prefix string
+	if strings.Contains(roleName, "-openshift-") {
+		parts := strings.SplitN(roleName, "-openshift-", 2)
+		if len(parts) == 2 {
+			prefix = parts[0]
+		}
+	} else if strings.HasSuffix(roleName, "-master-role") {
+		prefix = strings.TrimSuffix(roleName, "-master-role")
+	} else if strings.HasSuffix(roleName, "-worker-role") {
+		prefix = strings.TrimSuffix(roleName, "-worker-role")
+	}
+
+	if prefix == "" {
+		return ""
+	}
+
+	// Now remove the infra ID (last 5-char segment after last hyphen)
+	// Pattern: <cluster-name>-<5-char-infra-id>
+	parts := strings.Split(prefix, "-")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// The infra ID is the last segment and should be 5 alphanumeric characters
+	lastSegment := parts[len(parts)-1]
+	if len(lastSegment) == 5 {
+		// Remove the infra ID and return the cluster name
+		return strings.Join(parts[0:len(parts)-1], "-")
+	}
+
+	// If the last segment isn't exactly 5 chars, this might be an old-style role
+	// or a different naming convention - return empty to skip
 	return ""
 }

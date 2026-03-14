@@ -15,6 +15,8 @@ const (
 	OrphanedResourceTypeDNSRecord    OrphanedResourceType = "DNSRecord"
 	OrphanedResourceTypeEC2Instance  OrphanedResourceType = "EC2Instance"
 	OrphanedResourceTypeHostedZone   OrphanedResourceType = "HostedZone"
+	OrphanedResourceTypeIAMRole      OrphanedResourceType = "IAMRole"
+	OrphanedResourceTypeOIDCProvider OrphanedResourceType = "OIDCProvider"
 )
 
 // OrphanedResourceStatus represents the status of an orphaned resource
