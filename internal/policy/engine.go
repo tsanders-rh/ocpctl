@@ -145,8 +145,14 @@ func (e *Engine) validateBaseDomain(req *CreateClusterRequest, prof *profile.Pro
 
 // validateTTL checks TTL is within profile limits
 func (e *Engine) validateTTL(req *CreateClusterRequest, prof *profile.Profile, result *ValidationResult) {
-	if req.TTLHours <= 0 {
-		result.AddError("ttlHours", "TTL must be greater than 0")
+	// TTL=0 means infinite lifetime (never expires)
+	if req.TTLHours < 0 {
+		result.AddError("ttlHours", "TTL must be 0 or greater (0 = never expires)")
+		return
+	}
+
+	// Skip max and custom TTL validation if infinite lifetime
+	if req.TTLHours == 0 {
 		return
 	}
 
