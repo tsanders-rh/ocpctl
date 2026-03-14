@@ -483,16 +483,23 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 
 	orphans := []OrphanedResource{}
 
+	log.Printf("IAM Detection: Starting scan (clusters in DB: %d)", len(clustersByName))
+
 	// Use paginator to iterate through all IAM roles (account may have 1000+ roles)
 	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+
+	totalScanned := 0
+	openshiftRoles := 0
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
+			log.Printf("IAM Detection: Error paginating roles: %v", err)
 			return nil, err
 		}
 
 		for _, role := range page.Roles {
+			totalScanned++
 			roleName := aws.ToString(role.RoleName)
 
 			// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
@@ -508,6 +515,8 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 				!strings.HasSuffix(roleName, "-worker-role") {
 				continue
 			}
+
+			openshiftRoles++
 
 			// Extract cluster name by removing the infra ID suffix
 			// Pattern: <cluster-name>-<5-char-infra-id>-...
@@ -541,6 +550,8 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 			}
 		}
 	}
+
+	log.Printf("IAM Detection: Scanned %d total roles, %d OpenShift-related, %d orphaned", totalScanned, openshiftRoles, len(orphans))
 
 	return orphans, nil
 }
