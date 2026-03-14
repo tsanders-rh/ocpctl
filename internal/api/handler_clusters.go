@@ -146,10 +146,14 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	// Parse destroy_at timestamp
-	destroyAt, err := time.Parse(time.RFC3339, validation.DestroyAt)
-	if err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("invalid destroy_at timestamp: %w", err))
+	// Parse destroy_at timestamp (empty means infinite TTL)
+	var destroyAt *time.Time
+	if validation.DestroyAt != "" {
+		parsedTime, err := time.Parse(time.RFC3339, validation.DestroyAt)
+		if err != nil {
+			return LogAndReturnGenericError(c, fmt.Errorf("invalid destroy_at timestamp: %w", err))
+		}
+		destroyAt = &parsedTime
 	}
 
 	// Create cluster record
@@ -169,7 +173,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		TTLHours:      ttl,
 		RequestTags:   validation.MergedTags,
 		EffectiveTags: validation.MergedTags,
-		DestroyAt:     &destroyAt,
+		DestroyAt:     destroyAt,
 		OffhoursOptIn: req.OffhoursOptIn,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),

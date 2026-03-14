@@ -17,7 +17,7 @@ export const createClusterSchema = z.object({
   owner: z.string().email("Invalid email address"),
   team: z.string().min(2, "Team name required (min 2 characters)"),
   cost_center: z.string().min(2, "Cost center required (min 2 characters)"),
-  ttl_hours: z.number().int().min(1, "TTL must be at least 1 hour").max(720),
+  ttl_hours: z.number().int().min(0, "TTL must be 0 or greater (0 = never expires)").max(720),
   ssh_public_key: z.string().optional(),
   extra_tags: z.record(z.string()).optional(),
   offhours_opt_in: z.boolean().default(false),

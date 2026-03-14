@@ -14,6 +14,7 @@ set -e
 #   export API_URL=http://your-ec2-ip:8080/api/v1
 #   export OCPCTL_EMAIL=admin@example.com
 #   export OCPCTL_PASSWORD=yourpassword
+#   export TTL_HOURS=0  # Optional: 0 = infinite (never expires), default is 2 hours
 #   ./scripts/demo-autoscaling.sh
 
 # Configuration - UPDATE THESE
@@ -43,7 +44,7 @@ REGION="us-east-1"
 BASE_DOMAIN="${BASE_DOMAIN:-demo.ocpctl.io}"
 TEAM="demo"
 COST_CENTER="autoscaling-test"
-TTL_HOURS=2
+TTL_HOURS="${TTL_HOURS:-2}"  # Set to 0 for infinite TTL (never expires)
 
 # Colors for output
 RED='\033[0;31m'

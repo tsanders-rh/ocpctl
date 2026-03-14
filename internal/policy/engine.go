@@ -45,8 +45,8 @@ func (e *Engine) ValidateCreateRequest(req *CreateClusterRequest) (*ValidationRe
 	e.validateTags(req, prof, result)
 	e.validateOffhoursOptIn(req, prof, result)
 
-	// Calculate destroy_at timestamp
-	if result.Valid {
+	// Calculate destroy_at timestamp (0 = never expires)
+	if result.Valid && req.TTLHours > 0 {
 		destroyAt := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
 		result.DestroyAt = destroyAt.Format(time.RFC3339)
 	}

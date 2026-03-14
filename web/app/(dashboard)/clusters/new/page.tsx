@@ -366,12 +366,12 @@ export default function NewClusterPage() {
                   <Input
                     id="ttl_hours"
                     type="number"
-                    min={1}
+                    min={0}
                     max={selectedProfile.lifecycle.max_ttl_hours}
                     {...register("ttl_hours", { valueAsNumber: true })}
                   />
                   <p className="text-sm text-muted-foreground">
-                    Max: {selectedProfile.lifecycle.max_ttl_hours} hours
+                    Max: {selectedProfile.lifecycle.max_ttl_hours} hours (0 = never expires)
                   </p>
                   {errors.ttl_hours && (
                     <p className="text-sm text-red-600">
