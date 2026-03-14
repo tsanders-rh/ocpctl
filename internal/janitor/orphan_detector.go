@@ -481,60 +481,64 @@ func (j *Janitor) detectOrphanedHostedZones(ctx context.Context, cfg aws.Config,
 func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
 	iamClient := iam.NewFromConfig(cfg)
 
-	// List all IAM roles
-	result, err := iamClient.ListRoles(ctx, &iam.ListRolesInput{})
-	if err != nil {
-		return nil, err
-	}
-
 	orphans := []OrphanedResource{}
 
-	for _, role := range result.Roles {
-		roleName := aws.ToString(role.RoleName)
+	// Use paginator to iterate through all IAM roles (account may have 1000+ roles)
+	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
 
-		// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
-		// Examples:
-		// - sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden
-		// - sanders12-9hfvt-openshift-ingress-operator-cloud-credentials
-		// - sanders12-9hfvt-openshift-cluster-csi-drivers-ebs-cloud-credenti
-		// Also creates master/worker roles: <cluster-name>-<infra-id>-master-role
-
-		// Check if role name contains "-openshift-" pattern or ends with "-master-role" or "-worker-role"
-		if !strings.Contains(roleName, "-openshift-") &&
-			!strings.HasSuffix(roleName, "-master-role") &&
-			!strings.HasSuffix(roleName, "-worker-role") {
-			continue
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
 		}
 
-		// Extract cluster name by removing the infra ID suffix
-		// Pattern: <cluster-name>-<5-char-infra-id>-...
-		clusterName := extractClusterNameFromIAMRole(roleName)
-		if clusterName == "" {
-			continue
-		}
+		for _, role := range page.Roles {
+			roleName := aws.ToString(role.RoleName)
 
-		// Check if cluster exists and is not destroyed
-		cluster, exists := clustersByName[clusterName]
-		if !exists || cluster.Status == types.ClusterStatusDestroyed {
-			// Get role tags for additional metadata
-			tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
-				RoleName: role.RoleName,
-			})
+			// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
+			// Examples:
+			// - sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden
+			// - sanders12-9hfvt-openshift-ingress-operator-cloud-credentials
+			// - sanders12-9hfvt-openshift-cluster-csi-drivers-ebs-cloud-credenti
+			// Also creates master/worker roles: <cluster-name>-<infra-id>-master-role
 
-			tags := make(map[string]string)
-			if err == nil {
-				for _, tag := range tagsResult.Tags {
-					tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
-				}
+			// Check if role name contains "-openshift-" pattern or ends with "-master-role" or "-worker-role"
+			if !strings.Contains(roleName, "-openshift-") &&
+				!strings.HasSuffix(roleName, "-master-role") &&
+				!strings.HasSuffix(roleName, "-worker-role") {
+				continue
 			}
 
-			orphans = append(orphans, OrphanedResource{
-				Type:         "IAMRole",
-				ResourceID:   aws.ToString(role.Arn),
-				ResourceName: roleName,
-				Region:       "global", // IAM is global
-				Tags:         tags,
-			})
+			// Extract cluster name by removing the infra ID suffix
+			// Pattern: <cluster-name>-<5-char-infra-id>-...
+			clusterName := extractClusterNameFromIAMRole(roleName)
+			if clusterName == "" {
+				continue
+			}
+
+			// Check if cluster exists and is not destroyed
+			cluster, exists := clustersByName[clusterName]
+			if !exists || cluster.Status == types.ClusterStatusDestroyed {
+				// Get role tags for additional metadata
+				tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+					RoleName: role.RoleName,
+				})
+
+				tags := make(map[string]string)
+				if err == nil {
+					for _, tag := range tagsResult.Tags {
+						tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+					}
+				}
+
+				orphans = append(orphans, OrphanedResource{
+					Type:         "IAMRole",
+					ResourceID:   aws.ToString(role.Arn),
+					ResourceName: roleName,
+					Region:       "global", // IAM is global
+					Tags:         tags,
+				})
+			}
 		}
 	}
 
