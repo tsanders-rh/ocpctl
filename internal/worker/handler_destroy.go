@@ -117,6 +117,13 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 			// Don't fail the job - just log the warning
 			log.Printf("Warning: IBM Cloud cleanup encountered issues: %v", err)
 		}
+	} else if cluster.Platform == types.PlatformAWS {
+		// AWS requires CCO cleanup - delete IAM roles and OIDC provider created during installation
+		log.Printf("Running AWS post-destruction cleanup (CCO IAM roles and OIDC provider)...")
+		if err := h.HandleAWSDestroy(ctx, cluster, inst, workDir); err != nil {
+			// Don't fail the job - just log the warning
+			log.Printf("Warning: AWS cleanup encountered issues: %v", err)
+		}
 	}
 
 	// Clean up work directory
