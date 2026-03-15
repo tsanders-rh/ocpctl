@@ -15,9 +15,7 @@ const navigation = [
 const externalNavigation = [
   {
     name: "API Documentation",
-    href: process.env.NEXT_PUBLIC_API_URL
-      ? `${process.env.NEXT_PUBLIC_API_URL}/swagger/index.html`
-      : "http://localhost:8080/swagger/index.html",
+    href: "/swagger/index.html",
     icon: BookOpen,
     external: true,
   },
