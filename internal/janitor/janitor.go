@@ -30,7 +30,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		CheckInterval:                 5 * time.Minute,
-		StuckJobThreshold:             2 * time.Hour,
+		StuckJobThreshold:             1 * time.Hour, // Reduced from 2h to catch timed-out destroy jobs (45min timeout)
 		ExpiredLockCleanup:            true,
 		ExpiredKeyCleanup:             true,
 		OrphanDetection:               true,
@@ -263,9 +263,19 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 			log.Printf("Failed to release lock for cluster %s: %v", job.ClusterID, err)
 		}
 
-		// Update cluster status to FAILED
-		if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
-			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+		// Handle cluster status based on job type
+		if job.JobType == types.JobTypeDestroy || job.JobType == types.JobTypeJanitorDestroy {
+			// For destroy jobs, mark cluster as DESTROYED since infrastructure is likely gone
+			// Orphan detection will catch any remaining AWS resources
+			log.Printf("Marking cluster %s as DESTROYED (stuck destroy job likely timed out)", job.ClusterID)
+			if err := j.store.Clusters.MarkDestroyed(ctx, job.ClusterID); err != nil {
+				log.Printf("Failed to mark cluster %s as destroyed: %v", job.ClusterID, err)
+			}
+		} else {
+			// For other job types, mark cluster as FAILED
+			if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+				log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+			}
 		}
 
 		log.Printf("Marked stuck job %s as failed and released locks", job.ID)

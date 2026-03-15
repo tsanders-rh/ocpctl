@@ -85,6 +85,8 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
 
+	// Handle destroy errors
+	destroyFailed := false
 	if err != nil {
 		// Logs are already streamed to database
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
@@ -93,9 +95,10 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 
 		// Check if this was a timeout
 		if destroyCtx.Err() == context.DeadlineExceeded {
-			log.Printf("WARNING: openshift-install destroy timed out after 45 minutes for %s", cluster.Name)
-			log.Printf("Marking cluster as destroyed anyway to prevent infinite hanging")
-			log.Printf("Manual cleanup may be required for orphaned AWS resources")
+			log.Printf("ERROR: openshift-install destroy timed out after 45 minutes for %s", cluster.Name)
+			log.Printf("This likely indicates AWS has too many IAM resources (500+) causing infinite scanning loop")
+			log.Printf("Will mark cluster as destroyed and create orphan detection records")
+			destroyFailed = true
 		} else {
 			// Don't fail the job if destroy encounters errors - infrastructure might already be gone
 			log.Printf("Warning: openshift-install destroy cluster returned error: %v\nOutput: %s", err, output)
@@ -140,6 +143,11 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 	}
 
 	log.Printf("Cluster %s is now DESTROYED", cluster.Name)
+
+	// Return error if destroy timed out - job should be marked as FAILED
+	if destroyFailed {
+		return fmt.Errorf("destroy operation timed out after 45 minutes - likely due to AWS IAM resource scanning issues. Cluster marked as DESTROYED but manual cleanup may be required for orphaned IAM roles and OIDC provider")
+	}
 
 	return nil
 }
