@@ -89,3 +89,4 @@ tmp/
 temp/
 *.tmp
 ocpctl-worker
+config/worker.env

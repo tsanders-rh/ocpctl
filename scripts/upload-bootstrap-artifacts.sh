@@ -16,18 +16,11 @@ aws s3 cp scripts/bootstrap-worker.sh ${S3_BUCKET}/scripts/bootstrap-worker.sh
 echo "Uploading ocpctl-worker.service..."
 aws s3 cp scripts/ocpctl-worker.service ${S3_BUCKET}/scripts/ocpctl-worker.service
 
-# Upload worker environment template (if exists)
-if [ -f config/worker.env.template ]; then
-    echo "Uploading worker.env template..."
-    aws s3 cp config/worker.env.template ${S3_BUCKET}/config/worker.env
+# Upload worker environment file (if exists)
+if [ -f config/worker.env ]; then
+    echo "Uploading worker.env (contains secrets - stored privately in S3)..."
+    aws s3 cp config/worker.env ${S3_BUCKET}/config/worker.env
 fi
-
-# Make bootstrap script public (it's not sensitive)
-echo "Setting permissions..."
-aws s3api put-object-acl \
-    --bucket ocpctl-binaries \
-    --key scripts/bootstrap-worker.sh \
-    --acl bucket-owner-full-control
 
 echo ""
 echo "✓ Bootstrap artifacts uploaded to S3"
