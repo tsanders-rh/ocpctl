@@ -135,6 +135,15 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Run openshift-install create cluster
 	log.Printf("Running openshift-install create cluster for %s (version %s)", cluster.Name, cluster.Version)
 
+	// Build cluster metadata for tagging
+	metadata := &installer.ClusterMetadata{
+		ClusterName: cluster.Name,
+		ProfileName: cluster.Profile,
+		InfraID:     "", // Will be populated during cluster creation
+		CreatedAt:   cluster.CreatedAt,
+		Region:      cluster.Region,
+	}
+
 	var output string
 
 	if cluster.Platform == types.PlatformIBMCloud {
@@ -142,7 +151,7 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		output, err = inst.CreateClusterDirect(ctx, workDir)
 	} else {
 		// AWS and other platforms: use standard workflow
-		output, err = inst.CreateCluster(ctx, workDir)
+		output, err = inst.CreateCluster(ctx, workDir, metadata)
 	}
 
 	// Stop log streaming after installer completes
@@ -162,6 +171,17 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	}
 
 	log.Printf("Cluster %s created successfully", cluster.Name)
+
+	// Tag IAM/OIDC resources now that cluster creation is complete
+	// By now (30-45 min later), IAM eventual consistency has resolved
+	log.Printf("Tagging IAM/OIDC resources for cluster %s...", cluster.Name)
+	if err := inst.TagIAMResources(ctx, workDir, *metadata); err != nil {
+		log.Printf("Warning: failed to tag IAM/OIDC resources: %v", err)
+		// Don't fail cluster creation - it's already installed and working
+		// Resources will be detected as orphaned and can be tagged retroactively
+	} else {
+		log.Printf("Successfully tagged IAM/OIDC resources")
+	}
 
 	// Extract cluster outputs (API URL, console URL, etc.)
 	outputs, err := h.extractClusterOutputs(workDir, cluster)

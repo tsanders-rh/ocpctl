@@ -15,6 +15,13 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/store"
 )
 
+// Version information (set via -ldflags at build time)
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
 	// Load configuration from environment
 	dbURL := os.Getenv("DATABASE_URL")
@@ -103,6 +110,11 @@ func main() {
 	log.Printf("  Port: %d", config.Port)
 	log.Printf("  Auth enabled: %v (JWT: true, IAM: %v)", config.EnableAuth, config.EnableIAMAuth)
 	log.Printf("  CORS origins: %v", config.AllowedOrigins)
+
+	// Set version information
+	config.Version = Version
+	config.Commit = Commit
+	config.BuildTime = BuildTime
 
 	// Create API server
 	server := api.NewServer(config, st, registry, policyEngine)

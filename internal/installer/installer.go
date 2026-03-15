@@ -16,7 +16,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// ocpctlVersion is the version of ocpctl, injected at build time
+// Build with: go build -ldflags "-X github.com/tsanders-rh/ocpctl/internal/installer.ocpctlVersion=1.0.0"
+var ocpctlVersion = "dev"
 
 // Installer wraps the openshift-install CLI
 type Installer struct {
@@ -33,6 +44,15 @@ const (
 	CredentialTypeStatic CredentialType = iota
 	CredentialTypeSTSIMDS
 )
+
+// ClusterMetadata contains metadata for tagging cluster resources
+type ClusterMetadata struct {
+	ClusterName string
+	ProfileName string
+	InfraID     string
+	CreatedAt   time.Time
+	Region      string
+}
 
 // NewInstaller creates a new installer instance for the latest supported version
 // Deprecated: Use NewInstallerForVersion instead
@@ -153,14 +173,14 @@ func detectSTSCredentials() bool {
 
 // CreateCluster runs openshift-install create cluster
 // If using STS/IMDS credentials, uses Manual mode with ccoctl workflow
-func (i *Installer) CreateCluster(ctx context.Context, workDir string) (string, error) {
+func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata *ClusterMetadata) (string, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, i.timeout)
 	defer cancel()
 
 	// If using STS credentials, we must use Manual mode with ccoctl workflow
 	if i.useSTSCreds {
-		return i.createClusterManualMode(ctx, workDir)
+		return i.createClusterManualMode(ctx, workDir, metadata)
 	}
 
 	// Static credentials - direct cluster creation
@@ -190,7 +210,7 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 
 // createClusterManualMode implements the Manual credentials mode workflow with ccoctl
 // This is required when using STS/IMDS credentials which cannot be used with Mint/Passthrough modes
-func (i *Installer) createClusterManualMode(ctx context.Context, workDir string) (string, error) {
+func (i *Installer) createClusterManualMode(ctx context.Context, workDir string, metadata *ClusterMetadata) (string, error) {
 	// Log initial state
 	i.logInstallState(workDir, "BEFORE create manifests")
 
@@ -211,7 +231,7 @@ func (i *Installer) createClusterManualMode(ctx context.Context, workDir string)
 
 	// Step 3: Run ccoctl to create IAM resources and generate credential manifests
 	fmt.Printf("Running ccoctl to create IAM roles and credential manifests...\n")
-	if err := i.runCCOCtl(ctx, workDir); err != nil {
+	if err := i.runCCOCtl(ctx, workDir, metadata); err != nil {
 		return "", fmt.Errorf("run ccoctl: %w", err)
 	}
 	i.logInstallState(workDir, "AFTER ccoctl")
@@ -248,7 +268,7 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 }
 
 // runCCOCtl runs ccoctl to create IAM resources and generate credential manifests
-func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
+func (i *Installer) runCCOCtl(ctx context.Context, workDir string, metadata *ClusterMetadata) error {
 	// Get region for ccoctl
 	_, region, err := i.getClusterInfo(workDir)
 	if err != nil {
@@ -262,6 +282,9 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 		return fmt.Errorf("get infraID: %w", err)
 	}
 	log.Printf("Found infraID for ccoctl: %s", infraID)
+
+	// Populate infraID in metadata for tagging
+	metadata.InfraID = infraID
 
 	// Create temporary directory for CredentialsRequests
 	credsReqDir := filepath.Join(workDir, "credentialsrequests")
@@ -322,6 +345,7 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string) error {
 	}
 
 	log.Printf("Successfully created IAM resources and credential manifests")
+
 	return nil
 }
 
@@ -1103,6 +1127,240 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 	}
 
 	log.Printf("Successfully tagged hosted zone %s with %s=owned", hostedZoneID, clusterTag)
+
+	return nil
+}
+
+// buildTagSet creates the standard tag map for cluster resources
+func buildTagSet(metadata ClusterMetadata) map[string]string {
+	return map[string]string{
+		fmt.Sprintf("kubernetes.io/cluster/%s", metadata.InfraID): "owned",
+		"ManagedBy":      "ocpctl",
+		"ClusterName":    metadata.ClusterName,
+		"Profile":        metadata.ProfileName,
+		"InfraID":        metadata.InfraID,
+		"CreatedAt":      metadata.CreatedAt.Format(time.RFC3339),
+		"OcpctlVersion":  ocpctlVersion,
+	}
+}
+
+// isClusterIAMRole checks if an IAM role name matches the cluster's infraID
+func isClusterIAMRole(roleName, infraID string) bool {
+	// Pattern 1: <cluster>-<infraID>-openshift-*
+	if strings.Contains(roleName, fmt.Sprintf("-%s-openshift-", infraID)) {
+		return true
+	}
+
+	// Pattern 2: <cluster>-<infraID>-master-role
+	if strings.HasSuffix(roleName, fmt.Sprintf("-%s-master-role", infraID)) {
+		return true
+	}
+
+	// Pattern 3: <cluster>-<infraID>-worker-role
+	if strings.HasSuffix(roleName, fmt.Sprintf("-%s-worker-role", infraID)) {
+		return true
+	}
+
+	return false
+}
+
+// tagIAMRoles finds and tags all IAM roles created by ccoctl for this cluster
+// Includes retry logic to handle AWS IAM eventual consistency
+func (i *Installer) tagIAMRoles(ctx context.Context, infraID, region string, tags map[string]string) error {
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Retry logic to handle IAM eventual consistency
+	// IAM roles created by ccoctl may not appear in ListRoles immediately
+	var rolesToTag []string
+	maxRetries := 5
+	backoffSeconds := []int{2, 4, 6, 8, 10} // Total: 30 seconds max
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Use paginator to handle accounts with 1000+ roles
+		paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+		rolesToTag = []string{}
+
+		for paginator.HasMorePages() {
+			page, err := paginator.NextPage(ctx)
+			if err != nil {
+				return fmt.Errorf("list roles: %w", err)
+			}
+
+			for _, role := range page.Roles {
+				roleName := aws.ToString(role.RoleName)
+
+				// Check if this role belongs to our cluster
+				if isClusterIAMRole(roleName, infraID) {
+					rolesToTag = append(rolesToTag, roleName)
+				}
+			}
+		}
+
+		log.Printf("Found %d IAM roles to tag for infraID %s (attempt %d/%d)", len(rolesToTag), infraID, attempt+1, maxRetries)
+
+		// If we found roles, break out of retry loop
+		if len(rolesToTag) > 0 {
+			break
+		}
+
+		// If this was the last attempt, fail
+		if attempt == maxRetries-1 {
+			return fmt.Errorf("no IAM roles found for infraID %s after %d retries (expected at least 5-10 roles) - IAM eventual consistency timeout", infraID, maxRetries)
+		}
+
+		// Wait before retrying (exponential backoff)
+		waitTime := time.Duration(backoffSeconds[attempt]) * time.Second
+		log.Printf("No roles found yet for infraID %s, waiting %v before retry %d/%d (IAM eventual consistency)", infraID, waitTime, attempt+2, maxRetries)
+		time.Sleep(waitTime)
+	}
+
+	// Convert tags to IAM SDK format
+	iamTags := []iamtypes.Tag{}
+	for k, v := range tags {
+		iamTags = append(iamTags, iamtypes.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Tag each role
+	var errs []error
+	for _, roleName := range rolesToTag {
+		_, err := iamClient.TagRole(ctx, &iam.TagRoleInput{
+			RoleName: aws.String(roleName),
+			Tags:     iamTags,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("tag role %s: %w", roleName, err))
+			log.Printf("Failed to tag IAM role %s: %v", roleName, err)
+		} else {
+			log.Printf("Tagged IAM role: %s", roleName)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to tag %d/%d roles: %v", len(errs), len(rolesToTag), errs)
+	}
+
+	return nil
+}
+
+// tagOIDCProvider tags the OIDC provider created by ccoctl
+func (i *Installer) tagOIDCProvider(ctx context.Context, infraID, region string, tags map[string]string) error {
+	// Get AWS account ID
+	accountID, err := i.getAWSAccountID(ctx)
+	if err != nil {
+		return fmt.Errorf("get AWS account ID: %w", err)
+	}
+
+	// Construct OIDC provider ARN (same pattern as fixOIDCThumbprint)
+	providerARN := fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s-oidc.s3.%s.amazonaws.com",
+		accountID, infraID, region)
+
+	log.Printf("Tagging OIDC provider: %s", providerARN)
+
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Convert tags to IAM SDK format
+	iamTags := []iamtypes.Tag{}
+	for k, v := range tags {
+		iamTags = append(iamTags, iamtypes.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Tag the OIDC provider
+	_, err = iamClient.TagOpenIDConnectProvider(ctx, &iam.TagOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(providerARN),
+		Tags:                     iamTags,
+	})
+	if err != nil {
+		return fmt.Errorf("tag OIDC provider %s: %w", providerARN, err)
+	}
+
+	log.Printf("Successfully tagged OIDC provider")
+	return nil
+}
+
+// tagOIDCBucket tags the S3 bucket used for OIDC discovery documents
+func (i *Installer) tagOIDCBucket(ctx context.Context, infraID, region string, tags map[string]string) error {
+	bucketName := fmt.Sprintf("%s-oidc", infraID)
+
+	log.Printf("Tagging S3 bucket: %s", bucketName)
+
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.Region = region
+	})
+
+	// Convert tags to S3 SDK format
+	tagSet := []s3types.Tag{}
+	for k, v := range tags {
+		tagSet = append(tagSet, s3types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Tag the S3 bucket
+	_, err = s3Client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+		Bucket: aws.String(bucketName),
+		Tagging: &s3types.Tagging{
+			TagSet: tagSet,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("tag S3 bucket %s: %w", bucketName, err)
+	}
+
+	log.Printf("Successfully tagged S3 bucket")
+	return nil
+}
+
+// TagIAMResources tags IAM roles, OIDC provider, and S3 bucket with cluster metadata
+// This should be called AFTER cluster creation completes to allow IAM eventual consistency
+func (i *Installer) TagIAMResources(ctx context.Context, workDir string, metadata ClusterMetadata) error {
+	// Build standard tag set from metadata
+	tags := buildTagSet(metadata)
+
+	var errs []error
+
+	// Tag IAM roles
+	if err := i.tagIAMRoles(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		errs = append(errs, fmt.Errorf("tag IAM roles: %w", err))
+	}
+
+	// Tag OIDC provider
+	if err := i.tagOIDCProvider(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		errs = append(errs, fmt.Errorf("tag OIDC provider: %w", err))
+	}
+
+	// Tag S3 bucket
+	if err := i.tagOIDCBucket(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		errs = append(errs, fmt.Errorf("tag S3 bucket: %w", err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("tagging failed: %v", errs)
+	}
 
 	return nil
 }

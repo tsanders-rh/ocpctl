@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -489,6 +490,14 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		// Check if within work hours
 		withinWorkHours := isWithinWorkHours(nowInTZ, workHoursStart, workHoursEnd, workDays)
 
+		// Log grace period check
+		gracePeriodInfo := "none"
+		if cluster.LastWorkHoursCheck != nil {
+			gracePeriodInfo = cluster.LastWorkHoursCheck.In(location).Format("2006-01-02 15:04 MST")
+		}
+		log.Printf("[Work Hours Check] Cluster: %s, Status: %s, Within hours: %v, Current time: %s, Grace period until: %s",
+			cluster.Name, cluster.Status, withinWorkHours, nowInTZ.Format("2006-01-02 15:04 MST"), gracePeriodInfo)
+
 		// Determine action needed
 		var action string
 		var jobType types.JobType
@@ -498,12 +507,15 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			action = "hibernate"
 			jobType = types.JobTypeHibernate
 			newStatus = types.ClusterStatusHibernating
+			log.Printf("[Work Hours Action] WILL CREATE HIBERNATE JOB for %s (READY cluster outside work hours)", cluster.Name)
 		} else if cluster.Status == types.ClusterStatusHibernated && withinWorkHours {
 			action = "resume"
 			jobType = types.JobTypeResume
 			newStatus = types.ClusterStatusResuming
+			log.Printf("[Work Hours Action] WILL CREATE RESUME JOB for %s (HIBERNATED cluster within work hours)", cluster.Name)
 		} else {
 			// No action needed, just update the check timestamp
+			log.Printf("[Work Hours Action] NO ACTION NEEDED for %s (Status: %s, Within hours: %v)", cluster.Name, cluster.Status, withinWorkHours)
 			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 			}
@@ -570,8 +582,8 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		}
 
 		actionsCount++
-		log.Printf("Created %s job for cluster %s (outside work hours: %v, current time: %s %s)",
-			action, cluster.Name, !withinWorkHours, nowInTZ.Format("15:04"), user.Timezone)
+		log.Printf("[Work Hours Job Created] %s job %s for cluster %s | Time: %s | Within hours: %v | Grace period was: %s",
+			strings.ToUpper(action), job.ID, cluster.Name, nowInTZ.Format("2006-01-02 15:04 MST"), withinWorkHours, gracePeriodInfo)
 	}
 
 	if actionsCount > 0 {

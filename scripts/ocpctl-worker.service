@@ -1,0 +1,27 @@
+[Unit]
+Description=OCPCTL Worker
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ocpctl
+WorkingDirectory=/opt/ocpctl
+EnvironmentFile=/etc/ocpctl/worker.env
+ExecStart=/opt/ocpctl/current/ocpctl-worker
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ocpctl-worker
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

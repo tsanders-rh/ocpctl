@@ -38,11 +38,32 @@ function calculateNextAction(
   workHoursStart: string,
   workHoursEnd: string,
   workDays: number,
-  timezone: string
+  timezone: string,
+  lastWorkHoursCheck?: string | null
 ): { action: string; timeDescription: string } | null {
   try {
     // Get current time in user's timezone
     const now = new Date();
+
+    // Check if there's a grace period (manual resume)
+    if (lastWorkHoursCheck && clusterStatus === 'READY') {
+      const gracePeriodEnd = new Date(lastWorkHoursCheck);
+      if (gracePeriodEnd > now) {
+        // In grace period - show when it will be hibernated
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        const formattedTime = formatter.format(gracePeriodEnd);
+        return { action: 'active', timeDescription: `Manual resume - hibernates ${formattedTime}` };
+      }
+    }
+
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       hour: '2-digit',
@@ -624,7 +645,8 @@ export default function ClusterDetailPage() {
                         workStart,
                         workEnd,
                         workDaysMask,
-                        user.timezone
+                        user.timezone,
+                        cluster.last_work_hours_check
                       );
 
                       if (nextAction) {
@@ -674,7 +696,13 @@ export default function ClusterDetailPage() {
                         variant="outline"
                         onClick={async () => {
                           if (confirm(`Are you sure you want to hibernate cluster "${cluster.name}"? This will stop all EC2 instances.`)) {
-                            await hibernateCluster.mutateAsync(id);
+                            try {
+                              await hibernateCluster.mutateAsync(id);
+                            } catch (error: any) {
+                              const errorMessage = error?.response?.message || error?.message || "Failed to hibernate cluster";
+                              alert(`Hibernate failed: ${errorMessage}`);
+                              console.error("Hibernate error:", error);
+                            }
                           }
                         }}
                         disabled={hibernateCluster.isPending}
@@ -687,7 +715,13 @@ export default function ClusterDetailPage() {
                       <Button
                         variant="outline"
                         onClick={async () => {
-                          await resumeCluster.mutateAsync(id);
+                          try {
+                            await resumeCluster.mutateAsync(id);
+                          } catch (error: any) {
+                            const errorMessage = error?.response?.message || error?.message || "Failed to resume cluster";
+                            alert(`Resume failed: ${errorMessage}`);
+                            console.error("Resume error:", error);
+                          }
                         }}
                         disabled={resumeCluster.isPending}
                       >

@@ -357,7 +357,7 @@ func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) error {
 	query := `
 		UPDATE clusters
-		SET ttl_hours = $1, destroy_at = NOW() + ($1 || ' hours')::interval, updated_at = NOW()
+		SET ttl_hours = $1, destroy_at = NOW() + ($1::text || ' hours')::interval, updated_at = NOW()
 		WHERE id = $2
 	`
 
@@ -508,6 +508,14 @@ func (s *ClusterStore) UpdateLastWorkHoursCheck(ctx context.Context, clusterID s
 	return err
 }
 
+// SetLastWorkHoursCheck sets the last_work_hours_check timestamp to a specific time
+// This is used to set a grace period after manual resume during hibernate hours
+func (s *ClusterStore) SetLastWorkHoursCheck(ctx context.Context, clusterID string, checkTime time.Time) error {
+	query := `UPDATE clusters SET last_work_hours_check = $1 WHERE id = $2`
+	_, err := s.pool.Exec(ctx, query, checkTime, clusterID)
+	return err
+}
+
 // CheckNameExists checks if a cluster name already exists for the platform/domain
 func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platform types.Platform, baseDomain string) (bool, error) {
 	query := `
@@ -553,6 +561,7 @@ func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan ti
 // - work_hours_enabled = TRUE (cluster-level override), OR
 // - work_hours_enabled IS NULL AND user has work_hours_enabled = TRUE (use user default)
 // - AND status IN ('READY', 'HIBERNATED')
+// - AND last_work_hours_check is NULL or <= NOW() (skips clusters in grace period)
 // Ordered by last_work_hours_check ASC NULLS FIRST for efficient processing
 func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
@@ -565,6 +574,7 @@ func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) (
 		JOIN users u ON c.owner_id = u.id
 		WHERE c.status IN ('READY', 'HIBERNATED')
 			AND (c.work_hours_enabled = TRUE OR (c.work_hours_enabled IS NULL AND u.work_hours_enabled = TRUE))
+			AND (c.last_work_hours_check IS NULL OR c.last_work_hours_check <= NOW())
 		ORDER BY c.last_work_hours_check ASC NULLS FIRST
 	`
 

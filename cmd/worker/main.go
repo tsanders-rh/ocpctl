@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +15,13 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/janitor"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/internal/worker"
+)
+
+// Version information (set via -ldflags at build time)
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
 )
 
 // HealthCheckServer provides health and readiness endpoints
@@ -66,11 +75,23 @@ func (h *HealthCheckServer) readyHandler(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// versionHandler returns version information
+func (h *HealthCheckServer) versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"version":   Version,
+		"commit":    Commit,
+		"buildTime": BuildTime,
+	})
+}
+
 // startHealthCheckServer starts the health check HTTP server
 func startHealthCheckServer(hcs *HealthCheckServer, port string) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", hcs.healthHandler)
 	mux.HandleFunc("/ready", hcs.readyHandler)
+	mux.HandleFunc("/version", hcs.versionHandler)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -91,6 +112,17 @@ func startHealthCheckServer(hcs *HealthCheckServer, port string) *http.Server {
 }
 
 func main() {
+	// Parse command-line flags
+	showVersion := flag.Bool("version", false, "Show version information and exit")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("ocpctl-worker version %s\n", Version)
+		fmt.Printf("  Commit:    %s\n", Commit)
+		fmt.Printf("  BuildTime: %s\n", BuildTime)
+		os.Exit(0)
+	}
+
 	// Load configuration from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -124,6 +156,7 @@ func main() {
 		} else {
 			pullSecret = string(fileData)
 			log.Printf("Loaded pull secret from file: %s", pullSecretFile)
+			os.Setenv("OPENSHIFT_PULL_SECRET", pullSecret)
 		}
 	}
 

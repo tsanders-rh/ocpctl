@@ -31,6 +31,10 @@ type ServerConfig struct {
 	MaxBodySize       string
 	RateLimitRequests int
 	RateLimitDuration time.Duration
+	// Version information
+	Version   string
+	Commit    string
+	BuildTime string
 }
 
 // DefaultServerConfig returns default server configuration
@@ -153,6 +157,7 @@ func (s *Server) setupRoutes() {
 	// Health check (no auth required)
 	s.echo.GET("/health", s.healthCheck)
 	s.echo.GET("/ready", s.readyCheck)
+	s.echo.GET("/version", s.versionCheck)
 
 	// API v1 routes
 	v1 := s.echo.Group("/api/v1")
@@ -201,6 +206,8 @@ func (s *Server) setupRoutes() {
 	clustersGroup.DELETE("/:id", clusterHandler.Delete)
 	clustersGroup.PATCH("/:id/extend", clusterHandler.Extend)
 	clustersGroup.POST("/:id/refresh-outputs", clusterHandler.RefreshOutputs)
+	clustersGroup.POST("/:id/hibernate", clusterHandler.Hibernate)
+	clustersGroup.POST("/:id/resume", clusterHandler.Resume)
 	clustersGroup.GET("/:id/outputs", clusterHandler.GetOutputs)
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 	clustersGroup.GET("/:id/kubeconfig/download-url", clusterHandler.GetKubeconfigDownloadURL)
@@ -252,6 +259,15 @@ func (s *Server) readyCheck(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"status": "ready",
 		"time":   time.Now().Format(time.RFC3339),
+	})
+}
+
+// versionCheck returns version information
+func (s *Server) versionCheck(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{
+		"version":   s.config.Version,
+		"commit":    s.config.Commit,
+		"buildTime": s.config.BuildTime,
 	})
 }
 

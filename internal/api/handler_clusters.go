@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -664,6 +665,88 @@ func (h *ClusterHandler) Hibernate(c echo.Context) error {
 	return SuccessOK(c, cluster)
 }
 
+// calculateNextHibernateTime calculates the next time work hours will end (next hibernate time)
+// Returns zero time if work hours are not enabled for this cluster
+func (h *ClusterHandler) calculateNextHibernateTime(ctx context.Context, cluster *types.Cluster) (time.Time, error) {
+	// Get user to access timezone and default work hours
+	user, err := h.store.Users.GetByID(ctx, cluster.OwnerID)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get user: %w", err)
+	}
+
+	// Determine effective work hours (cluster override or user default)
+	var workHoursEnabled bool
+	var workHoursEnd time.Time
+	var workDays int16
+
+	if cluster.WorkHoursEnabled != nil {
+		workHoursEnabled = *cluster.WorkHoursEnabled
+		if workHoursEnabled {
+			if cluster.WorkHoursStart != nil && cluster.WorkHoursEnd != nil && cluster.WorkDays != nil {
+				workHoursEnd = *cluster.WorkHoursEnd
+				workDays = *cluster.WorkDays
+			} else {
+				return time.Time{}, fmt.Errorf("work hours enabled but config missing")
+			}
+		} else {
+			// Work hours explicitly disabled
+			return time.Time{}, nil
+		}
+	} else {
+		// Use user's default work hours
+		workHoursEnabled = user.WorkHoursEnabled
+		if !workHoursEnabled {
+			return time.Time{}, nil
+		}
+		workHoursEnd = user.WorkHoursEnd
+		workDays = user.WorkDays
+	}
+
+	// Load user's timezone
+	location, err := time.LoadLocation(user.Timezone)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("load timezone %s: %w", user.Timezone, err)
+	}
+
+	// Get current time in user's timezone
+	nowInTZ := time.Now().In(location)
+
+	// Extract work hours end time (just the time component)
+	endHour := workHoursEnd.Hour()
+	endMinute := workHoursEnd.Minute()
+
+	// Find the next work hours end time
+	// Start by checking today
+	candidateDate := nowInTZ
+
+	for i := 0; i < 14; i++ { // Check up to 2 weeks ahead to handle weekends
+		// Check if this day is a work day
+		if types.IsWorkDay(workDays, candidateDate.Weekday()) {
+			// Build the end time for this work day
+			endTime := time.Date(
+				candidateDate.Year(),
+				candidateDate.Month(),
+				candidateDate.Day(),
+				endHour,
+				endMinute,
+				0, 0,
+				location,
+			)
+
+			// If this end time is in the future, use it
+			if endTime.After(nowInTZ) {
+				return endTime, nil
+			}
+		}
+
+		// Move to next day
+		candidateDate = candidateDate.Add(24 * time.Hour)
+	}
+
+	// Couldn't find a future work hours end time (shouldn't happen)
+	return time.Time{}, fmt.Errorf("could not calculate next work hours end time")
+}
+
 // Resume handles POST /api/v1/clusters/:id/resume
 // Resumes a hibernated cluster by starting its instances (platform-dependent)
 func (h *ClusterHandler) Resume(c echo.Context) error {
@@ -727,6 +810,18 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 
 	if err := h.store.Jobs.Create(ctx, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create resume job: %w", err))
+	}
+
+	// Set grace period to prevent auto-hibernation until next scheduled hibernate time
+	// When user manually resumes, cluster should stay resumed until work hours end
+	gracePeriodEnd, err := h.calculateNextHibernateTime(ctx, cluster)
+	if err == nil && !gracePeriodEnd.IsZero() {
+		if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodEnd); err != nil {
+			// Log warning but don't fail the resume operation
+			LogWarning(c, "failed to set work hours grace period", "error", err)
+		} else {
+			LogInfo(c, "set work hours grace period", "grace_period_until", gracePeriodEnd)
+		}
 	}
 
 	// Log successful resume initiation
