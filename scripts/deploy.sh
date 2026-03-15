@@ -59,6 +59,17 @@ strings bin/ocpctl-api-${VERSION} | grep -q "${VERSION}" && echo -e "${GREEN}✓
 strings bin/ocpctl-worker-${VERSION} | grep -q "${VERSION}" && echo -e "${GREEN}✓ Worker version embedded correctly${NC}" || echo -e "${RED}✗ Worker version NOT found in binary${NC}"
 echo ""
 
+# Upload to S3 for autoscaling workers
+echo -e "${YELLOW}Uploading binaries to S3 for autoscaling workers...${NC}"
+S3_BUCKET="s3://ocpctl-binaries"
+
+aws s3 cp bin/ocpctl-worker-${VERSION} ${S3_BUCKET}/releases/${VERSION}/ocpctl-worker
+echo "${VERSION}" | aws s3 cp - ${S3_BUCKET}/LATEST
+
+echo -e "${GREEN}✓ Uploaded to ${S3_BUCKET}/releases/${VERSION}/${NC}"
+echo -e "${GREEN}✓ Updated LATEST pointer to ${VERSION}${NC}"
+echo ""
+
 # Deploy API server
 echo -e "${YELLOW}Deploying API server to $API_HOST...${NC}"
 
