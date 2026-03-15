@@ -89,6 +89,21 @@ type ListClustersFilters struct {
 }
 
 // Create handles POST /api/v1/clusters
+//
+//	@Summary		Create cluster
+//	@Description	Creates a new OpenShift cluster with the specified configuration. Validates against policy engine and initiates async provisioning.
+//	@Tags			clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		CreateClusterRequest	true	"Cluster configuration"
+//	@Success		201		{object}	types.Cluster
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		401		{object}	ErrorResponse
+//	@Failure		403		{object}	ErrorResponse
+//	@Failure		409		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters [post]
 func (h *ClusterHandler) Create(c echo.Context) error {
 	var req CreateClusterRequest
 	if err := c.Bind(&req); err != nil {
@@ -266,6 +281,24 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 }
 
 // List handles GET /api/v1/clusters
+//
+//	@Summary		List clusters
+//	@Description	Lists all clusters accessible to the authenticated user. Admins see all clusters, regular users see only their own.
+//	@Tags			clusters
+//	@Produce		json
+//	@Param			page		query		int		false	"Page number"	default(1)
+//	@Param			per_page	query		int		false	"Items per page"	default(50)
+//	@Param			platform	query		string	false	"Filter by platform (aws, ibmcloud)"
+//	@Param			profile		query		string	false	"Filter by profile name"
+//	@Param			owner		query		string	false	"Filter by owner email (admin only)"
+//	@Param			team		query		string	false	"Filter by team"
+//	@Param			cost_center	query		string	false	"Filter by cost center"
+//	@Param			status		query		string	false	"Filter by status"
+//	@Success		200			{object}	PaginatedResponse{data=[]types.Cluster}
+//	@Failure		401			{object}	ErrorResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters [get]
 func (h *ClusterHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -360,6 +393,19 @@ func (h *ClusterHandler) List(c echo.Context) error {
 }
 
 // Get handles GET /api/v1/clusters/:id
+//
+//	@Summary		Get cluster
+//	@Description	Retrieves details of a specific cluster by ID
+//	@Tags			clusters
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	types.Cluster
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters/{id} [get]
 func (h *ClusterHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -384,6 +430,20 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/clusters/:id
+//
+//	@Summary		Delete cluster
+//	@Description	Initiates cluster destruction. Creates a background job to deprovision all cluster resources.
+//	@Tags			clusters
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	types.Cluster
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		409	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters/{id} [delete]
 func (h *ClusterHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -450,6 +510,22 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 }
 
 // Extend handles PATCH /api/v1/clusters/:id/extend
+//
+//	@Summary		Extend cluster TTL
+//	@Description	Extends the time-to-live (TTL) of a cluster, postponing its automatic destruction
+//	@Tags			clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string					true	"Cluster ID"
+//	@Param			request	body		ExtendClusterRequest	true	"TTL extension request"
+//	@Success		200		{object}	types.Cluster
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		401		{object}	ErrorResponse
+//	@Failure		403		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/extend [patch]
 func (h *ClusterHandler) Extend(c echo.Context) error {
 	ctx := c.Request().Context()
 

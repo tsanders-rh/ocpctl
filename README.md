@@ -138,6 +138,58 @@ npm run dev
 
 Access at `http://localhost:3000`
 
+## API Documentation
+
+OCPCTL provides interactive API documentation powered by OpenAPI/Swagger. Access the API documentation at:
+
+**Swagger UI:** `http://localhost:8080/swagger/index.html` (or your deployment URL)
+
+The Swagger UI provides:
+- Complete API reference with all endpoints and parameters
+- Request/response schemas with examples
+- Interactive "Try it out" functionality to test endpoints directly
+- Authentication support (JWT Bearer token)
+
+### Generating Documentation
+
+The API documentation is auto-generated from code annotations using [swaggo/swag](https://github.com/swaggo/swag). To regenerate after making API changes:
+
+```bash
+# Install swag CLI (if not already installed)
+go install github.com/swaggo/swag/cmd/swag@latest
+
+# Generate docs (from project root)
+swag init -g cmd/api/main.go -o docs --parseDependency --parseInternal
+```
+
+This generates:
+- `docs/swagger.json` - OpenAPI specification (JSON)
+- `docs/swagger.yaml` - OpenAPI specification (YAML)
+- `docs/docs.go` - Go code to embed documentation
+
+### API Integration
+
+For programmatic access to the OCPCTL API:
+
+1. **Authentication:** Obtain a JWT token via `POST /api/v1/auth/login`
+2. **Authorization:** Include token in `Authorization: Bearer <token>` header
+3. **Endpoints:** See Swagger UI for complete endpoint reference
+4. **OpenAPI Spec:** Download from `/swagger/doc.json` for code generation
+
+Example using curl:
+
+```bash
+# Login and get token
+TOKEN=$(curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@localhost","password":"changeme"}' \
+  | jq -r '.access_token')
+
+# List clusters
+curl -X GET http://localhost:8080/api/v1/clusters \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Project Structure
 
 ```

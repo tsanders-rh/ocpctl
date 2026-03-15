@@ -1,3 +1,24 @@
+// Package main OCPCTL API Server
+//
+//	@title						OCPCTL API
+//	@version					1.0
+//	@description				OCPCTL is a self-service OpenShift cluster provisioning and management platform. This API provides endpoints for creating, managing, and destroying OpenShift clusters with automated lifecycle management, policy enforcement, and resource tracking.
+//	@termsOfService				http://github.com/tsanders-rh/ocpctl
+//
+//	@contact.name				OCPCTL Support
+//	@contact.url				http://github.com/tsanders-rh/ocpctl/issues
+//
+//	@license.name				Apache 2.0
+//	@license.url				http://www.apache.org/licenses/LICENSE-2.0.html
+//
+//	@host						localhost:8080
+//	@BasePath					/api/v1
+//	@schemes					http https
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				JWT access token. Format: "Bearer {token}". Obtain from /api/v1/auth/login endpoint.
 package main
 
 import (
@@ -9,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/tsanders-rh/ocpctl/docs" // Import generated docs
 	"github.com/tsanders-rh/ocpctl/internal/api"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"

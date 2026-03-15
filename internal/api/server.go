@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	echoSwagger "github.com/swaggo/echo-swagger"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
@@ -159,6 +161,9 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/ready", s.readyCheck)
 	s.echo.GET("/version", s.versionCheck)
 
+	// Swagger API documentation (no auth required)
+	s.echo.GET("/swagger/*", echoSwagger.WrapHandler)
+
 	// API v1 routes
 	v1 := s.echo.Group("/api/v1")
 
@@ -236,6 +241,13 @@ func (s *Server) setupRoutes() {
 }
 
 // healthCheck returns basic health status
+//
+//	@Summary		Health check
+//	@Description	Returns basic health status of the API server
+//	@Tags			system
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/health [get]
 func (s *Server) healthCheck(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"status": "healthy",
@@ -244,6 +256,14 @@ func (s *Server) healthCheck(c echo.Context) error {
 }
 
 // readyCheck checks if server is ready to handle requests
+//
+//	@Summary		Readiness check
+//	@Description	Checks if the server is ready to handle requests by verifying database connectivity
+//	@Tags			system
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Failure		503	{object}	map[string]string
+//	@Router			/ready [get]
 func (s *Server) readyCheck(c echo.Context) error {
 	// Check database connection
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
@@ -263,6 +283,13 @@ func (s *Server) readyCheck(c echo.Context) error {
 }
 
 // versionCheck returns version information
+//
+//	@Summary		Version information
+//	@Description	Returns version, commit hash, and build time of the API server
+//	@Tags			system
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/version [get]
 func (s *Server) versionCheck(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"version":   s.config.Version,

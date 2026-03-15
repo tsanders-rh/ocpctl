@@ -1,0 +1,547 @@
+basePath: /api/v1
+definitions:
+  github_com_tsanders-rh_ocpctl_pkg_types.Cluster:
+    properties:
+      base_domain:
+        type: string
+      cost_center:
+        type: string
+      created_at:
+        type: string
+      destroy_at:
+        type: string
+      destroyed_at:
+        type: string
+      effective_tags:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags'
+      id:
+        type: string
+      last_work_hours_check:
+        type: string
+      name:
+        type: string
+      offhours_opt_in:
+        type: boolean
+      owner:
+        description: Email for display/metadata
+        type: string
+      owner_id:
+        description: Foreign key to users table
+        type: string
+      platform:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform'
+      profile:
+        type: string
+      region:
+        type: string
+      request_tags:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags'
+      requested_by:
+        description: IAM principal ARN
+        type: string
+      ssh_public_key:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus'
+      storage_config:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig'
+      team:
+        type: string
+      ttl_hours:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: string
+      work_days:
+        type: integer
+      work_hours_enabled:
+        description: NULL = use user default
+        type: boolean
+      work_hours_end:
+        type: string
+      work_hours_start:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus:
+    enum:
+    - PENDING
+    - CREATING
+    - READY
+    - HIBERNATING
+    - HIBERNATED
+    - RESUMING
+    - DESTROYING
+    - DESTROYED
+    - FAILED
+    type: string
+    x-enum-varnames:
+    - ClusterStatusPending
+    - ClusterStatusCreating
+    - ClusterStatusReady
+    - ClusterStatusHibernating
+    - ClusterStatusHibernated
+    - ClusterStatusResuming
+    - ClusterStatusDestroying
+    - ClusterStatusDestroyed
+    - ClusterStatusFailed
+  github_com_tsanders-rh_ocpctl_pkg_types.Platform:
+    enum:
+    - aws
+    - ibmcloud
+    type: string
+    x-enum-varnames:
+    - PlatformAWS
+    - PlatformIBMCloud
+  github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig:
+    properties:
+      auth_mode:
+        description: '"sts" or "static"'
+        type: string
+      efs_enabled:
+        type: boolean
+      iam_role_arn:
+        description: For STS-enabled clusters
+        type: string
+      local_efs_id:
+        type: string
+      local_efs_sg_id:
+        type: string
+      security_group_id:
+        type: string
+      shared_efs_id:
+        type: string
+      shared_s3_bucket:
+        type: string
+      storage_group_id:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.Tags:
+    additionalProperties:
+      type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule:
+    properties:
+      end_time:
+        description: '"17:00" format'
+        type: string
+      start_time:
+        description: '"09:00" format'
+        type: string
+      work_days:
+        description: '["Monday", "Tuesday", ...]'
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.CreateClusterRequest:
+    properties:
+      base_domain:
+        type: string
+      cost_center:
+        type: string
+      enable_efs_storage:
+        type: boolean
+      extra_tags:
+        additionalProperties:
+          type: string
+        type: object
+      idempotency_key:
+        type: string
+      name:
+        maxLength: 63
+        minLength: 3
+        type: string
+      offhours_opt_in:
+        type: boolean
+      owner:
+        type: string
+      platform:
+        enum:
+        - aws
+        - ibmcloud
+        type: string
+      profile:
+        type: string
+      region:
+        type: string
+      ssh_public_key:
+        type: string
+      team:
+        type: string
+      ttl_hours:
+        type: integer
+      version:
+        type: string
+      work_hours:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
+      work_hours_enabled:
+        type: boolean
+    required:
+    - base_domain
+    - cost_center
+    - name
+    - owner
+    - platform
+    - profile
+    - region
+    - team
+    - version
+    type: object
+  internal_api.ErrorResponse:
+    properties:
+      details:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_api.ExtendClusterRequest:
+    properties:
+      ttl_hours:
+        minimum: 1
+        type: integer
+    required:
+    - ttl_hours
+    type: object
+  internal_api.PaginatedResponse:
+    properties:
+      data: {}
+      filters:
+        additionalProperties: true
+        type: object
+      pagination:
+        $ref: '#/definitions/internal_api.PaginationMeta'
+    type: object
+  internal_api.PaginationMeta:
+    properties:
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: OCPCTL Support
+    url: http://github.com/tsanders-rh/ocpctl/issues
+  description: OCPCTL is a self-service OpenShift cluster provisioning and management
+    platform. This API provides endpoints for creating, managing, and destroying OpenShift
+    clusters with automated lifecycle management, policy enforcement, and resource
+    tracking.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://github.com/tsanders-rh/ocpctl
+  title: OCPCTL API
+  version: "1.0"
+paths:
+  /clusters:
+    get:
+      description: Lists all clusters accessible to the authenticated user. Admins
+        see all clusters, regular users see only their own.
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        name: per_page
+        type: integer
+      - description: Filter by platform (aws, ibmcloud)
+        in: query
+        name: platform
+        type: string
+      - description: Filter by profile name
+        in: query
+        name: profile
+        type: string
+      - description: Filter by owner email (admin only)
+        in: query
+        name: owner
+        type: string
+      - description: Filter by team
+        in: query
+        name: team
+        type: string
+      - description: Filter by cost center
+        in: query
+        name: cost_center
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.PaginatedResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List clusters
+      tags:
+      - clusters
+    post:
+      consumes:
+      - application/json
+      description: Creates a new OpenShift cluster with the specified configuration.
+        Validates against policy engine and initiates async provisioning.
+      parameters:
+      - description: Cluster configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateClusterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create cluster
+      tags:
+      - clusters
+  /clusters/{id}:
+    delete:
+      description: Initiates cluster destruction. Creates a background job to deprovision
+        all cluster resources.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete cluster
+      tags:
+      - clusters
+    get:
+      description: Retrieves details of a specific cluster by ID
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cluster
+      tags:
+      - clusters
+  /clusters/{id}/extend:
+    patch:
+      consumes:
+      - application/json
+      description: Extends the time-to-live (TTL) of a cluster, postponing its automatic
+        destruction
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: TTL extension request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ExtendClusterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Extend cluster TTL
+      tags:
+      - clusters
+  /health:
+    get:
+      description: Returns basic health status of the API server
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+  /ready:
+    get:
+      description: Checks if the server is ready to handle requests by verifying database
+        connectivity
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Readiness check
+      tags:
+      - system
+  /version:
+    get:
+      description: Returns version, commit hash, and build time of the API server
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Version information
+      tags:
+      - system
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT access token. Format: "Bearer {token}". Obtain from /api/v1/auth/login
+      endpoint.'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
