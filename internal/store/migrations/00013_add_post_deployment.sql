@@ -4,8 +4,8 @@ ALTER TABLE clusters ADD COLUMN post_deploy_completed_at TIMESTAMP WITH TIME ZON
 
 -- Create cluster_configurations table to track individual configuration tasks
 CREATE TABLE cluster_configurations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    cluster_id UUID NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+    id VARCHAR(64) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    cluster_id VARCHAR(64) NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
     config_type VARCHAR(50) NOT NULL,  -- 'operator', 'manifest', 'helm'
     config_name VARCHAR(255) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- 'pending', 'installing', 'completed', 'failed'
