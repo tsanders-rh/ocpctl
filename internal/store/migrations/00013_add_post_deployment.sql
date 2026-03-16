@@ -1,3 +1,9 @@
+-- +goose Up
+-- Migration: Add post-deployment configuration tracking
+-- Created: 2026-03-16
+
+-- +goose StatementBegin
+
 -- Add post-deployment tracking to clusters table
 ALTER TABLE clusters ADD COLUMN post_deploy_status VARCHAR(20);
 ALTER TABLE clusters ADD COLUMN post_deploy_completed_at TIMESTAMP WITH TIME ZONE;
@@ -31,3 +37,18 @@ COMMENT ON COLUMN cluster_configurations.config_name IS 'Name of the operator, m
 COMMENT ON COLUMN cluster_configurations.metadata IS 'JSON metadata about the configuration (e.g., operator channel, manifest path)';
 COMMENT ON COLUMN clusters.post_deploy_status IS 'Overall post-deployment configuration status: pending, in_progress, completed, failed';
 COMMENT ON COLUMN clusters.post_deploy_completed_at IS 'Timestamp when post-deployment configuration completed';
+
+-- +goose StatementEnd
+
+-- +goose Down
+
+-- +goose StatementBegin
+
+-- Drop cluster_configurations table
+DROP TABLE IF EXISTS cluster_configurations;
+
+-- Remove post-deployment columns from clusters table
+ALTER TABLE clusters DROP COLUMN IF EXISTS post_deploy_status;
+ALTER TABLE clusters DROP COLUMN IF EXISTS post_deploy_completed_at;
+
+-- +goose StatementEnd
