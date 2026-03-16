@@ -215,14 +215,9 @@ func main() {
 		log.Fatalf("Failed to load profiles: %v", err)
 	}
 
-	profiles := profileRegistry.List()
-	enabledCount := 0
-	for _, p := range profiles {
-		if p.Enabled {
-			enabledCount++
-		}
-	}
-	log.Printf("Loaded %d profiles (%d enabled)", len(profiles), enabledCount)
+	profileCount := profileRegistry.Count()
+	enabledCount := profileRegistry.CountEnabled()
+	log.Printf("Loaded %d profiles (%d enabled)", profileCount, enabledCount)
 
 	// Create worker
 	workerConfig := worker.DefaultConfig()
