@@ -211,21 +211,27 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	if err != nil {
 		log.Printf("Warning: failed to get profile for post-deployment check: %v", err)
 	} else if prof.PostDeployment != nil && prof.PostDeployment.Enabled {
-		// Create POST_CONFIGURE job
-		log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
-
-		postConfigJob := &types.Job{
-			ClusterID:   cluster.ID,
-			JobType:     types.JobTypePostConfigure,
-			Status:      types.JobStatusPending,
-			Attempt:     0,
-			MaxAttempts: 3,
-		}
-
-		if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
-			log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
+		// Check if post-deployment has already been completed (e.g., from previous run)
+		// This prevents duplicate POST_CONFIGURE jobs
+		if cluster.PostDeployStatus != nil && *cluster.PostDeployStatus == "completed" {
+			log.Printf("Post-deployment already completed for cluster %s, skipping", cluster.Name)
 		} else {
-			log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
+			// Create POST_CONFIGURE job
+			log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
+
+			postConfigJob := &types.Job{
+				ClusterID:   cluster.ID,
+				JobType:     types.JobTypePostConfigure,
+				Status:      types.JobStatusPending,
+				Attempt:     0,
+				MaxAttempts: 3,
+			}
+
+			if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
+				log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
+			} else {
+				log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
+			}
 		}
 	}
 
