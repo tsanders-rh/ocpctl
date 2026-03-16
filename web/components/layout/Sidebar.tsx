@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { Layers, FileCode, Home, Shield, Users, BookOpen } from "lucide-react";
+import { Layers, FileCode, Home, Shield, Users, BookOpen, BookText } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { UserRole } from "@/types/api";
 
 const navigation = [
   { name: "Clusters", href: "/clusters", icon: Layers },
   { name: "Profiles", href: "/profiles", icon: FileCode },
+  { name: "User Guide", href: "/docs", icon: BookText },
 ];
 
 const externalNavigation = [
