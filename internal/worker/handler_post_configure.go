@@ -340,6 +340,12 @@ func (h *PostConfigureHandler) applyYAML(ctx context.Context, kubeconfigPath, ya
 
 // updatePostDeployStatus updates the cluster's post_deploy_status
 func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clusterID, status string) error {
+	tx, err := h.store.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	query := `
 		UPDATE clusters
 		SET post_deploy_status = $1,
@@ -348,12 +354,22 @@ func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clust
 		WHERE id = $2
 	`
 
-	_, err := h.store.Exec(ctx, query, status, clusterID)
-	return err
+	_, err = tx.Exec(ctx, query, status, clusterID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // createConfigTask creates a new cluster configuration task
 func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID string, configType types.ConfigType, configName string) (string, error) {
+	tx, err := h.store.BeginTx(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	query := `
 		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status)
 		VALUES ($1, $2, $3, $4)
@@ -361,12 +377,26 @@ func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID s
 	`
 
 	var configID string
-	err := h.store.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
-	return configID, err
+	err = tx.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+
+	return configID, nil
 }
 
 // updateConfigTaskStatus updates a configuration task's status
 func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, configID string, status types.ConfigStatus, errorMessage *string) error {
+	tx, err := h.store.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	query := `
 		UPDATE cluster_configurations
 		SET status = $1,
@@ -375,6 +405,10 @@ func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, confi
 		WHERE id = $3
 	`
 
-	_, err := h.store.Exec(ctx, query, status, errorMessage, configID)
-	return err
+	_, err = tx.Exec(ctx, query, status, errorMessage, configID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
