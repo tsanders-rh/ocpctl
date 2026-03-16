@@ -233,9 +233,25 @@ export default function NewClusterPage() {
                   </SelectContent>
                 </Select>
                 {selectedProfile && (
-                  <p className="text-sm text-muted-foreground">
-                    {selectedProfile.description}
-                  </p>
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedProfile.description}
+                    </p>
+                    {(selectedProfile.cost_controls?.estimated_hourly_cost ?? 0) >= 4 && (
+                      <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                        <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm space-y-1">
+                          <p className="font-medium text-amber-900 dark:text-amber-100">
+                            High-Cost Profile Warning
+                          </p>
+                          <p className="text-amber-800 dark:text-amber-200">
+                            {selectedProfile.cost_controls?.warning_message ||
+                             `This profile costs $${selectedProfile.cost_controls?.estimated_hourly_cost}/hr (~$${Math.round((selectedProfile.cost_controls?.estimated_hourly_cost ?? 0) * 24 * 30)}/month). Consider enabling work hours hibernation to reduce costs by ~66%.`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

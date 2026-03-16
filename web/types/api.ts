@@ -215,6 +215,7 @@ export interface Profile {
     estimated_hourly_cost: number;
     max_monthly_cost: number;
     budget_alert_threshold: number;
+    warning_message?: string;
   };
   features: {
     off_hours_scaling: boolean;
