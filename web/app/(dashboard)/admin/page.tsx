@@ -39,8 +39,18 @@ export default function AdminDashboardPage() {
     },
   ];
 
-  // Format data for donut chart with sorted statuses for consistent colors
-  const statusOrder = ["READY", "HIBERNATED", "PROVISIONING", "FAILED", "DESTROYING", "UNKNOWN"];
+  // Color mapping for status (both legend and chart)
+  const statusConfig = {
+    READY: { chart: "emerald", legend: "bg-emerald-500" },
+    DESTROYING: { chart: "amber", legend: "bg-amber-500" },
+    HIBERNATED: { chart: "gray", legend: "bg-slate-500" },
+    PROVISIONING: { chart: "blue", legend: "bg-blue-500" },
+    FAILED: { chart: "red", legend: "bg-red-500" },
+    UNKNOWN: { chart: "violet", legend: "bg-violet-500" },
+  } as const;
+
+  // Sort data in consistent order for color mapping
+  const statusOrder = ["READY", "DESTROYING", "HIBERNATED", "PROVISIONING", "FAILED", "UNKNOWN"];
   const statusChartData = clusterStats?.clusters_by_status
     ?.map((item) => ({
       name: item.status,
@@ -52,15 +62,14 @@ export default function AdminDashboardPage() {
       return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
     }) || [];
 
-  // Color mapping for status legend
-  const statusColorMap: Record<string, string> = {
-    READY: "bg-emerald-500",
-    HIBERNATED: "bg-slate-500",
-    PROVISIONING: "bg-blue-500",
-    FAILED: "bg-red-500",
-    DESTROYING: "bg-amber-500",
-    UNKNOWN: "bg-violet-500",
-  };
+  // Build colors array matching the sorted data
+  const statusChartColors = statusChartData.map((item) =>
+    statusConfig[item.name as keyof typeof statusConfig]?.chart || "slate"
+  );
+
+  // Debug logging
+  console.log("Status Chart Data:", statusChartData);
+  console.log("Status Chart Colors:", statusChartColors);
 
   // Format data for profile bar list (sorted by count descending)
   const total = clusterStats?.active_clusters || 0;
@@ -147,10 +156,11 @@ export default function AdminDashboardPage() {
                   category="value"
                   index="name"
                   valueFormatter={(value: number) => `${value}`}
-                  colors={["emerald", "slate", "blue", "red", "amber", "violet"]}
+                  colors={statusChartColors as any}
                   showAnimation={true}
                   showTooltip={false}
                   showLabel={false}
+                  variant="donut"
                 />
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
@@ -168,7 +178,7 @@ export default function AdminDashboardPage() {
                   return (
                     <div key={item.name} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
-                        <span className={`h-3 w-3 rounded-full ${statusColorMap[item.name] || 'bg-slate-500'}`} />
+                        <span className={`h-3 w-3 rounded-full ${statusConfig[item.name as keyof typeof statusConfig]?.legend || 'bg-slate-500'}`} />
                         <span className="text-slate-600 dark:text-slate-400">{item.name}</span>
                       </div>
                       <span className="font-medium text-slate-900 dark:text-slate-100">
