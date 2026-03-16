@@ -63,6 +63,17 @@ echo "✓ Symlink updated: ${REMOTE_BASE}/current -> ${REMOTE_BASE}/releases/${V
 CURRENT=$(readlink ${REMOTE_BASE}/current)
 echo "Current version: $(basename ${CURRENT})"
 
+# Sync profiles from S3
+echo "Syncing profiles from S3..."
+mkdir -p ${REMOTE_BASE}/profiles
+if aws s3 sync ${S3_BUCKET}/profiles/ ${REMOTE_BASE}/profiles/; then
+    echo "✓ Profiles synced successfully"
+    PROFILE_COUNT=$(ls -1 ${REMOTE_BASE}/profiles/*.yaml 2>/dev/null | wc -l)
+    echo "  Found ${PROFILE_COUNT} profiles"
+else
+    echo "WARNING: Failed to sync profiles from S3"
+fi
+
 # Cleanup old versions (keep last 3)
 echo "Cleaning up old releases (keeping last 3)..."
 cd ${REMOTE_BASE}/releases
