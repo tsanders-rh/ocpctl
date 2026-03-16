@@ -1,0 +1,104 @@
+---
+# Windows Server 2022 Virtual Machine Example
+# Optimized for server workloads and testing
+#
+# Prerequisites:
+# - OpenShift Virtualization operator installed
+# - Windows Server 2022 ISO uploaded to a PVC
+# - virtio-win drivers ISO uploaded
+#
+# Usage:
+#   oc apply -f windows-server-2022-vm.yaml
+#   virtctl start windows-server-2022
+
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows-server-2022
+  namespace: default
+  labels:
+    app: windows-server
+    os: windows-server
+    workload: server
+spec:
+  running: false
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: windows-server-2022
+        os.type: windows-server
+    spec:
+      domain:
+        cpu:
+          cores: 4
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: windows-iso
+              cdrom:
+                bus: sata
+                readonly: true
+            - name: virtio-drivers
+              cdrom:
+                bus: sata
+                readonly: true
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+        machine:
+          type: q35
+        resources:
+          requests:
+            memory: 8Gi
+            cpu: "4"
+          limits:
+            memory: 8Gi
+            cpu: "4"
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          persistentVolumeClaim:
+            claimName: windows-server-2022-disk
+        - name: windows-iso
+          persistentVolumeClaim:
+            claimName: windows-server-2022-iso
+        - name: virtio-drivers
+          persistentVolumeClaim:
+            claimName: virtio-win-iso
+
+---
+# PVC for Windows Server OS disk
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: windows-server-2022-disk
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 80Gi  # Windows Server needs more space
+  storageClassName: gp3
+
+---
+# PVC for Windows Server 2022 ISO
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: windows-server-2022-iso
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 6Gi
+  storageClassName: gp3

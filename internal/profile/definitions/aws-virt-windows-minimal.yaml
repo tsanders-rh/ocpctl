@@ -1,0 +1,109 @@
+name: aws-virt-windows-minimal
+displayName: AWS OpenShift Virtualization (Minimal Windows Testing)
+description: Minimal viable OpenShift Virtualization setup for Windows VM testing with single metal worker. Supports 10-15 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$2,400/month.
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18.35"
+    - "4.19.23"
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+    - eu-west-1
+    - eu-west-2
+    - eu-central-1
+    - ap-southeast-1
+    - ap-southeast-2
+    - ap-northeast-1
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: m6i.xlarge
+    schedulable: false
+  workers:
+    replicas: 1
+    minReplicas: 1
+    maxReplicas: 1
+    instanceType: m5zn.metal  # Cheapest metal instance for nested virtualization
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 48   # 2 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: virtualization-testing
+    ManagedBy: cluster-control-plane
+    Workload: openshift-virtualization
+    CostSavings: use-work-hours-hibernation
+  allowUserTags: true
+
+features:
+  offHoursScaling: false  # Not supported with metal instances
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 4.54
+  maxMonthlyCost: 3300    # Always-on monthly cost
+  budgetAlertThreshold: 0.7
+  warningMessage: "Metal instances cost $4.54/hr ($3,269/month). Enable work hours hibernation to reduce to ~$835/month."
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 500     # Storage for Windows VM images (QCOW2 files)
+      iops: 3000
+      throughput: 125
+
+metadata:
+  capabilities:
+    - OpenShift Virtualization
+    - Windows VM support (10, 11, Server 2019/2022)
+    - Nested virtualization
+    - Up to 10-15 concurrent Windows VMs
+  capacity:
+    maxConcurrentVMs: 15
+    recommendedVMSize: 4vCPU-8GB
+    totalWorkerCPU: 48
+    totalWorkerRAM: 192
+  notes:
+    - "Metal instances take 15-20 minutes to provision (vs 5-10 for standard instances)"
+    - "Hibernation start time may be 5-10 minutes due to larger EBS volumes"
+    - "Windows licensing is user's responsibility"
+    - "Requires OpenShift Virtualization operator installation (manual or automated)"
+    - "500GB storage supports ~10-12 Windows VM images (40-50GB each)"
