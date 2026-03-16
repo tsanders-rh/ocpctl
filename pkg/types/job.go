@@ -21,6 +21,7 @@ const (
 	JobTypeUnlinkSharedStorage    JobType = "UNLINK_SHARED_STORAGE"
 	JobTypeHibernate              JobType = "HIBERNATE"
 	JobTypeResume                 JobType = "RESUME"
+	JobTypePostConfigure          JobType = "POST_CONFIGURE"
 )
 
 // JobStatus represents the current state of a job

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/janitor"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/internal/worker"
 )
@@ -201,11 +202,33 @@ func main() {
 
 	log.Println("Database connection successful")
 
+	// Load profiles
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "/opt/ocpctl/profiles"
+	}
+
+	log.Printf("Loading profiles from: %s", profilesDir)
+	loader := profile.NewLoader(profilesDir)
+	profileRegistry, err := profile.NewRegistry(loader)
+	if err != nil {
+		log.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	profiles := profileRegistry.List()
+	enabledCount := 0
+	for _, p := range profiles {
+		if p.Enabled {
+			enabledCount++
+		}
+	}
+	log.Printf("Loaded %d profiles (%d enabled)", len(profiles), enabledCount)
+
 	// Create worker
 	workerConfig := worker.DefaultConfig()
 	workerConfig.WorkDir = workDir
 
-	w := worker.NewWorker(workerConfig, st)
+	w := worker.NewWorker(workerConfig, st, profileRegistry)
 
 	// Create janitor
 	janitorConfig := janitor.DefaultConfig()

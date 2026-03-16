@@ -34,6 +34,7 @@ export enum JobType {
   UNLINK_SHARED_STORAGE = "UNLINK_SHARED_STORAGE",
   HIBERNATE = "HIBERNATE",
   RESUME = "RESUME",
+  POST_CONFIGURE = "POST_CONFIGURE",
 }
 
 export enum JobStatus {

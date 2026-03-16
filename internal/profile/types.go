@@ -4,21 +4,22 @@ import "github.com/tsanders-rh/ocpctl/pkg/types"
 
 // Profile represents a complete cluster profile loaded from YAML
 type Profile struct {
-	Name               string             `yaml:"name" validate:"required"`
-	DisplayName        string             `yaml:"displayName" validate:"required"`
-	Description        string             `yaml:"description" validate:"required"`
-	Platform           types.Platform     `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
-	Enabled            bool               `yaml:"enabled"`
-	OpenshiftVersions  VersionConfig      `yaml:"openshiftVersions" validate:"required"`
-	Regions            RegionConfig       `yaml:"regions" validate:"required"`
-	BaseDomains        BaseDomainConfig   `yaml:"baseDomains" validate:"required"`
-	Compute            ComputeConfig      `yaml:"compute" validate:"required"`
-	Lifecycle          LifecycleConfig    `yaml:"lifecycle" validate:"required"`
-	Networking         *NetworkingConfig  `yaml:"networking,omitempty"`
-	Tags               TagsConfig         `yaml:"tags" validate:"required"`
-	Features           FeaturesConfig     `yaml:"features"`
-	CostControls       CostControlsConfig `yaml:"costControls"`
-	PlatformConfig     PlatformConfig     `yaml:"platformConfig"`
+	Name               string              `yaml:"name" validate:"required"`
+	DisplayName        string              `yaml:"displayName" validate:"required"`
+	Description        string              `yaml:"description" validate:"required"`
+	Platform           types.Platform      `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
+	Enabled            bool                `yaml:"enabled"`
+	OpenshiftVersions  VersionConfig       `yaml:"openshiftVersions" validate:"required"`
+	Regions            RegionConfig        `yaml:"regions" validate:"required"`
+	BaseDomains        BaseDomainConfig    `yaml:"baseDomains" validate:"required"`
+	Compute            ComputeConfig       `yaml:"compute" validate:"required"`
+	Lifecycle          LifecycleConfig     `yaml:"lifecycle" validate:"required"`
+	Networking         *NetworkingConfig   `yaml:"networking,omitempty"`
+	Tags               TagsConfig          `yaml:"tags" validate:"required"`
+	Features           FeaturesConfig      `yaml:"features"`
+	CostControls       CostControlsConfig  `yaml:"costControls"`
+	PlatformConfig     PlatformConfig      `yaml:"platformConfig"`
+	PostDeployment     *PostDeploymentConfig `yaml:"postDeployment,omitempty"`
 }
 
 // VersionConfig defines OpenShift version constraints
@@ -134,6 +135,47 @@ type AWSRootVolume struct {
 type IBMCloudConfig struct {
 	ResourceGroup string `yaml:"resourceGroup"`
 	VPCName       string `yaml:"vpcName"`
+}
+
+// PostDeploymentConfig defines automated post-deployment configuration
+type PostDeploymentConfig struct {
+	Enabled   bool                 `yaml:"enabled" json:"enabled"`
+	Timeout   string               `yaml:"timeout,omitempty" json:"timeout,omitempty"` // Duration string, e.g. "30m"
+	Operators []OperatorConfig     `yaml:"operators,omitempty" json:"operators,omitempty"`
+	Manifests []ManifestConfig     `yaml:"manifests,omitempty" json:"manifests,omitempty"`
+	HelmCharts []HelmChartConfig   `yaml:"helmCharts,omitempty" json:"helm_charts,omitempty"`
+}
+
+// OperatorConfig defines an operator to install post-deployment
+type OperatorConfig struct {
+	Name           string                 `yaml:"name" json:"name" validate:"required"`
+	Namespace      string                 `yaml:"namespace" json:"namespace" validate:"required"`
+	Source         string                 `yaml:"source" json:"source" validate:"required"` // e.g. "redhat-operators"
+	Channel        string                 `yaml:"channel" json:"channel" validate:"required"`
+	CustomResource *CustomResourceConfig  `yaml:"customResource,omitempty" json:"custom_resource,omitempty"`
+}
+
+// CustomResourceConfig defines a custom resource to create after operator installation
+type CustomResourceConfig struct {
+	APIVersion string                 `yaml:"apiVersion" json:"api_version" validate:"required"`
+	Kind       string                 `yaml:"kind" json:"kind" validate:"required"`
+	Name       string                 `yaml:"name" json:"name" validate:"required"`
+	Namespace  string                 `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+	Spec       map[string]interface{} `yaml:"spec,omitempty" json:"spec,omitempty"`
+}
+
+// ManifestConfig defines a manifest file to apply post-deployment
+type ManifestConfig struct {
+	Name string `yaml:"name" json:"name" validate:"required"`
+	Path string `yaml:"path" json:"path" validate:"required"`
+}
+
+// HelmChartConfig defines a Helm chart to install post-deployment
+type HelmChartConfig struct {
+	Name   string                 `yaml:"name" json:"name" validate:"required"`
+	Repo   string                 `yaml:"repo" json:"repo" validate:"required"`
+	Chart  string                 `yaml:"chart" json:"chart" validate:"required"`
+	Values map[string]interface{} `yaml:"values,omitempty" json:"values,omitempty"`
 }
 
 // ReservedTagKeys are tag keys that cannot be overridden by users

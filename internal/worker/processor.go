@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -19,10 +20,11 @@ type JobProcessor struct {
 	unlinkSharedStorageHandler      *UnlinkSharedStorageHandler
 	hibernateHandler                *HibernateHandler
 	resumeHandler                   *ResumeHandler
+	postConfigureHandler            *PostConfigureHandler
 }
 
 // NewJobProcessor creates a new job processor
-func NewJobProcessor(config *Config, st *store.Store) *JobProcessor {
+func NewJobProcessor(config *Config, st *store.Store, profileRegistry *profile.Registry) *JobProcessor {
 	return &JobProcessor{
 		config:                        config,
 		store:                         st,
@@ -33,6 +35,7 @@ func NewJobProcessor(config *Config, st *store.Store) *JobProcessor {
 		unlinkSharedStorageHandler:    NewUnlinkSharedStorageHandler(config, st),
 		hibernateHandler:              NewHibernateHandler(config, st),
 		resumeHandler:                 NewResumeHandler(config, st),
+		postConfigureHandler:          NewPostConfigureHandler(config, st, profileRegistry),
 	}
 }
 
@@ -68,6 +71,9 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 
 	case types.JobTypeResume:
 		return p.resumeHandler.Handle(ctx, job)
+
+	case types.JobTypePostConfigure:
+		return p.postConfigureHandler.Handle(ctx, job)
 
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)

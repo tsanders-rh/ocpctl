@@ -206,6 +206,29 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 
 	log.Printf("Cluster %s is now READY", cluster.Name)
 
+	// Check if profile has post-deployment configuration enabled
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		log.Printf("Warning: failed to get profile for post-deployment check: %v", err)
+	} else if prof.PostDeployment != nil && prof.PostDeployment.Enabled {
+		// Create POST_CONFIGURE job
+		log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
+
+		postConfigJob := &types.Job{
+			ClusterID:   cluster.ID,
+			JobType:     types.JobTypePostConfigure,
+			Status:      types.JobStatusPending,
+			Attempt:     0,
+			MaxAttempts: 3,
+		}
+
+		if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
+			log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
+		} else {
+			log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
+		}
+	}
+
 	return nil
 }
 

@@ -95,6 +95,8 @@ type Cluster struct {
 	WorkHoursEnd        *time.Time     `db:"work_hours_end" json:"work_hours_end"`
 	WorkDays            *int16         `db:"work_days" json:"work_days"`
 	LastWorkHoursCheck  *time.Time     `db:"last_work_hours_check" json:"last_work_hours_check"`
+	PostDeployStatus    *string        `db:"post_deploy_status" json:"post_deploy_status,omitempty"`
+	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 }
 
@@ -131,4 +133,36 @@ type ClusterArtifact struct {
 	Checksum     *string      `db:"checksum" json:"checksum"`
 	SizeBytes    *int64       `db:"size_bytes" json:"size_bytes"`
 	CreatedAt    time.Time    `db:"created_at" json:"created_at"`
+}
+
+// ConfigType represents the type of post-deployment configuration
+type ConfigType string
+
+const (
+	ConfigTypeOperator ConfigType = "operator"
+	ConfigTypeManifest ConfigType = "manifest"
+	ConfigTypeHelm     ConfigType = "helm"
+)
+
+// ConfigStatus represents the status of a configuration task
+type ConfigStatus string
+
+const (
+	ConfigStatusPending    ConfigStatus = "pending"
+	ConfigStatusInstalling ConfigStatus = "installing"
+	ConfigStatusCompleted  ConfigStatus = "completed"
+	ConfigStatusFailed     ConfigStatus = "failed"
+)
+
+// ClusterConfiguration represents a post-deployment configuration task
+type ClusterConfiguration struct {
+	ID           string        `db:"id" json:"id"`
+	ClusterID    string        `db:"cluster_id" json:"cluster_id"`
+	ConfigType   ConfigType    `db:"config_type" json:"config_type"`
+	ConfigName   string        `db:"config_name" json:"config_name"`
+	Status       ConfigStatus  `db:"status" json:"status"`
+	ErrorMessage *string       `db:"error_message" json:"error_message,omitempty"`
+	CreatedAt    time.Time     `db:"created_at" json:"created_at"`
+	CompletedAt  *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
+	Metadata     JobMetadata   `db:"metadata" json:"metadata,omitempty"`
 }

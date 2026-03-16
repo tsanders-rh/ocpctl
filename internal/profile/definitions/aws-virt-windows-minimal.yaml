@@ -90,6 +90,21 @@ platformConfig:
       iops: 3000
       throughput: 125
 
+postDeployment:
+  enabled: true
+  timeout: "30m"
+  operators:
+    - name: kubevirt-hyperconverged
+      namespace: openshift-cnv
+      source: redhat-operators
+      channel: stable
+      customResource:
+        apiVersion: hco.kubevirt.io/v1beta1
+        kind: HyperConverged
+        name: kubevirt-hyperconverged
+        namespace: openshift-cnv
+        spec: {}
+
 metadata:
   capabilities:
     - OpenShift Virtualization
@@ -105,5 +120,5 @@ metadata:
     - "Metal instances take 15-20 minutes to provision (vs 5-10 for standard instances)"
     - "Hibernation start time may be 5-10 minutes due to larger EBS volumes"
     - "Windows licensing is user's responsibility"
-    - "Requires OpenShift Virtualization operator installation (manual or automated)"
+    - "OpenShift Virtualization operator installed automatically via post-deployment"
     - "500GB storage supports ~10-12 Windows VM images (40-50GB each)"

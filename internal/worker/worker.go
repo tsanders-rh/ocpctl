@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/metrics"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -176,7 +177,7 @@ type Worker struct {
 }
 
 // NewWorker creates a new worker instance
-func NewWorker(config *Config, st *store.Store) *Worker {
+func NewWorker(config *Config, st *store.Store, profileRegistry *profile.Registry) *Worker {
 	if config == nil {
 		config = DefaultConfig()
 	}
@@ -196,7 +197,7 @@ func NewWorker(config *Config, st *store.Store) *Worker {
 	return &Worker{
 		config:    config,
 		store:     st,
-		processor: NewJobProcessor(config, st),
+		processor: NewJobProcessor(config, st, profileRegistry),
 		metrics:   metricsPublisher,
 		asgName:   asgName,
 		running:   false,
