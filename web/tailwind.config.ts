@@ -9,6 +9,15 @@ const config: Config = {
     "./src/**/*.{ts,tsx}",
     "./node_modules/@tremor/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    {
+      pattern: /^(fill|stroke|bg|text|border)-(green|gray|slate|blue|red|amber|violet|emerald)-(50|100|200|300|400|500|600|700|800|900)$/,
+    },
+    'bg-tremor-background',
+    'dark:bg-dark-tremor-background',
+    'border-tremor-border',
+    'dark:border-dark-tremor-border',
+  ],
   prefix: "",
   theme: {
     container: {

@@ -4,8 +4,8 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useClusters } from "@/lib/hooks/useClusters";
 import { useClusterStatistics } from "@/lib/hooks/useAdminStats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Layers, Activity, TrendingUp } from "lucide-react";
-import { DonutChart, BarChart, Card as TremorCard, Title } from "@tremor/react";
+import { Users, Layers, Activity, TrendingUp, DollarSign } from "lucide-react";
+import { DonutChart, BarList, Card as TremorCard, Title } from "@tremor/react";
 
 export default function AdminDashboardPage() {
   const { data: usersData } = useUsers();
@@ -39,28 +39,64 @@ export default function AdminDashboardPage() {
     },
   ];
 
-  // Format data for donut chart
-  const statusChartData = clusterStats?.clusters_by_status?.map((item) => ({
-    name: item.status,
-    value: item.count,
-  })) || [];
+  // Format data for donut chart with sorted statuses for consistent colors
+  const statusOrder = ["READY", "HIBERNATED", "PROVISIONING", "FAILED", "DESTROYING", "UNKNOWN"];
+  const statusChartData = clusterStats?.clusters_by_status
+    ?.map((item) => ({
+      name: item.status,
+      value: item.count,
+    }))
+    .sort((a, b) => {
+      const indexA = statusOrder.indexOf(a.name);
+      const indexB = statusOrder.indexOf(b.name);
+      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+    }) || [];
 
-  // Format data for profile bar chart
-  const profileChartData = clusterStats?.clusters_by_profile
-    ?.sort((a, b) => b.count - a.count) // Sort by count descending
+  // Color mapping for status legend
+  const statusColorMap: Record<string, string> = {
+    READY: "bg-emerald-500",
+    HIBERNATED: "bg-slate-500",
+    PROVISIONING: "bg-blue-500",
+    FAILED: "bg-red-500",
+    DESTROYING: "bg-amber-500",
+    UNKNOWN: "bg-violet-500",
+  };
+
+  // Format data for profile bar list (sorted by count descending)
+  const total = clusterStats?.active_clusters || 0;
+  const profileListData = clusterStats?.clusters_by_profile
+    ?.sort((a, b) => b.count - a.count)
     .slice(0, 10) // Show top 10 profiles
     .map((item) => ({
       name: item.profile,
-      "Cluster Count": item.count,
+      value: item.count,
     })) || [];
 
-  // Debug logging
-  if (typeof window !== 'undefined') {
-    console.log('Cluster Stats:', clusterStats);
-    console.log('Stats Loading:', statsLoading);
-    console.log('Status Chart Data:', statusChartData);
-    console.log('Profile Chart Data:', profileChartData);
-  }
+  // Format cost data for displays
+  const costByProfileData = clusterStats?.cost_by_profile
+    ?.sort((a, b) => b.hourly_cost - a.hourly_cost)
+    .slice(0, 10)
+    .map((item) => ({
+      name: item.profile,
+      value: item.hourly_cost,
+      // Store additional data for display
+      count: item.cluster_count,
+      daily: item.daily_cost,
+      monthly: item.monthly_cost,
+    })) || [];
+
+  const costByUserData = clusterStats?.cost_by_user
+    ?.sort((a, b) => b.hourly_cost - a.hourly_cost)
+    .slice(0, 10)
+    .map((item) => ({
+      name: item.username,
+      value: item.hourly_cost,
+      count: item.cluster_count,
+      daily: item.daily_cost,
+      monthly: item.monthly_cost,
+    })) || [];
+
+  const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
 
   return (
     <div className="space-y-6">
@@ -97,21 +133,52 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Cluster Status Donut Chart */}
         <TremorCard>
-          <Title>Clusters by Status</Title>
+          <Title>Active Clusters by Status</Title>
           {statsLoading ? (
             <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
               Loading statistics...
             </div>
           ) : statusChartData.length > 0 ? (
-            <DonutChart
-              className="mt-6 h-80"
-              data={statusChartData}
-              category="value"
-              index="name"
-              valueFormatter={(value: number) => `${value} clusters`}
-              colors={["emerald", "blue", "amber", "rose", "slate", "violet"]}
-              showAnimation={true}
-            />
+            <>
+              <div className="relative">
+                <DonutChart
+                  className="mt-6 h-44"
+                  data={statusChartData}
+                  category="value"
+                  index="name"
+                  valueFormatter={(value: number) => `${value}`}
+                  colors={["emerald", "slate", "blue", "red", "amber", "violet"]}
+                  showAnimation={true}
+                  showTooltip={false}
+                  showLabel={false}
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                    {clusterStats?.active_clusters || 0}
+                  </div>
+                  <div className="text-sm text-slate-600 dark:text-slate-400">
+                    Active Clusters
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 space-y-3">
+                {statusChartData.map((item) => {
+                  const total = clusterStats?.active_clusters || 0;
+                  const percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                  return (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-3 w-3 rounded-full ${statusColorMap[item.name] || 'bg-slate-500'}`} />
+                        <span className="text-slate-600 dark:text-slate-400">{item.name}</span>
+                      </div>
+                      <span className="font-medium text-slate-900 dark:text-slate-100">
+                        {item.value} ({percentage}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           ) : (
             <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
               No cluster data available
@@ -119,30 +186,128 @@ export default function AdminDashboardPage() {
           )}
         </TremorCard>
 
-        {/* Cluster by Profile Bar Chart */}
+        {/* Cluster by Profile Bar List */}
         <TremorCard>
-          <Title>Clusters by Profile</Title>
+          <Title>Active Clusters by Profile</Title>
           {statsLoading ? (
-            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+            <div className="mt-6 flex items-center justify-center text-muted-foreground">
               Loading statistics...
             </div>
-          ) : profileChartData.length > 0 ? (
-            <BarChart
-              className="mt-6 h-80"
-              data={profileChartData}
-              index="name"
-              categories={["Cluster Count"]}
-              colors={["blue"]}
-              valueFormatter={(value: number) => `${value} clusters`}
-              yAxisWidth={120}
+          ) : profileListData.length > 0 ? (
+            <BarList
+              data={profileListData}
+              className="mt-6"
+              color="blue"
               showAnimation={true}
+              valueFormatter={(value: number) => {
+                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                return `${value} (${percentage}%)`;
+              }}
             />
           ) : (
-            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+            <div className="mt-6 flex items-center justify-center text-muted-foreground">
               No cluster data available
             </div>
           )}
         </TremorCard>
+      </div>
+
+      {/* Resource & Cost Insights */}
+      <div>
+        <h2 className="text-2xl font-bold mb-4">Resource & Cost Insights</h2>
+
+        {/* Cost Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Hourly Cost</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(clusterStats?.total_hourly_cost || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Current running rate
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Daily Cost</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(clusterStats?.total_daily_cost || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Estimated per day
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Monthly Cost</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(clusterStats?.total_monthly_cost || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Estimated per month (30 days)
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Cost Breakdown Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Cost by Profile */}
+          <TremorCard>
+            <Title>Cost by Profile</Title>
+            {statsLoading ? (
+              <div className="mt-6 flex items-center justify-center text-muted-foreground">
+                Loading statistics...
+              </div>
+            ) : costByProfileData.length > 0 ? (
+              <BarList
+                data={costByProfileData}
+                className="mt-6"
+                color="emerald"
+                showAnimation={true}
+                valueFormatter={(value: number) => formatCurrency(value) + "/hr"}
+              />
+            ) : (
+              <div className="mt-6 flex items-center justify-center text-muted-foreground">
+                No cost data available
+              </div>
+            )}
+          </TremorCard>
+
+          {/* Cost by User */}
+          <TremorCard>
+            <Title>Cost by User</Title>
+            {statsLoading ? (
+              <div className="mt-6 flex items-center justify-center text-muted-foreground">
+                Loading statistics...
+              </div>
+            ) : costByUserData.length > 0 ? (
+              <BarList
+                data={costByUserData}
+                className="mt-6"
+                color="amber"
+                showAnimation={true}
+                valueFormatter={(value: number) => formatCurrency(value) + "/hr"}
+              />
+            ) : (
+              <div className="mt-6 flex items-center justify-center text-muted-foreground">
+                No cost data available
+              </div>
+            )}
+          </TremorCard>
+        </div>
       </div>
 
       <Card>
