@@ -40,19 +40,27 @@ export default function AdminDashboardPage() {
   ];
 
   // Format data for donut chart
-  const statusChartData = clusterStats?.clusters_by_status.map((item) => ({
+  const statusChartData = clusterStats?.clusters_by_status?.map((item) => ({
     name: item.status,
     value: item.count,
   })) || [];
 
   // Format data for profile bar chart
   const profileChartData = clusterStats?.clusters_by_profile
-    .sort((a, b) => b.count - a.count) // Sort by count descending
+    ?.sort((a, b) => b.count - a.count) // Sort by count descending
     .slice(0, 10) // Show top 10 profiles
     .map((item) => ({
       name: item.profile,
       "Cluster Count": item.count,
     })) || [];
+
+  // Debug logging
+  if (typeof window !== 'undefined') {
+    console.log('Cluster Stats:', clusterStats);
+    console.log('Stats Loading:', statsLoading);
+    console.log('Status Chart Data:', statusChartData);
+    console.log('Profile Chart Data:', profileChartData);
+  }
 
   return (
     <div className="space-y-6">
@@ -86,36 +94,56 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Cluster Statistics Charts */}
-      {!statsLoading && clusterStats && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Cluster Status Donut Chart */}
-          <TremorCard>
-            <Title>Clusters by Status</Title>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cluster Status Donut Chart */}
+        <TremorCard>
+          <Title>Clusters by Status</Title>
+          {statsLoading ? (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              Loading statistics...
+            </div>
+          ) : statusChartData.length > 0 ? (
             <DonutChart
-              className="mt-6"
+              className="mt-6 h-80"
               data={statusChartData}
               category="value"
               index="name"
               valueFormatter={(value: number) => `${value} clusters`}
               colors={["emerald", "blue", "amber", "rose", "slate", "violet"]}
+              showAnimation={true}
             />
-          </TremorCard>
+          ) : (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              No cluster data available
+            </div>
+          )}
+        </TremorCard>
 
-          {/* Cluster by Profile Bar Chart */}
-          <TremorCard>
-            <Title>Clusters by Profile</Title>
+        {/* Cluster by Profile Bar Chart */}
+        <TremorCard>
+          <Title>Clusters by Profile</Title>
+          {statsLoading ? (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              Loading statistics...
+            </div>
+          ) : profileChartData.length > 0 ? (
             <BarChart
-              className="mt-6"
+              className="mt-6 h-80"
               data={profileChartData}
               index="name"
               categories={["Cluster Count"]}
               colors={["blue"]}
               valueFormatter={(value: number) => `${value} clusters`}
-              yAxisWidth={48}
+              yAxisWidth={120}
+              showAnimation={true}
             />
-          </TremorCard>
-        </div>
-      )}
+          ) : (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              No cluster data available
+            </div>
+          )}
+        </TremorCard>
+      </div>
 
       <Card>
         <CardHeader>
