@@ -5,11 +5,11 @@
 -- +goose StatementBegin
 
 -- Add post-deployment tracking to clusters table
-ALTER TABLE clusters ADD COLUMN post_deploy_status VARCHAR(20);
-ALTER TABLE clusters ADD COLUMN post_deploy_completed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS post_deploy_status VARCHAR(20);
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS post_deploy_completed_at TIMESTAMP WITH TIME ZONE;
 
 -- Create cluster_configurations table to track individual configuration tasks
-CREATE TABLE cluster_configurations (
+CREATE TABLE IF NOT EXISTS cluster_configurations (
     id VARCHAR(64) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     cluster_id VARCHAR(64) NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
     config_type VARCHAR(50) NOT NULL,  -- 'operator', 'manifest', 'helm'
@@ -25,10 +25,20 @@ CREATE TABLE cluster_configurations (
     CONSTRAINT cluster_configurations_type_check CHECK (config_type IN ('operator', 'manifest', 'helm'))
 );
 
--- Indexes for cluster_configurations
-CREATE INDEX idx_cluster_configurations_cluster_id ON cluster_configurations(cluster_id);
-CREATE INDEX idx_cluster_configurations_status ON cluster_configurations(status);
-CREATE INDEX idx_cluster_configurations_created_at ON cluster_configurations(created_at DESC);
+-- Indexes for cluster_configurations (DROP IF EXISTS not needed for CREATE INDEX)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_cluster_configurations_cluster_id') THEN
+        CREATE INDEX idx_cluster_configurations_cluster_id ON cluster_configurations(cluster_id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_cluster_configurations_status') THEN
+        CREATE INDEX idx_cluster_configurations_status ON cluster_configurations(status);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_cluster_configurations_created_at') THEN
+        CREATE INDEX idx_cluster_configurations_created_at ON cluster_configurations(created_at DESC);
+    END IF;
+END
+$$;
 
 -- Comments
 COMMENT ON TABLE cluster_configurations IS 'Tracks individual post-deployment configuration tasks for clusters';
