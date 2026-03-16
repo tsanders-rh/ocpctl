@@ -201,7 +201,10 @@ func (s *Server) setupRoutes() {
 	adminGroup.DELETE("/orphaned-resources/:id", orphanedHandler.Delete)
 
 	// Cluster routes (all require authentication)
-	clusterHandler := NewClusterHandler(s.store, s.policy)
+	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)
+
+	// Cluster statistics (admin only)
+	adminGroup.GET("/clusters/statistics", clusterHandler.GetStatistics)
 	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
 
 	// Stricter rate limit for cluster creation (resource intensive)

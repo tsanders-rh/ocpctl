@@ -13,21 +13,24 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // ClusterHandler handles cluster-related API endpoints
 type ClusterHandler struct {
-	store  *store.Store
-	policy *policy.Engine
+	store    *store.Store
+	policy   *policy.Engine
+	registry *profile.Registry
 }
 
 // NewClusterHandler creates a new cluster handler
-func NewClusterHandler(s *store.Store, p *policy.Engine) *ClusterHandler {
+func NewClusterHandler(s *store.Store, p *policy.Engine, r *profile.Registry) *ClusterHandler {
 	return &ClusterHandler{
-		store:  s,
-		policy: p,
+		store:    s,
+		policy:   p,
+		registry: r,
 	}
 }
 
@@ -914,4 +917,164 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 	}
 
 	return SuccessOK(c, cluster)
+}
+
+// ClusterStatistics represents aggregated cluster statistics
+type ClusterStatistics struct {
+	TotalClusters      int                       `json:"total_clusters"`
+	ClustersByStatus   []ClusterStatusCount      `json:"clusters_by_status"`
+	ClustersByProfile  []ClusterProfileCount     `json:"clusters_by_profile"`
+	ActiveClusters     int                       `json:"active_clusters"`
+	TotalHourlyCost    float64                   `json:"total_hourly_cost"`
+	TotalDailyCost     float64                   `json:"total_daily_cost"`
+	TotalMonthlyCost   float64                   `json:"total_monthly_cost"`
+	CostByProfile      []ProfileCostBreakdown    `json:"cost_by_profile"`
+	CostByUser         []UserCostBreakdown       `json:"cost_by_user"`
+}
+
+// ClusterStatusCount represents cluster count per status
+type ClusterStatusCount struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+// ClusterProfileCount represents cluster count per profile
+type ClusterProfileCount struct {
+	Profile string `json:"profile"`
+	Count   int    `json:"count"`
+}
+
+// ProfileCostBreakdown represents cost breakdown by profile
+type ProfileCostBreakdown struct {
+	Profile     string  `json:"profile"`
+	ClusterCount int     `json:"cluster_count"`
+	HourlyCost  float64 `json:"hourly_cost"`
+	DailyCost   float64 `json:"daily_cost"`
+	MonthlyCost float64 `json:"monthly_cost"`
+}
+
+// UserCostBreakdown represents cost breakdown by user
+type UserCostBreakdown struct {
+	UserID       string  `json:"user_id"`
+	Username     string  `json:"username"`
+	ClusterCount int     `json:"cluster_count"`
+	HourlyCost   float64 `json:"hourly_cost"`
+	DailyCost    float64 `json:"daily_cost"`
+	MonthlyCost  float64 `json:"monthly_cost"`
+}
+
+// GetStatistics handles GET /api/v1/admin/clusters/statistics
+//
+//	@Summary		Get cluster statistics
+//	@Description	Returns aggregated statistics for all clusters (admin only)
+//	@Tags			admin
+//	@Produce		json
+//	@Success		200	{object}	ClusterStatistics
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/admin/clusters/statistics [get]
+func (h *ClusterHandler) GetStatistics(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get all clusters (no filters for stats)
+	clusters, _, err := h.store.Clusters.List(ctx, store.ListFilters{
+		Limit:  10000, // High limit to get all clusters
+		Offset: 0,
+	})
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to list clusters: %w", err))
+	}
+
+	// Calculate statistics
+	stats := ClusterStatistics{
+		TotalClusters:    len(clusters),
+		ClustersByStatus: make([]ClusterStatusCount, 0),
+		ClustersByProfile: make([]ClusterProfileCount, 0),
+		CostByProfile:    make([]ProfileCostBreakdown, 0),
+		CostByUser:       make([]UserCostBreakdown, 0),
+		ActiveClusters:   0,
+	}
+
+	// Count by status and profile (only for active clusters)
+	statusCounts := make(map[string]int)
+	profileCounts := make(map[string]int)
+	profileCosts := make(map[string]float64)
+	userCosts := make(map[string]*UserCostBreakdown)
+
+	for _, cluster := range clusters {
+		// Count active clusters (not Destroyed/Failed)
+		if cluster.Status != types.ClusterStatusDestroyed && cluster.Status != types.ClusterStatusFailed {
+			stats.ActiveClusters++
+			statusCounts[string(cluster.Status)]++
+			profileCounts[cluster.Profile]++
+
+			// Get profile cost
+			if prof, err := h.registry.Get(cluster.Profile); err == nil && prof != nil {
+				hourlyCost := prof.CostControls.EstimatedHourlyCost
+				stats.TotalHourlyCost += hourlyCost
+				profileCosts[cluster.Profile] += hourlyCost
+
+				// Track cost by user
+				if userCost, exists := userCosts[cluster.OwnerID]; exists {
+					userCost.ClusterCount++
+					userCost.HourlyCost += hourlyCost
+				} else {
+					// Get username
+					user, err := h.store.Users.GetByID(ctx, cluster.OwnerID)
+					username := cluster.OwnerID
+					if err == nil && user != nil {
+						username = user.Username
+					}
+					userCosts[cluster.OwnerID] = &UserCostBreakdown{
+						UserID:       cluster.OwnerID,
+						Username:     username,
+						ClusterCount: 1,
+						HourlyCost:   hourlyCost,
+					}
+				}
+			}
+		}
+	}
+
+	// Calculate daily and monthly costs
+	stats.TotalDailyCost = stats.TotalHourlyCost * 24
+	stats.TotalMonthlyCost = stats.TotalHourlyCost * 24 * 30
+
+	// Convert status map to slice
+	for status, count := range statusCounts {
+		stats.ClustersByStatus = append(stats.ClustersByStatus, ClusterStatusCount{
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	// Convert profile map to slice
+	for profile, count := range profileCounts {
+		stats.ClustersByProfile = append(stats.ClustersByProfile, ClusterProfileCount{
+			Profile: profile,
+			Count:   count,
+		})
+	}
+
+	// Convert profile costs to slice
+	for profile, hourlyCost := range profileCosts {
+		stats.CostByProfile = append(stats.CostByProfile, ProfileCostBreakdown{
+			Profile:     profile,
+			ClusterCount: profileCounts[profile],
+			HourlyCost:  hourlyCost,
+			DailyCost:   hourlyCost * 24,
+			MonthlyCost: hourlyCost * 24 * 30,
+		})
+	}
+
+	// Convert user costs to slice and calculate daily/monthly
+	for _, userCost := range userCosts {
+		userCost.DailyCost = userCost.HourlyCost * 24
+		userCost.MonthlyCost = userCost.HourlyCost * 24 * 30
+		stats.CostByUser = append(stats.CostByUser, *userCost)
+	}
+
+	return SuccessOK(c, stats)
 }

@@ -25,6 +25,7 @@
     "@smithy/protocol-http": "^5.3.10",
     "@smithy/signature-v4": "^5.3.10",
     "@tanstack/react-query": "^5.60.0",
+    "@tremor/react": "^3.18.7",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
