@@ -202,6 +202,9 @@ func (s *Server) setupRoutes() {
 
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy)
+
+	// Cluster statistics (admin only)
+	adminGroup.GET("/clusters/statistics", clusterHandler.GetStatistics)
 	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
 
 	// Stricter rate limit for cluster creation (resource intensive)

@@ -915,3 +915,91 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 
 	return SuccessOK(c, cluster)
 }
+
+// ClusterStatistics represents aggregated cluster statistics
+type ClusterStatistics struct {
+	TotalClusters    int                       `json:"total_clusters"`
+	ClustersByStatus []ClusterStatusCount      `json:"clusters_by_status"`
+	ClustersByProfile []ClusterProfileCount    `json:"clusters_by_profile"`
+	ActiveClusters   int                       `json:"active_clusters"`
+}
+
+// ClusterStatusCount represents cluster count per status
+type ClusterStatusCount struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+// ClusterProfileCount represents cluster count per profile
+type ClusterProfileCount struct {
+	Profile string `json:"profile"`
+	Count   int    `json:"count"`
+}
+
+// GetStatistics handles GET /api/v1/admin/clusters/statistics
+//
+//	@Summary		Get cluster statistics
+//	@Description	Returns aggregated statistics for all clusters (admin only)
+//	@Tags			admin
+//	@Produce		json
+//	@Success		200	{object}	ClusterStatistics
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/admin/clusters/statistics [get]
+func (h *ClusterHandler) GetStatistics(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get all clusters (no filters for stats)
+	clusters, _, err := h.store.Clusters.List(ctx, store.ListFilters{
+		Limit:  10000, // High limit to get all clusters
+		Offset: 0,
+	})
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to list clusters: %w", err))
+	}
+
+	// Calculate statistics
+	stats := ClusterStatistics{
+		TotalClusters:    len(clusters),
+		ClustersByStatus: make([]ClusterStatusCount, 0),
+		ClustersByProfile: make([]ClusterProfileCount, 0),
+		ActiveClusters:   0,
+	}
+
+	// Count by status
+	statusCounts := make(map[string]int)
+	for _, cluster := range clusters {
+		statusCounts[string(cluster.Status)]++
+
+		// Count active clusters (Ready, Provisioning, Hibernated, etc - not Destroyed/Failed)
+		if cluster.Status != types.ClusterStatusDestroyed && cluster.Status != types.ClusterStatusFailed {
+			stats.ActiveClusters++
+		}
+	}
+
+	// Convert status map to slice
+	for status, count := range statusCounts {
+		stats.ClustersByStatus = append(stats.ClustersByStatus, ClusterStatusCount{
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	// Count by profile
+	profileCounts := make(map[string]int)
+	for _, cluster := range clusters {
+		profileCounts[cluster.Profile]++
+	}
+
+	// Convert profile map to slice
+	for profile, count := range profileCounts {
+		stats.ClustersByProfile = append(stats.ClustersByProfile, ClusterProfileCount{
+			Profile: profile,
+			Count:   count,
+		})
+	}
+
+	return SuccessOK(c, stats)
+}

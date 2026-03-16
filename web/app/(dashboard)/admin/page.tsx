@@ -2,12 +2,15 @@
 
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useClusters } from "@/lib/hooks/useClusters";
+import { useClusterStatistics } from "@/lib/hooks/useAdminStats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Layers, Activity } from "lucide-react";
+import { Users, Layers, Activity, TrendingUp } from "lucide-react";
+import { DonutChart, BarChart, Card as TremorCard, Title } from "@tremor/react";
 
 export default function AdminDashboardPage() {
   const { data: usersData } = useUsers();
   const { data: clustersData } = useClusters({ page: 1, per_page: 1 });
+  const { data: clusterStats, isLoading: statsLoading } = useClusterStatistics();
 
   const stats = [
     {
@@ -18,9 +21,15 @@ export default function AdminDashboardPage() {
     },
     {
       title: "Total Clusters",
-      value: clustersData?.pagination?.total || 0,
+      value: clusterStats?.total_clusters || 0,
       icon: Layers,
-      description: "All clusters (all users)",
+      description: "All clusters (all time)",
+    },
+    {
+      title: "Active Clusters",
+      value: clusterStats?.active_clusters || 0,
+      icon: TrendingUp,
+      description: "Currently active",
     },
     {
       title: "System Status",
@@ -29,6 +38,21 @@ export default function AdminDashboardPage() {
       description: "All services operational",
     },
   ];
+
+  // Format data for donut chart
+  const statusChartData = clusterStats?.clusters_by_status.map((item) => ({
+    name: item.status,
+    value: item.count,
+  })) || [];
+
+  // Format data for profile bar chart
+  const profileChartData = clusterStats?.clusters_by_profile
+    .sort((a, b) => b.count - a.count) // Sort by count descending
+    .slice(0, 10) // Show top 10 profiles
+    .map((item) => ({
+      name: item.profile,
+      "Cluster Count": item.count,
+    })) || [];
 
   return (
     <div className="space-y-6">
@@ -39,7 +63,7 @@ export default function AdminDashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
@@ -60,6 +84,38 @@ export default function AdminDashboardPage() {
           );
         })}
       </div>
+
+      {/* Cluster Statistics Charts */}
+      {!statsLoading && clusterStats && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Cluster Status Donut Chart */}
+          <TremorCard>
+            <Title>Clusters by Status</Title>
+            <DonutChart
+              className="mt-6"
+              data={statusChartData}
+              category="value"
+              index="name"
+              valueFormatter={(value: number) => `${value} clusters`}
+              colors={["emerald", "blue", "amber", "rose", "slate", "violet"]}
+            />
+          </TremorCard>
+
+          {/* Cluster by Profile Bar Chart */}
+          <TremorCard>
+            <Title>Clusters by Profile</Title>
+            <BarChart
+              className="mt-6"
+              data={profileChartData}
+              index="name"
+              categories={["Cluster Count"]}
+              colors={["blue"]}
+              valueFormatter={(value: number) => `${value} clusters`}
+              yAxisWidth={48}
+            />
+          </TremorCard>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
