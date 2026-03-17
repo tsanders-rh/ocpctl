@@ -230,6 +230,12 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id/storage", storageHandler.GetStorage)
 	clustersGroup.DELETE("/:id/storage/link/:group_id", storageHandler.UnlinkStorage)
 
+	// Configuration routes (require authentication)
+	configHandler := NewConfigurationHandler(s.store)
+	clustersGroup.GET("/:id/configurations", configHandler.ListClusterConfigurations)
+	clustersGroup.POST("/:id/configure", configHandler.TriggerPostConfiguration)
+	clustersGroup.PATCH("/:id/configurations/:config_id/retry", configHandler.RetryConfiguration)
+
 	// Profile routes (require authentication)
 	profileHandler := NewProfileHandler(s.registry)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))

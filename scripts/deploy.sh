@@ -5,7 +5,7 @@
 set -e
 
 # Configuration
-WORKER_HOSTS=("52.90.135.148" "54.235.4.38")
+WORKER_HOSTS=("98.92.107.90")
 API_HOST="52.90.135.148"
 SSH_KEY="$HOME/.ssh/ocpctl-test-key.pem"
 REMOTE_BASE="/opt/ocpctl"

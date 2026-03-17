@@ -2,18 +2,36 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs, useHibernateCluster, useResumeCluster } from "@/lib/hooks/useClusters";
+import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs, useHibernateCluster, useResumeCluster, useClusterConfigurations, useTriggerPostConfiguration, useRetryConfiguration } from "@/lib/hooks/useClusters";
 import { useJobs } from "@/lib/hooks/useJobs";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { StorageTab } from "@/components/clusters/StorageTab";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, RefreshCw, Play } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ConfigStatus } from "@/types/api";
+
+// Helper to get badge variant for configuration status
+function getConfigStatusBadge(status: ConfigStatus): { variant: "default" | "secondary" | "destructive" | "outline"; label: string } {
+  switch (status) {
+    case ConfigStatus.COMPLETED:
+      return { variant: "default", label: "Completed" };
+    case ConfigStatus.INSTALLING:
+      return { variant: "secondary", label: "Installing" };
+    case ConfigStatus.PENDING:
+      return { variant: "outline", label: "Pending" };
+    case ConfigStatus.FAILED:
+      return { variant: "destructive", label: "Failed" };
+    default:
+      return { variant: "outline", label: status };
+  }
+}
 
 // Helper to convert work_days bitmask to day names
 function workDaysBitmaskToNames(mask: number): string[] {
@@ -202,10 +220,13 @@ export default function ClusterDetailPage() {
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
   const { data: outputs } = useClusterOutputs(id, cluster?.status);
+  const { data: configurations } = useClusterConfigurations(id);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();
   const hibernateCluster = useHibernateCluster();
   const resumeCluster = useResumeCluster();
+  const triggerPostConfiguration = useTriggerPostConfiguration();
+  const retryConfiguration = useRetryConfiguration();
 
   const [extendHours, setExtendHours] = useState<number>(24);
 
@@ -552,6 +573,94 @@ export default function ClusterDetailPage() {
           </CardHeader>
           <CardContent>
             <StorageTab clusterId={cluster.id} platform={cluster.platform} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Post-Deployment Configuration Card */}
+      {configurations && configurations.configurations.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle>Post-Deployment Configuration</CardTitle>
+            {cluster.status === "READY" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (confirm(`Are you sure you want to trigger post-deployment configuration for cluster "${cluster.name}"?`)) {
+                    try {
+                      await triggerPostConfiguration.mutateAsync(id);
+                      alert("Post-deployment configuration triggered successfully");
+                    } catch (error: any) {
+                      const errorMessage = error?.response?.message || error?.message || "Failed to trigger configuration";
+                      alert(`Failed to trigger configuration: ${errorMessage}`);
+                      console.error("Trigger configuration error:", error);
+                    }
+                  }
+                }}
+                disabled={triggerPostConfiguration.isPending}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                {triggerPostConfiguration.isPending ? "Triggering..." : "Trigger Now"}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {configurations.configurations.map((config) => {
+                const statusBadge = getConfigStatusBadge(config.status);
+                return (
+                  <div
+                    key={config.id}
+                    className="flex items-center justify-between p-3 border rounded-md"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {config.config_type}
+                        </Badge>
+                        <span className="font-medium">{config.config_name}</span>
+                      </div>
+                      {config.error_message && (
+                        <div className="text-sm text-destructive mt-1">
+                          {config.error_message}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Created: {formatDate(config.created_at)}
+                        {config.completed_at && ` • Completed: ${formatDate(config.completed_at)}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+                      {config.status === ConfigStatus.FAILED && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              await retryConfiguration.mutateAsync({
+                                clusterId: id,
+                                configId: config.id,
+                              });
+                              alert("Configuration retry initiated successfully");
+                            } catch (error: any) {
+                              const errorMessage = error?.response?.message || error?.message || "Failed to retry configuration";
+                              alert(`Failed to retry: ${errorMessage}`);
+                              console.error("Retry configuration error:", error);
+                            }
+                          }}
+                          disabled={retryConfiguration.isPending}
+                        >
+                          <RefreshCw className="mr-2 h-3 w-3" />
+                          {retryConfiguration.isPending ? "Retrying..." : "Retry"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       )}

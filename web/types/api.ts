@@ -274,6 +274,39 @@ export interface Profile {
   post_deployment?: PostDeploymentConfig;
 }
 
+// Cluster Configuration Types
+export enum ConfigType {
+  OPERATOR = "operator",
+  MANIFEST = "manifest",
+  HELM = "helm",
+}
+
+export enum ConfigStatus {
+  PENDING = "pending",
+  INSTALLING = "installing",
+  COMPLETED = "completed",
+  FAILED = "failed",
+}
+
+export interface ClusterConfiguration {
+  id: string;
+  cluster_id: string;
+  config_type: ConfigType;
+  config_name: string;
+  status: ConfigStatus;
+  error_message?: string;
+  created_at: string;
+  completed_at?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ClusterConfigurationsResponse {
+  cluster_id: string;
+  cluster_name: string;
+  configurations: ClusterConfiguration[];
+  total: number;
+}
+
 // Job Types
 export interface Job {
   id: string;

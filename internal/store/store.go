@@ -20,22 +20,23 @@ var migrationsFS embed.FS
 type Store struct {
 	pool *pgxpool.Pool
 
-	Clusters            *ClusterStore
-	Jobs                *JobStore
-	JobLocks            *JobLockStore
-	Idempotency         *IdempotencyStore
-	RBAC                *RBACStore
-	Audit               *AuditStore
-	ClusterOutputs      *ClusterOutputsStore
-	Artifacts           *ArtifactStore
-	Usage               *UsageStore
-	Users               *UserStore
-	RefreshTokens       *RefreshTokenStore
-	IAMMappings         *IAMMappingStore
-	DeploymentLogs      *DeploymentLogStore
-	StorageGroups       *StorageGroupStore
-	ClusterStorageLinks *ClusterStorageLinkStore
-	OrphanedResources   *OrphanedResourceStore
+	Clusters             *ClusterStore
+	Jobs                 *JobStore
+	JobLocks             *JobLockStore
+	Idempotency          *IdempotencyStore
+	RBAC                 *RBACStore
+	Audit                *AuditStore
+	ClusterOutputs       *ClusterOutputsStore
+	Artifacts            *ArtifactStore
+	Usage                *UsageStore
+	Users                *UserStore
+	RefreshTokens        *RefreshTokenStore
+	IAMMappings          *IAMMappingStore
+	DeploymentLogs       *DeploymentLogStore
+	StorageGroups        *StorageGroupStore
+	ClusterStorageLinks  *ClusterStorageLinkStore
+	OrphanedResources    *OrphanedResourceStore
+	ClusterConfigurations *ClusterConfigurationStore
 }
 
 // New creates a new Store with all sub-stores initialized
@@ -63,6 +64,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.StorageGroups = &StorageGroupStore{pool: pool}
 	s.ClusterStorageLinks = &ClusterStorageLinkStore{pool: pool}
 	s.OrphanedResources = &OrphanedResourceStore{pool: pool}
+	s.ClusterConfigurations = &ClusterConfigurationStore{pool: pool}
 
 	return s
 }

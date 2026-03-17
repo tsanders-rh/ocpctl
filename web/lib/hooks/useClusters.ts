@@ -103,3 +103,45 @@ export function useResumeCluster() {
     },
   });
 }
+
+export function useClusterConfigurations(id: string) {
+  return useQuery({
+    queryKey: ["cluster", id, "configurations"],
+    queryFn: () => clustersApi.getConfigurations(id),
+    enabled: !!id,
+    refetchInterval: (query) => {
+      // Poll every 5 seconds if there are pending or installing configurations
+      const data = query.state.data;
+      if (!data) return false;
+      const hasActiveConfig = data.configurations.some(
+        (config) => config.status === "pending" || config.status === "installing"
+      );
+      return hasActiveConfig ? 5000 : false;
+    },
+  });
+}
+
+export function useTriggerPostConfiguration() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => clustersApi.triggerPostConfiguration(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["cluster", id, "configurations"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}
+
+export function useRetryConfiguration() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ clusterId, configId }: { clusterId: string; configId: string }) =>
+      clustersApi.retryConfiguration(clusterId, configId),
+    onSuccess: (_, { clusterId }) => {
+      queryClient.invalidateQueries({ queryKey: ["cluster", clusterId, "configurations"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}

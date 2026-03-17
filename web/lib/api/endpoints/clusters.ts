@@ -6,6 +6,7 @@ import type {
   PaginatedResponse,
   ClusterOutputs,
   DeploymentLogsResponse,
+  ClusterConfigurationsResponse,
 } from "@/types/api";
 
 export interface ClusterFilters {
@@ -91,5 +92,18 @@ export const clustersApi = {
 
   resume: async (id: string): Promise<{ message: string; job_id: string }> => {
     return apiClient.post<{ message: string; job_id: string }>(`/clusters/${id}/resume`, {});
+  },
+
+  // Configuration endpoints
+  getConfigurations: async (id: string): Promise<ClusterConfigurationsResponse> => {
+    return apiClient.get<ClusterConfigurationsResponse>(`/clusters/${id}/configurations`);
+  },
+
+  triggerPostConfiguration: async (id: string): Promise<{ message: string; cluster_id: string; job_id: string }> => {
+    return apiClient.post<{ message: string; cluster_id: string; job_id: string }>(`/clusters/${id}/configure`, {});
+  },
+
+  retryConfiguration: async (id: string, configId: string): Promise<{ message: string; configuration_id: string; job_id: string }> => {
+    return apiClient.patch<{ message: string; configuration_id: string; job_id: string }>(`/clusters/${id}/configurations/${configId}/retry`, {});
   },
 };
