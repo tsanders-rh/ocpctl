@@ -118,6 +118,14 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Create versioned directory
     ssh -i "$SSH_KEY" ec2-user@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
+    # Deploy ensure-installers script
+    scp -i "$SSH_KEY" scripts/ensure-installers.sh ec2-user@$host:/tmp/ensure-installers.sh
+    ssh -i "$SSH_KEY" ec2-user@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && rm /tmp/ensure-installers.sh"
+
+    # Deploy systemd service file
+    scp -i "$SSH_KEY" deploy/systemd/ocpctl-worker.service ec2-user@$host:/tmp/ocpctl-worker.service
+    ssh -i "$SSH_KEY" ec2-user@$host "sudo install -m 644 /tmp/ocpctl-worker.service /etc/systemd/system/ocpctl-worker.service && rm /tmp/ocpctl-worker.service && sudo systemctl daemon-reload"
+
     # Copy binary
     scp -i "$SSH_KEY" bin/ocpctl-worker-${VERSION} ec2-user@$host:/tmp/ocpctl-worker-${VERSION}
     ssh -i "$SSH_KEY" ec2-user@$host "sudo install -m 755 /tmp/ocpctl-worker-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-worker && rm /tmp/ocpctl-worker-${VERSION}"
