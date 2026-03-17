@@ -1534,21 +1534,14 @@ func (i *Installer) tagELBResources(ctx context.Context, cfg aws.Config, infraID
 	}
 
 	// Tag all discovered load balancers
-	// ELB AddTags has a limit of 20 resources per call
-	const batchSize = 20
-	for i := 0; i < len(allLBArns); i += batchSize {
-		end := i + batchSize
-		if end > len(allLBArns) {
-			end = len(allLBArns)
-		}
-		batch := allLBArns[i:end]
-
+	// ELB AddTags only supports tagging one resource at a time
+	for _, lbArn := range allLBArns {
 		_, err := elbClient.AddTags(ctx, &elasticloadbalancingv2.AddTagsInput{
-			ResourceArns: batch,
+			ResourceArns: []string{lbArn},
 			Tags:         elbTags,
 		})
 		if err != nil {
-			return fmt.Errorf("add tags to load balancers (batch %d-%d): %w", i, end, err)
+			return fmt.Errorf("add tags to load balancer %s: %w", lbArn, err)
 		}
 	}
 
