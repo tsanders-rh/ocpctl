@@ -145,6 +145,52 @@ export default function ProfilesPage() {
                 </div>
               </div>
 
+              {profile.post_deployment?.enabled && (
+                <div className="border-t pt-4">
+                  <div className="text-sm text-muted-foreground mb-2">
+                    Post-Deployment
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-2">
+                    Automatically installed after cluster creation:
+                  </div>
+                  <div className="space-y-2">
+                    {profile.post_deployment.operators?.map((operator) => (
+                      <div key={operator.name} className="text-sm">
+                        <div className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Operator</Badge>
+                          {operator.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground ml-16">
+                          Namespace: {operator.namespace} • Channel: {operator.channel}
+                        </div>
+                      </div>
+                    ))}
+                    {profile.post_deployment.manifests?.map((manifest) => (
+                      <div key={manifest.name} className="text-sm">
+                        <div className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Manifest</Badge>
+                          {manifest.name}
+                        </div>
+                      </div>
+                    ))}
+                    {profile.post_deployment.helm_charts?.map((chart) => (
+                      <div key={chart.name} className="text-sm">
+                        <div className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Helm</Badge>
+                          {chart.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground ml-12">
+                          Chart: {chart.chart} • Namespace: {chart.namespace}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    💡 Can be skipped during cluster creation
+                  </div>
+                </div>
+              )}
+
               <div className="border-t pt-4">
                 <div className="text-sm text-muted-foreground mb-2">
                   OpenShift Versions
