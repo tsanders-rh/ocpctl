@@ -41,19 +41,32 @@ download_from_mirror() {
 
     log "Downloading ${binary} ${full_version} from mirror.openshift.com..."
 
-    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/${binary}-linux.tar.gz"
+    # oc client has different tarball name
+    local tarball_name="${binary}-linux.tar.gz"
+    if [ "$binary" = "oc" ]; then
+        tarball_name="openshift-client-linux.tar.gz"
+    fi
+
+    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/${tarball_name}"
     local tmp_dir=$(mktemp -d)
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
-        mv "${tmp_dir}/${binary}" "${local_path}"
-        chmod +x "${local_path}"
-        rm -rf "${tmp_dir}"
+        # oc client tarball contains both 'oc' and 'kubectl', we only need 'oc'
+        if [ -f "${tmp_dir}/${binary}" ]; then
+            mv "${tmp_dir}/${binary}" "${local_path}"
+            chmod +x "${local_path}"
+            rm -rf "${tmp_dir}"
 
-        # Upload to S3 for future use
-        upload_to_s3 "${version}" "${binary}" "${local_path}"
+            # Upload to S3 for future use
+            upload_to_s3 "${version}" "${binary}" "${local_path}"
 
-        log "✓ Downloaded ${binary} ${full_version} from mirror"
-        return 0
+            log "✓ Downloaded ${binary} ${full_version} from mirror"
+            return 0
+        else
+            log "✗ Binary ${binary} not found in tarball"
+            rm -rf "${tmp_dir}"
+            return 1
+        fi
     else
         rm -rf "${tmp_dir}"
         log "✗ Failed to download ${binary} ${full_version} from mirror"
@@ -122,6 +135,21 @@ main() {
         if ! ensure_binary "${version}" "ccoctl"; then
             log "WARNING: Failed to ensure ccoctl ${version} (non-fatal)"
             # Don't fail - ccoctl is only needed for Manual/STS mode
+        fi
+
+        if ! ensure_binary "${version}" "oc"; then
+            log "WARNING: Failed to ensure oc ${version} (non-fatal)"
+            # Don't fail - we'll create symlink to latest available version
+        fi
+    done
+
+    # Create symlink for oc to latest version (for PATH)
+    # Try versions in reverse order (4.20, 4.19, 4.18) to get the latest
+    for version in $(printf '%s\n' "${REQUIRED_VERSIONS[@]}" | tac); do
+        if [ -f "${INSTALL_DIR}/oc-${version}" ]; then
+            ln -sf "${INSTALL_DIR}/oc-${version}" "${INSTALL_DIR}/oc"
+            log "✓ Created symlink: oc -> oc-${version}"
+            break
         fi
     done
 
