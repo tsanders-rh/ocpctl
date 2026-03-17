@@ -53,7 +53,12 @@ func (h *HibernateHandler) Handle(ctx context.Context, job *types.Job) error {
 func (h *HibernateHandler) hibernateAWS(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	log.Printf("Hibernating AWS cluster %s by stopping EC2 instances", cluster.Name)
 
-	// Get infraID from metadata.json
+	// Ensure artifacts are available locally
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
+	}
+
+	// Get infraID from metadata.json (now available after ensureArtifactsAvailable)
 	infraID, err := h.getInfraID(cluster)
 	if err != nil {
 		return fmt.Errorf("get infrastructure ID: %w", err)
@@ -180,4 +185,30 @@ func (h *HibernateHandler) getInfraID(cluster *types.Cluster) (string, error) {
 // strPtr returns a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// ensureArtifactsAvailable downloads cluster artifacts from S3 if they don't exist locally
+func (h *HibernateHandler) ensureArtifactsAvailable(ctx context.Context, clusterID string) error {
+	workDir := filepath.Join(h.config.WorkDir, clusterID)
+	metadataPath := filepath.Join(workDir, "metadata.json")
+
+	// Check if metadata.json already exists
+	if _, err := os.Stat(metadataPath); err == nil {
+		log.Printf("[HibernateHandler] Artifacts already available locally for cluster %s", clusterID)
+		return nil
+	}
+
+	// Download artifacts from S3
+	log.Printf("[HibernateHandler] Downloading artifacts from S3 for cluster %s", clusterID)
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	if err := artifactStorage.DownloadClusterArtifacts(ctx, clusterID, workDir); err != nil {
+		return fmt.Errorf("download artifacts: %w", err)
+	}
+
+	log.Printf("[HibernateHandler] Successfully downloaded artifacts for cluster %s", clusterID)
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,11 @@ func (h *ConfigureEFSHandler) Handle(ctx context.Context, job *types.Job) error 
 			Current:  string(cluster.Status),
 			Required: string(types.ClusterStatusReady),
 		}
+	}
+
+	// Ensure artifacts are available locally
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
 	}
 
 	// Get kubeconfig path from cluster workdir
@@ -134,5 +140,31 @@ func (h *ConfigureEFSHandler) Handle(ctx context.Context, job *types.Job) error 
 	}
 
 	log.Printf("Successfully configured EFS storage for cluster %s", cluster.Name)
+	return nil
+}
+
+// ensureArtifactsAvailable downloads cluster artifacts from S3 if they don't exist locally
+func (h *ConfigureEFSHandler) ensureArtifactsAvailable(ctx context.Context, clusterID string) error {
+	workDir := filepath.Join(h.config.WorkDir, clusterID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Check if kubeconfig already exists
+	if _, err := os.Stat(kubeconfigPath); err == nil {
+		log.Printf("[ConfigureEFSHandler] Artifacts already available locally for cluster %s", clusterID)
+		return nil
+	}
+
+	// Download artifacts from S3
+	log.Printf("[ConfigureEFSHandler] Downloading artifacts from S3 for cluster %s", clusterID)
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	if err := artifactStorage.DownloadClusterArtifacts(ctx, clusterID, workDir); err != nil {
+		return fmt.Errorf("download artifacts: %w", err)
+	}
+
+	log.Printf("[ConfigureEFSHandler] Successfully downloaded artifacts for cluster %s", clusterID)
 	return nil
 }

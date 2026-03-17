@@ -40,16 +40,31 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Work directory should still exist from creation
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 
-	// Check if work directory exists
+	// Check if work directory exists locally, if not try downloading from S3
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		log.Printf("Warning: work directory %s not found, cluster may already be destroyed", workDir)
+		log.Printf("Work directory %s not found locally, attempting to download from S3", workDir)
 
-		// Mark cluster as destroyed anyway
-		if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
-			return fmt.Errorf("mark cluster destroyed: %w", err)
+		// Try to download artifacts from S3
+		artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+		if err != nil {
+			log.Printf("Warning: failed to create artifact storage: %v", err)
+			// Mark cluster as destroyed since we can't access artifacts
+			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+				return fmt.Errorf("mark cluster destroyed: %w", err)
+			}
+			return nil
 		}
 
-		return nil
+		if err := artifactStorage.DownloadClusterArtifacts(ctx, cluster.ID, workDir); err != nil {
+			log.Printf("Warning: failed to download artifacts from S3: %v", err)
+			// Mark cluster as destroyed since artifacts are not available
+			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+				return fmt.Errorf("mark cluster destroyed: %w", err)
+			}
+			return nil
+		}
+
+		log.Printf("Successfully downloaded artifacts from S3 for cluster %s", cluster.Name)
 	}
 
 	// Start log streaming before running openshift-install destroy
@@ -132,6 +147,19 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Clean up work directory
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to clean up work directory %s: %v", workDir, err)
+	}
+
+	// Clean up artifacts from S3
+	log.Printf("Cleaning up artifacts from S3 for cluster %s", cluster.Name)
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		log.Printf("Warning: failed to create artifact storage for cleanup: %v", err)
+	} else {
+		if err := artifactStorage.DeleteClusterArtifacts(ctx, cluster.ID); err != nil {
+			log.Printf("Warning: failed to delete artifacts from S3: %v", err)
+		} else {
+			log.Printf("Successfully deleted artifacts from S3 for cluster %s", cluster.Name)
+		}
 	}
 
 	// Clean up temporary files created by openshift-install

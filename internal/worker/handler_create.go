@@ -293,8 +293,16 @@ func (h *CreateHandler) extractClusterOutputs(workDir string, cluster *types.Clu
 
 // storeArtifacts stores cluster artifacts (kubeconfig, logs, metadata)
 func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID string) error {
-	// TODO: Implement proper artifact storage (S3)
-	// For now, artifacts remain in the work directory
+	// Create artifact storage client
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	// Upload all artifacts to S3
+	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, clusterID); err != nil {
+		return fmt.Errorf("upload artifacts: %w", err)
+	}
 
 	// Create artifact records for tracking
 	artifacts := []types.ClusterArtifact{}
@@ -307,7 +315,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeAuthBundle,
-			S3URI:        fmt.Sprintf("file://%s", kubeconfigPath),
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/auth/kubeconfig", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})
@@ -321,7 +329,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeMetadata,
-			S3URI:        fmt.Sprintf("file://%s", metadataPath),
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/metadata.json", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})
@@ -335,7 +343,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeLog,
-			S3URI:        fmt.Sprintf("file://%s", logPath),
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/openshift_install.log", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})

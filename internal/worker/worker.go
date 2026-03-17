@@ -24,6 +24,7 @@ type Config struct {
 	PollInterval   time.Duration
 	LockTimeout    time.Duration
 	WorkDir        string
+	S3BucketName   string // S3 bucket for storing cluster artifacts
 	MaxConcurrent  int
 	RetryBackoff   time.Duration
 	MaxRetries     int
@@ -39,11 +40,18 @@ func DefaultConfig() *Config {
 		workerID = fmt.Sprintf("i-%s", instanceID)
 	}
 
+	// Get S3 bucket from environment or use default
+	s3Bucket := os.Getenv("S3_ARTIFACT_BUCKET")
+	if s3Bucket == "" {
+		s3Bucket = "ocpctl-binaries" // Default to same bucket as worker binaries
+	}
+
 	return &Config{
 		WorkerID:      workerID,
 		PollInterval:  10 * time.Second,
 		LockTimeout:   30 * time.Minute,
 		WorkDir:       "/tmp/ocpctl",
+		S3BucketName:  s3Bucket,
 		MaxConcurrent: 3,
 		RetryBackoff:  30 * time.Second,
 		MaxRetries:    3,

@@ -67,6 +67,11 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 		return fmt.Errorf("update post-deploy status: %w", err)
 	}
 
+	// Ensure artifacts are available locally
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
+	}
+
 	// Get kubeconfig path
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
@@ -411,4 +416,30 @@ func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, confi
 	}
 
 	return tx.Commit(ctx)
+}
+
+// ensureArtifactsAvailable downloads cluster artifacts from S3 if they don't exist locally
+func (h *PostConfigureHandler) ensureArtifactsAvailable(ctx context.Context, clusterID string) error {
+	workDir := filepath.Join(h.config.WorkDir, clusterID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Check if kubeconfig already exists
+	if _, err := os.Stat(kubeconfigPath); err == nil {
+		log.Printf("[PostConfigureHandler] Artifacts already available locally for cluster %s", clusterID)
+		return nil
+	}
+
+	// Download artifacts from S3
+	log.Printf("[PostConfigureHandler] Downloading artifacts from S3 for cluster %s", clusterID)
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	if err := artifactStorage.DownloadClusterArtifacts(ctx, clusterID, workDir); err != nil {
+		return fmt.Errorf("download artifacts: %w", err)
+	}
+
+	log.Printf("[PostConfigureHandler] Successfully downloaded artifacts for cluster %s", clusterID)
+	return nil
 }

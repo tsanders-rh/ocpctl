@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -51,6 +53,11 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	log.Printf("Resuming AWS cluster %s by starting EC2 instances", cluster.Name)
 
+	// Ensure artifacts are available locally
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
+	}
+
 	// Get instance IDs from the last HIBERNATE job metadata
 	var instanceIDs []string
 	var infraID string
@@ -88,7 +95,7 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 	if len(instanceIDs) == 0 {
 		log.Printf("No instance IDs found in hibernate job metadata, discovering instances")
 
-		// Get infraID from metadata.json
+		// Get infraID from metadata.json (now available after ensureArtifactsAvailable)
 		if infraID == "" {
 			infraID, err = h.getInfraID(cluster)
 			if err != nil {
@@ -199,4 +206,30 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 func (h *ResumeHandler) getInfraID(cluster *types.Cluster) (string, error) {
 	hibernateHandler := NewHibernateHandler(h.config, h.store)
 	return hibernateHandler.getInfraID(cluster)
+}
+
+// ensureArtifactsAvailable downloads cluster artifacts from S3 if they don't exist locally
+func (h *ResumeHandler) ensureArtifactsAvailable(ctx context.Context, clusterID string) error {
+	workDir := filepath.Join(h.config.WorkDir, clusterID)
+	metadataPath := filepath.Join(workDir, "metadata.json")
+
+	// Check if metadata.json already exists
+	if _, err := os.Stat(metadataPath); err == nil {
+		log.Printf("[ResumeHandler] Artifacts already available locally for cluster %s", clusterID)
+		return nil
+	}
+
+	// Download artifacts from S3
+	log.Printf("[ResumeHandler] Downloading artifacts from S3 for cluster %s", clusterID)
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	if err := artifactStorage.DownloadClusterArtifacts(ctx, clusterID, workDir); err != nil {
+		return fmt.Errorf("download artifacts: %w", err)
+	}
+
+	log.Printf("[ResumeHandler] Successfully downloaded artifacts for cluster %s", clusterID)
+	return nil
 }
