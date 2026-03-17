@@ -54,6 +54,21 @@ type ClusterStorageLinkResponse struct {
 }
 
 // LinkToCluster handles POST /api/v1/clusters/:id/storage/link
+//
+//	@Summary		Link storage to cluster
+//	@Description	Links persistent storage from another cluster to this cluster
+//	@Tags			Storage
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Cluster ID"
+//	@Param			body	body		LinkStorageRequest	true	"Link storage request"
+//	@Success		200		{object}	StorageGroupResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		403		{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404		{object}	map[string]string	"Cluster not found"
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/storage/link [post]
 func (h *StorageHandler) LinkToCluster(c echo.Context) error {
 	clusterID := c.Param("id")
 
@@ -158,6 +173,19 @@ func (h *StorageHandler) LinkToCluster(c echo.Context) error {
 }
 
 // GetStorage handles GET /api/v1/clusters/:id/storage
+//
+//	@Summary		Get cluster storage
+//	@Description	Returns all storage groups linked to this cluster
+//	@Tags			Storage
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{array}		StorageGroupResponse
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/storage [get]
 func (h *StorageHandler) GetStorage(c echo.Context) error {
 	clusterID := c.Param("id")
 
@@ -194,6 +222,20 @@ func (h *StorageHandler) GetStorage(c echo.Context) error {
 }
 
 // UnlinkStorage handles DELETE /api/v1/clusters/:id/storage/link/:group_id
+//
+//	@Summary		Unlink storage from cluster
+//	@Description	Removes the storage group link from this cluster
+//	@Tags			Storage
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string	true	"Cluster ID"
+//	@Param			group_id	path		string	true	"Storage Group ID"
+//	@Success		200			{object}	map[string]string
+//	@Failure		403			{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404			{object}	map[string]string	"Cluster or storage link not found"
+//	@Failure		500			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/storage/link/{group_id} [delete]
 func (h *StorageHandler) UnlinkStorage(c echo.Context) error {
 	clusterID := c.Param("id")
 	storageGroupID := c.Param("group_id")

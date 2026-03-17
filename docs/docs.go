@@ -23,6 +23,700 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/clusters/statistics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns aggregated statistics for all clusters (admin only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get cluster statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ClusterStatistics"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists orphaned AWS resources that were detected by the janitor. Supports filtering by status, type, and region.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "List orphaned resources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (active, resolved, ignored)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource type (VPC, LoadBalancer, HostedZone, DNSRecord, EC2Instance, S3Bucket)",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by AWS region",
+                        "name": "region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.OrphanedResourceListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns aggregated statistics about orphaned resources grouped by type and status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Get orphaned resources statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Actually deletes the orphaned resource from AWS (currently supports HostedZone and DNSRecord only). Other resource types must be deleted manually in AWS Console.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Delete orphaned AWS resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                        }
+                    },
+                    "400": {
+                        "description": "Resource type not supported for automated deletion",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to delete resource from AWS",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources/{id}/ignore": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks an orphaned resource as ignored (e.g., false positive or intentionally kept)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Mark orphaned resource as ignored",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Ignore reason",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.MarkIgnoredRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources/{id}/resolve": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks an orphaned resource as resolved (e.g., after manual cleanup in AWS Console)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Mark orphaned resource as resolved",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Resolution notes",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.MarkResolvedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "description": "Authenticates user with email and password. Returns JWT access token and sets httpOnly refresh token cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "User login",
+                "parameters": [
+                    {
+                        "description": "Login credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid email or password",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Account is disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "description": "Revokes refresh token and clears authentication cookies",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "User logout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns profile information for the authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get current user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates profile information for the authenticated user (username, timezone, work hours)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Update current user profile",
+                "parameters": [
+                    {
+                        "description": "Profile update fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Changes the authenticated user's password. Requires current password. Invalidates all sessions.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Change password",
+                "parameters": [
+                    {
+                        "description": "Password change request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or weak password",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Current password is incorrect",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update password",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "description": "Generates a new access token using the refresh token from httpOnly cookie",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Refresh access token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired refresh token",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Account is disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to generate token",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/clusters": {
             "get": {
                 "security": [
@@ -314,6 +1008,199 @@ const docTemplate = `{
                 }
             }
         },
+        "/clusters/{id}/configurations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all post-deployment configurations for a cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configurations"
+                ],
+                "summary": "List cluster configurations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/configurations/{config_id}/retry": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retries a failed post-deployment configuration by creating a new job",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configurations"
+                ],
+                "summary": "Retry failed configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Configuration ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Configuration not failed or doesn't belong to cluster",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster or configuration not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/configure": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Manually triggers post-deployment configuration for a ready cluster (useful if skipped during creation)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configurations"
+                ],
+                "summary": "Trigger post-deployment configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready, already configured, or job already running",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/clusters/{id}/extend": {
             "patch": {
                 "security": [
@@ -390,6 +1277,762 @@ const docTemplate = `{
                 }
             }
         },
+        "/clusters/{id}/hibernate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Hibernates a cluster by stopping its instances. Reduces costs during off-hours. (AWS only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Hibernate cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready or platform not supported",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/kubeconfig": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Downloads the kubeconfig file for a ready cluster as a YAML attachment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/x-yaml"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Download kubeconfig",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kubeconfig YAML file",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster or kubeconfig not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/kubeconfig/download-url": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a pre-signed S3 URL for downloading the kubeconfig (15-minute expiration)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Get kubeconfig download URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Contains download_url field",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready or S3 storage not configured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns deployment logs for a cluster with cursor-based pagination. Defaults to latest CREATE job if job_id not specified.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Get cluster deployment logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Job ID to get logs for (defaults to latest CREATE job)",
+                        "name": "job_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cursor for pagination",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of log lines to return (default 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster or logs not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/outputs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns cluster outputs including kubeconfig, credentials, API URLs, and console URL. Only available for ready clusters.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Get cluster outputs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ClusterOutputsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready or outputs not available",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/refresh-outputs": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Extracts cluster outputs from the install directory and updates the database. Useful if outputs become stale.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Refresh cluster outputs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/resume": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Resumes a hibernated cluster by starting its instances. (AWS only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Clusters"
+                ],
+                "summary": "Resume cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster not hibernating or platform not supported",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/storage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all storage groups linked to this cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Get cluster storage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.StorageGroupResponse"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/storage/link": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Links persistent storage from another cluster to this cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Link storage to cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Link storage request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.LinkStorageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.StorageGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/storage/link/{group_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the storage group link from this cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Unlink storage from cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage Group ID",
+                        "name": "group_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - not cluster owner",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster or storage link not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns basic health status of the API server",
@@ -403,6 +2046,225 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/jobs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of jobs. Can be filtered by cluster_id, type (create/destroy), and status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jobs"
+                ],
+                "summary": "List jobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by cluster ID",
+                        "name": "cluster_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by job type (create, destroy)",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (pending, running, completed, failed)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 50, max 100)",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/jobs/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves details of a specific job by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jobs"
+                ],
+                "summary": "Get job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Job"
+                        }
+                    },
+                    "404": {
+                        "description": "Job not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/profiles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profiles"
+                ],
+                "summary": "List cluster profiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by platform (aws, ibmcloud)",
+                        "name": "platform",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.ProfileResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid platform parameter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/profiles/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns details of a specific cluster profile by name",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profiles"
+                ],
+                "summary": "Get cluster profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProfileResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -445,6 +2307,308 @@ const docTemplate = `{
                 }
             }
         },
+        "/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a list of all users (admin only). Password hashes are excluded from response.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "List users",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list users",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new user with specified email, username, role, and password (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Create user",
+                "parameters": [
+                    {
+                        "description": "User creation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Email already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to create user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves user details by ID (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "User ID required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft deletes a user by marking as inactive (admin only). Also revokes all refresh tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Delete user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "User ID required or cannot delete self",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to delete user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates user details including username, role, timezone, work hours, or active status (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Update user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User update fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "description": "Returns version, commit hash, and build time of the API server",
@@ -470,6 +2634,381 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig": {
+            "type": "object",
+            "required": [
+                "allowed",
+                "default"
+            ],
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                },
+                "hostPrefix": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig": {
+            "type": "object",
+            "required": [
+                "control_plane",
+                "workers"
+            ],
+            "properties": {
+                "control_plane": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig"
+                },
+                "workers": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig": {
+            "type": "object",
+            "required": [
+                "instance_type",
+                "replicas"
+            ],
+            "properties": {
+                "instance_type": {
+                    "type": "string"
+                },
+                "replicas": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "schedulable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig": {
+            "type": "object",
+            "properties": {
+                "budget_alert_threshold": {
+                    "type": "number",
+                    "maximum": 1,
+                    "minimum": 0
+                },
+                "estimated_hourly_cost": {
+                    "type": "number"
+                },
+                "max_monthly_cost": {
+                    "type": "number"
+                },
+                "warning_message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig": {
+            "type": "object",
+            "required": [
+                "api_version",
+                "kind",
+                "name"
+            ],
+            "properties": {
+                "api_version": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "spec": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig": {
+            "type": "object",
+            "properties": {
+                "fips_mode": {
+                    "type": "boolean"
+                },
+                "off_hours_scaling": {
+                    "type": "boolean"
+                },
+                "private_cluster": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig": {
+            "type": "object",
+            "required": [
+                "chart",
+                "name",
+                "repo"
+            ],
+            "properties": {
+                "chart": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "repo": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig": {
+            "type": "object",
+            "required": [
+                "default_ttl_hours",
+                "max_ttl_hours"
+            ],
+            "properties": {
+                "allow_custom_ttl": {
+                    "type": "boolean"
+                },
+                "default_ttl_hours": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "max_ttl_hours": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "warn_before_destroy_hours": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig": {
+            "type": "object",
+            "required": [
+                "name",
+                "path"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig": {
+            "type": "object",
+            "properties": {
+                "clusterNetworks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig"
+                    }
+                },
+                "machineNetwork": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig"
+                    }
+                },
+                "networkType": {
+                    "type": "string"
+                },
+                "serviceNetwork": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig": {
+            "type": "object",
+            "required": [
+                "channel",
+                "name",
+                "namespace",
+                "source"
+            ],
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "custom_resource": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "e.g. \"redhat-operators\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "helm_charts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig"
+                    }
+                },
+                "manifests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig"
+                    }
+                },
+                "operators": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig"
+                    }
+                },
+                "timeout": {
+                    "description": "Duration string, e.g. \"30m\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig": {
+            "type": "object",
+            "required": [
+                "allowed",
+                "default"
+            ],
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig": {
+            "type": "object",
+            "properties": {
+                "allow_user_tags": {
+                    "type": "boolean"
+                },
+                "defaults": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "required": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig": {
+            "type": "object",
+            "required": [
+                "allowed",
+                "default"
+            ],
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig": {
+            "type": "object",
+            "required": [
+                "instance_type"
+            ],
+            "properties": {
+                "autoscaling": {
+                    "type": "boolean"
+                },
+                "instance_type": {
+                    "type": "string"
+                },
+                "max_replicas": {
+                    "type": "integer"
+                },
+                "min_replicas": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "replicas": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string",
+                    "minLength": 8
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.Cluster": {
             "type": "object",
             "properties": {
@@ -514,6 +3053,12 @@ const docTemplate = `{
                 "platform": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform"
                 },
+                "post_deploy_completed_at": {
+                    "type": "string"
+                },
+                "post_deploy_status": {
+                    "type": "string"
+                },
                 "profile": {
                     "type": "string"
                 },
@@ -526,6 +3071,9 @@ const docTemplate = `{
                 "requested_by": {
                     "description": "IAM principal ARN",
                     "type": "string"
+                },
+                "skip_post_deployment": {
+                    "type": "boolean"
                 },
                 "ssh_public_key": {
                     "type": "string"
@@ -588,6 +3136,262 @@ const docTemplate = `{
                 "ClusterStatusFailed"
             ]
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole": {
+            "type": "string",
+            "enum": [
+                "source",
+                "target",
+                "shared"
+            ],
+            "x-enum-varnames": [
+                "ClusterStorageLinkRoleSource",
+                "ClusterStorageLinkRoleTarget",
+                "ClusterStorageLinkRoleShared"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password",
+                "role",
+                "username"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "username": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 2
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.Job": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "cluster_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobType"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "RUNNING",
+                "SUCCEEDED",
+                "FAILED",
+                "RETRYING"
+            ],
+            "x-enum-varnames": [
+                "JobStatusPending",
+                "JobStatusRunning",
+                "JobStatusSucceeded",
+                "JobStatusFailed",
+                "JobStatusRetrying"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobType": {
+            "type": "string",
+            "enum": [
+                "CREATE",
+                "DESTROY",
+                "SCALE_WORKERS",
+                "JANITOR_DESTROY",
+                "ORPHAN_SWEEP",
+                "CONFIGURE_EFS",
+                "PROVISION_SHARED_STORAGE",
+                "UNLINK_SHARED_STORAGE",
+                "HIBERNATE",
+                "RESUME",
+                "POST_CONFIGURE"
+            ],
+            "x-enum-varnames": [
+                "JobTypeCreate",
+                "JobTypeDestroy",
+                "JobTypeScaleWorkers",
+                "JobTypeJanitorDestroy",
+                "JobTypeOrphanSweep",
+                "JobTypeConfigureEFS",
+                "JobTypeProvisionSharedStorage",
+                "JobTypeUnlinkSharedStorage",
+                "JobTypeHibernate",
+                "JobTypeResume",
+                "JobTypePostConfigure"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "description": "seconds",
+                    "type": "integer"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource": {
+            "type": "object",
+            "properties": {
+                "cluster_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "detection_count": {
+                    "type": "integer"
+                },
+                "first_detected_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_detected_at": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "resolved_by": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus"
+                },
+                "tags": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "RESOLVED",
+                "IGNORED"
+            ],
+            "x-enum-varnames": [
+                "OrphanedResourceStatusActive",
+                "OrphanedResourceStatusResolved",
+                "OrphanedResourceStatusIgnored"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType": {
+            "type": "string",
+            "enum": [
+                "VPC",
+                "LoadBalancer",
+                "DNSRecord",
+                "EC2Instance",
+                "HostedZone",
+                "IAMRole",
+                "OIDCProvider"
+            ],
+            "x-enum-varnames": [
+                "OrphanedResourceTypeVPC",
+                "OrphanedResourceTypeLoadBalancer",
+                "OrphanedResourceTypeDNSRecord",
+                "OrphanedResourceTypeEC2Instance",
+                "OrphanedResourceTypeHostedZone",
+                "OrphanedResourceTypeIAMRole",
+                "OrphanedResourceTypeOIDCProvider"
+            ]
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.Platform": {
             "type": "string",
             "enum": [
@@ -633,11 +3437,113 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus": {
+            "type": "string",
+            "enum": [
+                "PROVISIONING",
+                "READY",
+                "FAILED",
+                "DELETING"
+            ],
+            "x-enum-varnames": [
+                "StorageGroupStatusProvisioning",
+                "StorageGroupStatusReady",
+                "StorageGroupStatusFailed",
+                "StorageGroupStatusDeleting"
+            ]
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.Tags": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
             }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 2
+                },
+                "work_hours": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
+                },
+                "work_hours_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "new_password": {
+                    "type": "string",
+                    "minLength": 8
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "username": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 2
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UserResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "work_hours": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
+                },
+                "work_hours_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UserRole": {
+            "type": "string",
+            "enum": [
+                "ADMIN",
+                "USER",
+                "VIEWER"
+            ],
+            "x-enum-varnames": [
+                "RoleAdmin",
+                "RoleUser",
+                "RoleViewer"
+            ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule": {
             "type": "object",
@@ -656,6 +3562,133 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api.ClusterOutputsResponse": {
+            "type": "object",
+            "properties": {
+                "api_url": {
+                    "type": "string"
+                },
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "console_url": {
+                    "type": "string"
+                },
+                "kubeadmin": {
+                    "description": "Actual credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_api.KubeadminCredentials"
+                        }
+                    ]
+                },
+                "kubeadmin_secret_ref": {
+                    "description": "Reference to secret location",
+                    "type": "string"
+                },
+                "kubeconfig": {
+                    "description": "Full kubeconfig content",
+                    "type": "string"
+                },
+                "kubeconfig_s3_uri": {
+                    "description": "S3 URI to kubeconfig file",
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterProfileCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterStatistics": {
+            "type": "object",
+            "properties": {
+                "active_clusters": {
+                    "type": "integer"
+                },
+                "clusters_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterProfileCount"
+                    }
+                },
+                "clusters_by_status": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterStatusCount"
+                    }
+                },
+                "cost_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ProfileCostBreakdown"
+                    }
+                },
+                "cost_by_user": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.UserCostBreakdown"
+                    }
+                },
+                "total_clusters": {
+                    "type": "integer"
+                },
+                "total_daily_cost": {
+                    "type": "number"
+                },
+                "total_hourly_cost": {
+                    "type": "number"
+                },
+                "total_monthly_cost": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_api.ClusterStatusCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterStorageLinkResponse": {
+            "type": "object",
+            "properties": {
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "linked_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole"
                 }
             }
         },
@@ -715,6 +3748,9 @@ const docTemplate = `{
                 "region": {
                     "type": "string"
                 },
+                "skip_post_deployment": {
+                    "type": "boolean"
+                },
                 "ssh_public_key": {
                     "type": "string"
                 },
@@ -765,6 +3801,64 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.KubeadminCredentials": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.LinkStorageRequest": {
+            "type": "object",
+            "required": [
+                "target_cluster_id"
+            ],
+            "properties": {
+                "target_cluster_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.MarkIgnoredRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.MarkResolvedRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.OrphanedResourceListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.PaginatedResponse": {
             "type": "object",
             "properties": {
@@ -792,6 +3886,137 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.ProfileCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ProfileResponse": {
+            "type": "object",
+            "properties": {
+                "base_domains": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig"
+                },
+                "compute": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig"
+                },
+                "cost_controls": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "features": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig"
+                },
+                "lifecycle": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "networking": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig"
+                },
+                "openshift_versions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "post_deployment": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig"
+                },
+                "regions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig"
+                },
+                "tags": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig"
+                }
+            }
+        },
+        "internal_api.StorageGroupResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "efs_id": {
+                    "type": "string"
+                },
+                "efs_security_group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_clusters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterStorageLinkResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "s3_bucket": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.UserCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
                 }
             }
         }

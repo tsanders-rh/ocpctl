@@ -1,5 +1,259 @@
 basePath: /api/v1
 definitions:
+  github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig:
+    properties:
+      allowed:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      default:
+        type: string
+    required:
+    - allowed
+    - default
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig:
+    properties:
+      cidr:
+        type: string
+      hostPrefix:
+        type: integer
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig:
+    properties:
+      control_plane:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig'
+      workers:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig'
+    required:
+    - control_plane
+    - workers
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig:
+    properties:
+      instance_type:
+        type: string
+      replicas:
+        minimum: 1
+        type: integer
+      schedulable:
+        type: boolean
+    required:
+    - instance_type
+    - replicas
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig:
+    properties:
+      budget_alert_threshold:
+        maximum: 1
+        minimum: 0
+        type: number
+      estimated_hourly_cost:
+        type: number
+      max_monthly_cost:
+        type: number
+      warning_message:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig:
+    properties:
+      api_version:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      spec:
+        additionalProperties: true
+        type: object
+    required:
+    - api_version
+    - kind
+    - name
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig:
+    properties:
+      fips_mode:
+        type: boolean
+      off_hours_scaling:
+        type: boolean
+      private_cluster:
+        type: boolean
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig:
+    properties:
+      chart:
+        type: string
+      name:
+        type: string
+      repo:
+        type: string
+      values:
+        additionalProperties: true
+        type: object
+    required:
+    - chart
+    - name
+    - repo
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig:
+    properties:
+      allow_custom_ttl:
+        type: boolean
+      default_ttl_hours:
+        minimum: 1
+        type: integer
+      max_ttl_hours:
+        minimum: 1
+        type: integer
+      warn_before_destroy_hours:
+        minimum: 0
+        type: integer
+    required:
+    - default_ttl_hours
+    - max_ttl_hours
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig:
+    properties:
+      cidr:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig:
+    properties:
+      name:
+        type: string
+      path:
+        type: string
+    required:
+    - name
+    - path
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig:
+    properties:
+      clusterNetworks:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig'
+        type: array
+      machineNetwork:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig'
+        type: array
+      networkType:
+        type: string
+      serviceNetwork:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig:
+    properties:
+      channel:
+        type: string
+      custom_resource:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig'
+      name:
+        type: string
+      namespace:
+        type: string
+      source:
+        description: e.g. "redhat-operators"
+        type: string
+    required:
+    - channel
+    - name
+    - namespace
+    - source
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig:
+    properties:
+      enabled:
+        type: boolean
+      helm_charts:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig'
+        type: array
+      manifests:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig'
+        type: array
+      operators:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig'
+        type: array
+      timeout:
+        description: Duration string, e.g. "30m"
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig:
+    properties:
+      allowed:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      default:
+        type: string
+    required:
+    - allowed
+    - default
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig:
+    properties:
+      allow_user_tags:
+        type: boolean
+      defaults:
+        additionalProperties:
+          type: string
+        type: object
+      required:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig:
+    properties:
+      allowed:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      default:
+        type: string
+    required:
+    - allowed
+    - default
+    type: object
+  github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig:
+    properties:
+      autoscaling:
+        type: boolean
+      instance_type:
+        type: string
+      max_replicas:
+        type: integer
+      min_replicas:
+        minimum: 0
+        type: integer
+      replicas:
+        minimum: 0
+        type: integer
+    required:
+    - instance_type
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        minLength: 8
+        type: string
+    required:
+    - current_password
+    - new_password
+    type: object
   github_com_tsanders-rh_ocpctl_pkg_types.Cluster:
     properties:
       base_domain:
@@ -30,6 +284,10 @@ definitions:
         type: string
       platform:
         $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform'
+      post_deploy_completed_at:
+        type: string
+      post_deploy_status:
+        type: string
       profile:
         type: string
       region:
@@ -39,6 +297,8 @@ definitions:
       requested_by:
         description: IAM principal ARN
         type: string
+      skip_post_deployment:
+        type: boolean
       ssh_public_key:
         type: string
       status:
@@ -85,6 +345,194 @@ definitions:
     - ClusterStatusDestroying
     - ClusterStatusDestroyed
     - ClusterStatusFailed
+  github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole:
+    enum:
+    - source
+    - target
+    - shared
+    type: string
+    x-enum-varnames:
+    - ClusterStorageLinkRoleSource
+    - ClusterStorageLinkRoleTarget
+    - ClusterStorageLinkRoleShared
+  github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+      role:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+      username:
+        maxLength: 100
+        minLength: 2
+        type: string
+    required:
+    - email
+    - password
+    - role
+    - username
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.Job:
+    properties:
+      attempt:
+        type: integer
+      cluster_id:
+        type: string
+      created_at:
+        type: string
+      ended_at:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      job_type:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobType'
+      max_attempts:
+        type: integer
+      metadata:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata'
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobStatus'
+      updated_at:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata:
+    additionalProperties: true
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.JobStatus:
+    enum:
+    - PENDING
+    - RUNNING
+    - SUCCEEDED
+    - FAILED
+    - RETRYING
+    type: string
+    x-enum-varnames:
+    - JobStatusPending
+    - JobStatusRunning
+    - JobStatusSucceeded
+    - JobStatusFailed
+    - JobStatusRetrying
+  github_com_tsanders-rh_ocpctl_pkg_types.JobType:
+    enum:
+    - CREATE
+    - DESTROY
+    - SCALE_WORKERS
+    - JANITOR_DESTROY
+    - ORPHAN_SWEEP
+    - CONFIGURE_EFS
+    - PROVISION_SHARED_STORAGE
+    - UNLINK_SHARED_STORAGE
+    - HIBERNATE
+    - RESUME
+    - POST_CONFIGURE
+    type: string
+    x-enum-varnames:
+    - JobTypeCreate
+    - JobTypeDestroy
+    - JobTypeScaleWorkers
+    - JobTypeJanitorDestroy
+    - JobTypeOrphanSweep
+    - JobTypeConfigureEFS
+    - JobTypeProvisionSharedStorage
+    - JobTypeUnlinkSharedStorage
+    - JobTypeHibernate
+    - JobTypeResume
+    - JobTypePostConfigure
+  github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        description: seconds
+        type: integer
+      user:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource:
+    properties:
+      cluster_name:
+        type: string
+      created_at:
+        type: string
+      detection_count:
+        type: integer
+      first_detected_at:
+        type: string
+      id:
+        type: string
+      last_detected_at:
+        type: string
+      notes:
+        type: string
+      region:
+        type: string
+      resolved_at:
+        type: string
+      resolved_by:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType'
+      status:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus'
+      tags:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags'
+      updated_at:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus:
+    enum:
+    - ACTIVE
+    - RESOLVED
+    - IGNORED
+    type: string
+    x-enum-varnames:
+    - OrphanedResourceStatusActive
+    - OrphanedResourceStatusResolved
+    - OrphanedResourceStatusIgnored
+  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags:
+    additionalProperties:
+      type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType:
+    enum:
+    - VPC
+    - LoadBalancer
+    - DNSRecord
+    - EC2Instance
+    - HostedZone
+    - IAMRole
+    - OIDCProvider
+    type: string
+    x-enum-varnames:
+    - OrphanedResourceTypeVPC
+    - OrphanedResourceTypeLoadBalancer
+    - OrphanedResourceTypeDNSRecord
+    - OrphanedResourceTypeEC2Instance
+    - OrphanedResourceTypeHostedZone
+    - OrphanedResourceTypeIAMRole
+    - OrphanedResourceTypeOIDCProvider
   github_com_tsanders-rh_ocpctl_pkg_types.Platform:
     enum:
     - aws
@@ -116,10 +564,82 @@ definitions:
       storage_group_id:
         type: string
     type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus:
+    enum:
+    - PROVISIONING
+    - READY
+    - FAILED
+    - DELETING
+    type: string
+    x-enum-varnames:
+    - StorageGroupStatusProvisioning
+    - StorageGroupStatusReady
+    - StorageGroupStatusFailed
+    - StorageGroupStatusDeleting
   github_com_tsanders-rh_ocpctl_pkg_types.Tags:
     additionalProperties:
       type: string
     type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest:
+    properties:
+      timezone:
+        type: string
+      username:
+        maxLength: 100
+        minLength: 2
+        type: string
+      work_hours:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
+      work_hours_enabled:
+        type: boolean
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest:
+    properties:
+      active:
+        type: boolean
+      new_password:
+        minLength: 8
+        type: string
+      role:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+      username:
+        maxLength: 100
+        minLength: 2
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.UserResponse:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      role:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      username:
+        type: string
+      work_hours:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
+      work_hours_enabled:
+        type: boolean
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.UserRole:
+    enum:
+    - ADMIN
+    - USER
+    - VIEWER
+    type: string
+    x-enum-varnames:
+    - RoleAdmin
+    - RoleUser
+    - RoleViewer
   github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule:
     properties:
       end_time:
@@ -133,6 +653,89 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_api.ClusterOutputsResponse:
+    properties:
+      api_url:
+        type: string
+      cluster_id:
+        type: string
+      cluster_name:
+        type: string
+      console_url:
+        type: string
+      kubeadmin:
+        allOf:
+        - $ref: '#/definitions/internal_api.KubeadminCredentials'
+        description: Actual credentials
+      kubeadmin_secret_ref:
+        description: Reference to secret location
+        type: string
+      kubeconfig:
+        description: Full kubeconfig content
+        type: string
+      kubeconfig_s3_uri:
+        description: S3 URI to kubeconfig file
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+    type: object
+  internal_api.ClusterProfileCount:
+    properties:
+      count:
+        type: integer
+      profile:
+        type: string
+    type: object
+  internal_api.ClusterStatistics:
+    properties:
+      active_clusters:
+        type: integer
+      clusters_by_profile:
+        items:
+          $ref: '#/definitions/internal_api.ClusterProfileCount'
+        type: array
+      clusters_by_status:
+        items:
+          $ref: '#/definitions/internal_api.ClusterStatusCount'
+        type: array
+      cost_by_profile:
+        items:
+          $ref: '#/definitions/internal_api.ProfileCostBreakdown'
+        type: array
+      cost_by_user:
+        items:
+          $ref: '#/definitions/internal_api.UserCostBreakdown'
+        type: array
+      total_clusters:
+        type: integer
+      total_daily_cost:
+        type: number
+      total_hourly_cost:
+        type: number
+      total_monthly_cost:
+        type: number
+    type: object
+  internal_api.ClusterStatusCount:
+    properties:
+      count:
+        type: integer
+      status:
+        type: string
+    type: object
+  internal_api.ClusterStorageLinkResponse:
+    properties:
+      cluster_id:
+        type: string
+      cluster_name:
+        type: string
+      linked_at:
+        type: string
+      role:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole'
     type: object
   internal_api.CreateClusterRequest:
     properties:
@@ -165,6 +768,8 @@ definitions:
         type: string
       region:
         type: string
+      skip_post_deployment:
+        type: boolean
       ssh_public_key:
         type: string
       team:
@@ -208,6 +813,43 @@ definitions:
     required:
     - ttl_hours
     type: object
+  internal_api.KubeadminCredentials:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.LinkStorageRequest:
+    properties:
+      target_cluster_id:
+        type: string
+    required:
+    - target_cluster_id
+    type: object
+  internal_api.MarkIgnoredRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  internal_api.MarkResolvedRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  internal_api.OrphanedResourceListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      resources:
+        items:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+        type: array
+      total:
+        type: integer
+    type: object
   internal_api.PaginatedResponse:
     properties:
       data: {}
@@ -228,6 +870,92 @@ definitions:
       total_pages:
         type: integer
     type: object
+  internal_api.ProfileCostBreakdown:
+    properties:
+      cluster_count:
+        type: integer
+      daily_cost:
+        type: number
+      hourly_cost:
+        type: number
+      monthly_cost:
+        type: number
+      profile:
+        type: string
+    type: object
+  internal_api.ProfileResponse:
+    properties:
+      base_domains:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig'
+      compute:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig'
+      cost_controls:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig'
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      features:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig'
+      lifecycle:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig'
+      name:
+        type: string
+      networking:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig'
+      openshift_versions:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig'
+      platform:
+        type: string
+      post_deployment:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig'
+      regions:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig'
+      tags:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig'
+    type: object
+  internal_api.StorageGroupResponse:
+    properties:
+      created_at:
+        type: string
+      efs_id:
+        type: string
+      efs_security_group_id:
+        type: string
+      id:
+        type: string
+      linked_clusters:
+        items:
+          $ref: '#/definitions/internal_api.ClusterStorageLinkResponse'
+        type: array
+      name:
+        type: string
+      region:
+        type: string
+      s3_bucket:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_api.UserCostBreakdown:
+    properties:
+      cluster_count:
+        type: integer
+      daily_cost:
+        type: number
+      hourly_cost:
+        type: number
+      monthly_cost:
+        type: number
+      user_id:
+        type: string
+      username:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -244,6 +972,463 @@ info:
   title: OCPCTL API
   version: "1.0"
 paths:
+  /admin/clusters/statistics:
+    get:
+      description: Returns aggregated statistics for all clusters (admin only)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ClusterStatistics'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cluster statistics
+      tags:
+      - admin
+  /admin/orphaned-resources:
+    get:
+      consumes:
+      - application/json
+      description: Lists orphaned AWS resources that were detected by the janitor.
+        Supports filtering by status, type, and region.
+      parameters:
+      - description: Filter by status (active, resolved, ignored)
+        in: query
+        name: status
+        type: string
+      - description: Filter by resource type (VPC, LoadBalancer, HostedZone, DNSRecord,
+          EC2Instance, S3Bucket)
+        in: query
+        name: type
+        type: string
+      - description: Filter by AWS region
+        in: query
+        name: region
+        type: string
+      - description: Maximum number of results (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of results to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.OrphanedResourceListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List orphaned resources
+      tags:
+      - Orphaned Resources
+  /admin/orphaned-resources/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Actually deletes the orphaned resource from AWS (currently supports
+        HostedZone and DNSRecord only). Other resource types must be deleted manually
+        in AWS Console.
+      parameters:
+      - description: Resource ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+        "400":
+          description: Resource type not supported for automated deletion
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Resource not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to delete resource from AWS
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete orphaned AWS resource
+      tags:
+      - Orphaned Resources
+  /admin/orphaned-resources/{id}/ignore:
+    patch:
+      consumes:
+      - application/json
+      description: Marks an orphaned resource as ignored (e.g., false positive or
+        intentionally kept)
+      parameters:
+      - description: Resource ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Ignore reason
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.MarkIgnoredRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark orphaned resource as ignored
+      tags:
+      - Orphaned Resources
+  /admin/orphaned-resources/{id}/resolve:
+    patch:
+      consumes:
+      - application/json
+      description: Marks an orphaned resource as resolved (e.g., after manual cleanup
+        in AWS Console)
+      parameters:
+      - description: Resource ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Resolution notes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.MarkResolvedRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark orphaned resource as resolved
+      tags:
+      - Orphaned Resources
+  /admin/orphaned-resources/stats:
+    get:
+      consumes:
+      - application/json
+      description: Returns aggregated statistics about orphaned resources grouped
+        by type and status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get orphaned resources statistics
+      tags:
+      - Orphaned Resources
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates user with email and password. Returns JWT access
+        token and sets httpOnly refresh token cookie.
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Invalid email or password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Account is disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User login
+      tags:
+      - Authentication
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revokes refresh token and clears authentication cookies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User logout
+      tags:
+      - Authentication
+  /auth/me:
+    get:
+      consumes:
+      - application/json
+      description: Returns profile information for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Authentication
+    patch:
+      consumes:
+      - application/json
+      description: Updates profile information for the authenticated user (username,
+        timezone, work hours)
+      parameters:
+      - description: Profile update fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update current user profile
+      tags:
+      - Authentication
+  /auth/password:
+    post:
+      consumes:
+      - application/json
+      description: Changes the authenticated user's password. Requires current password.
+        Invalidates all sessions.
+      parameters:
+      - description: Password change request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request or weak password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Current password is incorrect
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Authentication
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Generates a new access token using the refresh token from httpOnly
+        cookie
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse'
+        "401":
+          description: Invalid or expired refresh token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Account is disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to generate token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Refresh access token
+      tags:
+      - Authentication
   /clusters:
     get:
       description: Lists all clusters accessible to the authenticated user. Admins
@@ -432,6 +1617,133 @@ paths:
       summary: Get cluster
       tags:
       - clusters
+  /clusters/{id}/configurations:
+    get:
+      consumes:
+      - application/json
+      description: Returns all post-deployment configurations for a cluster
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cluster configurations
+      tags:
+      - Configurations
+  /clusters/{id}/configurations/{config_id}/retry:
+    patch:
+      consumes:
+      - application/json
+      description: Retries a failed post-deployment configuration by creating a new
+        job
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Configuration ID
+        in: path
+        name: config_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Configuration not failed or doesn't belong to cluster
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster or configuration not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Retry failed configuration
+      tags:
+      - Configurations
+  /clusters/{id}/configure:
+    post:
+      consumes:
+      - application/json
+      description: Manually triggers post-deployment configuration for a ready cluster
+        (useful if skipped during creation)
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Cluster not ready, already configured, or job already running
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Trigger post-deployment configuration
+      tags:
+      - Configurations
   /clusters/{id}/extend:
     patch:
       consumes:
@@ -482,6 +1794,499 @@ paths:
       summary: Extend cluster TTL
       tags:
       - clusters
+  /clusters/{id}/hibernate:
+    post:
+      consumes:
+      - application/json
+      description: Hibernates a cluster by stopping its instances. Reduces costs during
+        off-hours. (AWS only)
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Cluster not ready or platform not supported
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Hibernate cluster
+      tags:
+      - Clusters
+  /clusters/{id}/kubeconfig:
+    get:
+      consumes:
+      - application/json
+      description: Downloads the kubeconfig file for a ready cluster as a YAML attachment
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/x-yaml
+      responses:
+        "200":
+          description: Kubeconfig YAML file
+          schema:
+            type: file
+        "400":
+          description: Cluster not ready
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster or kubeconfig not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download kubeconfig
+      tags:
+      - Clusters
+  /clusters/{id}/kubeconfig/download-url:
+    get:
+      consumes:
+      - application/json
+      description: Returns a pre-signed S3 URL for downloading the kubeconfig (15-minute
+        expiration)
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Contains download_url field
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Cluster not ready or S3 storage not configured
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get kubeconfig download URL
+      tags:
+      - Clusters
+  /clusters/{id}/logs:
+    get:
+      consumes:
+      - application/json
+      description: Returns deployment logs for a cluster with cursor-based pagination.
+        Defaults to latest CREATE job if job_id not specified.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Job ID to get logs for (defaults to latest CREATE job)
+        in: query
+        name: job_id
+        type: string
+      - description: Cursor for pagination
+        in: query
+        name: cursor
+        type: string
+      - description: Number of log lines to return (default 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster or logs not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cluster deployment logs
+      tags:
+      - Clusters
+  /clusters/{id}/outputs:
+    get:
+      consumes:
+      - application/json
+      description: Returns cluster outputs including kubeconfig, credentials, API
+        URLs, and console URL. Only available for ready clusters.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ClusterOutputsResponse'
+        "400":
+          description: Cluster not ready or outputs not available
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cluster outputs
+      tags:
+      - Clusters
+  /clusters/{id}/refresh-outputs:
+    post:
+      consumes:
+      - application/json
+      description: Extracts cluster outputs from the install directory and updates
+        the database. Useful if outputs become stale.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Cluster not ready
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Refresh cluster outputs
+      tags:
+      - Clusters
+  /clusters/{id}/resume:
+    post:
+      consumes:
+      - application/json
+      description: Resumes a hibernated cluster by starting its instances. (AWS only)
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Cluster not hibernating or platform not supported
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resume cluster
+      tags:
+      - Clusters
+  /clusters/{id}/storage:
+    get:
+      consumes:
+      - application/json
+      description: Returns all storage groups linked to this cluster
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.StorageGroupResponse'
+            type: array
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cluster storage
+      tags:
+      - Storage
+  /clusters/{id}/storage/link:
+    post:
+      consumes:
+      - application/json
+      description: Links persistent storage from another cluster to this cluster
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Link storage request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LinkStorageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.StorageGroupResponse'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Link storage to cluster
+      tags:
+      - Storage
+  /clusters/{id}/storage/link/{group_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the storage group link from this cluster
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Storage Group ID
+        in: path
+        name: group_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not cluster owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster or storage link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unlink storage from cluster
+      tags:
+      - Storage
   /health:
     get:
       description: Returns basic health status of the API server
@@ -497,6 +2302,147 @@ paths:
       summary: Health check
       tags:
       - system
+  /jobs:
+    get:
+      consumes:
+      - application/json
+      description: Returns a paginated list of jobs. Can be filtered by cluster_id,
+        type (create/destroy), and status.
+      parameters:
+      - description: Filter by cluster ID
+        in: query
+        name: cluster_id
+        type: string
+      - description: Filter by job type (create, destroy)
+        in: query
+        name: type
+        type: string
+      - description: Filter by status (pending, running, completed, failed)
+        in: query
+        name: status
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 50, max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List jobs
+      tags:
+      - Jobs
+  /jobs/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves details of a specific job by ID
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Job'
+        "404":
+          description: Job not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get job
+      tags:
+      - Jobs
+  /profiles:
+    get:
+      consumes:
+      - application/json
+      description: Returns all available cluster profiles. Can be filtered by platform
+        (aws or ibmcloud).
+      parameters:
+      - description: Filter by platform (aws, ibmcloud)
+        in: query
+        name: platform
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.ProfileResponse'
+            type: array
+        "400":
+          description: Invalid platform parameter
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cluster profiles
+      tags:
+      - Profiles
+  /profiles/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Returns details of a specific cluster profile by name
+      parameters:
+      - description: Profile name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProfileResponse'
+        "404":
+          description: Profile not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cluster profile
+      tags:
+      - Profiles
   /ready:
     get:
       description: Checks if the server is ready to handle requests by verifying database
@@ -519,6 +2465,204 @@ paths:
       summary: Readiness check
       tags:
       - system
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of all users (admin only). Password hashes are excluded
+        from response.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Failed to list users
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List users
+      tags:
+      - Users
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user with specified email, username, role, and password
+        (admin only)
+      parameters:
+      - description: User creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Email already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to create user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create user
+      tags:
+      - Users
+  /users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft deletes a user by marking as inactive (admin only). Also revokes
+        all refresh tokens.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: User ID required or cannot delete self
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to delete user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete user
+      tags:
+      - Users
+    get:
+      consumes:
+      - application/json
+      description: Retrieves user details by ID (admin only)
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        "400":
+          description: User ID required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to get user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get user
+      tags:
+      - Users
+    patch:
+      consumes:
+      - application/json
+      description: Updates user details including username, role, timezone, work hours,
+        or active status (admin only)
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User update fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user
+      tags:
+      - Users
   /version:
     get:
       description: Returns version, commit hash, and build time of the API server

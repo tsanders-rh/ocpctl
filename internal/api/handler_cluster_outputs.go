@@ -33,7 +33,20 @@ type KubeadminCredentials struct {
 }
 
 // GetOutputs handles GET /api/v1/clusters/:id/outputs
-// Returns cluster outputs including kubeconfig, credentials, and URLs
+//
+//	@Summary		Get cluster outputs
+//	@Description	Returns cluster outputs including kubeconfig, credentials, API URLs, and console URL. Only available for ready clusters.
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	ClusterOutputsResponse
+//	@Failure		400	{object}	map[string]string	"Cluster not ready or outputs not available"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/outputs [get]
 func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -137,7 +150,20 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 }
 
 // DownloadKubeconfig handles GET /api/v1/clusters/:id/kubeconfig
-// Returns the kubeconfig file as a downloadable attachment
+//
+//	@Summary		Download kubeconfig
+//	@Description	Downloads the kubeconfig file for a ready cluster as a YAML attachment
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		application/x-yaml
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{file}		file	"Kubeconfig YAML file"
+//	@Failure		400	{object}	map[string]string	"Cluster not ready"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster or kubeconfig not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/kubeconfig [get]
 func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -194,7 +220,20 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 }
 
 // GetKubeconfigDownloadURL handles GET /api/v1/clusters/:id/kubeconfig/download-url
-// Returns a pre-signed S3 URL for downloading the kubeconfig
+//
+//	@Summary		Get kubeconfig download URL
+//	@Description	Returns a pre-signed S3 URL for downloading the kubeconfig (15-minute expiration)
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]string	"Contains download_url field"
+//	@Failure		400	{object}	map[string]string	"Cluster not ready or S3 storage not configured"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/kubeconfig/download-url [get]
 func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 	ctx := c.Request().Context()
 

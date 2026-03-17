@@ -576,7 +576,20 @@ func (h *ClusterHandler) Extend(c echo.Context) error {
 }
 
 // RefreshOutputs handles POST /api/v1/clusters/:id/refresh-outputs
-// This endpoint extracts cluster outputs from the install directory and updates the database
+//
+//	@Summary		Refresh cluster outputs
+//	@Description	Extracts cluster outputs from the install directory and updates the database. Useful if outputs become stale.
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]string
+//	@Failure		400	{object}	map[string]string	"Cluster not ready"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/refresh-outputs [post]
 func (h *ClusterHandler) RefreshOutputs(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -666,7 +679,20 @@ func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.C
 }
 
 // Hibernate handles POST /api/v1/clusters/:id/hibernate
-// Hibernates a cluster by stopping its instances (platform-dependent)
+//
+//	@Summary		Hibernate cluster
+//	@Description	Hibernates a cluster by stopping its instances. Reduces costs during off-hours. (AWS only)
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]string
+//	@Failure		400	{object}	map[string]string	"Cluster not ready or platform not supported"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/hibernate [post]
 func (h *ClusterHandler) Hibernate(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -829,7 +855,20 @@ func (h *ClusterHandler) calculateNextHibernateTime(ctx context.Context, cluster
 }
 
 // Resume handles POST /api/v1/clusters/:id/resume
-// Resumes a hibernated cluster by starting its instances (platform-dependent)
+//
+//	@Summary		Resume cluster
+//	@Description	Resumes a hibernated cluster by starting its instances. (AWS only)
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]string
+//	@Failure		400	{object}	map[string]string	"Cluster not hibernating or platform not supported"
+//	@Failure		403	{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/resume [post]
 func (h *ClusterHandler) Resume(c echo.Context) error {
 	ctx := c.Request().Context()
 

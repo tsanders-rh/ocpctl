@@ -50,6 +50,17 @@ func (h *UserHandler) logAudit(c echo.Context, action string, targetUserID strin
 
 // List returns all users
 // GET /api/v1/users
+// List lists all users
+//
+//	@Summary		List users
+//	@Description	Returns a list of all users (admin only). Password hashes are excluded from response.
+//	@Tags			Users
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		500	{object}	map[string]string	"Failed to list users"
+//	@Security		BearerAuth
+//	@Router			/users [get]
 func (h *UserHandler) List(c echo.Context) error {
 	users, err := h.store.Users.List(c.Request().Context())
 	if err != nil {
@@ -69,7 +80,19 @@ func (h *UserHandler) List(c echo.Context) error {
 }
 
 // Create creates a new user
-// POST /api/v1/users
+//
+//	@Summary		Create user
+//	@Description	Creates a new user with specified email, username, role, and password (admin only)
+//	@Tags			Users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		types.CreateUserRequest	true	"User creation request"
+//	@Success		201		{object}	types.UserResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		409		{object}	map[string]string	"Email already exists"
+//	@Failure		500		{object}	map[string]string	"Failed to create user"
+//	@Security		BearerAuth
+//	@Router			/users [post]
 func (h *UserHandler) Create(c echo.Context) error {
 	var req types.CreateUserRequest
 	if err := c.Bind(&req); err != nil {
@@ -150,7 +173,19 @@ func (h *UserHandler) Create(c echo.Context) error {
 }
 
 // Get retrieves a user by ID
-// GET /api/v1/users/:id
+//
+//	@Summary		Get user
+//	@Description	Retrieves user details by ID (admin only)
+//	@Tags			Users
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"User ID"
+//	@Success		200	{object}	types.UserResponse
+//	@Failure		400	{object}	map[string]string	"User ID required"
+//	@Failure		404	{object}	map[string]string	"User not found"
+//	@Failure		500	{object}	map[string]string	"Failed to get user"
+//	@Security		BearerAuth
+//	@Router			/users/{id} [get]
 func (h *UserHandler) Get(c echo.Context) error {
 	userID := c.Param("id")
 	if userID == "" {
@@ -169,7 +204,20 @@ func (h *UserHandler) Get(c echo.Context) error {
 }
 
 // Update updates a user
-// PATCH /api/v1/users/:id
+//
+//	@Summary		Update user
+//	@Description	Updates user details including username, role, timezone, work hours, or active status (admin only)
+//	@Tags			Users
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"User ID"
+//	@Param			body	body		types.UpdateUserRequest		true	"User update fields"
+//	@Success		200		{object}	types.UserResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		404		{object}	map[string]string	"User not found"
+//	@Failure		500		{object}	map[string]string	"Failed to update user"
+//	@Security		BearerAuth
+//	@Router			/users/{id} [patch]
 func (h *UserHandler) Update(c echo.Context) error {
 	userID := c.Param("id")
 	if userID == "" {
@@ -246,7 +294,19 @@ func (h *UserHandler) Update(c echo.Context) error {
 }
 
 // Delete deletes a user
-// DELETE /api/v1/users/:id
+//
+//	@Summary		Delete user
+//	@Description	Soft deletes a user by marking as inactive (admin only). Also revokes all refresh tokens.
+//	@Tags			Users
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"User ID"
+//	@Success		200	{object}	map[string]string
+//	@Failure		400	{object}	map[string]string	"User ID required or cannot delete self"
+//	@Failure		404	{object}	map[string]string	"User not found"
+//	@Failure		500	{object}	map[string]string	"Failed to delete user"
+//	@Security		BearerAuth
+//	@Router			/users/{id} [delete]
 func (h *UserHandler) Delete(c echo.Context) error {
 	userID := c.Param("id")
 	if userID == "" {

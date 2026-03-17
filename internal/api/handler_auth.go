@@ -28,7 +28,19 @@ func NewAuthHandler(st *store.Store, authService *auth.Auth) *AuthHandler {
 }
 
 // Login handles user login
-// POST /api/v1/auth/login
+//
+//	@Summary		User login
+//	@Description	Authenticates user with email and password. Returns JWT access token and sets httpOnly refresh token cookie.
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		types.LoginRequest	true	"Login credentials"
+//	@Success		200		{object}	types.LoginResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request body"
+//	@Failure		401		{object}	map[string]string	"Invalid email or password"
+//	@Failure		403		{object}	map[string]string	"Account is disabled"
+//	@Failure		500		{object}	map[string]string	"Internal server error"
+//	@Router			/auth/login [post]
 func (h *AuthHandler) Login(c echo.Context) error {
 	var req types.LoginRequest
 	if err := c.Bind(&req); err != nil {
@@ -112,7 +124,14 @@ func (h *AuthHandler) Login(c echo.Context) error {
 }
 
 // Logout handles user logout
-// POST /api/v1/auth/logout
+//
+//	@Summary		User logout
+//	@Description	Revokes refresh token and clears authentication cookies
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/auth/logout [post]
 func (h *AuthHandler) Logout(c echo.Context) error {
 	// Get refresh token from cookie
 	cookie, err := c.Cookie("refresh_token")
@@ -142,7 +161,17 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 }
 
 // Refresh handles access token refresh
-// POST /api/v1/auth/refresh
+//
+//	@Summary		Refresh access token
+//	@Description	Generates a new access token using the refresh token from httpOnly cookie
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	types.LoginResponse
+//	@Failure		401	{object}	map[string]string	"Invalid or expired refresh token"
+//	@Failure		403	{object}	map[string]string	"Account is disabled"
+//	@Failure		500	{object}	map[string]string	"Failed to generate token"
+//	@Router			/auth/refresh [post]
 func (h *AuthHandler) Refresh(c echo.Context) error {
 	// Get refresh token from cookie
 	cookie, err := c.Cookie("refresh_token")
@@ -189,7 +218,18 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 }
 
 // GetMe returns current user info
-// GET /api/v1/auth/me
+//
+//	@Summary		Get current user
+//	@Description	Returns profile information for the authenticated user
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	types.UserResponse
+//	@Failure		401	{object}	map[string]string	"Unauthorized"
+//	@Failure		404	{object}	map[string]string	"User not found"
+//	@Failure		500	{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/auth/me [get]
 func (h *AuthHandler) GetMe(c echo.Context) error {
 	// Get user ID from context (set by auth middleware)
 	userID, err := auth.GetUserID(c)
@@ -210,7 +250,20 @@ func (h *AuthHandler) GetMe(c echo.Context) error {
 }
 
 // UpdateMe updates current user profile
-// PATCH /api/v1/auth/me
+//
+//	@Summary		Update current user profile
+//	@Description	Updates profile information for the authenticated user (username, timezone, work hours)
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		types.UpdateMeRequest	true	"Profile update fields"
+//	@Success		200		{object}	types.UserResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		401		{object}	map[string]string	"Unauthorized"
+//	@Failure		404		{object}	map[string]string	"User not found"
+//	@Failure		500		{object}	map[string]string	"Failed to update user"
+//	@Security		BearerAuth
+//	@Router			/auth/me [patch]
 func (h *AuthHandler) UpdateMe(c echo.Context) error {
 	// Get user ID from context
 	userID, err := auth.GetUserID(c)
@@ -283,7 +336,20 @@ func (h *AuthHandler) UpdateMe(c echo.Context) error {
 }
 
 // ChangePassword handles password change
-// POST /api/v1/auth/password
+//
+//	@Summary		Change password
+//	@Description	Changes the authenticated user's password. Requires current password. Invalidates all sessions.
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		types.ChangePasswordRequest	true	"Password change request"
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	map[string]string	"Invalid request or weak password"
+//	@Failure		401		{object}	map[string]string	"Current password is incorrect"
+//	@Failure		404		{object}	map[string]string	"User not found"
+//	@Failure		500		{object}	map[string]string	"Failed to update password"
+//	@Security		BearerAuth
+//	@Router			/auth/password [post]
 func (h *AuthHandler) ChangePassword(c echo.Context) error {
 	// Get user ID from context
 	userID, err := auth.GetUserID(c)

@@ -31,6 +31,21 @@ type ListJobsFilters struct {
 }
 
 // List handles GET /api/v1/jobs
+//
+//	@Summary		List jobs
+//	@Description	Returns a paginated list of jobs. Can be filtered by cluster_id, type (create/destroy), and status.
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			cluster_id	query		string	false	"Filter by cluster ID"
+//	@Param			type		query		string	false	"Filter by job type (create, destroy)"
+//	@Param			status		query		string	false	"Filter by status (pending, running, completed, failed)"
+//	@Param			page		query		int		false	"Page number (default 1)"
+//	@Param			per_page	query		int		false	"Items per page (default 50, max 100)"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		500			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/jobs [get]
 func (h *JobHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -110,6 +125,18 @@ func (h *JobHandler) List(c echo.Context) error {
 }
 
 // Get handles GET /api/v1/jobs/:id
+//
+//	@Summary		Get job
+//	@Description	Retrieves details of a specific job by ID
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Job ID"
+//	@Success		200	{object}	types.Job
+//	@Failure		404	{object}	map[string]string	"Job not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/jobs/{id} [get]
 func (h *JobHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 

@@ -59,6 +59,17 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 }
 
 // List handles GET /api/v1/profiles
+//
+//	@Summary		List cluster profiles
+//	@Description	Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud).
+//	@Tags			Profiles
+//	@Accept			json
+//	@Produce		json
+//	@Param			platform	query		string	false	"Filter by platform (aws, ibmcloud)"
+//	@Success		200			{array}		ProfileResponse
+//	@Failure		400			{object}	map[string]string	"Invalid platform parameter"
+//	@Security		BearerAuth
+//	@Router			/profiles [get]
 func (h *ProfileHandler) List(c echo.Context) error {
 	// Parse platform filter
 	platformParam := c.QueryParam("platform")
@@ -92,6 +103,17 @@ func (h *ProfileHandler) List(c echo.Context) error {
 }
 
 // Get handles GET /api/v1/profiles/:name
+//
+//	@Summary		Get cluster profile
+//	@Description	Returns details of a specific cluster profile by name
+//	@Tags			Profiles
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Profile name"
+//	@Success		200		{object}	ProfileResponse
+//	@Failure		404		{object}	map[string]string	"Profile not found"
+//	@Security		BearerAuth
+//	@Router			/profiles/{name} [get]
 func (h *ProfileHandler) Get(c echo.Context) error {
 	name := c.Param("name")
 

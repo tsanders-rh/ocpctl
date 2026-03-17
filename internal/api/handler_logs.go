@@ -23,7 +23,22 @@ func NewLogHandler(s *store.Store) *LogHandler {
 }
 
 // GetClusterLogs handles GET /api/v1/clusters/:id/logs
-// Returns deployment logs for a cluster with cursor-based pagination
+//
+//	@Summary		Get cluster deployment logs
+//	@Description	Returns deployment logs for a cluster with cursor-based pagination. Defaults to latest CREATE job if job_id not specified.
+//	@Tags			Clusters
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string	true	"Cluster ID"
+//	@Param			job_id	query		string	false	"Job ID to get logs for (defaults to latest CREATE job)"
+//	@Param			cursor	query		string	false	"Cursor for pagination"
+//	@Param			limit	query		int		false	"Number of log lines to return (default 100)"
+//	@Success		200		{object}	map[string]interface{}
+//	@Failure		403		{object}	map[string]string	"Forbidden - not cluster owner"
+//	@Failure		404		{object}	map[string]string	"Cluster or logs not found"
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/logs [get]
 func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 	ctx := c.Request().Context()
 	clusterID := c.Param("id")

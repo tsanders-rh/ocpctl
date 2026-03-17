@@ -22,6 +22,18 @@ func NewConfigurationHandler(store *store.Store) *ConfigurationHandler {
 }
 
 // ListClusterConfigurations handles GET /api/v1/clusters/:id/configurations
+//
+//	@Summary		List cluster configurations
+//	@Description	Returns all post-deployment configurations for a cluster
+//	@Tags			Configurations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/configurations [get]
 func (h *ConfigurationHandler) ListClusterConfigurations(c echo.Context) error {
 	clusterID := c.Param("id")
 	ctx := c.Request().Context()
@@ -52,6 +64,20 @@ func (h *ConfigurationHandler) ListClusterConfigurations(c echo.Context) error {
 }
 
 // RetryConfiguration handles PATCH /api/v1/clusters/:id/configurations/:config_id/retry
+//
+//	@Summary		Retry failed configuration
+//	@Description	Retries a failed post-deployment configuration by creating a new job
+//	@Tags			Configurations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string	true	"Cluster ID"
+//	@Param			config_id	path		string	true	"Configuration ID"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400			{object}	map[string]string	"Configuration not failed or doesn't belong to cluster"
+//	@Failure		404			{object}	map[string]string	"Cluster or configuration not found"
+//	@Failure		500			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/configurations/{config_id}/retry [patch]
 func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 	clusterID := c.Param("id")
 	configID := c.Param("config_id")
@@ -108,6 +134,19 @@ func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 }
 
 // TriggerPostConfiguration handles POST /api/v1/clusters/:id/configure
+//
+//	@Summary		Trigger post-deployment configuration
+//	@Description	Manually triggers post-deployment configuration for a ready cluster (useful if skipped during creation)
+//	@Tags			Configurations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		400	{object}	map[string]string	"Cluster not ready, already configured, or job already running"
+//	@Failure		404	{object}	map[string]string	"Cluster not found"
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/configure [post]
 func (h *ConfigurationHandler) TriggerPostConfiguration(c echo.Context) error {
 	clusterID := c.Param("id")
 	ctx := c.Request().Context()

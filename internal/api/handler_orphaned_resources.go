@@ -50,6 +50,21 @@ type OrphanedResourceListResponse struct {
 }
 
 // List handles GET /api/v1/admin/orphaned-resources
+//
+//	@Summary		List orphaned resources
+//	@Description	Lists orphaned AWS resources that were detected by the janitor. Supports filtering by status, type, and region.
+//	@Tags			Orphaned Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			status	query		string	false	"Filter by status (active, resolved, ignored)"
+//	@Param			type	query		string	false	"Filter by resource type (VPC, LoadBalancer, HostedZone, DNSRecord, EC2Instance, S3Bucket)"
+//	@Param			region	query		string	false	"Filter by AWS region"
+//	@Param			limit	query		int		false	"Maximum number of results (default 50, max 100)"
+//	@Param			offset	query		int		false	"Number of results to skip (default 0)"
+//	@Success		200		{object}	OrphanedResourceListResponse
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources [get]
 func (h *OrphanedResourceHandler) List(c echo.Context) error {
 	// Parse query parameters
 	filters := store.OrphanedResourceFilters{
@@ -106,6 +121,16 @@ func (h *OrphanedResourceHandler) List(c echo.Context) error {
 }
 
 // GetStats handles GET /api/v1/admin/orphaned-resources/stats
+//
+//	@Summary		Get orphaned resources statistics
+//	@Description	Returns aggregated statistics about orphaned resources grouped by type and status
+//	@Tags			Orphaned Resources
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources/stats [get]
 func (h *OrphanedResourceHandler) GetStats(c echo.Context) error {
 	stats, err := h.store.OrphanedResources.GetStats(c.Request().Context())
 	if err != nil {
@@ -116,6 +141,19 @@ func (h *OrphanedResourceHandler) GetStats(c echo.Context) error {
 }
 
 // MarkResolved handles PATCH /api/v1/admin/orphaned-resources/:id/resolve
+//
+//	@Summary		Mark orphaned resource as resolved
+//	@Description	Marks an orphaned resource as resolved (e.g., after manual cleanup in AWS Console)
+//	@Tags			Orphaned Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string					true	"Resource ID"
+//	@Param			body	body		MarkResolvedRequest		true	"Resolution notes"
+//	@Success		200		{object}	types.OrphanedResource
+//	@Failure		400		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources/{id}/resolve [patch]
 func (h *OrphanedResourceHandler) MarkResolved(c echo.Context) error {
 	id := c.Param("id")
 
@@ -148,6 +186,19 @@ func (h *OrphanedResourceHandler) MarkResolved(c echo.Context) error {
 }
 
 // MarkIgnored handles PATCH /api/v1/admin/orphaned-resources/:id/ignore
+//
+//	@Summary		Mark orphaned resource as ignored
+//	@Description	Marks an orphaned resource as ignored (e.g., false positive or intentionally kept)
+//	@Tags			Orphaned Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string					true	"Resource ID"
+//	@Param			body	body		MarkIgnoredRequest		true	"Ignore reason"
+//	@Success		200		{object}	types.OrphanedResource
+//	@Failure		400		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources/{id}/ignore [patch]
 func (h *OrphanedResourceHandler) MarkIgnored(c echo.Context) error {
 	id := c.Param("id")
 
@@ -172,7 +223,19 @@ func (h *OrphanedResourceHandler) MarkIgnored(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/admin/orphaned-resources/:id
-// This endpoint actually deletes the AWS resource (currently only supports HostedZone)
+//
+//	@Summary		Delete orphaned AWS resource
+//	@Description	Actually deletes the orphaned resource from AWS (currently supports HostedZone and DNSRecord only). Other resource types must be deleted manually in AWS Console.
+//	@Tags			Orphaned Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string	true	"Resource ID"
+//	@Success		200	{object}	types.OrphanedResource
+//	@Failure		400	{object}	map[string]string	"Resource type not supported for automated deletion"
+//	@Failure		404	{object}	map[string]string	"Resource not found"
+//	@Failure		500	{object}	map[string]string	"Failed to delete resource from AWS"
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources/{id} [delete]
 func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	id := c.Param("id")
 
