@@ -172,15 +172,15 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 
 	log.Printf("Cluster %s created successfully", cluster.Name)
 
-	// Tag IAM/OIDC resources now that cluster creation is complete
+	// Tag all AWS resources now that cluster creation is complete
 	// By now (30-45 min later), IAM eventual consistency has resolved
-	log.Printf("Tagging IAM/OIDC resources for cluster %s...", cluster.Name)
-	if err := inst.TagIAMResources(ctx, workDir, *metadata); err != nil {
-		log.Printf("Warning: failed to tag IAM/OIDC resources: %v", err)
+	log.Printf("Tagging all AWS resources for cluster %s...", cluster.Name)
+	if err := inst.TagAWSResources(ctx, workDir, *metadata); err != nil {
+		log.Printf("Warning: failed to tag AWS resources: %v", err)
 		// Don't fail cluster creation - it's already installed and working
 		// Resources will be detected as orphaned and can be tagged retroactively
 	} else {
-		log.Printf("Successfully tagged IAM/OIDC resources")
+		log.Printf("Successfully tagged all AWS resources")
 	}
 
 	// Extract cluster outputs (API URL, console URL, etc.)

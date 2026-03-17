@@ -2,6 +2,22 @@
 
 This directory contains comprehensive documentation for the ocpctl project.
 
+## 📋 Reference Documentation
+
+### [reference/](reference/)
+
+Reference documentation and specifications:
+
+- **[FEATURE_MATRIX.md](reference/FEATURE_MATRIX.md)** - **NEW!** Comprehensive feature overview
+  - Platform support (AWS, IBM Cloud)
+  - OpenShift version compatibility
+  - Resource tagging by service
+  - Authentication methods
+  - Cluster profiles
+  - Security features
+  - API endpoint reference
+  - Known limitations and workarounds
+
 ## Directory Structure
 
 ### 📦 [setup/](setup/)
@@ -75,12 +91,28 @@ Implementation phase tracking (historical):
 - **[DATA-LAYER-COMPLETE.md](phases/DATA-LAYER-COMPLETE.md)** - Data layer completion
 - **[IMPLEMENTATION-GUIDE.md](phases/IMPLEMENTATION-GUIDE.md)** - Implementation guide
 
+### 👥 [user-guide/](user-guide/)
+
+User documentation and guides:
+
+- **[getting-started.md](user-guide/getting-started.md)** - New user onboarding guide
+- **[cluster-management.md](user-guide/cluster-management.md)** - Cluster lifecycle management
+- **[aws-resource-management.md](user-guide/aws-resource-management.md)** - **NEW!** AWS resource tagging, orphan detection, and cost attribution
+
+### 🔧 [operations/](operations/)
+
+Operations and maintenance guides:
+
+- **[resource-tagging-operations.md](operations/resource-tagging-operations.md)** - **NEW!** Operational procedures for AWS resource tagging and monitoring
+
 ### 🔬 [issues/](issues/)
 
 Feature specifications and technical documentation:
 
 - **[off-hours-scaling.md](issues/off-hours-scaling.md)** - Complete technical specification for off-hours worker scaling feature
 - **[github-issue-off-hours-scaling.md](issues/github-issue-off-hours-scaling.md)** - GitHub issue summary for off-hours scaling
+- **[OIDC_FIX_PLAN.md](issues/OIDC_FIX_PLAN.md)** - OIDC issuer validation and troubleshooting plan
+- **[OIDC_STS_TOKEN_FIX.md](issues/OIDC_STS_TOKEN_FIX.md)** - Root cause analysis and fix for AWS STS InvalidIdentityToken errors
 
 ## Quick Links
 

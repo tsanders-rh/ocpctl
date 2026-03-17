@@ -31,8 +31,10 @@ Self-service provisioning and lifecycle management for ephemeral OpenShift clust
 - **State preservation**: S3-backed artifact storage ensures clean destroy operations
 - **Auto-cleanup**: TTL janitor and orphan resource detection
 - **Work hours hibernation**: Automatic cluster hibernation outside business hours (AWS)
+- **Comprehensive resource tagging**: Automatic tagging of ALL AWS resources (EC2, ELB, Route53, S3, IAM) with cluster metadata
 - **Orphaned resource management**: Track and clean up AWS resources without database entries
-- **Cost attribution**: Tag-based tracking and FinOps reporting
+- **Cost attribution**: Tag-based tracking and FinOps reporting with ManagedBy:ocpctl tags
+- **Retroactive tagging**: Tool to tag existing cluster resources for improved tracking
 - **Multi-cloud ready**: AWS (active), IBM Cloud (planned)
 
 ### Security & Compliance
@@ -470,6 +472,10 @@ See [Development](#development) section above.
 - [x] Security configuration documentation
 - [x] Work hours hibernation (automatic cluster hibernation)
 - [x] Orphaned resource management (admin UI and cleanup)
+- [x] Comprehensive AWS resource tagging (EC2, ELB, Route53, S3, IAM)
+- [x] Hybrid orphan detection (tag-based + pattern matching)
+- [x] Retroactive tagging tool for existing clusters
+- [x] IAM permissions for tagging operations
 
 ### Phase 3 (Production Operations) 🚧 IN PROGRESS
 - [ ] CloudWatch/monitoring integration
@@ -494,6 +500,17 @@ See [Development](#development) section above.
 - [ ] Advanced cost optimization
 - [ ] ML-based usage predictions
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
+
+**Latest Version:** v0.20260317.bca1feb (March 17, 2024)
+- ✅ Phase 2: AWS Resource Tagging complete
+- ✅ Comprehensive tagging for EC2, ELB, Route53, S3, IAM
+- ✅ Hybrid orphan detection (tag-based + pattern matching)
+- ✅ Retroactive tagging tool
+- ✅ Updated documentation
+
 ## Contributing
 
 This is an internal tool. See development guidelines in this README.
@@ -504,10 +521,21 @@ Internal use only - All rights reserved.
 
 ## Documentation
 
+### 📋 Feature Matrix
+- **[Feature Matrix](docs/reference/FEATURE_MATRIX.md)** - **NEW!** Comprehensive feature overview, platform support, version compatibility
+
 ### 🚀 Getting Started
 - **[AWS Quick Start Guide](docs/deployment/AWS_QUICKSTART.md)** - Deploy to AWS in 45-60 minutes
 - **[Security Configuration](docs/deployment/SECURITY_CONFIGURATION.md)** - Complete security reference
 - **[Web Deployment Guide](docs/deployment/DEPLOYMENT_WEB.md)** - Detailed deployment instructions
+
+### 👥 User Guides
+- **[Getting Started](docs/user-guide/getting-started.md)** - New user onboarding
+- **[Cluster Management](docs/user-guide/cluster-management.md)** - Cluster lifecycle operations
+- **[AWS Resource Management](docs/user-guide/aws-resource-management.md)** - **NEW!** Resource tagging, orphan detection, cost attribution
+
+### 🔧 Operations
+- **[Resource Tagging Operations](docs/operations/resource-tagging-operations.md)** - **NEW!** Operational procedures for AWS resource tagging
 
 ### 📚 Reference Documentation
 - **[Architecture Overview](docs/architecture/architecture.md)** - System architecture and design

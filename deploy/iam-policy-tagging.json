@@ -1,0 +1,59 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2TaggingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeInstances",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeAddresses"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ELBTaggingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Route53TaggingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeTagsForResource",
+        "route53:ListHostedZones",
+        "route53:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3TaggingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutBucketTagging",
+        "s3:GetBucketTagging",
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMTaggingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "iam:TagRole",
+        "iam:ListRoles",
+        "iam:ListRoleTags"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

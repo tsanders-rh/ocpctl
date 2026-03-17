@@ -15,12 +15,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -1362,6 +1369,407 @@ func (i *Installer) TagIAMResources(ctx context.Context, workDir string, metadat
 		return fmt.Errorf("tagging failed: %v", errs)
 	}
 
+	return nil
+}
+
+// tagEC2Resources tags VPCs, subnets, instances, volumes, security groups, and elastic IPs
+func (i *Installer) tagEC2Resources(ctx context.Context, cfg aws.Config, infraID string, tags map[string]string) error {
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Build EC2 tag format
+	ec2Tags := make([]ec2types.Tag, 0, len(tags))
+	for k, v := range tags {
+		ec2Tags = append(ec2Tags, ec2types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Discover resources by kubernetes.io/cluster/<infraID> tag
+	filter := []ec2types.Filter{
+		{
+			Name:   aws.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
+			Values: []string{"owned"},
+		},
+	}
+
+	var allResourceIDs []string
+
+	// 1. VPCs
+	vpcsResp, err := ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe VPCs: %w", err)
+	}
+	for _, vpc := range vpcsResp.Vpcs {
+		allResourceIDs = append(allResourceIDs, *vpc.VpcId)
+	}
+
+	// 2. Subnets
+	subnetsResp, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe subnets: %w", err)
+	}
+	for _, subnet := range subnetsResp.Subnets {
+		allResourceIDs = append(allResourceIDs, *subnet.SubnetId)
+	}
+
+	// 3. Instances
+	instancesResp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe instances: %w", err)
+	}
+	for _, reservation := range instancesResp.Reservations {
+		for _, instance := range reservation.Instances {
+			allResourceIDs = append(allResourceIDs, *instance.InstanceId)
+		}
+	}
+
+	// 4. Volumes
+	volumesResp, err := ec2Client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe volumes: %w", err)
+	}
+	for _, volume := range volumesResp.Volumes {
+		allResourceIDs = append(allResourceIDs, *volume.VolumeId)
+	}
+
+	// 5. Security Groups
+	sgsResp, err := ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe security groups: %w", err)
+	}
+	for _, sg := range sgsResp.SecurityGroups {
+		allResourceIDs = append(allResourceIDs, *sg.GroupId)
+	}
+
+	// 6. Elastic IPs
+	eipsResp, err := ec2Client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{Filters: filter})
+	if err != nil {
+		return fmt.Errorf("describe elastic IPs: %w", err)
+	}
+	for _, eip := range eipsResp.Addresses {
+		if eip.AllocationId != nil {
+			allResourceIDs = append(allResourceIDs, *eip.AllocationId)
+		}
+	}
+
+	// Tag all discovered resources in a single call
+	if len(allResourceIDs) == 0 {
+		log.Printf("[tagEC2Resources] Warning: no EC2 resources found for infraID %s", infraID)
+		return nil
+	}
+
+	// EC2 CreateTags has a limit of 1000 resources per call
+	const batchSize = 1000
+	for i := 0; i < len(allResourceIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(allResourceIDs) {
+			end = len(allResourceIDs)
+		}
+		batch := allResourceIDs[i:end]
+
+		_, err = ec2Client.CreateTags(ctx, &ec2.CreateTagsInput{
+			Resources: batch,
+			Tags:      ec2Tags,
+		})
+		if err != nil {
+			return fmt.Errorf("create tags (batch %d-%d): %w", i, end, err)
+		}
+	}
+
+	log.Printf("[tagEC2Resources] Tagged %d EC2 resources", len(allResourceIDs))
+	return nil
+}
+
+// tagELBResources tags Network Load Balancers and Application Load Balancers
+func (i *Installer) tagELBResources(ctx context.Context, cfg aws.Config, infraID string, tags map[string]string) error {
+	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+
+	// Build ELB tag format
+	elbTags := make([]elbv2types.Tag, 0, len(tags))
+	for k, v := range tags {
+		elbTags = append(elbTags, elbv2types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Discover load balancers (can't filter by tags in DescribeLoadBalancers)
+	var allLBArns []string
+
+	// Paginate through all load balancers
+	paginator := elasticloadbalancingv2.NewDescribeLoadBalancersPaginator(elbClient, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("describe load balancers: %w", err)
+		}
+
+		// Filter by kubernetes.io/cluster/<infraID> tag
+		for _, lb := range page.LoadBalancers {
+			// Get tags for this LB
+			tagsResp, err := elbClient.DescribeTags(ctx, &elasticloadbalancingv2.DescribeTagsInput{
+				ResourceArns: []string{*lb.LoadBalancerArn},
+			})
+			if err != nil {
+				log.Printf("[tagELBResources] Warning: failed to get tags for LB %s: %v", *lb.LoadBalancerName, err)
+				continue
+			}
+
+			// Check if it has the cluster tag
+			for _, tagDesc := range tagsResp.TagDescriptions {
+				for _, tag := range tagDesc.Tags {
+					if *tag.Key == fmt.Sprintf("kubernetes.io/cluster/%s", infraID) {
+						allLBArns = append(allLBArns, *lb.LoadBalancerArn)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if len(allLBArns) == 0 {
+		log.Printf("[tagELBResources] No load balancers found for infraID %s", infraID)
+		return nil
+	}
+
+	// Tag all discovered load balancers
+	// ELB AddTags has a limit of 20 resources per call
+	const batchSize = 20
+	for i := 0; i < len(allLBArns); i += batchSize {
+		end := i + batchSize
+		if end > len(allLBArns) {
+			end = len(allLBArns)
+		}
+		batch := allLBArns[i:end]
+
+		_, err := elbClient.AddTags(ctx, &elasticloadbalancingv2.AddTagsInput{
+			ResourceArns: batch,
+			Tags:         elbTags,
+		})
+		if err != nil {
+			return fmt.Errorf("add tags to load balancers (batch %d-%d): %w", i, end, err)
+		}
+	}
+
+	log.Printf("[tagELBResources] Tagged %d load balancers", len(allLBArns))
+	return nil
+}
+
+// tagRoute53Resources tags Route53 hosted zones
+func (i *Installer) tagRoute53Resources(ctx context.Context, cfg aws.Config, infraID string, tags map[string]string) error {
+	r53Client := route53.NewFromConfig(cfg)
+
+	// Build Route53 tag format
+	r53Tags := make([]route53types.Tag, 0, len(tags))
+	for k, v := range tags {
+		r53Tags = append(r53Tags, route53types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// List all hosted zones
+	zonesResp, err := r53Client.ListHostedZones(ctx, &route53.ListHostedZonesInput{})
+	if err != nil {
+		return fmt.Errorf("list hosted zones: %w", err)
+	}
+
+	var matchingZoneIDs []string
+
+	// Filter zones by kubernetes.io/cluster/<infraID> tag
+	for _, zone := range zonesResp.HostedZones {
+		// Get tags for this zone
+		tagsResp, err := r53Client.ListTagsForResource(ctx, &route53.ListTagsForResourceInput{
+			ResourceType: route53types.TagResourceTypeHostedzone,
+			ResourceId:   zone.Id,
+		})
+		if err != nil {
+			log.Printf("[tagRoute53Resources] Warning: failed to get tags for zone %s: %v", *zone.Name, err)
+			continue
+		}
+
+		// Check if it has the cluster tag
+		for _, tag := range tagsResp.ResourceTagSet.Tags {
+			if *tag.Key == fmt.Sprintf("kubernetes.io/cluster/%s", infraID) {
+				matchingZoneIDs = append(matchingZoneIDs, *zone.Id)
+				break
+			}
+		}
+	}
+
+	if len(matchingZoneIDs) == 0 {
+		log.Printf("[tagRoute53Resources] No hosted zones found for infraID %s", infraID)
+		return nil
+	}
+
+	// Tag each zone (Route53 doesn't support batch tagging)
+	for _, zoneID := range matchingZoneIDs {
+		_, err := r53Client.ChangeTagsForResource(ctx, &route53.ChangeTagsForResourceInput{
+			ResourceType: route53types.TagResourceTypeHostedzone,
+			ResourceId:   aws.String(zoneID),
+			AddTags:      r53Tags,
+		})
+		if err != nil {
+			return fmt.Errorf("tag zone %s: %w", zoneID, err)
+		}
+	}
+
+	log.Printf("[tagRoute53Resources] Tagged %d hosted zones", len(matchingZoneIDs))
+	return nil
+}
+
+// tagBootstrapBucket tags the S3 bootstrap bucket used during cluster installation
+func (i *Installer) tagBootstrapBucket(ctx context.Context, cfg aws.Config, infraID string, tags map[string]string) error {
+	s3Client := s3.NewFromConfig(cfg)
+
+	// Build S3 tag format
+	s3Tags := make([]s3types.Tag, 0, len(tags))
+	for k, v := range tags {
+		s3Tags = append(s3Tags, s3types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
+	// Bootstrap bucket name format: <cluster>-<infraID>-bootstrap
+	// List all buckets and filter by name pattern
+	bucketsResp, err := s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return fmt.Errorf("list buckets: %w", err)
+	}
+
+	var bootstrapBucket string
+	bucketSuffix := fmt.Sprintf("-%s-bootstrap", infraID)
+
+	for _, bucket := range bucketsResp.Buckets {
+		if strings.HasSuffix(*bucket.Name, bucketSuffix) {
+			bootstrapBucket = *bucket.Name
+			break
+		}
+	}
+
+	if bootstrapBucket == "" {
+		log.Printf("[tagBootstrapBucket] No bootstrap bucket found for infraID %s", infraID)
+		return nil
+	}
+
+	// Tag the bootstrap bucket
+	_, err = s3Client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+		Bucket: aws.String(bootstrapBucket),
+		Tagging: &s3types.Tagging{
+			TagSet: s3Tags,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("tag bucket %s: %w", bootstrapBucket, err)
+	}
+
+	log.Printf("[tagBootstrapBucket] Tagged bootstrap bucket: %s", bootstrapBucket)
+	return nil
+}
+
+// TagAWSResources tags all AWS resources created by the cluster with ocpctl metadata.
+// This includes EC2 resources (VPCs, subnets, instances, volumes, security groups),
+// load balancers, Route53 hosted zones, S3 buckets, IAM roles, and OIDC providers.
+//
+// Tagging is done post-cluster-creation and failures are non-blocking to avoid
+// disrupting cluster provisioning.
+func (i *Installer) TagAWSResources(ctx context.Context, workDir string, metadata ClusterMetadata) error {
+	// Build standard tag set
+	tags := buildTagSet(metadata)
+
+	log.Printf("[TagAWSResources] Tagging all AWS resources for cluster %s (infraID: %s)",
+		metadata.ClusterName, metadata.InfraID)
+
+	// Create AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(metadata.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	// Tag resources in parallel using goroutines
+	var wg sync.WaitGroup
+	errChan := make(chan error, 5) // Buffer for 5 services
+
+	// EC2 resources (VPCs, subnets, instances, volumes, security groups, elastic IPs)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := i.tagEC2Resources(ctx, cfg, metadata.InfraID, tags); err != nil {
+			errChan <- fmt.Errorf("EC2: %w", err)
+		} else {
+			log.Printf("[TagAWSResources] ✓ EC2 resources tagged")
+		}
+	}()
+
+	// Elastic Load Balancers (NLB, ALB)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := i.tagELBResources(ctx, cfg, metadata.InfraID, tags); err != nil {
+			errChan <- fmt.Errorf("ELB: %w", err)
+		} else {
+			log.Printf("[TagAWSResources] ✓ Load balancers tagged")
+		}
+	}()
+
+	// Route53 hosted zones
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := i.tagRoute53Resources(ctx, cfg, metadata.InfraID, tags); err != nil {
+			errChan <- fmt.Errorf("Route53: %w", err)
+		} else {
+			log.Printf("[TagAWSResources] ✓ Route53 zones tagged")
+		}
+	}()
+
+	// S3 bootstrap bucket
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := i.tagBootstrapBucket(ctx, cfg, metadata.InfraID, tags); err != nil {
+			errChan <- fmt.Errorf("S3: %w", err)
+		} else {
+			log.Printf("[TagAWSResources] ✓ S3 buckets tagged")
+		}
+	}()
+
+	// IAM roles and OIDC provider (existing implementation)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := i.tagIAMRoles(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+			errChan <- fmt.Errorf("IAM roles: %w", err)
+			return
+		}
+		if err := i.tagOIDCProvider(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+			errChan <- fmt.Errorf("OIDC: %w", err)
+			return
+		}
+		if err := i.tagOIDCBucket(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+			errChan <- fmt.Errorf("OIDC bucket: %w", err)
+			return
+		}
+		log.Printf("[TagAWSResources] ✓ IAM/OIDC resources tagged")
+	}()
+
+	// Wait for all goroutines
+	wg.Wait()
+	close(errChan)
+
+	// Aggregate errors
+	var errs []error
+	for err := range errChan {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("tagging failed for %d services: %v", len(errs), errs)
+	}
+
+	log.Printf("[TagAWSResources] ✓ All AWS resources tagged successfully")
 	return nil
 }
 

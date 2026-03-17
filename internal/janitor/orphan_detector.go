@@ -162,21 +162,41 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 func (j *Janitor) detectOrphanedVPCs(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
 	ec2Client := ec2.NewFromConfig(cfg)
 
-	// List VPCs with cluster tags
-	result, err := ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("tag-key"),
-				Values: []string{"Name"},
-			},
-		},
-	})
+	// List all VPCs (we'll filter by tags)
+	result, err := ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{})
 	if err != nil {
 		return nil, err
 	}
 
 	orphans := []OrphanedResource{}
 	for _, vpc := range result.Vpcs {
+		// Step 1: Check for ManagedBy=ocpctl tag (preferred method)
+		managedByOcpctl := getTagValue(vpc.Tags, "ManagedBy") == "ocpctl"
+		clusterNameFromTag := getTagValue(vpc.Tags, "ClusterName")
+
+		// If ManagedBy tag is present, use it
+		if managedByOcpctl {
+			if clusterNameFromTag == "" {
+				log.Printf("[detectOrphanedVPCs] VPC %s has ManagedBy=ocpctl but no ClusterName tag", aws.ToString(vpc.VpcId))
+				continue
+			}
+
+			// Check if cluster exists in database
+			cluster, exists := clustersByName[clusterNameFromTag]
+			if !exists || cluster.Status == types.ClusterStatusDestroyed {
+				orphans = append(orphans, OrphanedResource{
+					Type:         "VPC",
+					ResourceID:   aws.ToString(vpc.VpcId),
+					ResourceName: getTagValue(vpc.Tags, "Name"),
+					Region:       cfg.Region,
+					Tags:         tagsToMap(vpc.Tags),
+				})
+			}
+			continue // Skip pattern matching for tagged resources
+		}
+
+		// Step 2: Fallback to pattern matching for backward compatibility
+		// (clusters created before comprehensive tagging was implemented)
 		vpcName := getTagValue(vpc.Tags, "Name")
 
 		// Check if VPC name contains "-cluster-" pattern
@@ -502,6 +522,44 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 			totalScanned++
 			roleName := aws.ToString(role.RoleName)
 
+			// Get role tags to check for ManagedBy tag
+			tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+				RoleName: role.RoleName,
+			})
+
+			tags := make(map[string]string)
+			if err == nil {
+				for _, tag := range tagsResult.Tags {
+					tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+				}
+			}
+
+			// Step 1: Check for ManagedBy=ocpctl tag (preferred method)
+			managedByOcpctl := tags["ManagedBy"] == "ocpctl"
+			clusterNameFromTag := tags["ClusterName"]
+
+			if managedByOcpctl {
+				openshiftRoles++
+				if clusterNameFromTag == "" {
+					log.Printf("[detectOrphanedIAMRoles] Role %s has ManagedBy=ocpctl but no ClusterName tag", roleName)
+					continue
+				}
+
+				// Check if cluster exists in database
+				cluster, exists := clustersByName[clusterNameFromTag]
+				if !exists || cluster.Status == types.ClusterStatusDestroyed {
+					orphans = append(orphans, OrphanedResource{
+						Type:         "IAMRole",
+						ResourceID:   aws.ToString(role.Arn),
+						ResourceName: roleName,
+						Region:       "global", // IAM is global
+						Tags:         tags,
+					})
+				}
+				continue // Skip pattern matching for tagged resources
+			}
+
+			// Step 2: Fallback to pattern matching for backward compatibility
 			// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
 			// Examples:
 			// - sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden
@@ -528,18 +586,6 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 			// Check if cluster exists and is not destroyed
 			cluster, exists := clustersByName[clusterName]
 			if !exists || cluster.Status == types.ClusterStatusDestroyed {
-				// Get role tags for additional metadata
-				tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
-					RoleName: role.RoleName,
-				})
-
-				tags := make(map[string]string)
-				if err == nil {
-					for _, tag := range tagsResult.Tags {
-						tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
-					}
-				}
-
 				orphans = append(orphans, OrphanedResource{
 					Type:         "IAMRole",
 					ResourceID:   aws.ToString(role.Arn),
