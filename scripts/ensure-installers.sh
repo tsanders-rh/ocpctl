@@ -1,0 +1,136 @@
+#!/bin/bash
+# Ensure required OpenShift installer binaries are available
+# Downloads from S3 or falls back to mirror.openshift.com
+
+set -e
+
+S3_BUCKET="s3://ocpctl-binaries"
+INSTALL_DIR="/usr/local/bin"
+REQUIRED_VERSIONS=("4.18" "4.19" "4.20")
+
+# Default patch versions to use if not specified
+declare -A DEFAULT_PATCHES
+DEFAULT_PATCHES["4.18"]="4.18.35"
+DEFAULT_PATCHES["4.19"]="4.19.23"
+DEFAULT_PATCHES["4.20"]="4.20.3"
+
+log() {
+    echo "[ensure-installers] $1"
+}
+
+download_from_s3() {
+    local version=$1
+    local binary=$2
+    local s3_path="${S3_BUCKET}/installers/${version}/${binary}"
+    local local_path="${INSTALL_DIR}/${binary}-${version}"
+
+    log "Attempting to download ${binary} ${version} from S3..."
+    if aws s3 cp "${s3_path}" "${local_path}" 2>/dev/null; then
+        chmod +x "${local_path}"
+        log "✓ Downloaded ${binary} ${version} from S3"
+        return 0
+    fi
+    return 1
+}
+
+download_from_mirror() {
+    local full_version=$1
+    local binary=$2
+    local version=$(echo "$full_version" | cut -d. -f1,2)
+    local local_path="${INSTALL_DIR}/${binary}-${version}"
+
+    log "Downloading ${binary} ${full_version} from mirror.openshift.com..."
+
+    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/${binary}-linux.tar.gz"
+    local tmp_dir=$(mktemp -d)
+
+    if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
+        mv "${tmp_dir}/${binary}" "${local_path}"
+        chmod +x "${local_path}"
+        rm -rf "${tmp_dir}"
+
+        # Upload to S3 for future use
+        upload_to_s3 "${version}" "${binary}" "${local_path}"
+
+        log "✓ Downloaded ${binary} ${full_version} from mirror"
+        return 0
+    else
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to download ${binary} ${full_version} from mirror"
+        return 1
+    fi
+}
+
+upload_to_s3() {
+    local version=$1
+    local binary=$2
+    local local_path=$3
+    local s3_path="${S3_BUCKET}/installers/${version}/${binary}"
+
+    log "Uploading ${binary} ${version} to S3 for future use..."
+    if aws s3 cp "${local_path}" "${s3_path}" 2>/dev/null; then
+        log "✓ Uploaded ${binary} ${version} to S3"
+    else
+        log "Warning: Failed to upload ${binary} ${version} to S3 (non-fatal)"
+    fi
+}
+
+ensure_binary() {
+    local version=$1
+    local binary=$2
+    local local_path="${INSTALL_DIR}/${binary}-${version}"
+
+    # Check if binary already exists
+    if [ -f "${local_path}" ]; then
+        log "✓ ${binary} ${version} already installed"
+        return 0
+    fi
+
+    log "${binary} ${version} not found, attempting download..."
+
+    # Try S3 first
+    if download_from_s3 "${version}" "${binary}"; then
+        return 0
+    fi
+
+    # Fall back to mirror.openshift.com with default patch version
+    local full_version="${DEFAULT_PATCHES[${version}]}"
+    if [ -z "${full_version}" ]; then
+        log "✗ No default patch version configured for ${version}"
+        return 1
+    fi
+
+    if download_from_mirror "${full_version}" "${binary}"; then
+        return 0
+    fi
+
+    log "✗ Failed to download ${binary} ${version}"
+    return 1
+}
+
+main() {
+    log "Ensuring required OpenShift installer binaries..."
+
+    local failed=0
+
+    for version in "${REQUIRED_VERSIONS[@]}"; do
+        if ! ensure_binary "${version}" "openshift-install"; then
+            log "ERROR: Failed to ensure openshift-install ${version}"
+            failed=1
+        fi
+
+        if ! ensure_binary "${version}" "ccoctl"; then
+            log "WARNING: Failed to ensure ccoctl ${version} (non-fatal)"
+            # Don't fail - ccoctl is only needed for Manual/STS mode
+        fi
+    done
+
+    if [ $failed -eq 1 ]; then
+        log "ERROR: Failed to ensure all required binaries"
+        exit 1
+    fi
+
+    log "✓ All required installer binaries are available"
+}
+
+main "$@"

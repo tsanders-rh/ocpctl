@@ -1,37 +1,31 @@
 [Unit]
-Description=OCPCTL Worker and Janitor
-Documentation=https://github.com/tsanders-rh/ocpctl
-After=network.target postgresql.service ocpctl-api.service
-Wants=postgresql.service
+Description=OCPCTL Worker
+After=network.target postgresql.service
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=ocpctl
-Group=ocpctl
 WorkingDirectory=/opt/ocpctl
 EnvironmentFile=/etc/ocpctl/worker.env
 
-# Binary location
-ExecStart=/opt/ocpctl/bin/ocpctl-worker
+# Ensure installer binaries are available before starting (runs as root with + prefix)
+ExecStartPre=+/opt/ocpctl/scripts/ensure-installers.sh
 
-# Restart policy
-Restart=always
-RestartSec=10s
-
-# Security hardening
-NoNewPrivileges=true
-PrivateTmp=false
-ProtectSystem=full
-ProtectHome=true
-
-# Resource limits
-LimitNOFILE=65536
-MemoryMax=2G
-
-# Logging
+ExecStart=/opt/ocpctl/current/ocpctl-worker
+Restart=on-failure
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ocpctl-worker
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
