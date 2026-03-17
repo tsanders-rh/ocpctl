@@ -211,9 +211,12 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	if err != nil {
 		log.Printf("Warning: failed to get profile for post-deployment check: %v", err)
 	} else if prof.PostDeployment != nil && prof.PostDeployment.Enabled {
-		// Check if post-deployment has already been completed (e.g., from previous run)
-		// This prevents duplicate POST_CONFIGURE jobs
-		if cluster.PostDeployStatus != nil && *cluster.PostDeployStatus == "completed" {
+		// Check if user opted to skip post-deployment
+		if cluster.SkipPostDeployment {
+			log.Printf("Post-deployment skipped for cluster %s (user opted out)", cluster.Name)
+		} else if cluster.PostDeployStatus != nil && *cluster.PostDeployStatus == "completed" {
+			// Check if post-deployment has already been completed (e.g., from previous run)
+			// This prevents duplicate POST_CONFIGURE jobs
 			log.Printf("Post-deployment already completed for cluster %s, skipping", cluster.Name)
 		} else {
 			// Create POST_CONFIGURE job

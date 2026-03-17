@@ -69,11 +69,12 @@ type CreateClusterRequest struct {
 	TTLHours         *int                      `json:"ttl_hours,omitempty"`
 	SSHPublicKey     *string                   `json:"ssh_public_key,omitempty"`
 	ExtraTags        map[string]string         `json:"extra_tags,omitempty"`
-	OffhoursOptIn    bool                      `json:"offhours_opt_in,omitempty"`
-	WorkHoursEnabled *bool                     `json:"work_hours_enabled,omitempty"`
-	WorkHours        *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
-	EnableEFSStorage bool                      `json:"enable_efs_storage,omitempty"`
-	IdempotencyKey   string                    `json:"idempotency_key,omitempty"`
+	OffhoursOptIn      bool                      `json:"offhours_opt_in,omitempty"`
+	WorkHoursEnabled   *bool                     `json:"work_hours_enabled,omitempty"`
+	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
+	SkipPostDeployment bool                      `json:"skip_post_deployment,omitempty"`
+	EnableEFSStorage   bool                      `json:"enable_efs_storage,omitempty"`
+	IdempotencyKey     string                    `json:"idempotency_key,omitempty"`
 }
 
 // ExtendClusterRequest represents the API request to extend cluster TTL
@@ -177,25 +178,26 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	// Create cluster record
 	cluster := &types.Cluster{
-		ID:            uuid.New().String(),
-		Name:          req.Name,
-		Platform:      types.Platform(req.Platform),
-		Version:       req.Version,
-		Profile:       req.Profile,
-		Region:        req.Region,
-		BaseDomain:    req.BaseDomain,
-		Status:        types.ClusterStatusPending,
-		Owner:         req.Owner,
-		OwnerID:       ownerID,
-		Team:          req.Team,
-		CostCenter:    req.CostCenter,
-		TTLHours:      ttl,
-		RequestTags:   validation.MergedTags,
-		EffectiveTags: validation.MergedTags,
-		DestroyAt:     destroyAt,
-		OffhoursOptIn: req.OffhoursOptIn,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ID:                 uuid.New().String(),
+		Name:               req.Name,
+		Platform:           types.Platform(req.Platform),
+		Version:            req.Version,
+		Profile:            req.Profile,
+		Region:             req.Region,
+		BaseDomain:         req.BaseDomain,
+		Status:             types.ClusterStatusPending,
+		Owner:              req.Owner,
+		OwnerID:            ownerID,
+		Team:               req.Team,
+		CostCenter:         req.CostCenter,
+		TTLHours:           ttl,
+		RequestTags:        validation.MergedTags,
+		EffectiveTags:      validation.MergedTags,
+		DestroyAt:          destroyAt,
+		OffhoursOptIn:      req.OffhoursOptIn,
+		SkipPostDeployment: req.SkipPostDeployment,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	// Handle work hours override if provided

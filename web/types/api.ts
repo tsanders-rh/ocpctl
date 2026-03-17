@@ -119,6 +119,7 @@ export interface CreateClusterRequest {
   offhours_opt_in?: boolean;
   work_hours_enabled?: boolean;
   work_hours?: WorkHoursSchedule;
+  skip_post_deployment?: boolean;
   idempotency_key?: string;
 }
 
@@ -174,6 +175,44 @@ export interface ClusterOutputs {
 }
 
 // Profile Types
+export interface PostDeploymentConfig {
+  enabled: boolean;
+  timeout?: string;
+  operators?: OperatorConfig[];
+  manifests?: ManifestConfig[];
+  helm_charts?: HelmChartConfig[];
+}
+
+export interface OperatorConfig {
+  name: string;
+  namespace: string;
+  source: string;
+  channel: string;
+  custom_resource?: CustomResourceConfig;
+}
+
+export interface CustomResourceConfig {
+  api_version: string;
+  kind: string;
+  name: string;
+  namespace?: string;
+  spec?: Record<string, any>;
+}
+
+export interface ManifestConfig {
+  name: string;
+  path: string;
+}
+
+export interface HelmChartConfig {
+  name: string;
+  repo: string;
+  chart: string;
+  version?: string;
+  namespace: string;
+  values?: Record<string, any>;
+}
+
 export interface Profile {
   name: string;
   display_name: string;
@@ -232,6 +271,7 @@ export interface Profile {
     aws?: Record<string, any>;
     ibmcloud?: Record<string, any>;
   };
+  post_deployment?: PostDeploymentConfig;
 }
 
 // Job Types

@@ -20,20 +20,21 @@ func NewProfileHandler(registry *profile.Registry) *ProfileHandler {
 
 // ProfileResponse represents a profile in API responses
 type ProfileResponse struct {
-	Name               string                    `json:"name"`
-	DisplayName        string                    `json:"display_name"`
-	Description        string                    `json:"description"`
-	Platform           string                    `json:"platform"`
-	Enabled            bool                      `json:"enabled"`
-	OpenshiftVersions  profile.VersionConfig     `json:"openshift_versions"`
-	Regions            profile.RegionConfig      `json:"regions"`
-	BaseDomains        profile.BaseDomainConfig  `json:"base_domains"`
-	Compute            profile.ComputeConfig     `json:"compute"`
-	Lifecycle          profile.LifecycleConfig   `json:"lifecycle"`
-	Networking         *profile.NetworkingConfig `json:"networking,omitempty"`
-	Tags               profile.TagsConfig        `json:"tags"`
-	Features           profile.FeaturesConfig    `json:"features"`
-	CostControls       *profile.CostControlsConfig `json:"cost_controls,omitempty"`
+	Name               string                       `json:"name"`
+	DisplayName        string                       `json:"display_name"`
+	Description        string                       `json:"description"`
+	Platform           string                       `json:"platform"`
+	Enabled            bool                         `json:"enabled"`
+	OpenshiftVersions  profile.VersionConfig        `json:"openshift_versions"`
+	Regions            profile.RegionConfig         `json:"regions"`
+	BaseDomains        profile.BaseDomainConfig     `json:"base_domains"`
+	Compute            profile.ComputeConfig        `json:"compute"`
+	Lifecycle          profile.LifecycleConfig      `json:"lifecycle"`
+	Networking         *profile.NetworkingConfig    `json:"networking,omitempty"`
+	Tags               profile.TagsConfig           `json:"tags"`
+	Features           profile.FeaturesConfig       `json:"features"`
+	CostControls       *profile.CostControlsConfig  `json:"cost_controls,omitempty"`
+	PostDeployment     *profile.PostDeploymentConfig `json:"post_deployment,omitempty"`
 }
 
 // toProfileResponse converts a profile to API response format
@@ -53,6 +54,7 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 		Tags:              p.Tags,
 		Features:          p.Features,
 		CostControls:      &p.CostControls,
+		PostDeployment:    p.PostDeployment,
 	}
 }
 

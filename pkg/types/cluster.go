@@ -97,6 +97,7 @@ type Cluster struct {
 	LastWorkHoursCheck  *time.Time     `db:"last_work_hours_check" json:"last_work_hours_check"`
 	PostDeployStatus    *string        `db:"post_deploy_status" json:"post_deploy_status,omitempty"`
 	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
+	SkipPostDeployment  bool           `db:"skip_post_deployment" json:"skip_post_deployment"`
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 }
 

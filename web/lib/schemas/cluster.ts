@@ -21,6 +21,7 @@ export const createClusterSchema = z.object({
   ssh_public_key: z.string().optional(),
   extra_tags: z.record(z.string()).optional(),
   offhours_opt_in: z.boolean().default(false),
+  skip_post_deployment: z.boolean().default(false),
   enable_efs_storage: z.boolean().default(false),
   override_work_hours: z.boolean().default(false),
   work_hours_enabled: z.boolean().optional(),

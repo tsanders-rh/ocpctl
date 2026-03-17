@@ -60,6 +60,7 @@ export default function NewClusterPage() {
       team: "Migration Feature Team",
       cost_center: "733",
       offhours_opt_in: false,
+      skip_post_deployment: false,
       enable_efs_storage: false,
       override_work_hours: false,
       work_hours_enabled: user?.work_hours_enabled || false,
@@ -492,6 +493,37 @@ export default function NewClusterPage() {
                         )}
                       </div>
                     </div>
+
+                    {selectedProfile?.post_deployment?.enabled && (
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="skip_post_deployment"
+                          checked={watchedValues.skip_post_deployment}
+                          onCheckedChange={(checked) =>
+                            setValue("skip_post_deployment", checked as boolean)
+                          }
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="skip_post_deployment" className="cursor-pointer">
+                            Skip automatic post-deployment configuration
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Skip automatic operator/manifest installation configured for this profile
+                            {selectedProfile.post_deployment.operators && selectedProfile.post_deployment.operators.length > 0 && (
+                              <span className="block mt-1">
+                                Will skip: {selectedProfile.post_deployment.operators.map(op => op.name).join(", ")}
+                              </span>
+                            )}
+                          </p>
+                          {getFieldError("skip_post_deployment") && (
+                            <p className="text-sm text-red-600 mt-1">
+                              {getFieldError("skip_post_deployment")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-start space-x-2">
                       <Checkbox
