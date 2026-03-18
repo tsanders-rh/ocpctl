@@ -461,7 +461,7 @@ func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clust
 	query := `
 		UPDATE clusters
 		SET post_deploy_status = $1,
-		    post_deploy_completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE NULL END,
+		    post_deploy_completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE NULL END,
 		    updated_at = NOW()
 		WHERE id = $2
 	`
