@@ -179,6 +179,7 @@ export interface PostDeploymentConfig {
   enabled: boolean;
   timeout?: string;
   operators?: OperatorConfig[];
+  scripts?: ScriptConfig[];
   manifests?: ManifestConfig[];
   helm_charts?: HelmChartConfig[];
 }
@@ -189,6 +190,13 @@ export interface OperatorConfig {
   source: string;
   channel: string;
   custom_resource?: CustomResourceConfig;
+}
+
+export interface ScriptConfig {
+  name: string;
+  path: string;
+  description?: string;
+  env?: Record<string, string>;
 }
 
 export interface CustomResourceConfig {

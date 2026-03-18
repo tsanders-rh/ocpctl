@@ -165,6 +165,19 @@ export default function ProfilesPage() {
                         </div>
                       </div>
                     ))}
+                    {profile.post_deployment.scripts?.map((script) => (
+                      <div key={script.name} className="text-sm">
+                        <div className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Script</Badge>
+                          {script.name}
+                        </div>
+                        {script.description && (
+                          <div className="text-xs text-muted-foreground ml-14">
+                            {script.description}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                     {profile.post_deployment.manifests?.map((manifest) => (
                       <div key={manifest.name} className="text-sm">
                         <div className="font-medium flex items-center gap-2">
