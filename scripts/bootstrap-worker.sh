@@ -74,6 +74,17 @@ else
     echo "WARNING: Failed to sync profiles from S3"
 fi
 
+# Sync manifests from S3
+echo "Syncing manifests from S3..."
+mkdir -p ${REMOTE_BASE}/manifests
+if aws s3 sync ${S3_BUCKET}/manifests/ ${REMOTE_BASE}/manifests/; then
+    echo "✓ Manifests synced successfully"
+    MANIFEST_COUNT=$(find ${REMOTE_BASE}/manifests -type f 2>/dev/null | wc -l)
+    echo "  Found ${MANIFEST_COUNT} manifest files"
+else
+    echo "WARNING: Failed to sync manifests from S3"
+fi
+
 # Cleanup old versions (keep last 3)
 echo "Cleaning up old releases (keeping last 3)..."
 cd ${REMOTE_BASE}/releases
