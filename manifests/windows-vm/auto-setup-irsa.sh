@@ -52,7 +52,7 @@ log_info "Infrastructure ID: $INFRA_ID"
 log_info "Region: $REGION"
 
 # Configuration
-ROLE_NAME="ocpctl-windows-image-s3-reader-${CLUSTER_ID}"
+ROLE_NAME="ocpctl-win-s3-${CLUSTER_ID}"
 SERVICE_ACCOUNT_NAME="windows-image-importer"
 SERVICE_ACCOUNT_NAMESPACE="openshift-virtualization-os-images"
 

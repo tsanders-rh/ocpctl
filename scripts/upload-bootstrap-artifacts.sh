@@ -12,6 +12,10 @@ echo "Uploading bootstrap artifacts to S3..."
 echo "Uploading bootstrap-worker.sh..."
 aws s3 cp scripts/bootstrap-worker.sh ${S3_BUCKET}/scripts/bootstrap-worker.sh
 
+# Upload ensure-installers script
+echo "Uploading ensure-installers.sh..."
+aws s3 cp scripts/ensure-installers.sh ${S3_BUCKET}/scripts/ensure-installers.sh
+
 # Upload systemd service file
 echo "Uploading ocpctl-worker.service..."
 aws s3 cp scripts/ocpctl-worker.service ${S3_BUCKET}/scripts/ocpctl-worker.service
@@ -21,6 +25,14 @@ if [ -f config/worker.env ]; then
     echo "Uploading worker.env (contains secrets - stored privately in S3)..."
     aws s3 cp config/worker.env ${S3_BUCKET}/config/worker.env
 fi
+
+# Upload manifests directory
+echo "Uploading manifests directory..."
+aws s3 sync manifests/ ${S3_BUCKET}/manifests/ --delete
+
+# Upload profiles directory
+echo "Uploading profiles directory..."
+aws s3 sync internal/profile/definitions/ ${S3_BUCKET}/profiles/ --delete
 
 echo ""
 echo "✓ Bootstrap artifacts uploaded to S3"

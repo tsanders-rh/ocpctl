@@ -86,9 +86,9 @@ func (s *ClusterConfigurationStore) GetByID(ctx context.Context, id string) (*ty
 func (s *ClusterConfigurationStore) UpdateStatus(ctx context.Context, id string, status types.ConfigStatus, errorMessage *string) error {
 	query := `
 		UPDATE cluster_configurations
-		SET status = $1,
+		SET status = $1::text,
 		    error_message = $2,
-		    completed_at = CASE WHEN $1 IN ('completed', 'failed') THEN NOW() ELSE NULL END
+		    completed_at = CASE WHEN $1::text IN ('completed', 'failed') THEN NOW() ELSE NULL END
 		WHERE id = $3
 	`
 

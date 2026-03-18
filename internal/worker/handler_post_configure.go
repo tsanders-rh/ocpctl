@@ -328,8 +328,8 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
-	// Build script path
-	scriptPath := filepath.Join("manifests", script.Path)
+	// Build script path (absolute path to deployed manifests directory)
+	scriptPath := filepath.Join("/opt/ocpctl/manifests", script.Path)
 
 	// Verify script exists and is executable
 	info, err := os.Stat(scriptPath)
@@ -460,7 +460,7 @@ func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clust
 
 	query := `
 		UPDATE clusters
-		SET post_deploy_status = $1,
+		SET post_deploy_status = $1::text,
 		    post_deploy_completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE NULL END,
 		    updated_at = NOW()
 		WHERE id = $2
@@ -474,7 +474,7 @@ func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clust
 	return tx.Commit(ctx)
 }
 
-// createConfigTask creates a new cluster configuration task
+// createConfigTask creates or reuses a cluster configuration task
 func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID string, configType types.ConfigType, configName string) (string, error) {
 	tx, err := h.store.BeginTx(ctx)
 	if err != nil {
@@ -482,14 +482,49 @@ func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID s
 	}
 	defer tx.Rollback(ctx)
 
-	query := `
+	// Check if a task already exists for this configuration
+	checkQuery := `
+		SELECT id, status
+		FROM cluster_configurations
+		WHERE cluster_id = $1 AND config_type = $2::text AND config_name = $3
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var existingID string
+	var existingStatus string
+	err = tx.QueryRow(ctx, checkQuery, clusterID, configType, configName).Scan(&existingID, &existingStatus)
+
+	if err == nil {
+		// Task exists - reuse it if it's pending or failed, reset it to pending
+		if existingStatus == "pending" || existingStatus == "failed" {
+			updateQuery := `
+				UPDATE cluster_configurations
+				SET status = 'pending', error_message = NULL, completed_at = NULL
+				WHERE id = $1
+			`
+			_, err = tx.Exec(ctx, updateQuery, existingID)
+			if err != nil {
+				return "", fmt.Errorf("reset existing task: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return "", err
+			}
+			log.Printf("Reusing existing configuration task %s (was %s)", existingID, existingStatus)
+			return existingID, nil
+		}
+		// If completed, create a new task (fall through to INSERT below)
+	}
+
+	// No existing task or previous task was completed - create new one
+	insertQuery := `
 		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id
 	`
 
 	var configID string
-	err = tx.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
+	err = tx.QueryRow(ctx, insertQuery, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
 	if err != nil {
 		return "", err
 	}
@@ -511,9 +546,9 @@ func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, confi
 
 	query := `
 		UPDATE cluster_configurations
-		SET status = $1,
+		SET status = $1::text,
 		    error_message = $2,
-		    completed_at = CASE WHEN $1 IN ('completed', 'failed') THEN NOW() ELSE NULL END
+		    completed_at = CASE WHEN $1::text IN ('completed', 'failed') THEN NOW() ELSE NULL END
 		WHERE id = $3
 	`
 

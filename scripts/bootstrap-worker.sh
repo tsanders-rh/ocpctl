@@ -79,10 +79,22 @@ echo "Syncing manifests from S3..."
 mkdir -p ${REMOTE_BASE}/manifests
 if aws s3 sync ${S3_BUCKET}/manifests/ ${REMOTE_BASE}/manifests/; then
     echo "✓ Manifests synced successfully"
+    # Set execute permissions on all scripts
+    chmod -R 755 ${REMOTE_BASE}/manifests
     MANIFEST_COUNT=$(find ${REMOTE_BASE}/manifests -type f 2>/dev/null | wc -l)
     echo "  Found ${MANIFEST_COUNT} manifest files"
 else
     echo "WARNING: Failed to sync manifests from S3"
+fi
+
+# Download ensure-installers script
+echo "Downloading ensure-installers script from S3..."
+mkdir -p ${REMOTE_BASE}/scripts
+if aws s3 cp ${S3_BUCKET}/scripts/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh; then
+    chmod +x ${REMOTE_BASE}/scripts/ensure-installers.sh
+    echo "✓ ensure-installers.sh downloaded and made executable"
+else
+    echo "WARNING: Failed to download ensure-installers.sh from S3"
 fi
 
 # Cleanup old versions (keep last 3)

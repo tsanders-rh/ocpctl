@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -112,6 +113,7 @@ func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 
 	// Create a new POST_CONFIGURE job to retry
 	job := &types.Job{
+		ID:          uuid.New().String(),
 		ClusterID:   clusterID,
 		JobType:     types.JobTypePostConfigure,
 		Status:      types.JobStatusPending,
@@ -182,6 +184,7 @@ func (h *ConfigurationHandler) TriggerPostConfiguration(c echo.Context) error {
 
 	// Create POST_CONFIGURE job
 	job := &types.Job{
+		ID:          uuid.New().String(),
 		ClusterID:   clusterID,
 		JobType:     types.JobTypePostConfigure,
 		Status:      types.JobStatusPending,
