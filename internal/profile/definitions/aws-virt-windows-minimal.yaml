@@ -1,6 +1,6 @@
 name: aws-virt-windows-minimal
 displayName: AWS OpenShift Virtualization (Minimal Windows Testing)
-description: Minimal viable OpenShift Virtualization setup for Windows VM testing with single metal worker. Supports 10-15 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$2,400/month.
+description: Minimal viable OpenShift Virtualization setup for Windows VM testing with single metal worker and automated S3-backed Windows image deployment. Supports 10-15 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$2,400/month.
 platform: aws
 enabled: true
 
@@ -92,7 +92,7 @@ platformConfig:
 
 postDeployment:
   enabled: true
-  timeout: "30m"
+  timeout: "45m"  # Extended for Windows image import from S3 (5-10min download + buffer)
   operators:
     - name: kubevirt-hyperconverged
       namespace: openshift-cnv
@@ -104,6 +104,10 @@ postDeployment:
         name: kubevirt-hyperconverged
         namespace: openshift-cnv
         spec: {}
+  scripts:
+    - name: setup-windows-irsa
+      path: windows-vm/auto-setup-irsa.sh
+      description: "Automated IRSA setup for Windows VM image access from S3"
 
 metadata:
   capabilities:
@@ -121,4 +125,9 @@ metadata:
     - "Hibernation start time may be 5-10 minutes due to larger EBS volumes"
     - "Windows licensing is user's responsibility"
     - "OpenShift Virtualization operator installed automatically via post-deployment"
+    - "Windows VM infrastructure fully automated - IRSA setup runs automatically during post-deployment"
+    - "Windows 10 image source: s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 (23GB)"
+    - "Image import starts automatically (5-10 min), Windows VMs ready after cluster creation"
     - "500GB storage supports ~10-12 Windows VM images (40-50GB each)"
+    - "IRSA provides secure, credential-free S3 access (no static credentials stored in cluster)"
+    - "Per-cluster IAM roles created automatically for isolation and security"

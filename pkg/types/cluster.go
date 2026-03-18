@@ -141,6 +141,7 @@ type ConfigType string
 
 const (
 	ConfigTypeOperator ConfigType = "operator"
+	ConfigTypeScript   ConfigType = "script"
 	ConfigTypeManifest ConfigType = "manifest"
 	ConfigTypeHelm     ConfigType = "helm"
 )

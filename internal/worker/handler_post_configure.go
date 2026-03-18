@@ -90,6 +90,14 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 		}
 	}
 
+	// Execute scripts
+	for _, script := range prof.PostDeployment.Scripts {
+		if err := h.executeScript(ctx, cluster, kubeconfigPath, script); err != nil {
+			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+			return fmt.Errorf("execute script %s: %w", script.Name, err)
+		}
+	}
+
 	// Apply manifests
 	for _, manifest := range prof.PostDeployment.Manifests {
 		if err := h.applyManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
@@ -306,6 +314,105 @@ func (h *PostConfigureHandler) applyManifest(ctx context.Context, cluster *types
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
 	return nil
+}
+
+// executeScript executes a shell script for post-deployment configuration
+func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, script profile.ScriptConfig) error {
+	log.Printf("Executing script: %s", script.Name)
+
+	// Track configuration task
+	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeScript, script.Name)
+	if err != nil {
+		return fmt.Errorf("create config task: %w", err)
+	}
+
+	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
+
+	// Build script path
+	scriptPath := filepath.Join("manifests", script.Path)
+
+	// Verify script exists and is executable
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		errMsg := err.Error()
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("script not found: %w", err)
+	}
+
+	// Check if executable
+	if info.Mode()&0111 == 0 {
+		errMsg := "script is not executable"
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	// Get cluster infrastructure details
+	infraID, region, err := h.getClusterInfraDetails(ctx, cluster)
+	if err != nil {
+		errMsg := err.Error()
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("get cluster details: %w", err)
+	}
+
+	// Prepare environment variables
+	env := os.Environ()
+	env = append(env,
+		fmt.Sprintf("CLUSTER_ID=%s", cluster.ID),
+		fmt.Sprintf("CLUSTER_NAME=%s", cluster.Name),
+		fmt.Sprintf("INFRA_ID=%s", infraID),
+		fmt.Sprintf("REGION=%s", region),
+		fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath),
+	)
+
+	// Add custom environment variables from script config
+	for key, value := range script.Env {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Execute script
+	cmd := exec.CommandContext(ctx, scriptPath)
+	cmd.Env = env
+	cmd.Dir = filepath.Dir(scriptPath) // Set working directory to script's directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		errMsg := fmt.Sprintf("script failed: %v\nOutput: %s", err, string(output))
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	log.Printf("Script %s completed successfully:\n%s", script.Name, string(output))
+	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
+	return nil
+}
+
+// getClusterInfraDetails retrieves infrastructure ID and region from the cluster
+func (h *PostConfigureHandler) getClusterInfraDetails(ctx context.Context, cluster *types.Cluster) (string, string, error) {
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Get infraID from cluster using oc command
+	cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
+		"get", "infrastructure", "cluster",
+		"-o", "jsonpath={.status.infrastructureName}")
+
+	infraIDBytes, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("get infrastructure name: %w", err)
+	}
+
+	infraID := strings.TrimSpace(string(infraIDBytes))
+	if infraID == "" {
+		return "", "", fmt.Errorf("infrastructure name is empty")
+	}
+
+	// Get region
+	region := cluster.Region
+	if region == "" {
+		region = "us-east-1" // Default fallback
+	}
+
+	return infraID, region, nil
 }
 
 // installHelmChart installs a Helm chart

@@ -139,11 +139,12 @@ type IBMCloudConfig struct {
 
 // PostDeploymentConfig defines automated post-deployment configuration
 type PostDeploymentConfig struct {
-	Enabled   bool                 `yaml:"enabled" json:"enabled"`
-	Timeout   string               `yaml:"timeout,omitempty" json:"timeout,omitempty"` // Duration string, e.g. "30m"
-	Operators []OperatorConfig     `yaml:"operators,omitempty" json:"operators,omitempty"`
-	Manifests []ManifestConfig     `yaml:"manifests,omitempty" json:"manifests,omitempty"`
-	HelmCharts []HelmChartConfig   `yaml:"helmCharts,omitempty" json:"helm_charts,omitempty"`
+	Enabled    bool                 `yaml:"enabled" json:"enabled"`
+	Timeout    string               `yaml:"timeout,omitempty" json:"timeout,omitempty"` // Duration string, e.g. "30m"
+	Operators  []OperatorConfig     `yaml:"operators,omitempty" json:"operators,omitempty"`
+	Scripts    []ScriptConfig       `yaml:"scripts,omitempty" json:"scripts,omitempty"`
+	Manifests  []ManifestConfig     `yaml:"manifests,omitempty" json:"manifests,omitempty"`
+	HelmCharts []HelmChartConfig    `yaml:"helmCharts,omitempty" json:"helm_charts,omitempty"`
 }
 
 // OperatorConfig defines an operator to install post-deployment
@@ -164,10 +165,19 @@ type CustomResourceConfig struct {
 	Spec       map[string]interface{} `yaml:"spec,omitempty" json:"spec,omitempty"`
 }
 
+// ScriptConfig defines a script to execute post-deployment
+type ScriptConfig struct {
+	Name        string            `yaml:"name" json:"name" validate:"required"`
+	Path        string            `yaml:"path" json:"path" validate:"required"`
+	Description string            `yaml:"description,omitempty" json:"description,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"` // Additional environment variables
+}
+
 // ManifestConfig defines a manifest file to apply post-deployment
 type ManifestConfig struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
-	Path string `yaml:"path" json:"path" validate:"required"`
+	Name        string `yaml:"name" json:"name" validate:"required"`
+	Path        string `yaml:"path" json:"path" validate:"required"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // HelmChartConfig defines a Helm chart to install post-deployment

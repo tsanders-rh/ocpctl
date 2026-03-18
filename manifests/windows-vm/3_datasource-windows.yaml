@@ -1,0 +1,31 @@
+---
+# Windows 10 DataSource
+#
+# A DataSource provides a reusable template for creating VM disks from the imported
+# Windows image. When VMs are created from this DataSource, OpenShift Virtualization
+# clones the base image (from the DataVolume) to create independent VM disks.
+#
+# Benefits:
+# - Base image is downloaded once and reused for all VMs
+# - Each VM gets its own independent disk (COW clone)
+# - Fast VM provisioning (cloning is faster than downloading)
+#
+# Usage in VM Templates:
+#   dataVolumeTemplates:
+#     - spec:
+#         source:
+#           pvc:
+#             name: windows
+#             namespace: openshift-virtualization-os-images
+#
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: windows
+  namespace: openshift-virtualization-os-images
+spec:
+  source:
+    pvc:
+      # References the PVC created by the DataVolume above
+      name: windows
+      namespace: openshift-virtualization-os-images
