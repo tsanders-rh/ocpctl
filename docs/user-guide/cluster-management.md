@@ -37,6 +37,15 @@ Select a cluster profile that matches your needs:
 - **Max TTL:** 168 hours, Default: 72 hours
 - **Best for:** OpenShift Virtualization workloads requiring nested virtualization
 
+#### aws-virt-windows-minimal
+- **Configuration:** 3 control-plane nodes (m6i.2xlarge) + 2 worker nodes (m6i.metal)
+- **Cost:** ~$25/hour
+- **Max TTL:** 168 hours, Default: 72 hours
+- **Post-Deployment:** Automatically configures IRSA for Windows VM image access
+- **Best for:** OpenShift Virtualization with Windows VM workloads
+
+**Note:** Some profiles include automated post-deployment configuration. See [Post-Deployment Configuration](#post-deployment-configuration) below for details.
+
 ### Step 3: Configure Cluster Details
 
 Fill in the required fields:
@@ -65,6 +74,7 @@ Fill in the required fields:
 - **Work Hours Enabled** - Enable automatic hibernation outside business hours
   - **Work Hours Schedule** - Define when cluster should be running (e.g., Mon-Fri 9am-5pm ET)
 - **Off-hours Opt-in** - Allow cluster to run outside defined work hours
+- **Skip Post-Deployment** - Skip automated configuration (operators, scripts, etc.) for profiles that include it
 
 ### Step 4: Create Cluster
 
@@ -155,6 +165,131 @@ Permanently delete a cluster:
 - Destruction typically takes 15-30 minutes
 - Cluster status changes to **Destroying** then **Destroyed**
 
+## Post-Deployment Configuration
+
+### What is Post-Deployment Configuration?
+
+Some cluster profiles include **automated post-deployment configuration** that runs automatically after your cluster is created and reaches **Ready** status. This automation can install operators, apply manifests, run scripts, or deploy Helm charts to prepare your cluster for specific workloads.
+
+**When it runs:**
+- Automatically triggered after cluster creation completes
+- Runs as a separate `POST_CONFIGURE` job
+- Typically takes 5-15 minutes depending on configuration
+- Can be monitored via cluster status indicators
+
+### What Can Be Automated?
+
+Post-deployment configuration can include:
+
+**Operators:**
+- OpenShift operators installed via OLM (Operator Lifecycle Manager)
+- Example: OpenShift Virtualization, OpenShift Data Foundation, Serverless
+- Configured with custom resources if needed
+
+**Scripts:**
+- Shell scripts for custom configuration tasks
+- Automatically provided with cluster context (name, region, kubeconfig)
+- Example: IRSA setup for Windows VM image access in aws-virt-windows-minimal
+
+**Manifests:**
+- Kubernetes/OpenShift YAML manifests
+- Applied directly to the cluster
+- Example: Custom NetworkPolicies, ConfigMaps, ServiceAccounts
+
+**Helm Charts:**
+- Helm 3 chart installations
+- Deployed with custom values if needed
+
+### Viewing Post-Deployment Details
+
+To see what will be installed automatically:
+
+1. Navigate to **Profiles** page in the sidebar
+2. Find your desired profile (e.g., aws-virt-windows-minimal)
+3. Look for the **Post-Deployment** section in the profile card
+
+This section shows:
+- Which operators will be installed
+- What scripts will run (with descriptions)
+- Which manifests will be applied
+- What Helm charts will be deployed
+
+**Example:** The aws-virt-windows-minimal profile shows:
+```
+Post-Deployment
+Automatically installed after cluster creation:
+
+Script: setup-windows-irsa
+  Automated IRSA setup for Windows VM image access from S3
+```
+
+### Skipping Post-Deployment
+
+If you want a clean cluster without automated configuration:
+
+1. When creating the cluster, expand **Advanced Options**
+2. Check **Skip Post-Deployment**
+3. Create the cluster normally
+
+The cluster will reach **Ready** status without running any post-deployment automation.
+
+**When to skip:**
+- Testing cluster creation without extra automation
+- You want to manually configure the cluster
+- Troubleshooting post-deployment issues
+- You don't need the automated features
+
+### Monitoring Post-Deployment Progress
+
+After cluster creation:
+
+1. Cluster reaches **Ready** status (provisioning complete)
+2. Post-deployment job starts automatically
+3. Check cluster details page for post-deployment status:
+   - **In Progress** - Configuration running
+   - **Completed** - All automation succeeded
+   - **Failed** - Configuration encountered errors
+
+**Note:** The cluster is usable immediately when it reaches **Ready** status. Post-deployment runs in parallel and adds additional capabilities.
+
+### Troubleshooting Post-Deployment Failures
+
+If post-deployment fails:
+
+**Check the logs:**
+1. Navigate to cluster details page
+2. View post-deployment job logs
+3. Look for error messages in the configuration steps
+
+**Common issues:**
+- Operator catalog unavailable (temporary, retry later)
+- Script permission errors (contact administrator)
+- Resource quota exceeded (contact administrator)
+- Network connectivity issues
+
+**Impact on cluster:**
+- Cluster is still **Ready** and usable
+- Only automated features are affected
+- You can manually install failed components if needed
+
+### Example: Windows Virtualization Profile
+
+The **aws-virt-windows-minimal** profile includes this post-deployment automation:
+
+**What it does:**
+- Configures AWS IAM Roles for Service Accounts (IRSA)
+- Sets up permissions for Windows VM images stored in S3
+- Creates necessary ServiceAccounts and IAM role mappings
+- Verifies connectivity to S3 bucket
+
+**Why it's automated:**
+- Eliminates manual IRSA setup steps
+- Ensures correct AWS permissions for Windows VMs
+- Faster time-to-value for Windows virtualization workloads
+
+**Result:**
+After post-deployment completes, you can immediately deploy Windows VMs using the pre-configured image access, without manual AWS IAM configuration.
+
 ## Cluster Profiles
 
 ### Understanding Profiles
@@ -164,6 +299,7 @@ Cluster profiles are pre-configured templates that define:
 - Network configuration
 - Maximum and default TTL
 - Enabled features (hibernation, EFS, etc.)
+- Post-deployment automation (operators, scripts, manifests)
 - Cost estimates
 
 ### Profile Policies
@@ -275,6 +411,14 @@ If you need access outside work hours:
 - **Minimal** for multi-node testing
 - **Standard** for realistic workloads
 - **Virtualization** only when you need nested virt
+
+### Profile Selection
+
+- **Check the Profiles page** before creating clusters to see what automation is included
+- **Use profiles with post-deployment** when you need specific operators or configurations pre-installed
+- **Skip post-deployment** if you want manual control over cluster configuration
+- **Review post-deployment time** - factor in an extra 5-15 minutes for automated configuration
+- **aws-virt-windows-minimal** for Windows VMs - includes automated IRSA setup
 
 ## Getting Help
 
