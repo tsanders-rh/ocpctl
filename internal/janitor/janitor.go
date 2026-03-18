@@ -514,6 +514,15 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		var newStatus types.ClusterStatus
 
 		if cluster.Status == types.ClusterStatusReady && !withinWorkHours {
+			// Don't hibernate if post-deployment is still in progress
+			if cluster.PostDeployStatus == nil || *cluster.PostDeployStatus != "completed" {
+				log.Printf("[Work Hours Action] SKIPPING HIBERNATION for %s: post-deployment in progress (status: %v)", cluster.Name, cluster.PostDeployStatus)
+				// Update check timestamp so we don't spam logs
+				if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+					log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+				}
+				continue
+			}
 			action = "hibernate"
 			jobType = types.JobTypeHibernate
 			newStatus = types.ClusterStatusHibernating
