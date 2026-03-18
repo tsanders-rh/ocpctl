@@ -223,6 +223,7 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 			log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
 
 			postConfigJob := &types.Job{
+				ID:          uuid.New().String(),
 				ClusterID:   cluster.ID,
 				JobType:     types.JobTypePostConfigure,
 				Status:      types.JobStatusPending,
