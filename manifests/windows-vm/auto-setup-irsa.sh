@@ -151,6 +151,33 @@ metadata:
 EOF
 log_info "✓ ServiceAccount created"
 
+# Wait for CDI API to be ready
+log_info "Waiting for CDI API to be ready..."
+MAX_WAIT=300  # 5 minutes
+ELAPSED=0
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    if oc --kubeconfig="$KUBECONFIG" get endpoints cdi-api -n openshift-cnv &>/dev/null; then
+        ENDPOINTS=$(oc --kubeconfig="$KUBECONFIG" get endpoints cdi-api -n openshift-cnv -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+        if [ -n "$ENDPOINTS" ]; then
+            log_info "✓ CDI API is ready"
+            break
+        fi
+    fi
+
+    if [ $((ELAPSED % 30)) -eq 0 ]; then
+        log_info "Still waiting for CDI API... (${ELAPSED}s elapsed)"
+    fi
+
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+done
+
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+    log_error "Timeout waiting for CDI API to be ready after ${MAX_WAIT}s"
+    log_error "The CDI operator may still be deploying. Try retrying this configuration in a few minutes."
+    exit 1
+fi
+
 # Create DataVolume (IRSA version)
 log_info "Creating DataVolume for Windows image download"
 cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
