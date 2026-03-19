@@ -59,6 +59,7 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 type CreateClusterRequest struct {
 	Name             string                    `json:"name" validate:"required,min=3,max=63"`
 	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud"`
+	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift eks iks"`
 	Version          string                    `json:"version" validate:"required"`
 	Profile          string                    `json:"profile" validate:"required"`
 	Region           string                    `json:"region" validate:"required"`
@@ -135,6 +136,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	policyReq := &types.CreateClusterRequest{
 		Name:          req.Name,
 		Platform:      req.Platform,
+		ClusterType:   req.ClusterType,
 		Version:       req.Version,
 		Profile:       req.Profile,
 		Region:        req.Region,
@@ -181,6 +183,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		ID:                 uuid.New().String(),
 		Name:               req.Name,
 		Platform:           types.Platform(req.Platform),
+		ClusterType:        types.ClusterType(req.ClusterType),
 		Version:            req.Version,
 		Profile:            req.Profile,
 		Region:             req.Region,

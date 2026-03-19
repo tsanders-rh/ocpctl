@@ -4,6 +4,7 @@ package types
 type CreateClusterRequest struct {
 	Name             string
 	Platform         string
+	ClusterType      string
 	Version          string
 	Profile          string
 	Region           string
