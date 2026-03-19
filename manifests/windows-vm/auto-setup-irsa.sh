@@ -151,6 +151,44 @@ metadata:
 EOF
 log_info "✓ ServiceAccount created"
 
+# Note: CDI importer pods use the 'default' service account, not the custom one
+# We need to annotate the default SA and update the trust policy
+log_info "Annotating default ServiceAccount with IAM role..."
+oc --kubeconfig="$KUBECONFIG" annotate sa default -n ${SERVICE_ACCOUNT_NAMESPACE} \
+    eks.amazonaws.com/role-arn=${ROLE_ARN} --overwrite
+
+# Update trust policy to allow both service accounts
+log_info "Updating IAM trust policy to allow default service account..."
+TRUST_POLICY_UPDATED=$(cat <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "${OIDC_PROVIDER_ARN}"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "${OIDC_PROVIDER}:sub": [
+            "system:serviceaccount:${SERVICE_ACCOUNT_NAMESPACE}:${SERVICE_ACCOUNT_NAME}",
+            "system:serviceaccount:${SERVICE_ACCOUNT_NAMESPACE}:default"
+          ]
+        }
+      }
+    }
+  ]
+}
+EOF
+)
+echo "$TRUST_POLICY_UPDATED" > /tmp/trust-policy-${CLUSTER_ID}-updated.json
+aws iam update-assume-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-document file:///tmp/trust-policy-${CLUSTER_ID}-updated.json
+rm /tmp/trust-policy-${CLUSTER_ID}-updated.json
+log_info "✓ Trust policy updated"
+
 # Wait for CDI API to be ready
 log_info "Waiting for CDI API to be ready..."
 MAX_WAIT=300  # 5 minutes
@@ -178,8 +216,75 @@ if [ $ELAPSED -ge $MAX_WAIT ]; then
     exit 1
 fi
 
-# Create DataVolume (IRSA version)
-log_info "Creating DataVolume for Windows image download"
+# Auto-detect best storage class for Windows VMs
+log_info "Detecting available storage class..."
+if oc --kubeconfig="$KUBECONFIG" get storageclass ocs-storagecluster-ceph-rbd-virtualization &>/dev/null; then
+    STORAGE_CLASS="ocs-storagecluster-ceph-rbd-virtualization"
+    ACCESS_MODE="ReadWriteMany"
+    log_info "✓ Using ODF storage: $STORAGE_CLASS (supports live migration)"
+elif oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi &>/dev/null; then
+    # Create gp3-csi-immediate for CDI imports (WaitForFirstConsumer causes issues)
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-immediate &>/dev/null; then
+        log_info "Creating gp3-csi-immediate storage class for CDI imports..."
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-csi-immediate
+  annotations:
+    storageclass.kubernetes.io/description: "AWS EBS gp3 with immediate binding for CDI imports"
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+  type: gp3
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+EOF
+    fi
+    STORAGE_CLASS="gp3-csi-immediate"
+    ACCESS_MODE="ReadWriteOnce"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (immediate binding for CDI)"
+elif oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi &>/dev/null; then
+    # Create gp2-csi-immediate for CDI imports
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-immediate &>/dev/null; then
+        log_info "Creating gp2-csi-immediate storage class for CDI imports..."
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp2-csi-immediate
+  annotations:
+    storageclass.kubernetes.io/description: "AWS EBS gp2 with immediate binding for CDI imports"
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+  type: gp2
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+EOF
+    fi
+    STORAGE_CLASS="gp2-csi-immediate"
+    ACCESS_MODE="ReadWriteOnce"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (immediate binding for CDI)"
+else
+    # Fallback to default storage class
+    STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get storageclass -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}')
+    if [ -z "$STORAGE_CLASS" ]; then
+        log_error "No suitable storage class found"
+        exit 1
+    fi
+    ACCESS_MODE="ReadWriteOnce"
+    log_info "✓ Using default storage class: $STORAGE_CLASS"
+fi
+
+# Create DataVolume
+# Note: CDI importer doesn't properly support IRSA for S3, so we use HTTP with presigned URL
+log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
+PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region ${REGION})
+
+log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
 cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
@@ -187,29 +292,34 @@ metadata:
   name: windows
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   annotations:
-    cdi.kubevirt.io/storage.pod.serviceAccount: ${SERVICE_ACCOUNT_NAME}
+    cdi.kubevirt.io/storage.usePopulator: "false"
 spec:
   contentType: kubevirt
   source:
-    s3:
-      url: "https://s3.${REGION}.amazonaws.com/ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+    http:
+      url: "${PRESIGNED_URL}"
   storage:
+    accessModes:
+      - ${ACCESS_MODE}
     resources:
       requests:
         storage: 70Gi
-    storageClassName: ocs-storagecluster-ceph-rbd-virtualization
+    storageClassName: ${STORAGE_CLASS}
 EOF
-log_info "✓ DataVolume created (import starting)"
+log_info "✓ DataVolume created (import starting - this will take 5-10 minutes)"
 
 # Apply DataSource
 log_info "Creating DataSource (windows10-datasource)"
 oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/3_datasource-windows.yaml"
 log_info "✓ DataSource created"
 
-# Apply VM Template (to openshift namespace)
+# Apply VM Template with dynamic storage class substitution
 log_info "Creating Windows VM template in openshift namespace"
-oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/4_windows10-template.yaml"
-log_info "✓ VM Template created"
+# Use envsubst to replace STORAGE_CLASS placeholder in template
+export STORAGE_CLASS
+export ACCESS_MODE
+cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
+log_info "✓ VM Template created (using storage class: $STORAGE_CLASS)"
 
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
@@ -225,10 +335,11 @@ log_info "Monitor progress:"
 log_info "  oc get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -w"
 log_info ""
 log_info "Once complete, VMs will appear in OpenShift Console:"
-log_info "  Virtualization → Templates → Search for 'Windows 10 VM (OADP)'"
+log_info "  Virtualization → Catalog → BootableVolumes"
+log_info "  Or Virtualization → Templates (Project: openshift-virtualization-os-images)"
 log_info ""
 log_info "Or create from CLI:"
-log_info "  oc process -n openshift windows10-oadp-vm -p VM_NAME=my-vm -p VM_NAMESPACE=default | oc apply -f -"
+log_info "  oc process -n openshift-virtualization-os-images windows10-oadp-vm -p VM_NAME=my-vm -p VM_NAMESPACE=default | oc apply -f -"
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
 

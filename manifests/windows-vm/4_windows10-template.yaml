@@ -22,7 +22,7 @@ apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
   name: windows10-oadp-vm
-  namespace: openshift
+  namespace: openshift-virtualization-os-images
   labels:
     template.kubevirt.io/type: base
     template.kubevirt.io/default-os-variant: "true"
@@ -76,7 +76,7 @@ objects:
       labels:
         app: ${VM_NAME}
         vm.kubevirt.io/template: windows10-oadp-vm
-        vm.kubevirt.io/template.namespace: openshift
+        vm.kubevirt.io/template.namespace: openshift-virtualization-os-images
         vm.kubevirt.io/template.revision: "1"
         vm.kubevirt.io/template.version: v0.27.0
         vm.kubevirt.io/os: windows10
@@ -94,7 +94,7 @@ objects:
               resources:
                 requests:
                   storage: 70Gi
-              storageClassName: ocs-storagecluster-ceph-rbd-virtualization
+              storageClassName: ${STORAGE_CLASS}
       template:
         metadata:
           annotations:
