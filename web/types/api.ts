@@ -5,6 +5,12 @@ export enum Platform {
   IBMCloud = "ibmcloud",
 }
 
+export enum ClusterType {
+  OpenShift = "openshift",
+  EKS = "eks",
+  IKS = "iks",
+}
+
 export enum ClusterStatus {
   PENDING = "PENDING",
   CREATING = "CREATING",
@@ -227,7 +233,11 @@ export interface Profile {
   description: string;
   platform: Platform;
   enabled: boolean;
-  openshift_versions: {
+  openshift_versions?: {
+    allowed: string[];
+    default: string;
+  };
+  kubernetes_versions?: {
     allowed: string[];
     default: string;
   };
@@ -235,7 +245,7 @@ export interface Profile {
     allowed: string[];
     default: string;
   };
-  base_domains: {
+  base_domains?: {
     allowed: string[];
     default: string;
   };
