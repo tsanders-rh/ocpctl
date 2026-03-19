@@ -12,27 +12,32 @@ interface DeploymentLogsProps {
   clusterId: string;
   jobId?: string;
   clusterStatus?: string;
+  hasActiveJobs?: boolean; // Added to know if any jobs are running
 }
 
 export function DeploymentLogs({
   clusterId,
   jobId,
   clusterStatus,
+  hasActiveJobs = false,
 }: DeploymentLogsProps) {
-  // Only enable auto-scroll if cluster is actively deploying
+  // Only enable auto-scroll if cluster is actively deploying or has active jobs
   const [autoScroll, setAutoScroll] = useState(
-    clusterStatus !== "READY" && clusterStatus !== "FAILED"
+    (clusterStatus !== "READY" && clusterStatus !== "FAILED") || hasActiveJobs
   );
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [accumulatedLogs, setAccumulatedLogs] = useState<DeploymentLog[]>([]);
   const [lastSequence, setLastSequence] = useState(0);
   const [isInitialLoad, setIsInitialLoad] = useState(
-    clusterStatus !== "READY" && clusterStatus !== "FAILED"
+    (clusterStatus !== "READY" && clusterStatus !== "FAILED") || hasActiveJobs
   );
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Determine if we should poll based on cluster status
-  const isActive = clusterStatus === "CREATING" || clusterStatus === "DESTROYING";
+  // Determine if we should poll based on cluster status or active jobs
+  const isActive =
+    clusterStatus === "CREATING" ||
+    clusterStatus === "DESTROYING" ||
+    hasActiveJobs; // Also poll when jobs are running (e.g., POST_CONFIGURE)
   const refreshInterval = isActive ? 2000 : false; // Poll every 2 seconds if active
 
   const { data, isLoading, error } = useDeploymentLogs(clusterId, {

@@ -890,6 +890,11 @@ export default function ClusterDetailPage() {
         <DeploymentLogs
           clusterId={cluster.id}
           clusterStatus={cluster.status}
+          hasActiveJobs={
+            jobsData?.data?.some((job) =>
+              ["PENDING", "RUNNING", "RETRYING"].includes(job.status)
+            ) || false
+          }
         />
       )}
 
