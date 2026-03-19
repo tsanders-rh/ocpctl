@@ -35,7 +35,24 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		return fmt.Errorf("get cluster: %w", err)
 	}
 
-	log.Printf("Destroying cluster %s (platform=%s)", cluster.Name, cluster.Platform)
+	log.Printf("Destroying cluster %s (platform=%s, cluster_type=%s)", cluster.Name, cluster.Platform, cluster.ClusterType)
+
+	// Route to appropriate handler based on cluster type
+	switch cluster.ClusterType {
+	case types.ClusterTypeOpenShift:
+		return h.handleOpenShiftDestroy(ctx, job, cluster)
+	case types.ClusterTypeEKS:
+		return h.handleEKSDestroy(ctx, job, cluster)
+	case types.ClusterTypeIKS:
+		return h.handleIKSDestroy(ctx, job, cluster)
+	default:
+		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
+	}
+}
+
+// handleOpenShiftDestroy handles OpenShift cluster destruction
+func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting OpenShift cluster destruction for %s", cluster.Name)
 
 	// Work directory should still exist from creation
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
@@ -244,4 +261,93 @@ func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
 			}
 		}
 	}
+}
+
+// handleEKSDestroy handles EKS cluster destruction
+func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting EKS cluster destruction for %s", cluster.Name)
+
+	// Create EKS installer
+	eksInstaller := installer.NewEKSInstaller()
+
+	// Run eksctl delete cluster
+	log.Printf("Running eksctl delete cluster for %s in region %s", cluster.Name, cluster.Region)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer destroyCancel()
+
+	output, err := eksInstaller.DestroyCluster(destroyCtx, cluster.Name, cluster.Region)
+	if err != nil {
+		log.Printf("EKS cluster destruction failed: %v\nOutput: %s", err, output)
+		// Mark as failed but don't return error - cluster resources may be partially destroyed
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to FAILED: %v", updateErr)
+		}
+		return fmt.Errorf("eksctl delete cluster: %w", err)
+	}
+
+	log.Printf("EKS cluster %s destroyed successfully", cluster.Name)
+
+	// Mark cluster as destroyed
+	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("mark cluster destroyed: %w", err)
+	}
+
+	// Clean up work directory
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Printf("Warning: failed to remove work directory: %v", err)
+	}
+
+	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
+	return nil
+}
+
+// handleIKSDestroy handles IKS cluster destruction
+func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting IKS cluster destruction for %s", cluster.Name)
+
+	// Create IKS installer
+	iksInstaller := installer.NewIKSInstaller()
+
+	// Get IBM Cloud API key from environment
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey == "" {
+		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
+	}
+
+	// Login to IBM Cloud
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+		return fmt.Errorf("IBM Cloud login: %w", err)
+	}
+
+	// Run ibmcloud ks cluster rm
+	log.Printf("Running ibmcloud ks cluster rm for %s", cluster.Name)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer destroyCancel()
+
+	output, err := iksInstaller.DestroyCluster(destroyCtx, cluster.Name)
+	if err != nil {
+		log.Printf("IKS cluster destruction failed: %v\nOutput: %s", err, output)
+		// Mark as failed but don't return error - cluster resources may be partially destroyed
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to FAILED: %v", updateErr)
+		}
+		return fmt.Errorf("ibmcloud ks cluster rm: %w", err)
+	}
+
+	log.Printf("IKS cluster %s destroyed successfully", cluster.Name)
+
+	// Mark cluster as destroyed
+	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("mark cluster destroyed: %w", err)
+	}
+
+	// Clean up work directory
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Printf("Warning: failed to remove work directory: %v", err)
+	}
+
+	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
+	return nil
 }
