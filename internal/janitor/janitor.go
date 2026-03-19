@@ -553,23 +553,30 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			continue
 		}
 
-		// Check for existing pending/running jobs of this type
-		existingJobs, err := j.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, jobType)
+		// Check for ANY active jobs on this cluster
+		// We don't want to hibernate/resume while other jobs are running (POST_CONFIGURE, etc.)
+		allJobs, err := j.store.Jobs.ListByClusterID(ctx, cluster.ID)
 		if err != nil {
-			log.Printf("Failed to check for existing %s jobs for cluster %s: %v", action, cluster.Name, err)
+			log.Printf("Failed to check for active jobs for cluster %s: %v", cluster.Name, err)
 			continue
 		}
 
 		hasActiveJob := false
-		for _, job := range existingJobs {
-			if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning {
+		var activeJobType types.JobType
+		for _, job := range allJobs {
+			if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning || job.Status == types.JobStatusRetrying {
 				hasActiveJob = true
+				activeJobType = job.JobType
 				break
 			}
 		}
 
 		if hasActiveJob {
-			log.Printf("Cluster %s already has a pending/running %s job, skipping", cluster.Name, action)
+			log.Printf("[Work Hours Action] Cluster %s has active %s job, skipping %s", cluster.Name, activeJobType, action)
+			// Update check timestamp so we don't spam logs
+			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+			}
 			continue
 		}
 
