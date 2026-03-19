@@ -111,9 +111,6 @@ objects:
                 - name: rootdisk
                   disk:
                     bus: virtio
-                - name: cloudinitdisk
-                  disk:
-                    bus: virtio
               interfaces:
                 - name: default
                   masquerade: {}
@@ -155,25 +152,6 @@ objects:
             - name: rootdisk
               dataVolume:
                 name: ${VM_NAME}-disk
-            - name: cloudinitdisk
-              cloudInitNoCloud:
-                userDataSecretRef:
-                  name: ${VM_NAME}-cloudinit
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${VM_NAME}-cloudinit
-      namespace: ${VM_NAMESPACE}
-    type: Opaque
-    stringData:
-      userdata: |
-        #cloud-config
-        # Windows cloud-init configuration
-        # This is processed by cloudbase-init on first boot
-        #
-        # Note: The Windows image must have cloudbase-init installed
-        # for this configuration to take effect
-        hostname: ${VM_NAME}
 
 parameters:
   - name: VM_NAME
