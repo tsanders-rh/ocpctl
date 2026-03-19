@@ -74,7 +74,6 @@ objects:
       name: ${VM_NAME}
       namespace: ${VM_NAMESPACE}
       labels:
-        app: ${VM_NAME}
         vm.kubevirt.io/template: windows10-oadp-vm
         vm.kubevirt.io/template.namespace: openshift-virtualization-os-images
         vm.kubevirt.io/template.revision: "1"
@@ -101,9 +100,6 @@ objects:
             vm.kubevirt.io/flavor: medium
             vm.kubevirt.io/os: windows10
             vm.kubevirt.io/workload: desktop
-          labels:
-            kubevirt.io/vm: ${VM_NAME}
-            vm.kubevirt.io/name: ${VM_NAME}
         spec:
           domain:
             cpu:
