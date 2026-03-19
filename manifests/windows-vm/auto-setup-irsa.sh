@@ -186,18 +186,18 @@ kind: DataVolume
 metadata:
   name: windows
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  annotations:
+    cdi.kubevirt.io/storage.pod.serviceAccount: ${SERVICE_ACCOUNT_NAME}
 spec:
   contentType: kubevirt
   source:
     s3:
-      url: "s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+      url: "https://s3.${REGION}.amazonaws.com/ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
   storage:
     resources:
       requests:
         storage: 70Gi
     storageClassName: ocs-storagecluster-ceph-rbd-virtualization
-  pvc:
-    serviceAccountName: ${SERVICE_ACCOUNT_NAME}
 EOF
 log_info "✓ DataVolume created (import starting)"
 

@@ -1,6 +1,6 @@
 name: aws-virt-windows-minimal
-displayName: AWS OpenShift Virtualization (Minimal Windows Testing)
-description: Minimal viable OpenShift Virtualization setup for Windows VM testing with single metal worker and automated S3-backed Windows image deployment. Supports 10-15 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$2,400/month.
+displayName: AWS OpenShift Virtualization (HA Windows Testing)
+description: High-availability OpenShift Virtualization setup for Windows VM testing with dual metal workers and automated S3-backed Windows image deployment. Supports 25-30 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$4,868/month.
 platform: aws
 enabled: true
 
@@ -38,9 +38,9 @@ compute:
     instanceType: m6i.xlarge
     schedulable: false
   workers:
-    replicas: 1
-    minReplicas: 1
-    maxReplicas: 1
+    replicas: 2
+    minReplicas: 2
+    maxReplicas: 2
     instanceType: m5zn.metal  # Cheapest metal instance for nested virtualization
     autoscaling: false
 
@@ -76,10 +76,10 @@ features:
   privateCluster: false
 
 costControls:
-  estimatedHourlyCost: 4.54
-  maxMonthlyCost: 3300    # Always-on monthly cost
+  estimatedHourlyCost: 9.08    # 2 workers x $4.54/hr
+  maxMonthlyCost: 6538         # Always-on monthly cost
   budgetAlertThreshold: 0.7
-  warningMessage: "Metal instances cost $4.54/hr ($3,269/month). Enable work hours hibernation to reduce to ~$835/month."
+  warningMessage: "2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours hibernation to reduce to ~$1,670/month."
 
 platformConfig:
   aws:
@@ -111,15 +111,17 @@ postDeployment:
 
 metadata:
   capabilities:
-    - OpenShift Virtualization
+    - OpenShift Virtualization (HA)
     - Windows VM support (10, 11, Server 2019/2022)
     - Nested virtualization
-    - Up to 10-15 concurrent Windows VMs
+    - Up to 25-30 concurrent Windows VMs
+    - Live migration support
+    - High availability for VMs
   capacity:
-    maxConcurrentVMs: 15
+    maxConcurrentVMs: 30
     recommendedVMSize: 4vCPU-8GB
-    totalWorkerCPU: 48
-    totalWorkerRAM: 192
+    totalWorkerCPU: 96         # 2 workers x 48 cores
+    totalWorkerRAM: 384        # 2 workers x 192 GB
   notes:
     - "Metal instances take 15-20 minutes to provision (vs 5-10 for standard instances)"
     - "Hibernation start time may be 5-10 minutes due to larger EBS volumes"
@@ -128,6 +130,7 @@ metadata:
     - "Windows VM infrastructure fully automated - IRSA setup runs automatically during post-deployment"
     - "Windows 10 image source: s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 (23GB)"
     - "Image import starts automatically (5-10 min), Windows VMs ready after cluster creation"
-    - "500GB storage supports ~10-12 Windows VM images (40-50GB each)"
+    - "500GB storage per worker supports ~10-12 Windows VM images per node (40-50GB each)"
     - "IRSA provides secure, credential-free S3 access (no static credentials stored in cluster)"
     - "Per-cluster IAM roles created automatically for isolation and security"
+    - "2 workers enable: VM live migration, pod anti-affinity, full CNV operator HA, and no IPAM controller issues"

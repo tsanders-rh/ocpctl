@@ -42,15 +42,16 @@ export default function AdminDashboardPage() {
   // Color mapping for status (both legend and chart)
   const statusConfig = {
     READY: { chart: "emerald", legend: "bg-emerald-500" },
+    CREATING: { chart: "cyan", legend: "bg-cyan-500" },
     DESTROYING: { chart: "amber", legend: "bg-amber-500" },
-    HIBERNATED: { chart: "gray", legend: "bg-slate-500" },
+    HIBERNATED: { chart: "slate", legend: "bg-slate-500" },
     PROVISIONING: { chart: "blue", legend: "bg-blue-500" },
     FAILED: { chart: "red", legend: "bg-red-500" },
     UNKNOWN: { chart: "violet", legend: "bg-violet-500" },
   } as const;
 
   // Sort data in consistent order for color mapping
-  const statusOrder = ["READY", "DESTROYING", "HIBERNATED", "PROVISIONING", "FAILED", "UNKNOWN"];
+  const statusOrder = ["READY", "CREATING", "DESTROYING", "HIBERNATED", "PROVISIONING", "FAILED", "UNKNOWN"];
   const statusChartData = clusterStats?.clusters_by_status
     ?.map((item) => ({
       name: item.status,
