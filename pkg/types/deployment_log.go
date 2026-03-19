@@ -9,6 +9,7 @@ const (
 	DeploymentLogSourceInstaller  DeploymentLogSource = "installer"  // openshift-install CLI output
 	DeploymentLogSourceWorker     DeploymentLogSource = "worker"     // ocpctl worker logs
 	DeploymentLogSourceTerraform  DeploymentLogSource = "terraform"  // future: terraform output
+	DeploymentLogSourceScript     DeploymentLogSource = "script"     // post-deployment script output
 )
 
 // DeploymentLogLevel represents the severity level of a log entry
