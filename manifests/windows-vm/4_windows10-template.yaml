@@ -8,31 +8,65 @@
 # VM Specifications:
 # - 4 vCPUs
 # - 8Gi RAM
-# - 70Gi disk (cloned from windows DataSource)
+# - 70Gi disk (cloned from windows10-datasource)
 # - VirtIO drivers for optimal performance
 #
 # Creating a VM from this template:
-#   oc process windows10-template -p VM_NAME=windows-vm1 | oc apply -f -
+#   oc process windows10-oadp-vm -p VM_NAME=windows-vm1 -p VM_NAMESPACE=default | oc apply -f -
 #
 # Template Parameters:
-# - VM_NAME: Name for the VM instance (default: windows10-vm)
+# - VM_NAME: Name for the VM instance (auto-generated if not specified)
 # - VM_NAMESPACE: Namespace to create the VM in (default: default)
 #
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
-  name: windows10-template
-  namespace: openshift-virtualization-os-images
+  name: windows10-oadp-vm
+  namespace: openshift
+  labels:
+    template.kubevirt.io/type: base
+    template.kubevirt.io/default-os-variant: "true"
+    os.template.kubevirt.io/win10: "true"
+    workload.template.kubevirt.io/desktop: "true"
+    flavor.template.kubevirt.io/medium: "true"
+    template.kubevirt.io/architecture: amd64
+    template.kubevirt.io/version: v0.27.0
+    app.kubernetes.io/component: templating
+    app.kubernetes.io/managed-by: ocpctl
+    app.kubernetes.io/name: windows10-oadp-template
   annotations:
     openshift.io/display-name: "Windows 10 VM (OADP)"
+    openshift.io/documentation-url: "https://github.com/tsanders-rh/ocpctl"
     description: >-
       Template for creating Windows 10 VMs for OADP migration testing.
-      The VM uses a pre-configured Windows 10 image with OADP test applications.
-    tags: "virtualization,windows,oadp"
+      The VM uses a pre-configured Windows 10 image optimized for backup and restore operations.
+    tags: "kubevirt,virtualmachine,windows,oadp"
     iconClass: "icon-windows"
-    openshift.io/provider-display-name: "Red Hat, Inc."
-    openshift.io/documentation-url: "https://github.com/tsanders-rh/ocpctl"
-    openshift.io/support-url: "https://github.com/tsanders-rh/ocpctl/issues"
+    template.openshift.io/bindable: "false"
+    template.kubevirt.io/editable: |
+      /objects[0].spec.template.spec.domain.cpu.cores
+      /objects[0].spec.template.spec.domain.memory.guest
+      /objects[0].spec.template.spec.domain.devices.disks
+      /objects[0].spec.template.spec.volumes
+      /objects[0].spec.template.spec.networks
+    defaults.template.kubevirt.io/disk: rootdisk
+    defaults.template.kubevirt.io/network: default
+    validations: |
+      [
+        {
+          "name": "minimal-required-memory",
+          "path": "jsonpath::.spec.domain.memory.guest",
+          "rule": "integer",
+          "message": "This VM requires more memory.",
+          "min": 2147483648
+        }
+      ]
+    name.os.template.kubevirt.io/win10: Microsoft Windows 10
+    openshift.io/provider-display-name: "ocpctl"
+    openshift.kubevirt.io/pronounceable-suffix-for-name-expression: "true"
+    template.kubevirt.io/provider: "ocpctl"
+    template.kubevirt.io/provider-support-level: "Community"
+    template.kubevirt.io/provider-url: "https://github.com/tsanders-rh/ocpctl"
 objects:
   - apiVersion: kubevirt.io/v1
     kind: VirtualMachine
@@ -41,27 +75,32 @@ objects:
       namespace: ${VM_NAMESPACE}
       labels:
         app: ${VM_NAME}
-        vm.kubevirt.io/template: windows10-template
+        vm.kubevirt.io/template: windows10-oadp-vm
+        vm.kubevirt.io/template.namespace: openshift
+        vm.kubevirt.io/template.revision: "1"
+        vm.kubevirt.io/template.version: v0.27.0
         vm.kubevirt.io/os: windows10
-        workload.template.kubevirt.io/server: "true"
     spec:
       running: false
       dataVolumeTemplates:
         - metadata:
             name: ${VM_NAME}-disk
           spec:
+            sourceRef:
+              kind: DataSource
+              name: windows10-datasource
+              namespace: openshift-virtualization-os-images
             storage:
               resources:
                 requests:
                   storage: 70Gi
               storageClassName: ocs-storagecluster-ceph-rbd-virtualization
-            source:
-              pvc:
-                # Clone from the windows DataSource in openshift-virtualization-os-images
-                name: windows
-                namespace: openshift-virtualization-os-images
       template:
         metadata:
+          annotations:
+            vm.kubevirt.io/flavor: medium
+            vm.kubevirt.io/os: windows10
+            vm.kubevirt.io/workload: desktop
           labels:
             kubevirt.io/vm: ${VM_NAME}
             vm.kubevirt.io/name: ${VM_NAME}
@@ -143,7 +182,8 @@ objects:
 parameters:
   - name: VM_NAME
     description: "Name of the Virtual Machine"
-    value: "windows10-vm"
+    generate: expression
+    from: "windows-[a-z0-9]{6}"
     required: true
   - name: VM_NAMESPACE
     description: "Namespace to create the VM in"

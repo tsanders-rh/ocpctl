@@ -202,12 +202,12 @@ EOF
 log_info "✓ DataVolume created (import starting)"
 
 # Apply DataSource
-log_info "Creating DataSource"
+log_info "Creating DataSource (windows10-datasource)"
 oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/3_datasource-windows.yaml"
 log_info "✓ DataSource created"
 
-# Apply VM Template
-log_info "Creating Windows VM template"
+# Apply VM Template (to openshift namespace)
+log_info "Creating Windows VM template in openshift namespace"
 oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/4_windows10-template.yaml"
 log_info "✓ VM Template created"
 
@@ -224,9 +224,11 @@ log_info "Windows image download started (5-10 minutes)"
 log_info "Monitor progress:"
 log_info "  oc get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -w"
 log_info ""
-log_info "Once complete, create Windows VMs:"
-log_info "  oc process windows10-template -n $SERVICE_ACCOUNT_NAMESPACE \\"
-log_info "    -p VM_NAME=my-windows-vm | oc apply -f -"
+log_info "Once complete, VMs will appear in OpenShift Console:"
+log_info "  Virtualization → Templates → Search for 'Windows 10 VM (OADP)'"
+log_info ""
+log_info "Or create from CLI:"
+log_info "  oc process -n openshift windows10-oadp-vm -p VM_NAME=my-vm -p VM_NAMESPACE=default | oc apply -f -"
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
 
