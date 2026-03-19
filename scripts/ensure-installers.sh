@@ -121,11 +121,90 @@ ensure_binary() {
     return 1
 }
 
+ensure_eksctl() {
+    local binary_path="${INSTALL_DIR}/eksctl"
+
+    # Check if already installed
+    if [ -f "${binary_path}" ]; then
+        log "✓ eksctl already installed"
+        return 0
+    fi
+
+    log "Installing eksctl..."
+    local tmp_dir=$(mktemp -d)
+
+    # Download from GitHub releases
+    local download_url="https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
+
+    if curl -sL "${download_url}" | tar xzf - -C "${tmp_dir}"; then
+        if [ -f "${tmp_dir}/eksctl" ]; then
+            mv "${tmp_dir}/eksctl" "${binary_path}"
+            chmod +x "${binary_path}"
+            rm -rf "${tmp_dir}"
+            log "✓ Installed eksctl"
+            return 0
+        else
+            log "✗ eksctl binary not found in tarball"
+            rm -rf "${tmp_dir}"
+            return 1
+        fi
+    else
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to download eksctl"
+        return 1
+    fi
+}
+
+ensure_ibmcloud() {
+    local binary_path="${INSTALL_DIR}/ibmcloud"
+
+    # Check if already installed
+    if [ -f "${binary_path}" ]; then
+        log "✓ ibmcloud already installed"
+        return 0
+    fi
+
+    log "Installing IBM Cloud CLI..."
+    local tmp_dir=$(mktemp -d)
+
+    # Download from IBM Cloud (using a recent stable version)
+    local download_url="https://download.clis.cloud.ibm.com/ibm-cloud-cli/2.24.0/IBM_Cloud_CLI_2.24.0_linux_amd64.tar.gz"
+
+    if curl -sL "${download_url}" | tar xzf - -C "${tmp_dir}"; then
+        # IBM Cloud CLI extracts to a subdirectory
+        if [ -f "${tmp_dir}/Bluemix_CLI/bin/ibmcloud" ]; then
+            mv "${tmp_dir}/Bluemix_CLI/bin/ibmcloud" "${binary_path}"
+            chmod +x "${binary_path}"
+            rm -rf "${tmp_dir}"
+            log "✓ Installed IBM Cloud CLI"
+
+            # Install container-service plugin
+            log "Installing IBM Cloud container-service plugin..."
+            if "${binary_path}" plugin install container-service -f 2>/dev/null; then
+                log "✓ Installed container-service plugin"
+            else
+                log "WARNING: Failed to install container-service plugin (non-fatal)"
+            fi
+
+            return 0
+        else
+            log "✗ ibmcloud binary not found in tarball"
+            rm -rf "${tmp_dir}"
+            return 1
+        fi
+    else
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to download IBM Cloud CLI"
+        return 1
+    fi
+}
+
 main() {
-    log "Ensuring required OpenShift installer binaries..."
+    log "Ensuring required installer binaries..."
 
     local failed=0
 
+    # OpenShift installers
     for version in "${REQUIRED_VERSIONS[@]}"; do
         if ! ensure_binary "${version}" "openshift-install"; then
             log "ERROR: Failed to ensure openshift-install ${version}"
@@ -152,6 +231,17 @@ main() {
             break
         fi
     done
+
+    # EKS and IKS installers
+    if ! ensure_eksctl; then
+        log "WARNING: Failed to ensure eksctl (non-fatal)"
+        # Don't fail - only needed for EKS clusters
+    fi
+
+    if ! ensure_ibmcloud; then
+        log "WARNING: Failed to ensure ibmcloud CLI (non-fatal)"
+        # Don't fail - only needed for IKS clusters
+    fi
 
     if [ $failed -eq 1 ]; then
         log "ERROR: Failed to ensure all required binaries"
