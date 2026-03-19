@@ -426,7 +426,7 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 	}
 
 	// Check if max attempts reached
-	if job.Attempt+1 >= job.MaxAttempts {
+	if job.Attempt >= job.MaxAttempts {
 		log.Printf("Job %s reached max attempts (%d), marking as failed", job.ID, job.MaxAttempts)
 
 		// Mark job as permanently failed
@@ -442,7 +442,7 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		}
 	} else {
 		// Schedule retry
-		log.Printf("Job %s will be retried (attempt %d/%d)", job.ID, job.Attempt+1, job.MaxAttempts)
+		log.Printf("Job %s will be retried (attempt %d/%d)", job.ID, job.Attempt, job.MaxAttempts)
 
 		// For CREATE jobs, clean up partial infrastructure before retry
 		if job.JobType == types.JobTypeCreate {

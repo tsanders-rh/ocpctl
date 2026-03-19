@@ -326,6 +326,9 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="text-sm text-muted-foreground">
+            • View infrastructure: <a href="/admin/infrastructure" className="text-blue-600 hover:underline">Infrastructure Status</a>
+          </div>
+          <div className="text-sm text-muted-foreground">
             • Manage users: <a href="/admin/users" className="text-blue-600 hover:underline">User Management</a>
           </div>
           <div className="text-sm text-muted-foreground">

@@ -247,6 +247,10 @@ func (s *Server) setupRoutes() {
 	jobsGroup := v1.Group("/jobs", auth.RequireAuthDual(s.auth, s.iamAuth))
 	jobsGroup.GET("", jobHandler.List)
 	jobsGroup.GET("/:id", jobHandler.Get)
+
+	// System/Infrastructure routes (admin only)
+	systemHandler := NewSystemHandler(s.store, s.config.Version)
+	adminGroup.GET("/system/infrastructure", systemHandler.GetInfrastructure)
 }
 
 // healthCheck returns basic health status

@@ -227,7 +227,7 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 				ClusterID:   cluster.ID,
 				JobType:     types.JobTypePostConfigure,
 				Status:      types.JobStatusPending,
-				Attempt:     0,
+				Attempt:     1,
 				MaxAttempts: 3,
 			}
 

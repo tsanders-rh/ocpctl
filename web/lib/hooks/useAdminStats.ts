@@ -9,3 +9,12 @@ export function useClusterStatistics() {
     refetchInterval: 60 * 1000, // Refresh every minute
   });
 }
+
+export function useInfrastructure() {
+  return useQuery({
+    queryKey: ["admin", "infrastructure"],
+    queryFn: () => adminApi.getInfrastructure(),
+    staleTime: 10 * 1000, // 10 seconds
+    refetchInterval: 10 * 1000, // Refresh every 10 seconds
+  });
+}

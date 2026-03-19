@@ -228,6 +228,29 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Set initial post_deploy_status based on profile configuration
+	// This prevents hibernation from blocking clusters that don't have post-deployment config
+	prof, err := h.registry.Get(req.Profile)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to load profile: %w", err))
+	}
+
+	hasPostDeployment := prof.PostDeployment != nil && (
+		len(prof.PostDeployment.Operators) > 0 ||
+		len(prof.PostDeployment.Scripts) > 0 ||
+		len(prof.PostDeployment.Manifests) > 0 ||
+		len(prof.PostDeployment.HelmCharts) > 0)
+
+	if req.SkipPostDeployment || !hasPostDeployment {
+		// No post-deployment needed - set to 'skipped' so hibernation works immediately
+		skipped := "skipped"
+		cluster.PostDeployStatus = &skipped
+	} else {
+		// Post-deployment will run - set to 'pending' to block hibernation until complete
+		pending := "pending"
+		cluster.PostDeployStatus = &pending
+	}
+
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create cluster: %w", err))
 	}
@@ -240,7 +263,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		Status:      types.JobStatusPending,
 		Metadata:    types.JobMetadata{},
 		MaxAttempts: 3,
-		Attempt:     0,
+		Attempt:     1,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -258,7 +281,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			Status:      types.JobStatusPending,
 			Metadata:    types.JobMetadata{},
 			MaxAttempts: 3,
-			Attempt:     0,
+			Attempt:     1,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 		}
@@ -495,7 +518,7 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		Status:      types.JobStatusPending,
 		Metadata:    types.JobMetadata{},
 		MaxAttempts: 3,
-		Attempt:     0,
+		Attempt:     1,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -745,7 +768,7 @@ func (h *ClusterHandler) Hibernate(c echo.Context) error {
 		ClusterID:   cluster.ID,
 		JobType:     types.JobTypeHibernate,
 		Status:      types.JobStatusPending,
-		Attempt:     0,
+		Attempt:     1,
 		MaxAttempts: 3,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -921,7 +944,7 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 		ClusterID:   cluster.ID,
 		JobType:     types.JobTypeResume,
 		Status:      types.JobStatusPending,
-		Attempt:     0,
+		Attempt:     1,
 		MaxAttempts: 3,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),

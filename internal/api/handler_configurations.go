@@ -117,7 +117,7 @@ func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 		ClusterID:   clusterID,
 		JobType:     types.JobTypePostConfigure,
 		Status:      types.JobStatusPending,
-		Attempt:     0,
+		Attempt:     1,
 		MaxAttempts: 3,
 		Metadata: types.JobMetadata{
 			"retry_config_id": configID,
@@ -188,7 +188,7 @@ func (h *ConfigurationHandler) TriggerPostConfiguration(c echo.Context) error {
 		ClusterID:   clusterID,
 		JobType:     types.JobTypePostConfigure,
 		Status:      types.JobStatusPending,
-		Attempt:     0,
+		Attempt:     1,
 		MaxAttempts: 3,
 		Metadata: types.JobMetadata{
 			"manual_trigger": true,

@@ -150,7 +150,7 @@ func (h *StorageHandler) LinkToCluster(c echo.Context) error {
 		JobType:     types.JobTypeProvisionSharedStorage,
 		Status:      types.JobStatusPending,
 		MaxAttempts: 3,
-		Attempt:     0,
+		Attempt:     1,
 		Metadata: types.JobMetadata{
 			"target_cluster_id": targetCluster.ID,
 		},
@@ -265,7 +265,7 @@ func (h *StorageHandler) UnlinkStorage(c echo.Context) error {
 		JobType:     types.JobTypeUnlinkSharedStorage,
 		Status:      types.JobStatusPending,
 		MaxAttempts: 3,
-		Attempt:     0,
+		Attempt:     1,
 		Metadata: types.JobMetadata{
 			"storage_group_id": storageGroupID,
 		},
