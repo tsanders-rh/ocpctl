@@ -503,7 +503,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Run eksctl create cluster
 	configPath := filepath.Join(workDir, "eksctl-config.yaml")
-	output, err := eksInstaller.CreateCluster(ctx, configPath, logPath)
+	_, err = eksInstaller.CreateCluster(ctx, configPath, logPath)
 
 	// Stop log streaming after eksctl completes
 	streamCancel()
