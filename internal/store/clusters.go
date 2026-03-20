@@ -571,7 +571,7 @@ func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan ti
 // Ordered by last_work_hours_check ASC NULLS FIRST for efficient processing
 func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
-		SELECT DISTINCT c.id, c.name, c.platform, c.version, c.profile, c.region, c.base_domain,
+		SELECT DISTINCT c.id, c.name, c.platform, c.cluster_type, c.version, c.profile, c.region, c.base_domain,
 			c.owner, c.owner_id, c.team, c.cost_center, c.status, c.requested_by, c.ttl_hours,
 			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
 			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
