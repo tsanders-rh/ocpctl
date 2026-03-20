@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ExecutionPanel } from "@/components/clusters/ClusterForm/ExecutionPanel";
-import { Platform, type ValidationError } from "@/types/api";
+import { Platform, ClusterType, type ValidationError } from "@/types/api";
 import { ApiError } from "@/lib/api/client";
 import { AlertCircle, Clock } from "lucide-react";
 
@@ -41,6 +41,7 @@ export default function NewClusterPage() {
   const router = useRouter();
   const { user } = useAuthStore();
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>(Platform.AWS);
+  const [selectedClusterType, setSelectedClusterType] = useState<ClusterType>(ClusterType.OpenShift);
   const { data: profiles } = useProfiles(selectedPlatform);
   const createCluster = useCreateCluster();
   const [apiValidationErrors, setApiValidationErrors] = useState<ValidationError[]>([]);
@@ -56,6 +57,7 @@ export default function NewClusterPage() {
     resolver: zodResolver(createClusterSchema),
     defaultValues: {
       platform: Platform.AWS,
+      cluster_type: ClusterType.OpenShift,
       owner: user?.email || "",
       team: "Migration Feature Team",
       cost_center: "733",
@@ -98,12 +100,24 @@ export default function NewClusterPage() {
   // Update form defaults when profile changes
   useEffect(() => {
     if (selectedProfile) {
-      setValue("version", selectedProfile.openshift_versions.default);
+      // Set version based on cluster type
+      const defaultVersion = watchedValues.cluster_type === "openshift"
+        ? selectedProfile.openshift_versions?.default
+        : selectedProfile.kubernetes_versions?.default;
+      if (defaultVersion) {
+        setValue("version", defaultVersion);
+      }
+
       setValue("region", selectedProfile.regions.default);
-      setValue("base_domain", selectedProfile.base_domains.default);
+
+      // Only set base_domain for OpenShift clusters
+      if (watchedValues.cluster_type === "openshift" && selectedProfile.base_domains?.default) {
+        setValue("base_domain", selectedProfile.base_domains.default);
+      }
+
       setValue("ttl_hours", selectedProfile.lifecycle.default_ttl_hours);
     }
-  }, [selectedProfile, setValue]);
+  }, [selectedProfile, setValue, watchedValues.cluster_type]);
 
   const onSubmit = async (data: CreateClusterFormData) => {
     // Clear previous errors
@@ -163,7 +177,7 @@ export default function NewClusterPage() {
       <div>
         <h1 className="text-3xl font-bold">Create Cluster</h1>
         <p className="text-muted-foreground">
-          Request a new OpenShift cluster
+          Request a new Kubernetes cluster (OpenShift, EKS, or IKS)
         </p>
       </div>
 
@@ -205,6 +219,32 @@ export default function NewClusterPage() {
                     <SelectItem value="ibmcloud">IBM Cloud</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cluster_type">Cluster Type</Label>
+                <Select
+                  value={watchedValues.cluster_type || ""}
+                  onValueChange={(value) => {
+                    setValue("cluster_type", value as ClusterType);
+                    setSelectedClusterType(value as ClusterType);
+                    setValue("profile", ""); // Reset profile when cluster type changes
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select cluster type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openshift">OpenShift</SelectItem>
+                    <SelectItem value="eks">Amazon EKS</SelectItem>
+                    <SelectItem value="iks">IBM Cloud IKS</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {watchedValues.cluster_type === "openshift" && "Red Hat OpenShift Container Platform"}
+                  {watchedValues.cluster_type === "eks" && "AWS Elastic Kubernetes Service (managed Kubernetes)"}
+                  {watchedValues.cluster_type === "iks" && "IBM Cloud Kubernetes Service (managed Kubernetes)"}
+                </p>
               </div>
             </div>
 
@@ -256,9 +296,11 @@ export default function NewClusterPage() {
                 )}
               </div>
 
-              {selectedProfile && selectedProfile.openshift_versions?.allowed && (
+              {selectedProfile && (selectedProfile.openshift_versions?.allowed || selectedProfile.kubernetes_versions?.allowed) && (
                 <div className="space-y-2">
-                  <Label htmlFor="version">OpenShift Version</Label>
+                  <Label htmlFor="version">
+                    {watchedValues.cluster_type === "openshift" ? "OpenShift Version" : "Kubernetes Version"}
+                  </Label>
                   <Select
                     value={watchedValues.version || ""}
                     onValueChange={(value) => setValue("version", value)}
@@ -267,7 +309,10 @@ export default function NewClusterPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedProfile.openshift_versions.allowed.map((version) => (
+                      {(watchedValues.cluster_type === "openshift"
+                        ? selectedProfile.openshift_versions?.allowed
+                        : selectedProfile.kubernetes_versions?.allowed
+                      )?.map((version) => (
                         <SelectItem key={version} value={version}>
                           {version}
                         </SelectItem>
@@ -305,24 +350,26 @@ export default function NewClusterPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="base_domain">Base Domain</Label>
-                  <Select
-                    value={watchedValues.base_domain || ""}
-                    onValueChange={(value) => setValue("base_domain", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedProfile.base_domains?.allowed?.map((domain) => (
-                        <SelectItem key={domain} value={domain}>
-                          {domain}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {watchedValues.cluster_type === "openshift" && selectedProfile.base_domains?.allowed && (
+                  <div className="space-y-2">
+                    <Label htmlFor="base_domain">Base Domain</Label>
+                    <Select
+                      value={watchedValues.base_domain || ""}
+                      onValueChange={(value) => setValue("base_domain", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedProfile.base_domains.allowed.map((domain) => (
+                          <SelectItem key={domain} value={domain}>
+                            {domain}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="owner">Owner Email</Label>

@@ -1,0 +1,99 @@
+name: iks-standard
+displayName: IBM Cloud IKS Standard Cluster
+description: Standard 4-node IKS cluster for development and integration testing
+platform: ibmcloud
+clusterType: iks
+enabled: true
+
+kubernetesVersions:
+  allowlist:
+    - "1.31"
+    - "1.30"
+    - "1.29"
+    - "1.28"
+  default: "1.30"
+
+regions:
+  allowlist:
+    - us-south
+    - us-east
+    - eu-gb
+    - eu-de
+    - jp-tok
+    - au-syd
+  default: us-south
+
+zones:
+  allowlist:
+    - dal10
+    - dal12
+    - dal13
+    - wdc04
+    - wdc06
+    - wdc07
+    - lon04
+    - lon05
+    - lon06
+    - fra02
+    - fra04
+    - fra05
+    - tok02
+    - tok04
+    - tok05
+    - syd01
+    - syd04
+    - syd05
+  default: dal10
+
+compute:
+  workers:
+    count: 4
+    machineType: bx2.8x32  # 8 vCPU, 32 GB RAM
+    publicVLAN: auto
+    privateVLAN: auto
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 72   # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: iks
+  allowUserTags: true
+
+features:
+  publicServiceEndpoint: true
+  privateServiceEndpoint: true  # Enable private endpoint for HA
+
+costControls:
+  estimatedHourlyCost: 1.12   # 4x bx2.8x32 workers (free control plane)
+  maxMonthlyCost: 806          # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  ibmcloud:
+    classicInfrastructure: true
+    dataCenter: dal10
+
+metadata:
+  capabilities:
+    - IBM Cloud IKS managed Kubernetes
+    - Free control plane (no charge for masters)
+    - Classic infrastructure with VLANs
+    - Public and private service endpoints
+    - High availability configuration
+  capacity:
+    totalWorkerCPU: 32        # 4 workers x 8 vCPU
+    totalWorkerRAM: 128       # 4 workers x 32 GB
+  notes:
+    - "IKS control plane is free (no hourly charge for master nodes)"
+    - "Workers are bx2.8x32 (8 vCPU, 32GB RAM) at ~$0.28/hour each"
+    - "Total: ~$1.12/hour or $806/month for always-on cluster"
+    - "Private service endpoint provides additional security and HA"
+    - "VLAN charges may apply depending on existing infrastructure"

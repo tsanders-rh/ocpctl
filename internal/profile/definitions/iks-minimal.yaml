@@ -1,0 +1,97 @@
+name: iks-minimal
+displayName: IBM Cloud IKS Minimal Cluster
+description: Minimal 2-node IKS cluster for development and testing
+platform: ibmcloud
+clusterType: iks
+enabled: true
+
+kubernetesVersions:
+  allowlist:
+    - "1.31"
+    - "1.30"
+    - "1.29"
+    - "1.28"
+  default: "1.30"
+
+regions:
+  allowlist:
+    - us-south
+    - us-east
+    - eu-gb
+    - eu-de
+    - jp-tok
+    - au-syd
+  default: us-south
+
+zones:
+  allowlist:
+    - dal10
+    - dal12
+    - dal13
+    - wdc04
+    - wdc06
+    - wdc07
+    - lon04
+    - lon05
+    - lon06
+    - fra02
+    - fra04
+    - fra05
+    - tok02
+    - tok04
+    - tok05
+    - syd01
+    - syd04
+    - syd05
+  default: dal10
+
+compute:
+  workers:
+    count: 2
+    machineType: bx2.4x16  # 4 vCPU, 16 GB RAM
+    publicVLAN: auto
+    privateVLAN: auto
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 48   # 2 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: iks
+  allowUserTags: true
+
+features:
+  publicServiceEndpoint: true
+  privateServiceEndpoint: false
+
+costControls:
+  estimatedHourlyCost: 0.28   # 2x bx2.4x16 workers (free control plane)
+  maxMonthlyCost: 202          # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  ibmcloud:
+    classicInfrastructure: true
+    dataCenter: dal10
+
+metadata:
+  capabilities:
+    - IBM Cloud IKS managed Kubernetes
+    - Free control plane (no charge for masters)
+    - Classic infrastructure with VLANs
+    - Public service endpoint
+  capacity:
+    totalWorkerCPU: 8         # 2 workers x 4 vCPU
+    totalWorkerRAM: 32        # 2 workers x 16 GB
+  notes:
+    - "IKS control plane is free (no hourly charge for master nodes)"
+    - "Workers are bx2.4x16 (4 vCPU, 16GB RAM) at ~$0.14/hour each"
+    - "Total: ~$0.28/hour or $202/month for always-on cluster"
+    - "VLAN charges may apply depending on existing infrastructure"

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Platform } from "@/types/api";
+import { Platform, ClusterType } from "@/types/api";
 
 export const createClusterSchema = z.object({
   name: z
@@ -10,10 +10,13 @@ export const createClusterSchema = z.object({
   platform: z.nativeEnum(Platform, {
     required_error: "Platform is required",
   }),
+  cluster_type: z.nativeEnum(ClusterType, {
+    required_error: "Cluster type is required",
+  }),
   version: z.string().min(1, "Version is required"),
   profile: z.string().min(1, "Profile is required"),
   region: z.string().min(1, "Region is required"),
-  base_domain: z.string().min(1, "Base domain is required"),
+  base_domain: z.string().optional(),
   owner: z.string().email("Invalid email address"),
   team: z.string().min(2, "Team name required (min 2 characters)"),
   cost_center: z.string().min(2, "Cost center required (min 2 characters)"),

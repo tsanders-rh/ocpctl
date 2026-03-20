@@ -8,10 +8,13 @@ type Profile struct {
 	DisplayName        string              `yaml:"displayName" validate:"required"`
 	Description        string              `yaml:"description" validate:"required"`
 	Platform           types.Platform      `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
+	ClusterType        types.ClusterType   `yaml:"clusterType,omitempty"`
 	Enabled            bool                `yaml:"enabled"`
-	OpenshiftVersions  VersionConfig       `yaml:"openshiftVersions" validate:"required"`
+	OpenshiftVersions  VersionConfig       `yaml:"openshiftVersions,omitempty"`
+	KubernetesVersions VersionConfig       `yaml:"kubernetesVersions,omitempty"`
 	Regions            RegionConfig        `yaml:"regions" validate:"required"`
-	BaseDomains        BaseDomainConfig    `yaml:"baseDomains" validate:"required"`
+	Zones              *ZoneConfig         `yaml:"zones,omitempty"`
+	BaseDomains        BaseDomainConfig    `yaml:"baseDomains,omitempty"`
 	Compute            ComputeConfig       `yaml:"compute" validate:"required"`
 	Lifecycle          LifecycleConfig     `yaml:"lifecycle" validate:"required"`
 	Networking         *NetworkingConfig   `yaml:"networking,omitempty"`
@@ -20,6 +23,7 @@ type Profile struct {
 	CostControls       CostControlsConfig  `yaml:"costControls"`
 	PlatformConfig     PlatformConfig      `yaml:"platformConfig"`
 	PostDeployment     *PostDeploymentConfig `yaml:"postDeployment,omitempty"`
+	Metadata           *MetadataConfig     `yaml:"metadata,omitempty"`
 }
 
 // VersionConfig defines OpenShift version constraints
@@ -34,6 +38,12 @@ type RegionConfig struct {
 	Default   string   `yaml:"default" json:"default" validate:"required"`
 }
 
+// ZoneConfig defines zone constraints (for IKS)
+type ZoneConfig struct {
+	Allowlist []string `yaml:"allowlist" json:"allowed" validate:"required,min=1"`
+	Default   string   `yaml:"default" json:"default" validate:"required"`
+}
+
 // BaseDomainConfig defines base domain constraints
 type BaseDomainConfig struct {
 	Allowlist []string `yaml:"allowlist" json:"allowed" validate:"required,min=1"`
@@ -42,8 +52,9 @@ type BaseDomainConfig struct {
 
 // ComputeConfig defines compute resource configuration
 type ComputeConfig struct {
-	ControlPlane ControlPlaneConfig `yaml:"controlPlane" json:"control_plane" validate:"required"`
-	Workers      WorkersConfig      `yaml:"workers" json:"workers" validate:"required"`
+	ControlPlane ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Workers      *WorkersConfig     `yaml:"workers,omitempty" json:"workers,omitempty"`
+	NodeGroups   []NodeGroupConfig  `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"` // For EKS
 }
 
 // ControlPlaneConfig defines control plane node configuration
@@ -58,8 +69,24 @@ type WorkersConfig struct {
 	Replicas     int    `yaml:"replicas" json:"replicas" validate:"min=0"`
 	MinReplicas  int    `yaml:"minReplicas" json:"min_replicas" validate:"min=0"`
 	MaxReplicas  int    `yaml:"maxReplicas" json:"max_replicas" validate:"gtefield=MinReplicas"`
-	InstanceType string `yaml:"instanceType" json:"instance_type" validate:"required"`
+	InstanceType string `yaml:"instanceType,omitempty" json:"instance_type,omitempty"`
 	Autoscaling  bool   `yaml:"autoscaling" json:"autoscaling"`
+	// IKS-specific fields
+	MachineType string `yaml:"machineType,omitempty" json:"machine_type,omitempty"`
+	Count       int    `yaml:"count,omitempty" json:"count,omitempty"`
+	PublicVLAN  string `yaml:"publicVLAN,omitempty" json:"public_vlan,omitempty"`
+	PrivateVLAN string `yaml:"privateVLAN,omitempty" json:"private_vlan,omitempty"`
+}
+
+// NodeGroupConfig defines EKS node group configuration
+type NodeGroupConfig struct {
+	Name            string `yaml:"name" json:"name" validate:"required"`
+	InstanceType    string `yaml:"instanceType" json:"instance_type" validate:"required"`
+	DesiredCapacity int    `yaml:"desiredCapacity" json:"desired_capacity" validate:"required,min=1"`
+	MinSize         int    `yaml:"minSize" json:"min_size" validate:"required,min=0"`
+	MaxSize         int    `yaml:"maxSize" json:"max_size" validate:"required,gtefield=DesiredCapacity"`
+	VolumeSize      int    `yaml:"volumeSize,omitempty" json:"volume_size,omitempty"`
+	VolumeType      string `yaml:"volumeType,omitempty" json:"volume_type,omitempty"`
 }
 
 // LifecycleConfig defines cluster lifecycle policies
@@ -72,10 +99,13 @@ type LifecycleConfig struct {
 
 // NetworkingConfig defines networking configuration
 type NetworkingConfig struct {
-	NetworkType     string                 `yaml:"networkType"`
-	ClusterNetworks []ClusterNetworkConfig `yaml:"clusterNetworks"`
-	ServiceNetwork  []string               `yaml:"serviceNetwork"`
-	MachineNetwork  []MachineNetworkConfig `yaml:"machineNetwork"`
+	NetworkType     string                 `yaml:"networkType,omitempty"`
+	ClusterNetworks []ClusterNetworkConfig `yaml:"clusterNetworks,omitempty"`
+	ServiceNetwork  []string               `yaml:"serviceNetwork,omitempty"`
+	MachineNetwork  []MachineNetworkConfig `yaml:"machineNetwork,omitempty"`
+	// EKS-specific fields
+	VpcCIDR    string `yaml:"vpcCIDR,omitempty" json:"vpc_cidr,omitempty"`
+	NatGateway string `yaml:"natGateway,omitempty" json:"nat_gateway,omitempty"` // "Single" or "HighlyAvailable"
 }
 
 // ClusterNetworkConfig defines cluster network CIDR
@@ -101,6 +131,11 @@ type FeaturesConfig struct {
 	OffHoursScaling bool `yaml:"offHoursScaling" json:"off_hours_scaling"`
 	FIPSMode        bool `yaml:"fipsMode" json:"fips_mode"`
 	PrivateCluster  bool `yaml:"privateCluster" json:"private_cluster"`
+	// EKS-specific
+	OidcProvider bool `yaml:"oidcProvider,omitempty" json:"oidc_provider,omitempty"`
+	// IKS-specific
+	PublicServiceEndpoint  bool `yaml:"publicServiceEndpoint,omitempty" json:"public_service_endpoint,omitempty"`
+	PrivateServiceEndpoint bool `yaml:"privateServiceEndpoint,omitempty" json:"private_service_endpoint,omitempty"`
 }
 
 // CostControlsConfig defines cost management settings
@@ -115,6 +150,7 @@ type CostControlsConfig struct {
 type PlatformConfig struct {
 	AWS      *AWSConfig      `yaml:"aws,omitempty"`
 	IBMCloud *IBMCloudConfig `yaml:"ibmcloud,omitempty"`
+	EKS      *EKSConfig      `yaml:"eks,omitempty"`
 }
 
 // AWSConfig contains AWS-specific settings
@@ -133,8 +169,17 @@ type AWSRootVolume struct {
 
 // IBMCloudConfig contains IBM Cloud-specific settings
 type IBMCloudConfig struct {
-	ResourceGroup string `yaml:"resourceGroup"`
-	VPCName       string `yaml:"vpcName"`
+	ResourceGroup         string `yaml:"resourceGroup"`
+	VPCName               string `yaml:"vpcName"`
+	ClassicInfrastructure bool   `yaml:"classicInfrastructure,omitempty"`
+	DataCenter            string `yaml:"dataCenter,omitempty"`
+}
+
+// EKSConfig contains EKS-specific settings
+type EKSConfig struct {
+	EnabledClusterLogTypes []string `yaml:"enabledClusterLogTypes,omitempty" json:"enabled_cluster_log_types,omitempty"`
+	PublicAccess           bool     `yaml:"publicAccess,omitempty" json:"public_access,omitempty"`
+	PrivateAccess          bool     `yaml:"privateAccess,omitempty" json:"private_access,omitempty"`
 }
 
 // PostDeploymentConfig defines automated post-deployment configuration
@@ -186,6 +231,13 @@ type HelmChartConfig struct {
 	Repo   string                 `yaml:"repo" json:"repo" validate:"required"`
 	Chart  string                 `yaml:"chart" json:"chart" validate:"required"`
 	Values map[string]interface{} `yaml:"values,omitempty" json:"values,omitempty"`
+}
+
+// MetadataConfig contains profile metadata for documentation
+type MetadataConfig struct {
+	Capabilities []string          `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Capacity     map[string]interface{} `yaml:"capacity,omitempty" json:"capacity,omitempty"`
+	Notes        []string          `yaml:"notes,omitempty" json:"notes,omitempty"`
 }
 
 // ReservedTagKeys are tag keys that cannot be overridden by users

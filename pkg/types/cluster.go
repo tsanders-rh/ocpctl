@@ -29,6 +29,15 @@ const (
 	PlatformIBMCloud Platform = "ibmcloud"
 )
 
+// ClusterType represents the type of Kubernetes cluster
+type ClusterType string
+
+const (
+	ClusterTypeOpenShift ClusterType = "openshift" // OpenShift (OCP/ROSA)
+	ClusterTypeEKS       ClusterType = "eks"       // AWS Elastic Kubernetes Service
+	ClusterTypeIKS       ClusterType = "iks"       // IBM Cloud Kubernetes Service
+)
+
 // Tags is a map of key-value pairs stored as JSONB
 type Tags map[string]string
 
@@ -71,6 +80,7 @@ type Cluster struct {
 	ID             string        `db:"id" json:"id"`
 	Name           string        `db:"name" json:"name"`
 	Platform       Platform      `db:"platform" json:"platform"`
+	ClusterType    ClusterType   `db:"cluster_type" json:"cluster_type"`
 	Version        string        `db:"version" json:"version"`
 	Profile        string        `db:"profile" json:"profile"`
 	Region         string        `db:"region" json:"region"`

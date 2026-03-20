@@ -1,0 +1,93 @@
+name: eks-standard
+displayName: AWS EKS Standard Cluster
+description: Standard 4-node EKS cluster for development and integration testing
+platform: aws
+clusterType: eks
+enabled: true
+
+kubernetesVersions:
+  allowlist:
+    - "1.31"
+    - "1.30"
+    - "1.29"
+    - "1.28"
+  default: "1.30"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+    - eu-west-1
+    - eu-west-2
+    - eu-central-1
+    - ap-southeast-1
+    - ap-southeast-2
+    - ap-northeast-1
+  default: us-east-1
+
+compute:
+  nodeGroups:
+    - name: standard
+      instanceType: t3.large
+      desiredCapacity: 4
+      minSize: 2
+      maxSize: 10
+      volumeSize: 100
+      volumeType: gp3
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 72   # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+networking:
+  vpcCIDR: 10.0.0.0/16
+  natGateway: HighlyAvailable  # Multiple NAT gateways for HA
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: eks
+  allowUserTags: true
+
+features:
+  oidcProvider: true  # Enable OIDC provider for IRSA
+
+costControls:
+  estimatedHourlyCost: 0.56   # 4x t3.large + EKS control plane + 3x NAT gateways
+  maxMonthlyCost: 405          # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  eks:
+    enabledClusterLogTypes:
+      - api
+      - audit
+      - authenticator
+      - controllerManager
+      - scheduler
+    publicAccess: true
+    privateAccess: true
+
+metadata:
+  capabilities:
+    - AWS EKS managed Kubernetes
+    - OIDC provider for IRSA
+    - Highly available NAT gateways
+    - Full CloudWatch logging enabled
+    - Auto-scaling capable (2-10 nodes)
+  capacity:
+    totalNodeCPU: 8         # 4 nodes x 2 vCPU
+    totalNodeRAM: 32        # 4 nodes x 8 GB
+  notes:
+    - "EKS control plane costs $0.10/hour ($73/month)"
+    - "3x NAT gateways cost ~$0.135/hour ($97/month) for HA"
+    - "Nodes are t3.large (2 vCPU, 8GB RAM) at $0.0832/hour each"
+    - "Total: ~$0.56/hour or $405/month for always-on cluster"
+    - "Supports workloads requiring HA networking"

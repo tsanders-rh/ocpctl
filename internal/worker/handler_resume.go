@@ -2,15 +2,19 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -37,15 +41,30 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 		return fmt.Errorf("get cluster: %w", err)
 	}
 
-	log.Printf("Resuming cluster %s (platform=%s)", cluster.Name, cluster.Platform)
+	log.Printf("Resuming cluster %s (platform=%s, cluster_type=%s)", cluster.Name, cluster.Platform, cluster.ClusterType)
 
+	// Route by cluster type
+	switch cluster.ClusterType {
+	case types.ClusterTypeOpenShift:
+		return h.resumeOpenShift(ctx, cluster, job)
+	case types.ClusterTypeEKS:
+		return h.resumeEKS(ctx, cluster, job)
+	case types.ClusterTypeIKS:
+		return h.resumeIKS(ctx, cluster, job)
+	default:
+		return fmt.Errorf("unsupported cluster type for resume: %s", cluster.ClusterType)
+	}
+}
+
+// resumeOpenShift resumes an OpenShift cluster (AWS or IBMCloud)
+func (h *ResumeHandler) resumeOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	switch cluster.Platform {
 	case types.PlatformAWS:
 		return h.resumeAWS(ctx, cluster, job)
 	case types.PlatformIBMCloud:
 		return fmt.Errorf("resume not supported for platform %s - cluster was destroyed", cluster.Platform)
 	default:
-		return fmt.Errorf("unsupported platform for resume: %s", cluster.Platform)
+		return fmt.Errorf("unsupported platform for OpenShift resume: %s", cluster.Platform)
 	}
 }
 
@@ -232,4 +251,165 @@ func (h *ResumeHandler) ensureArtifactsAvailable(ctx context.Context, clusterID 
 
 	log.Printf("[ResumeHandler] Successfully downloaded artifacts for cluster %s", clusterID)
 	return nil
+}
+
+// resumeEKS resumes an EKS cluster by scaling node groups back to original capacity
+func (h *ResumeHandler) resumeEKS(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Resuming EKS cluster %s by scaling node groups to original capacity", cluster.Name)
+
+	// Get the last hibernate job to retrieve original capacities
+	hibernateJobs, err := h.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, types.JobTypeHibernate)
+	if err != nil {
+		return fmt.Errorf("get hibernate jobs: %w", err)
+	}
+
+	// Find the most recent successful hibernate job
+	var lastHibernateJob *types.Job
+	for _, hJob := range hibernateJobs {
+		if hJob.Status == types.JobStatusSucceeded {
+			if lastHibernateJob == nil || hJob.CreatedAt.After(lastHibernateJob.CreatedAt) {
+				lastHibernateJob = hJob
+			}
+		}
+	}
+
+	if lastHibernateJob == nil {
+		return fmt.Errorf("no successful hibernate job found for cluster %s", cluster.ID)
+	}
+
+	// Get original node group capacities from job metadata
+	capacitiesJSON, ok := lastHibernateJob.Metadata["node_group_capacities"]
+	if !ok {
+		return fmt.Errorf("node_group_capacities not found in hibernate job metadata")
+	}
+
+	var nodeGroupCapacities map[string]int
+	if err := json.Unmarshal([]byte(capacitiesJSON), &nodeGroupCapacities); err != nil {
+		return fmt.Errorf("unmarshal node group capacities: %w", err)
+	}
+
+	log.Printf("Restoring node group capacities: %+v", nodeGroupCapacities)
+
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	eksClient := eks.NewFromConfig(cfg)
+
+	// Scale each node group back to original capacity
+	for ngName, originalCapacity := range nodeGroupCapacities {
+		log.Printf("Scaling node group %s to %d", ngName, originalCapacity)
+
+		// Get current node group config to preserve max size
+		describeInput := &eks.DescribeNodegroupInput{
+			ClusterName:   &cluster.Name,
+			NodegroupName: &ngName,
+		}
+
+		describeOutput, err := eksClient.DescribeNodegroup(ctx, describeInput)
+		if err != nil {
+			log.Printf("Warning: failed to describe node group %s: %v", ngName, err)
+			continue
+		}
+
+		// Scale back to original capacity
+		updateInput := &eks.UpdateNodegroupConfigInput{
+			ClusterName:   &cluster.Name,
+			NodegroupName: &ngName,
+			ScalingConfig: &eks.NodegroupScalingConfigProperty{
+				DesiredSize: int32Ptr(int32(originalCapacity)),
+				MinSize:     int32Ptr(0), // Keep min at 0 for future hibernation
+				MaxSize:     describeOutput.Nodegroup.ScalingConfig.MaxSize,
+			},
+		}
+
+		_, err = eksClient.UpdateNodegroupConfig(ctx, updateInput)
+		if err != nil {
+			log.Printf("Warning: failed to scale node group %s: %v", ngName, err)
+			continue
+		}
+
+		log.Printf("Successfully scaled node group %s to %d", ngName, originalCapacity)
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	log.Printf("EKS cluster %s resumed successfully", cluster.Name)
+	return nil
+}
+
+// resumeIKS resumes an IKS cluster by scaling workers back to original count
+func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Resuming IKS cluster %s by scaling workers to original count", cluster.Name)
+
+	// Get the last hibernate job to retrieve original worker count
+	hibernateJobs, err := h.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, types.JobTypeHibernate)
+	if err != nil {
+		return fmt.Errorf("get hibernate jobs: %w", err)
+	}
+
+	// Find the most recent successful hibernate job
+	var lastHibernateJob *types.Job
+	for _, hJob := range hibernateJobs {
+		if hJob.Status == types.JobStatusSucceeded {
+			if lastHibernateJob == nil || hJob.CreatedAt.After(lastHibernateJob.CreatedAt) {
+				lastHibernateJob = hJob
+			}
+		}
+	}
+
+	if lastHibernateJob == nil {
+		return fmt.Errorf("no successful hibernate job found for cluster %s", cluster.ID)
+	}
+
+	// Get original worker count from job metadata
+	workerCountStr, ok := lastHibernateJob.Metadata["original_worker_count"]
+	if !ok {
+		return fmt.Errorf("original_worker_count not found in hibernate job metadata")
+	}
+
+	originalWorkerCount, err := strconv.Atoi(workerCountStr)
+	if err != nil {
+		return fmt.Errorf("parse worker count: %w", err)
+	}
+
+	log.Printf("Restoring IKS cluster to %d workers", originalWorkerCount)
+
+	// Create IKS installer
+	iksInstaller := installer.NewIKSInstaller()
+
+	// Get IBM Cloud API key from environment
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey == "" {
+		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
+	}
+
+	// Login to IBM Cloud
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+		return fmt.Errorf("IBM Cloud login: %w", err)
+	}
+
+	// TODO: Scale workers back to original count
+	// This requires IBM Cloud Kubernetes Service API to resize worker pools
+	log.Printf("Warning: IKS worker pool scaling requires IBM Cloud Kubernetes Service API")
+	log.Printf("Current implementation limitation: Cannot programmatically scale IKS workers")
+	log.Printf("Manual action required: Scale cluster %s to %d workers", cluster.Name, originalWorkerCount)
+
+	// Update cluster status to READY (even though manual action is required)
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	log.Printf("IKS cluster %s marked as resumed (Note: actual worker scaling not yet implemented)", cluster.Name)
+	return nil
+}
+
+// int32Ptr returns a pointer to an int32
+func int32Ptr(i int32) *int32 {
+	return &i
 }

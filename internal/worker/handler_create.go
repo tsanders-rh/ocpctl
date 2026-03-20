@@ -51,8 +51,25 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return fmt.Errorf("get cluster: %w", err)
 	}
 
-	log.Printf("Creating cluster %s (platform=%s, version=%s, profile=%s)",
-		cluster.Name, cluster.Platform, cluster.Version, cluster.Profile)
+	log.Printf("Creating cluster %s (platform=%s, cluster_type=%s, version=%s, profile=%s)",
+		cluster.Name, cluster.Platform, cluster.ClusterType, cluster.Version, cluster.Profile)
+
+	// Route to appropriate handler based on cluster type
+	switch cluster.ClusterType {
+	case types.ClusterTypeOpenShift:
+		return h.handleOpenShiftCreate(ctx, job, cluster)
+	case types.ClusterTypeEKS:
+		return h.handleEKSCreate(ctx, job, cluster)
+	case types.ClusterTypeIKS:
+		return h.handleIKSCreate(ctx, job, cluster)
+	default:
+		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
+	}
+}
+
+// handleOpenShiftCreate handles OpenShift cluster creation
+func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting OpenShift cluster creation for %s", cluster.Name)
 
 	// Update cluster status to CREATING
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusCreating); err != nil {
@@ -359,5 +376,289 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 
 	log.Printf("Stored %d artifact records for cluster %s", len(artifacts), clusterID)
 
+	return nil
+}
+
+// handleEKSCreate handles EKS cluster creation
+func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting EKS cluster creation for %s", cluster.Name)
+
+	// Update cluster status to CREATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusCreating); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	// Create work directory for this cluster
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return fmt.Errorf("create work directory: %w", err)
+	}
+
+	// Create EKS installer
+	eksInstaller := installer.NewEKSInstaller()
+
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Build eksctl configuration
+	eksConfig := &installer.EKSClusterConfig{
+		APIVersion: "eksctl.io/v1alpha5",
+		Kind:       "ClusterConfig",
+		Metadata: installer.EKSMetadata{
+			Name:    cluster.Name,
+			Region:  cluster.Region,
+			Version: cluster.Version,
+		},
+		IAM: &installer.EKSIAM{
+			WithOIDC: true, // Enable OIDC provider for IRSA
+		},
+		NodeGroups: []installer.EKSNodeGroup{},
+		Tags:       cluster.EffectiveTags,
+	}
+
+	// Add node groups from profile
+	if len(prof.Compute.NodeGroups) > 0 {
+		for _, ng := range prof.Compute.NodeGroups {
+			eksNodeGroup := installer.EKSNodeGroup{
+				Name:            ng.Name,
+				InstanceType:    ng.InstanceType,
+				DesiredCapacity: ng.DesiredCapacity,
+				MinSize:         ng.MinSize,
+				MaxSize:         ng.MaxSize,
+				VolumeSize:      ng.VolumeSize,
+				VolumeType:      ng.VolumeType,
+				Tags:            cluster.EffectiveTags,
+			}
+
+			// Add SSH configuration if public key provided
+			if cluster.SSHPublicKey != nil {
+				sshKeyPath := filepath.Join(workDir, "ssh-key.pub")
+				if err := os.WriteFile(sshKeyPath, []byte(*cluster.SSHPublicKey), 0600); err != nil {
+					return fmt.Errorf("write SSH public key: %w", err)
+				}
+				eksNodeGroup.SSH = &installer.EKSNodeGroupSSH{
+					Allow:         true,
+					PublicKeyPath: sshKeyPath,
+				}
+			}
+
+			eksConfig.NodeGroups = append(eksConfig.NodeGroups, eksNodeGroup)
+		}
+	}
+
+	// Set VPC configuration from profile
+	if prof.Networking.VpcCIDR != "" {
+		eksConfig.VPC = &installer.EKSVPC{
+			CIDR: prof.Networking.VpcCIDR,
+		}
+		// Set NAT gateway mode
+		if prof.Networking.NatGateway != "" {
+			eksConfig.VPC.NAT = &installer.EKSNAT{
+				Gateway: prof.Networking.NatGateway,
+			}
+		}
+	}
+
+	// Write eksctl configuration
+	if err := eksInstaller.WriteConfig(workDir, eksConfig); err != nil {
+		return fmt.Errorf("write eksctl config: %w", err)
+	}
+
+	log.Printf("Generated eksctl config for cluster %s", cluster.Name)
+
+	// Run eksctl create cluster
+	configPath := filepath.Join(workDir, "eksctl-config.yaml")
+	output, err := eksInstaller.CreateCluster(ctx, configPath)
+	if err != nil {
+		log.Printf("EKS cluster creation failed: %v\nOutput: %s", err, output)
+		return fmt.Errorf("eksctl create cluster: %w", err)
+	}
+
+	log.Printf("EKS cluster %s created successfully", cluster.Name)
+
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+		return fmt.Errorf("create auth directory: %w", err)
+	}
+
+	if err := eksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+		log.Printf("Warning: failed to get kubeconfig: %v", err)
+	}
+
+	// Extract cluster outputs
+	outputs := &types.ClusterOutputs{
+		ID:        uuid.New().String(),
+		ClusterID: cluster.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// For EKS, construct API URL from cluster name and region
+	apiURL := fmt.Sprintf("https://%s.%s.eks.amazonaws.com", cluster.Name, cluster.Region)
+	outputs.APIURL = &apiURL
+
+	// EKS doesn't have a console URL like OpenShift
+	consoleURL := fmt.Sprintf("https://console.aws.amazon.com/eks/home?region=%s#/clusters/%s", cluster.Region, cluster.Name)
+	outputs.ConsoleURL = &consoleURL
+
+	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
+	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Store cluster outputs
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		log.Printf("Warning: failed to store cluster outputs: %v", err)
+	}
+
+	// Store artifacts
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+		log.Printf("Warning: failed to store artifacts: %v", err)
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to ready: %w", err)
+	}
+
+	log.Printf("EKS cluster %s is now READY", cluster.Name)
+	return nil
+}
+
+// handleIKSCreate handles IKS cluster creation
+func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting IKS cluster creation for %s", cluster.Name)
+
+	// Update cluster status to CREATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusCreating); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	// Create work directory for this cluster
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return fmt.Errorf("create work directory: %w", err)
+	}
+
+	// Create IKS installer
+	iksInstaller := installer.NewIKSInstaller()
+
+	// Get IBM Cloud API key from environment
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey == "" {
+		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
+	}
+
+	// Login to IBM Cloud
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+		return fmt.Errorf("IBM Cloud login: %w", err)
+	}
+
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Build IKS cluster create options
+	zone := prof.Zones.Default
+	if zone == "" {
+		return fmt.Errorf("no default zone configured in profile")
+	}
+
+	machineType := "bx2.4x16" // Default machine type
+	workerCount := 2          // Default worker count
+
+	if prof.Compute.Workers != nil {
+		if prof.Compute.Workers.MachineType != "" {
+			machineType = prof.Compute.Workers.MachineType
+		}
+		if prof.Compute.Workers.Count > 0 {
+			workerCount = prof.Compute.Workers.Count
+		}
+	}
+
+	createOpts := &installer.IKSClusterCreateOptions{
+		Name:         cluster.Name,
+		Zone:         zone,
+		MachineType:  machineType,
+		Workers:      workerCount,
+		KubeVersion:  cluster.Version,
+		PublicVLAN:   "auto",
+		PrivateVLAN:  "auto",
+		PublicServiceEndpoint:  prof.Features.PublicServiceEndpoint,
+		PrivateServiceEndpoint: prof.Features.PrivateServiceEndpoint,
+	}
+
+	log.Printf("Creating IKS cluster with options: zone=%s, machine=%s, workers=%d", zone, machineType, workerCount)
+
+	// Create the cluster
+	output, err := iksInstaller.CreateCluster(ctx, createOpts)
+	if err != nil {
+		log.Printf("IKS cluster creation failed: %v\nOutput: %s", err, output)
+		return fmt.Errorf("ibmcloud ks cluster create: %w", err)
+	}
+
+	log.Printf("IKS cluster %s creation initiated", cluster.Name)
+
+	// Wait for cluster to be ready (IKS clusters take 20-30 minutes)
+	log.Printf("Waiting for IKS cluster %s to reach READY state...", cluster.Name)
+	if err := iksInstaller.WaitForCluster(ctx, cluster.Name, "normal", 60*time.Minute); err != nil {
+		return fmt.Errorf("wait for cluster ready: %w", err)
+	}
+
+	log.Printf("IKS cluster %s is ready", cluster.Name)
+
+	// Get cluster info
+	info, err := iksInstaller.GetClusterInfo(ctx, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("get cluster info: %w", err)
+	}
+
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+		return fmt.Errorf("create auth directory: %w", err)
+	}
+
+	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
+		log.Printf("Warning: failed to get kubeconfig: %v", err)
+	}
+
+	// Extract cluster outputs
+	outputs := &types.ClusterOutputs{
+		ID:        uuid.New().String(),
+		ClusterID: cluster.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	outputs.APIURL = &info.MasterURL
+
+	// IKS console URL
+	consoleURL := fmt.Sprintf("https://cloud.ibm.com/kubernetes/clusters/%s/overview", info.ID)
+	outputs.ConsoleURL = &consoleURL
+
+	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
+	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Store cluster outputs
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		log.Printf("Warning: failed to store cluster outputs: %v", err)
+	}
+
+	// Store artifacts
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+		log.Printf("Warning: failed to store artifacts: %v", err)
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to ready: %w", err)
+	}
+
+	log.Printf("IKS cluster %s is now READY", cluster.Name)
 	return nil
 }
