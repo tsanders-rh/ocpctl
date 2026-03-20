@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,10 +74,27 @@ export default function NewClusterPage() {
 
   const watchedValues = watch();
 
-  // Sort profiles alphabetically by display_name for consistent ordering
-  const sortedProfiles = profiles?.slice().sort((a, b) =>
-    a.display_name.localeCompare(b.display_name)
-  );
+  // Filter profiles by platform AND cluster type, then sort alphabetically
+  const sortedProfiles = useMemo(() => {
+    const filteredProfiles = profiles?.filter((p) => {
+      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-)
+      if (selectedClusterType === ClusterType.OpenShift) {
+        return p.name.startsWith(`${selectedPlatform}-`);
+      }
+      // For EKS/IKS clusters, show profiles that start with cluster type prefix (eks-, iks-)
+      if (selectedClusterType === ClusterType.EKS) {
+        return p.name.startsWith('eks-');
+      }
+      if (selectedClusterType === ClusterType.IKS) {
+        return p.name.startsWith('iks-');
+      }
+      return false;
+    });
+
+    return filteredProfiles?.slice().sort((a, b) =>
+      a.display_name.localeCompare(b.display_name)
+    );
+  }, [profiles, selectedClusterType, selectedPlatform]);
 
   const selectedProfile = sortedProfiles?.find((p) => p.name === watchedValues.profile);
 
@@ -87,15 +104,32 @@ export default function NewClusterPage() {
     return error?.message;
   };
 
-  // Set default profile to "AWS Single Node OpenShift (SNO)" when profiles load
+  // Set default profile based on cluster type when profiles load or cluster type changes
   useEffect(() => {
-    if (sortedProfiles && sortedProfiles.length > 0 && !watchedValues.profile) {
-      const defaultProfile = sortedProfiles.find(p => p.name === "aws-sno-test");
+    if (sortedProfiles && sortedProfiles.length > 0) {
+      // Determine default profile based on cluster type
+      let defaultProfileName = "";
+
+      if (selectedClusterType === ClusterType.OpenShift) {
+        // Default to SNO for OpenShift
+        defaultProfileName = "aws-sno-test";
+      } else if (selectedClusterType === ClusterType.EKS) {
+        // Default to minimal EKS profile
+        defaultProfileName = "eks-minimal";
+      } else if (selectedClusterType === ClusterType.IKS) {
+        // Default to minimal IKS profile
+        defaultProfileName = "iks-minimal";
+      }
+
+      const defaultProfile = sortedProfiles.find(p => p.name === defaultProfileName);
       if (defaultProfile) {
         setValue("profile", defaultProfile.name);
+      } else if (sortedProfiles.length > 0) {
+        // Fallback to first available profile if default not found
+        setValue("profile", sortedProfiles[0].name);
       }
     }
-  }, [sortedProfiles, setValue]);
+  }, [sortedProfiles, selectedClusterType, setValue]);
 
   // Update form defaults when profile changes
   useEffect(() => {
@@ -226,9 +260,19 @@ export default function NewClusterPage() {
                 <Select
                   value={watchedValues.cluster_type || ""}
                   onValueChange={(value) => {
-                    setValue("cluster_type", value as ClusterType);
-                    setSelectedClusterType(value as ClusterType);
+                    const clusterType = value as ClusterType;
+                    setValue("cluster_type", clusterType);
+                    setSelectedClusterType(clusterType);
                     setValue("profile", ""); // Reset profile when cluster type changes
+
+                    // Auto-select the correct platform for EKS/IKS
+                    if (clusterType === ClusterType.EKS) {
+                      setValue("platform", Platform.AWS);
+                      setSelectedPlatform(Platform.AWS);
+                    } else if (clusterType === ClusterType.IKS) {
+                      setValue("platform", Platform.IBMCloud);
+                      setSelectedPlatform(Platform.IBMCloud);
+                    }
                   }}
                 >
                   <SelectTrigger>
@@ -482,7 +526,7 @@ export default function NewClusterPage() {
                       onChange={(tags) => setValue("extra_tags", tags)}
                     />
                     <p className="text-sm text-muted-foreground">
-                      Add custom tags to apply to all deployed AWS resources
+                      Add custom tags to apply to all deployed {watchedValues.platform === "aws" ? "AWS" : "IBM Cloud"} resources
                     </p>
                   </div>
                 </div>
@@ -517,29 +561,32 @@ export default function NewClusterPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-start space-x-2">
-                      <Checkbox
-                        id="enable_efs_storage"
-                        checked={watchedValues.enable_efs_storage}
-                        onCheckedChange={(checked) =>
-                          setValue("enable_efs_storage", checked as boolean)
-                        }
-                        className="mt-1"
-                      />
-                      <div className="flex-1">
-                        <Label htmlFor="enable_efs_storage" className="cursor-pointer">
-                          Enable EFS shared storage (RWX)
-                        </Label>
-                        <p className="text-sm text-muted-foreground">
-                          Provisions EFS file system with CSI driver for ReadWriteMany (RWX) storage class
-                        </p>
-                        {getFieldError("enable_efs_storage") && (
-                          <p className="text-sm text-red-600 mt-1">
-                            {getFieldError("enable_efs_storage")}
+                    {/* EFS Storage - AWS only */}
+                    {watchedValues.platform === "aws" && (
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="enable_efs_storage"
+                          checked={watchedValues.enable_efs_storage}
+                          onCheckedChange={(checked) =>
+                            setValue("enable_efs_storage", checked as boolean)
+                          }
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="enable_efs_storage" className="cursor-pointer">
+                            Enable EFS shared storage (RWX)
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Provisions EFS file system with CSI driver for ReadWriteMany (RWX) storage class
                           </p>
-                        )}
+                          {getFieldError("enable_efs_storage") && (
+                            <p className="text-sm text-red-600 mt-1">
+                              {getFieldError("enable_efs_storage")}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {selectedProfile?.post_deployment?.enabled && (
                       <div className="flex items-start space-x-2">

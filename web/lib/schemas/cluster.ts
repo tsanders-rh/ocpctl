@@ -31,6 +31,18 @@ export const createClusterSchema = z.object({
   work_hours_start: z.string().optional(),
   work_hours_end: z.string().optional(),
   work_days: z.array(z.string()).optional(),
-});
+}).refine(
+  (data) => {
+    // base_domain is required for OpenShift clusters
+    if (data.cluster_type === ClusterType.OpenShift) {
+      return !!data.base_domain;
+    }
+    return true;
+  },
+  {
+    message: "Base domain is required for OpenShift clusters",
+    path: ["base_domain"],
+  }
+);
 
 export type CreateClusterFormData = z.infer<typeof createClusterSchema>;

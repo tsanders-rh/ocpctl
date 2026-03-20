@@ -268,12 +268,12 @@ func (h *CreateHandler) extractClusterOutputs(workDir string, cluster *types.Clu
 		UpdatedAt: time.Now(),
 	}
 
-	// Construct API URL and Console URL from cluster name and base domain
-	if cluster.Name != "" && cluster.BaseDomain != "" {
-		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, cluster.BaseDomain)
+	// Construct API URL and Console URL from cluster name and base domain (OpenShift only)
+	if cluster.Name != "" && cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
+		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, *cluster.BaseDomain)
 		outputs.APIURL = &apiURL
 
-		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, cluster.BaseDomain)
+		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, *cluster.BaseDomain)
 		outputs.ConsoleURL = &consoleURL
 
 		log.Printf("Extracted cluster URLs - API: %s, Console: %s", apiURL, consoleURL)

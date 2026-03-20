@@ -83,27 +83,41 @@ export default function ProfilesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Control Plane</span>
-                  <span className="font-medium">
-                    {profile.compute.control_plane.replicas} ×{" "}
-                    {profile.compute.control_plane.instance_type}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Workers</span>
-                  <span className="font-medium">
-                    {profile.compute.workers.replicas ?? "?"} ×{" "}
-                    {profile.compute.workers.instance_type}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Range</span>
-                  <span className="font-medium">
-                    {profile.compute.workers.min_replicas ?? "?"}-
-                    {profile.compute.workers.max_replicas ?? "?"} workers
-                  </span>
-                </div>
+                {profile.compute.control_plane && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Control Plane</span>
+                    <span className="font-medium">
+                      {profile.compute.control_plane.replicas} ×{" "}
+                      {profile.compute.control_plane.instance_type}
+                    </span>
+                  </div>
+                )}
+                {profile.compute.workers && (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Workers</span>
+                      <span className="font-medium">
+                        {profile.compute.workers.replicas ?? "?"} ×{" "}
+                        {profile.compute.workers.instance_type}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Range</span>
+                      <span className="font-medium">
+                        {profile.compute.workers.min_replicas ?? "?"}-
+                        {profile.compute.workers.max_replicas ?? "?"} workers
+                      </span>
+                    </div>
+                  </>
+                )}
+                {profile.compute.node_groups && profile.compute.node_groups.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Node Groups</span>
+                    <span className="font-medium">
+                      {profile.compute.node_groups.length} group{profile.compute.node_groups.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t pt-4 space-y-2">
@@ -139,7 +153,7 @@ export default function ProfilesPage() {
                   {profile.features.private_cluster && (
                     <Badge variant="secondary">Private</Badge>
                   )}
-                  {profile.compute.workers.autoscaling && (
+                  {profile.compute.workers?.autoscaling && (
                     <Badge variant="secondary">Autoscaling</Badge>
                   )}
                 </div>
@@ -204,15 +218,16 @@ export default function ProfilesPage() {
                 </div>
               )}
 
+              {/* Version Information - show OpenShift or Kubernetes versions based on profile */}
               <div className="border-t pt-4">
                 <div className="text-sm text-muted-foreground mb-2">
-                  OpenShift Versions
+                  {profile.openshift_versions ? "OpenShift Versions" : "Kubernetes Versions"}
                 </div>
                 <div className="text-sm">
-                  {profile.openshift_versions?.default || "N/A"} (default)
+                  {profile.openshift_versions?.default || profile.kubernetes_versions?.default || "N/A"} (default)
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Available: {profile.openshift_versions?.allowed?.join(", ") || "N/A"}
+                  Available: {(profile.openshift_versions?.allowed || profile.kubernetes_versions?.allowed)?.join(", ") || "N/A"}
                 </div>
               </div>
 

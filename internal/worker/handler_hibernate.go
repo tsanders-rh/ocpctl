@@ -7,12 +7,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -288,7 +288,7 @@ func (h *HibernateHandler) hibernateEKS(ctx context.Context, cluster *types.Clus
 			updateInput := &eks.UpdateNodegroupConfigInput{
 				ClusterName:   &cluster.Name,
 				NodegroupName: &ngName,
-				ScalingConfig: &eks.NodegroupScalingConfigProperty{
+				ScalingConfig: &ekstypes.NodegroupScalingConfig{
 					DesiredSize: int32Ptr(0),
 					MinSize:     int32Ptr(0),
 					MaxSize:     describeOutput.Nodegroup.ScalingConfig.MaxSize,
@@ -306,6 +306,7 @@ func (h *HibernateHandler) hibernateEKS(ctx context.Context, cluster *types.Clus
 	}
 
 	// Store capacities in job metadata for resume
+	// Note: Metadata will be saved when the job completes via MarkSucceeded
 	if job.Metadata == nil {
 		job.Metadata = make(types.JobMetadata)
 	}
@@ -314,9 +315,7 @@ func (h *HibernateHandler) hibernateEKS(ctx context.Context, cluster *types.Clus
 		log.Printf("Warning: failed to marshal node group capacities: %v", err)
 	} else {
 		job.Metadata["node_group_capacities"] = string(capacitiesJSON)
-		if err := h.store.Jobs.Update(ctx, job); err != nil {
-			log.Printf("Warning: failed to update job metadata: %v", err)
-		}
+		log.Printf("Stored node group capacities in job metadata for resume")
 	}
 
 	// Update cluster status to HIBERNATED
@@ -361,15 +360,13 @@ func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Clus
 	log.Printf("Cluster info: %+v", info)
 
 	// Store cluster ID in job metadata for resume
+	// Note: Metadata will be saved when the job completes via MarkSucceeded
 	if job.Metadata == nil {
 		job.Metadata = make(types.JobMetadata)
 	}
 	job.Metadata["cluster_id"] = info.ID
 	job.Metadata["original_worker_count"] = "2" // Placeholder - should query actual count
-
-	if err := h.store.Jobs.Update(ctx, job); err != nil {
-		log.Printf("Warning: failed to update job metadata: %v", err)
-	}
+	log.Printf("Stored cluster info in job metadata for resume")
 
 	// Update cluster status to HIBERNATED
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {

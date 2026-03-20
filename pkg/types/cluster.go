@@ -84,7 +84,7 @@ type Cluster struct {
 	Version        string        `db:"version" json:"version"`
 	Profile        string        `db:"profile" json:"profile"`
 	Region         string        `db:"region" json:"region"`
-	BaseDomain     string        `db:"base_domain" json:"base_domain"`
+	BaseDomain     *string       `db:"base_domain" json:"base_domain,omitempty"`
 	Owner          string        `db:"owner" json:"owner"`           // Email for display/metadata
 	OwnerID        string        `db:"owner_id" json:"owner_id"`        // Foreign key to users table
 	Team           string        `db:"team" json:"team"`

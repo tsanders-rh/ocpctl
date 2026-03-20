@@ -36,16 +36,36 @@ export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
                 • Platform: {formValues.platform?.toUpperCase() || "Not selected"}
               </li>
               <li>• Region: {formValues.region || "Not selected"}</li>
-              <li>
-                • Control Plane: {profile.compute?.control_plane?.replicas || "?"} ×{" "}
-                {profile.compute?.control_plane?.instance_type || "?"}
-              </li>
-              <li>
-                • Workers: {profile.compute?.workers?.min_replicas ?? "?"}-
-                {profile.compute?.workers?.max_replicas ?? "?"} ×{" "}
-                {profile.compute?.workers?.instance_type || "?"}
-                {profile.compute?.workers?.autoscaling && " (autoscaling)"}
-              </li>
+
+              {/* OpenShift clusters - show control plane and workers */}
+              {profile.compute?.control_plane && (
+                <li>
+                  • Control Plane: {profile.compute.control_plane.replicas} ×{" "}
+                  {profile.compute.control_plane.instance_type}
+                </li>
+              )}
+              {profile.compute?.workers && (
+                <li>
+                  • Workers: {profile.compute.workers.min_replicas ?? "?"}-
+                  {profile.compute.workers.max_replicas ?? "?"} ×{" "}
+                  {profile.compute.workers.instance_type}
+                  {profile.compute.workers.autoscaling && " (autoscaling)"}
+                </li>
+              )}
+
+              {/* EKS/IKS clusters - show node groups */}
+              {profile.compute?.node_groups && profile.compute.node_groups.length > 0 && (
+                <>
+                  {profile.compute.node_groups.map((ng, idx) => (
+                    <li key={idx}>
+                      • {ng.name}: {ng.min_size}-{ng.max_size} ×{" "}
+                      {ng.instance_type}
+                      {ng.min_size !== ng.max_size && " (autoscaling)"}
+                    </li>
+                  ))}
+                </>
+              )}
+
               <li>• Estimated cost: {formatCurrency(estimatedCost)}/hour</li>
               <li>• Time to live: {ttl} hours</li>
               {formValues.extra_tags && Object.keys(formValues.extra_tags).length > 0 && (
@@ -63,8 +83,8 @@ export function ExecutionPanel({ formValues, profile }: ExecutionPanelProps) {
         </Card>
       )}
 
-      {/* Generated Install Config Preview */}
-      {profile && formValues.name && (
+      {/* Generated Install Config Preview (OpenShift only) */}
+      {profile && formValues.name && formValues.cluster_type === "openshift" && profile.compute.control_plane && profile.compute.workers && (
         <Card>
           <CardHeader>
             <CardTitle>Install Config Preview</CardTitle>

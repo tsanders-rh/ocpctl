@@ -4,26 +4,26 @@ import "github.com/tsanders-rh/ocpctl/pkg/types"
 
 // Profile represents a complete cluster profile loaded from YAML
 type Profile struct {
-	Name               string              `yaml:"name" validate:"required"`
-	DisplayName        string              `yaml:"displayName" validate:"required"`
-	Description        string              `yaml:"description" validate:"required"`
-	Platform           types.Platform      `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
-	ClusterType        types.ClusterType   `yaml:"clusterType,omitempty"`
-	Enabled            bool                `yaml:"enabled"`
-	OpenshiftVersions  VersionConfig       `yaml:"openshiftVersions,omitempty"`
-	KubernetesVersions VersionConfig       `yaml:"kubernetesVersions,omitempty"`
-	Regions            RegionConfig        `yaml:"regions" validate:"required"`
-	Zones              *ZoneConfig         `yaml:"zones,omitempty"`
-	BaseDomains        BaseDomainConfig    `yaml:"baseDomains,omitempty"`
-	Compute            ComputeConfig       `yaml:"compute" validate:"required"`
-	Lifecycle          LifecycleConfig     `yaml:"lifecycle" validate:"required"`
-	Networking         *NetworkingConfig   `yaml:"networking,omitempty"`
-	Tags               TagsConfig          `yaml:"tags" validate:"required"`
-	Features           FeaturesConfig      `yaml:"features"`
-	CostControls       CostControlsConfig  `yaml:"costControls"`
-	PlatformConfig     PlatformConfig      `yaml:"platformConfig"`
-	PostDeployment     *PostDeploymentConfig `yaml:"postDeployment,omitempty"`
-	Metadata           *MetadataConfig     `yaml:"metadata,omitempty"`
+	Name               string                 `yaml:"name" validate:"required"`
+	DisplayName        string                 `yaml:"displayName" validate:"required"`
+	Description        string                 `yaml:"description" validate:"required"`
+	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
+	ClusterType        types.ClusterType      `yaml:"clusterType,omitempty"`
+	Enabled            bool                   `yaml:"enabled"`
+	OpenshiftVersions  *VersionConfig         `yaml:"openshiftVersions,omitempty"`
+	KubernetesVersions *VersionConfig         `yaml:"kubernetesVersions,omitempty"`
+	Regions            RegionConfig           `yaml:"regions" validate:"required"`
+	Zones              *ZoneConfig            `yaml:"zones,omitempty"`
+	BaseDomains        *BaseDomainConfig      `yaml:"baseDomains,omitempty"`
+	Compute            ComputeConfig          `yaml:"compute" validate:"required"`
+	Lifecycle          LifecycleConfig        `yaml:"lifecycle" validate:"required"`
+	Networking         *NetworkingConfig      `yaml:"networking,omitempty"`
+	Tags               TagsConfig             `yaml:"tags" validate:"required"`
+	Features           FeaturesConfig         `yaml:"features"`
+	CostControls       CostControlsConfig     `yaml:"costControls"`
+	PlatformConfig     PlatformConfig         `yaml:"platformConfig"`
+	PostDeployment     *PostDeploymentConfig  `yaml:"postDeployment,omitempty"`
+	Metadata           *MetadataConfig        `yaml:"metadata,omitempty"`
 }
 
 // VersionConfig defines OpenShift version constraints
@@ -52,9 +52,9 @@ type BaseDomainConfig struct {
 
 // ComputeConfig defines compute resource configuration
 type ComputeConfig struct {
-	ControlPlane ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Workers      *WorkersConfig     `yaml:"workers,omitempty" json:"workers,omitempty"`
-	NodeGroups   []NodeGroupConfig  `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"` // For EKS
+	ControlPlane *ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Workers      *WorkersConfig      `yaml:"workers,omitempty" json:"workers,omitempty"`
+	NodeGroups   []NodeGroupConfig   `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"` // For EKS
 }
 
 // ControlPlaneConfig defines control plane node configuration

@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -283,8 +284,13 @@ func (h *ResumeHandler) resumeEKS(ctx context.Context, cluster *types.Cluster, j
 		return fmt.Errorf("node_group_capacities not found in hibernate job metadata")
 	}
 
+	capacitiesStr, ok := capacitiesJSON.(string)
+	if !ok {
+		return fmt.Errorf("node_group_capacities is not a string")
+	}
+
 	var nodeGroupCapacities map[string]int
-	if err := json.Unmarshal([]byte(capacitiesJSON), &nodeGroupCapacities); err != nil {
+	if err := json.Unmarshal([]byte(capacitiesStr), &nodeGroupCapacities); err != nil {
 		return fmt.Errorf("unmarshal node group capacities: %w", err)
 	}
 
@@ -318,7 +324,7 @@ func (h *ResumeHandler) resumeEKS(ctx context.Context, cluster *types.Cluster, j
 		updateInput := &eks.UpdateNodegroupConfigInput{
 			ClusterName:   &cluster.Name,
 			NodegroupName: &ngName,
-			ScalingConfig: &eks.NodegroupScalingConfigProperty{
+			ScalingConfig: &ekstypes.NodegroupScalingConfig{
 				DesiredSize: int32Ptr(int32(originalCapacity)),
 				MinSize:     int32Ptr(0), // Keep min at 0 for future hibernation
 				MaxSize:     describeOutput.Nodegroup.ScalingConfig.MaxSize,
@@ -368,9 +374,14 @@ func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, j
 	}
 
 	// Get original worker count from job metadata
-	workerCountStr, ok := lastHibernateJob.Metadata["original_worker_count"]
+	workerCountVal, ok := lastHibernateJob.Metadata["original_worker_count"]
 	if !ok {
 		return fmt.Errorf("original_worker_count not found in hibernate job metadata")
+	}
+
+	workerCountStr, ok := workerCountVal.(string)
+	if !ok {
+		return fmt.Errorf("original_worker_count is not a string")
 	}
 
 	originalWorkerCount, err := strconv.Atoi(workerCountStr)
@@ -407,9 +418,4 @@ func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, j
 
 	log.Printf("IKS cluster %s marked as resumed (Note: actual worker scaling not yet implemented)", cluster.Name)
 	return nil
-}
-
-// int32Ptr returns a pointer to an int32
-func int32Ptr(i int32) *int32 {
-	return &i
 }

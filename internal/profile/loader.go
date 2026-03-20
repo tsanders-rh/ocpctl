@@ -103,8 +103,15 @@ func (l *Loader) Validate(profile *Profile) error {
 	// Additional custom validations
 
 	// 1. Default version must be in allowlist
-	if !contains(profile.OpenshiftVersions.Allowlist, profile.OpenshiftVersions.Default) {
-		return fmt.Errorf("default version %s not in allowlist", profile.OpenshiftVersions.Default)
+	if profile.OpenshiftVersions != nil {
+		if !contains(profile.OpenshiftVersions.Allowlist, profile.OpenshiftVersions.Default) {
+			return fmt.Errorf("default OpenShift version %s not in allowlist", profile.OpenshiftVersions.Default)
+		}
+	}
+	if profile.KubernetesVersions != nil {
+		if !contains(profile.KubernetesVersions.Allowlist, profile.KubernetesVersions.Default) {
+			return fmt.Errorf("default Kubernetes version %s not in allowlist", profile.KubernetesVersions.Default)
+		}
 	}
 
 	// 2. Default region must be in allowlist
@@ -112,39 +119,72 @@ func (l *Loader) Validate(profile *Profile) error {
 		return fmt.Errorf("default region %s not in allowlist", profile.Regions.Default)
 	}
 
-	// 3. Default base domain must be in allowlist
-	if !contains(profile.BaseDomains.Allowlist, profile.BaseDomains.Default) {
-		return fmt.Errorf("default base domain %s not in allowlist", profile.BaseDomains.Default)
+	// 3. Default base domain must be in allowlist (only for OpenShift)
+	if profile.BaseDomains != nil {
+		if !contains(profile.BaseDomains.Allowlist, profile.BaseDomains.Default) {
+			return fmt.Errorf("default base domain %s not in allowlist", profile.BaseDomains.Default)
+		}
 	}
 
-	// 4. Platform-specific config must match platform
-	if profile.Platform == "aws" && profile.PlatformConfig.AWS == nil {
-		return fmt.Errorf("aws platform requires platformConfig.aws")
+	// 4. Platform-specific config must match platform and cluster type
+	if profile.Platform == "aws" {
+		// OpenShift on AWS requires platformConfig.aws
+		if profile.ClusterType == "" || profile.ClusterType == "openshift" {
+			if profile.PlatformConfig.AWS == nil {
+				return fmt.Errorf("OpenShift on AWS requires platformConfig.aws")
+			}
+		}
+		// EKS requires platformConfig.eks
+		if profile.ClusterType == "eks" {
+			if profile.PlatformConfig.EKS == nil {
+				return fmt.Errorf("EKS cluster requires platformConfig.eks")
+			}
+		}
 	}
-	if profile.Platform == "ibmcloud" && profile.PlatformConfig.IBMCloud == nil {
-		return fmt.Errorf("ibmcloud platform requires platformConfig.ibmcloud")
+	if profile.Platform == "ibmcloud" {
+		// OpenShift on IBMCloud requires platformConfig.ibmcloud
+		if profile.ClusterType == "" || profile.ClusterType == "openshift" {
+			if profile.PlatformConfig.IBMCloud == nil {
+				return fmt.Errorf("OpenShift on IBMCloud requires platformConfig.ibmcloud")
+			}
+		}
+		// IKS requires platformConfig.ibmcloud (same config structure)
+		if profile.ClusterType == "iks" {
+			if profile.PlatformConfig.IBMCloud == nil {
+				return fmt.Errorf("IKS cluster requires platformConfig.ibmcloud")
+			}
+		}
 	}
 
-	// 5. Profile name must match platform prefix
-	expectedPrefix := string(profile.Platform) + "-"
+	// 5. Profile name must match platform or cluster type prefix
+	// For OpenShift clusters, use platform prefix (aws-, ibmcloud-)
+	// For EKS/IKS clusters, use cluster type prefix (eks-, iks-)
+	var expectedPrefix string
+	if profile.ClusterType == "eks" || profile.ClusterType == "iks" {
+		expectedPrefix = string(profile.ClusterType) + "-"
+	} else {
+		expectedPrefix = string(profile.Platform) + "-"
+	}
 	if !strings.HasPrefix(profile.Name, expectedPrefix) {
 		return fmt.Errorf("profile name %s must start with %s", profile.Name, expectedPrefix)
 	}
 
-	// 6. Worker max replicas must be >= min replicas (already validated by struct tag, but explicit check)
-	if profile.Compute.Workers.MaxReplicas < profile.Compute.Workers.MinReplicas {
-		return fmt.Errorf("worker maxReplicas (%d) must be >= minReplicas (%d)",
-			profile.Compute.Workers.MaxReplicas, profile.Compute.Workers.MinReplicas)
-	}
+	// 6. Worker max replicas must be >= min replicas (only for profiles with workers)
+	if profile.Compute.Workers != nil {
+		if profile.Compute.Workers.MaxReplicas < profile.Compute.Workers.MinReplicas {
+			return fmt.Errorf("worker maxReplicas (%d) must be >= minReplicas (%d)",
+				profile.Compute.Workers.MaxReplicas, profile.Compute.Workers.MinReplicas)
+		}
 
-	// 7. Worker replicas must be within bounds
-	if profile.Compute.Workers.Replicas < profile.Compute.Workers.MinReplicas {
-		return fmt.Errorf("worker replicas (%d) must be >= minReplicas (%d)",
-			profile.Compute.Workers.Replicas, profile.Compute.Workers.MinReplicas)
-	}
-	if profile.Compute.Workers.Replicas > profile.Compute.Workers.MaxReplicas {
-		return fmt.Errorf("worker replicas (%d) must be <= maxReplicas (%d)",
-			profile.Compute.Workers.Replicas, profile.Compute.Workers.MaxReplicas)
+		// 7. Worker replicas must be within bounds
+		if profile.Compute.Workers.Replicas < profile.Compute.Workers.MinReplicas {
+			return fmt.Errorf("worker replicas (%d) must be >= minReplicas (%d)",
+				profile.Compute.Workers.Replicas, profile.Compute.Workers.MinReplicas)
+		}
+		if profile.Compute.Workers.Replicas > profile.Compute.Workers.MaxReplicas {
+			return fmt.Errorf("worker replicas (%d) must be <= maxReplicas (%d)",
+				profile.Compute.Workers.Replicas, profile.Compute.Workers.MaxReplicas)
+		}
 	}
 
 	return nil

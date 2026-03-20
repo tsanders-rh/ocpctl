@@ -201,11 +201,11 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		destroyAt = &parsedTime
 	}
 
-	// Prepare base_domain - convert empty string to empty for non-OpenShift clusters
-	// This allows NULL in the database for EKS/IKS clusters
-	baseDomain := req.BaseDomain
-	if req.ClusterType != "openshift" && baseDomain == "" {
-		baseDomain = "" // Keep as empty string for now, will be handled by NULLIF in SQL
+	// Prepare base_domain - use pointer for nullable field
+	// EKS/IKS clusters will have nil, OpenShift will have actual value
+	var baseDomain *string
+	if req.ClusterType == "openshift" && req.BaseDomain != "" {
+		baseDomain = &req.BaseDomain
 	}
 
 	// Create cluster record
@@ -284,8 +284,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		cluster.PostDeployStatus = &pending
 	}
 
+	baseDomainStr := ""
+	if cluster.BaseDomain != nil {
+		baseDomainStr = *cluster.BaseDomain
+	}
 	log.Printf("[DEBUG] About to insert cluster: ID=%s, Name=%s, ClusterType=%s, OwnerID=%s, BaseDomain='%s'",
-		cluster.ID, cluster.Name, cluster.ClusterType, cluster.OwnerID, cluster.BaseDomain)
+		cluster.ID, cluster.Name, cluster.ClusterType, cluster.OwnerID, baseDomainStr)
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
 		log.Printf("[ERROR] Database insert failed: %v (owner_id=%s, cluster_type=%s)", err, ownerID, cluster.ClusterType)
@@ -714,12 +718,12 @@ func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.C
 		UpdatedAt: time.Now(),
 	}
 
-	// Construct API URL and Console URL from cluster name and base domain
-	if cluster.Name != "" && cluster.BaseDomain != "" {
-		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, cluster.BaseDomain)
+	// Construct API URL and Console URL from cluster name and base domain (OpenShift only)
+	if cluster.Name != "" && cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
+		apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, *cluster.BaseDomain)
 		outputs.APIURL = &apiURL
 
-		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, cluster.BaseDomain)
+		consoleURL := fmt.Sprintf("https://console-openshift-console.apps.%s.%s", cluster.Name, *cluster.BaseDomain)
 		outputs.ConsoleURL = &consoleURL
 	}
 

@@ -99,9 +99,15 @@ func (h *DestroyHandler) getInfraID(workDir string) (string, error) {
 
 // deleteRoute53HostedZone deletes the Route53 hosted zone for the cluster
 func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *types.Cluster) error {
+	// Skip Route53 cleanup for clusters without base domain (EKS/IKS)
+	if cluster.BaseDomain == nil || *cluster.BaseDomain == "" {
+		log.Printf("Skipping Route53 cleanup - no base domain for cluster %s", cluster.Name)
+		return nil
+	}
+
 	// Construct the domain name for the cluster
 	// Format: <cluster-name>.<base-domain>
-	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, cluster.BaseDomain)
+	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
 
 	log.Printf("Looking for Route53 hosted zone: %s", zoneName)
 

@@ -112,10 +112,11 @@ export interface UpdateUserRequest {
 export interface CreateClusterRequest {
   name: string;
   platform: Platform;
+  cluster_type?: ClusterType;
   version: string;
   profile: string;
   region: string;
-  base_domain: string;
+  base_domain?: string;
   owner: string;
   team: string;
   cost_center: string;
@@ -250,18 +251,27 @@ export interface Profile {
     default: string;
   };
   compute: {
-    control_plane: {
+    control_plane?: {
       replicas: number;
       instance_type: string;
       schedulable: boolean;
     };
-    workers: {
+    workers?: {
       replicas: number;
       min_replicas: number;
       max_replicas: number;
       instance_type: string;
       autoscaling: boolean;
     };
+    node_groups?: {
+      name: string;
+      instance_type: string;
+      desired_capacity: number;
+      min_size: number;
+      max_size: number;
+      volume_size?: number;
+      volume_type?: string;
+    }[];
   };
   lifecycle: {
     max_ttl_hours: number;
