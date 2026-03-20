@@ -130,8 +130,14 @@ func (e *Engine) validateBaseDomain(req *CreateClusterRequest, prof *profile.Pro
 		return
 	}
 
+	// OpenShift clusters require base domain
 	if req.BaseDomain == "" {
 		result.AddError("baseDomain", "base domain is required for OpenShift clusters")
+		return
+	}
+
+	// Skip allowlist check if profile doesn't define base domains (shouldn't happen for OpenShift profiles)
+	if prof.BaseDomains == nil {
 		return
 	}
 
