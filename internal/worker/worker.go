@@ -353,6 +353,13 @@ func (w *Worker) processJob(job *types.Job) {
 		return
 	}
 
+	// Delete old deployment logs from previous attempts
+	// This ensures each retry starts with a clean slate and sequence numbers start from 0
+	if err := w.store.DeploymentLogs.DeleteByJobID(ctx, job.ID); err != nil {
+		log.Printf("Warning: failed to delete old deployment logs for job %s: %v", job.ID, err)
+		// Continue processing - this is not fatal
+	}
+
 	log.Printf("Processing job %s (type=%s, cluster=%s)", job.ID, job.JobType, job.ClusterID)
 
 	// Process the job
