@@ -277,6 +277,16 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 
 	output, err := eksInstaller.DestroyCluster(destroyCtx, cluster.Name, cluster.Region)
 	if err != nil {
+		// Check if cluster is already deleted (ResourceNotFoundException)
+		if isClusterNotFoundError(output) {
+			log.Printf("EKS cluster %s not found (already deleted), marking as destroyed", cluster.Name)
+			// Cluster is already gone, treat as success
+			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+				return fmt.Errorf("mark cluster destroyed: %w", err)
+			}
+			return nil
+		}
+
 		log.Printf("EKS cluster destruction failed: %v\nOutput: %s", err, output)
 		// Mark as failed but don't return error - cluster resources may be partially destroyed
 		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusFailed); updateErr != nil {
@@ -350,4 +360,28 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
 	return nil
+}
+
+// isClusterNotFoundError checks if the error message indicates the cluster doesn't exist
+func isClusterNotFoundError(output string) bool {
+	return stringContains(output, "ResourceNotFoundException") ||
+		stringContains(output, "No cluster found for name") ||
+		stringContains(output, "cluster not found")
+}
+
+// stringContains is a helper function to check if a string contains a substring
+func stringContains(s, substr string) bool {
+	// Simple contains implementation without importing strings package
+	if len(substr) == 0 {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
