@@ -417,12 +417,12 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 			Name:    cluster.Name,
 			Region:  cluster.Region,
 			Version: cluster.Version,
+			Tags:    cluster.EffectiveTags,
 		},
 		IAM: &installer.EKSIAM{
 			WithOIDC: true, // Enable OIDC provider for IRSA
 		},
 		NodeGroups: []installer.EKSNodeGroup{},
-		Tags:       cluster.EffectiveTags,
 	}
 
 	// Add node groups from profile

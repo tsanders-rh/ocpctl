@@ -26,14 +26,14 @@ type EKSClusterConfig struct {
 	IAM        *EKSIAM                `yaml:"iam,omitempty"`
 	NodeGroups []EKSNodeGroup         `yaml:"nodeGroups"`
 	VPC        *EKSVPC                `yaml:"vpc,omitempty"`
-	Tags       map[string]string      `yaml:"tags,omitempty"`
 }
 
 // EKSMetadata represents cluster metadata
 type EKSMetadata struct {
-	Name    string `yaml:"name"`
-	Region  string `yaml:"region"`
-	Version string `yaml:"version"`
+	Name    string            `yaml:"name"`
+	Region  string            `yaml:"region"`
+	Version string            `yaml:"version"`
+	Tags    map[string]string `yaml:"tags,omitempty"`
 }
 
 // EKSIAM represents IAM configuration
