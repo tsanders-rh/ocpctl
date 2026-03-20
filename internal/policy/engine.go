@@ -83,13 +83,30 @@ func (e *Engine) validatePlatform(req *CreateClusterRequest, prof *profile.Profi
 // validateVersion checks version is in profile allowlist
 func (e *Engine) validateVersion(req *CreateClusterRequest, prof *profile.Profile, result *ValidationResult) {
 	if req.Version == "" {
-		result.AddError("version", "OpenShift version is required")
+		result.AddError("version", "version is required")
+		return
+	}
+
+	// Determine which version config to use based on cluster type
+	var versionConfig *profile.VersionConfig
+	var versionType string
+
+	if req.ClusterType == "openshift" {
+		versionConfig = prof.OpenshiftVersions
+		versionType = "OpenShift"
+	} else if req.ClusterType == "eks" || req.ClusterType == "iks" {
+		versionConfig = prof.KubernetesVersions
+		versionType = "Kubernetes"
+	}
+
+	// If version config is not defined in profile, skip validation
+	if versionConfig == nil {
 		return
 	}
 
 	// Check if version is in allowlist
 	found := false
-	for _, v := range prof.OpenshiftVersions.Allowlist {
+	for _, v := range versionConfig.Allowlist {
 		if req.Version == v {
 			found = true
 			break
@@ -97,7 +114,7 @@ func (e *Engine) validateVersion(req *CreateClusterRequest, prof *profile.Profil
 	}
 
 	if !found {
-		result.AddError("version", fmt.Sprintf("version %s not in profile allowlist: %v", req.Version, prof.OpenshiftVersions.Allowlist))
+		result.AddError("version", fmt.Sprintf("%s version %s not in profile allowlist: %v", versionType, req.Version, versionConfig.Allowlist))
 	}
 }
 
@@ -227,7 +244,16 @@ func (e *Engine) GetDefaultVersion(profileName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return prof.OpenshiftVersions.Default, nil
+
+	// Return OpenShift version if available, otherwise Kubernetes version
+	if prof.OpenshiftVersions != nil {
+		return prof.OpenshiftVersions.Default, nil
+	}
+	if prof.KubernetesVersions != nil {
+		return prof.KubernetesVersions.Default, nil
+	}
+
+	return "", fmt.Errorf("profile has no version configuration")
 }
 
 // GetDefaultRegion returns the default region for a profile
@@ -245,6 +271,12 @@ func (e *Engine) GetDefaultBaseDomain(profileName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// BaseDomains is optional (not used for EKS/IKS)
+	if prof.BaseDomains == nil {
+		return "", nil
+	}
+
 	return prof.BaseDomains.Default, nil
 }
 
