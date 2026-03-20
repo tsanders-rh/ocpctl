@@ -20,13 +20,13 @@ type ClusterStore struct {
 func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error {
 	query := `
 		INSERT INTO clusters (
-			id, name, platform, version, profile, region, base_domain,
+			id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
 			offhours_opt_in, work_hours_enabled, work_hours_start, work_hours_end, work_days
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19, $20, $21, $22, $23
+			$1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), $9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19, $20, $21, $22, $23, $24
 		)
 	`
 
@@ -34,10 +34,11 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.ID,
 		cluster.Name,
 		cluster.Platform,
+		cluster.ClusterType,
 		cluster.Version,
 		cluster.Profile,
 		cluster.Region,
-		cluster.BaseDomain,
+		cluster.BaseDomain, // Will be converted to NULL if empty string via NULLIF
 		cluster.Owner,
 		cluster.OwnerID,
 		cluster.Team,

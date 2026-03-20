@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -63,7 +64,7 @@ type CreateClusterRequest struct {
 	Version          string                    `json:"version" validate:"required"`
 	Profile          string                    `json:"profile" validate:"required"`
 	Region           string                    `json:"region" validate:"required"`
-	BaseDomain       string                    `json:"base_domain" validate:"required"`
+	BaseDomain       string                    `json:"base_domain,omitempty"` // Only required for OpenShift
 	Owner            string                    `json:"owner" validate:"required,email"`
 	Team             string                    `json:"team" validate:"required"`
 	CostCenter       string                    `json:"cost_center" validate:"required"`
@@ -110,14 +111,30 @@ type ListClustersFilters struct {
 //	@Security		BearerAuth
 //	@Router			/clusters [post]
 func (h *ClusterHandler) Create(c echo.Context) error {
+	log.Printf("[DEBUG] Create cluster endpoint called")
 	var req CreateClusterRequest
 	if err := c.Bind(&req); err != nil {
+		log.Printf("[ERROR] Failed to bind request: %v", err)
 		return ErrorBadRequest(c, "Invalid request body")
 	}
+	log.Printf("[DEBUG] Request bound successfully: name=%s, cluster_type=%s, profile=%s", req.Name, req.ClusterType, req.Profile)
 
 	// Validate request body
 	if err := c.Validate(req); err != nil {
+		log.Printf("[ERROR] Request validation failed: %v", err)
 		return ErrorBadRequest(c, err.Error())
+	}
+	log.Printf("[DEBUG] Request validation passed")
+
+	// Custom validation: base_domain is required for OpenShift clusters
+	if req.ClusterType == "openshift" && req.BaseDomain == "" {
+		return ErrorBadRequest(c, "base_domain is required for OpenShift clusters")
+	}
+
+	// Convert empty base_domain to empty string for non-OpenShift clusters
+	// (frontend sends empty string, but we want to store empty string in DB for EKS/IKS)
+	if req.ClusterType != "openshift" && req.BaseDomain == "" {
+		// Keep it as empty string - the database column allows empty strings
 	}
 
 	// Get default TTL if not provided
@@ -151,20 +168,26 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	// Validate against policy
+	log.Printf("[DEBUG] Starting policy validation for profile: %s", req.Profile)
 	validation, err := h.policy.ValidateCreateRequest(policyReq)
 	if err != nil {
+		log.Printf("[ERROR] Policy validation error: %v", err)
 		return LogAndReturnGenericError(c, fmt.Errorf("policy validation failed: %w", err))
 	}
+	log.Printf("[DEBUG] Policy validation completed, valid=%v", validation.Valid)
 
 	if !validation.Valid {
+		log.Printf("[ERROR] Policy validation failed: %+v", validation)
 		return ErrorValidation(c, validation)
 	}
 
 	// Get authenticated user ID
 	ownerID, err := auth.GetUserID(c)
 	if err != nil {
+		log.Printf("[ERROR] Failed to get user ID: %v", err)
 		return err
 	}
+	log.Printf("[DEBUG] Creating cluster for user ID: %s", ownerID)
 
 	ctx := c.Request().Context()
 
@@ -178,6 +201,13 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		destroyAt = &parsedTime
 	}
 
+	// Prepare base_domain - convert empty string to empty for non-OpenShift clusters
+	// This allows NULL in the database for EKS/IKS clusters
+	baseDomain := req.BaseDomain
+	if req.ClusterType != "openshift" && baseDomain == "" {
+		baseDomain = "" // Keep as empty string for now, will be handled by NULLIF in SQL
+	}
+
 	// Create cluster record
 	cluster := &types.Cluster{
 		ID:                 uuid.New().String(),
@@ -187,7 +217,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		Version:            req.Version,
 		Profile:            req.Profile,
 		Region:             req.Region,
-		BaseDomain:         req.BaseDomain,
+		BaseDomain:         baseDomain,
 		Status:             types.ClusterStatusPending,
 		Owner:              req.Owner,
 		OwnerID:            ownerID,
@@ -254,9 +284,16 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		cluster.PostDeployStatus = &pending
 	}
 
+	log.Printf("[DEBUG] About to insert cluster: ID=%s, Name=%s, ClusterType=%s, OwnerID=%s, BaseDomain='%s'",
+		cluster.ID, cluster.Name, cluster.ClusterType, cluster.OwnerID, cluster.BaseDomain)
+
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to create cluster: %w", err))
+		log.Printf("[ERROR] Database insert failed: %v (owner_id=%s, cluster_type=%s)", err, ownerID, cluster.ClusterType)
+		// Return detailed error for debugging
+		return ErrorBadRequest(c, fmt.Sprintf("Database error: %v (owner_id=%s, cluster_type=%s)", err, ownerID, cluster.ClusterType))
 	}
+
+	log.Printf("[DEBUG] Cluster created successfully: %s", cluster.ID)
 
 	// Create provision job
 	job := &types.Job{
