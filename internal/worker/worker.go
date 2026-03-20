@@ -467,67 +467,107 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 
 // cleanupPartialDeployment cleans up partial infrastructure from a failed CREATE job
 func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
-	// Get cluster metadata for DNS cleanup
+	// Get cluster metadata
 	cluster, err := w.store.Clusters.GetByID(ctx, job.ClusterID)
 	if err != nil {
-		log.Printf("Warning: failed to get cluster for DNS cleanup: %v", err)
-	} else {
-		// Clean up DNS records before openshift-install destroy
-		// This ensures DNS cleanup happens even if workDir doesn't exist
-		// Only clean up DNS for OpenShift clusters (have base domain)
-		if cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
-			log.Printf("Cleaning up DNS records for cluster %s.%s", cluster.Name, *cluster.BaseDomain)
-			dnsCleaner := NewDNSCleaner(cluster.Region)
-			if err := dnsCleaner.CleanupClusterDNS(ctx, cluster.Name, *cluster.BaseDomain); err != nil {
-				log.Printf("Warning: DNS cleanup failed: %v", err)
-			} else {
-				log.Printf("Successfully cleaned up DNS records")
-			}
+		log.Printf("Warning: failed to get cluster for cleanup: %v", err)
+		return
+	}
+
+	log.Printf("Cleaning up partial deployment for job %s (cluster %s, type %s)", job.ID, job.ClusterID, cluster.ClusterType)
+
+	// Clean up DNS records for OpenShift clusters (have base domain)
+	if cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
+		log.Printf("Cleaning up DNS records for cluster %s.%s", cluster.Name, *cluster.BaseDomain)
+		dnsCleaner := NewDNSCleaner(cluster.Region)
+		if err := dnsCleaner.CleanupClusterDNS(ctx, cluster.Name, *cluster.BaseDomain); err != nil {
+			log.Printf("Warning: DNS cleanup failed: %v", err)
 		} else {
-			log.Printf("Skipping DNS cleanup - no base domain for cluster %s", cluster.Name)
+			log.Printf("Successfully cleaned up DNS records")
 		}
 	}
 
 	workDir := fmt.Sprintf("%s/%s", w.config.WorkDir, job.ClusterID)
 
-	// Check if work directory exists
-	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		log.Printf("Work directory %s does not exist, skipping openshift-install destroy", workDir)
-		return
-	}
-
-	log.Printf("Cleaning up partial deployment for job %s (cluster %s)", job.ID, job.ClusterID)
-
-	// Get cluster version for version-specific installer
-	if cluster != nil {
-		// Create version-specific installer
-		inst, err := installer.NewInstallerForVersion(cluster.Version)
-		if err != nil {
-			log.Printf("Warning: failed to create installer for version %s: %v", cluster.Version, err)
-			log.Printf("Skipping openshift-install destroy, proceeding with directory cleanup")
-		} else {
-			// Run openshift-install destroy to clean up partial infrastructure
-			output, err := inst.DestroyCluster(ctx, workDir)
-
-			if err != nil {
-				// Log the error but don't fail - allow retry to proceed
-				log.Printf("Warning: cleanup failed for job %s: %v\nOutput: %s", job.ID, err, output)
-				log.Printf("Proceeding with retry despite cleanup failure")
-			} else {
-				log.Printf("Successfully cleaned up partial deployment for job %s", job.ID)
-			}
-		}
-	} else {
-		log.Printf("Cannot create installer without cluster metadata, skipping destroy")
+	// Route to appropriate cleanup based on cluster type
+	switch cluster.ClusterType {
+	case types.ClusterTypeOpenShift:
+		w.cleanupOpenShiftDeployment(ctx, job, cluster, workDir)
+	case types.ClusterTypeEKS:
+		w.cleanupEKSDeployment(ctx, job, cluster, workDir)
+	case types.ClusterTypeIKS:
+		w.cleanupIKSDeployment(ctx, job, cluster, workDir)
+	default:
+		log.Printf("Unknown cluster type %s, skipping cleanup", cluster.ClusterType)
 	}
 
 	// Remove work directory to ensure clean slate for retry
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to remove work directory %s: %v", workDir, err)
 	}
+}
 
-	// Clean up temporary files created by openshift-install
-	w.cleanupTempFiles()
+// cleanupOpenShiftDeployment cleans up partial OpenShift deployment
+func (w *Worker) cleanupOpenShiftDeployment(ctx context.Context, job *types.Job, cluster *types.Cluster, workDir string) {
+	// Check if work directory exists
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		log.Printf("Work directory %s does not exist, skipping openshift-install destroy", workDir)
+		return
+	}
+
+	// Create version-specific installer
+	inst, err := installer.NewInstallerForVersion(cluster.Version)
+	if err != nil {
+		log.Printf("Warning: failed to create installer for version %s: %v", cluster.Version, err)
+		return
+	}
+
+	// Run openshift-install destroy to clean up partial infrastructure
+	output, err := inst.DestroyCluster(ctx, workDir)
+	if err != nil {
+		log.Printf("Warning: openshift-install destroy failed for job %s: %v\nOutput: %s", job.ID, err, output)
+	} else {
+		log.Printf("Successfully cleaned up OpenShift deployment for job %s", job.ID)
+	}
+}
+
+// cleanupEKSDeployment cleans up partial EKS deployment
+func (w *Worker) cleanupEKSDeployment(ctx context.Context, job *types.Job, cluster *types.Cluster, workDir string) {
+	log.Printf("Cleaning up partial EKS deployment for cluster %s in region %s", cluster.Name, cluster.Region)
+
+	eksInstaller := installer.NewEKSInstaller()
+	output, err := eksInstaller.DestroyCluster(ctx, cluster.Name, cluster.Region)
+	if err != nil {
+		log.Printf("Warning: eksctl delete failed for job %s: %v\nOutput: %s", job.ID, err, output)
+	} else {
+		log.Printf("Successfully cleaned up EKS deployment for job %s", job.ID)
+	}
+}
+
+// cleanupIKSDeployment cleans up partial IKS deployment
+func (w *Worker) cleanupIKSDeployment(ctx context.Context, job *types.Job, cluster *types.Cluster, workDir string) {
+	log.Printf("Cleaning up partial IKS deployment for cluster %s", cluster.Name)
+
+	iksInstaller := installer.NewIKSInstaller()
+
+	// Login to IBM Cloud
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey == "" {
+		log.Printf("Warning: IBMCLOUD_API_KEY not set, cannot cleanup IKS cluster")
+		return
+	}
+
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+		log.Printf("Warning: IBM Cloud login failed: %v", err)
+		return
+	}
+
+	output, err := iksInstaller.DestroyCluster(ctx, cluster.Name)
+	if err != nil {
+		log.Printf("Warning: IKS cluster destroy failed for job %s: %v\nOutput: %s", job.ID, err, output)
+	} else {
+		log.Printf("Successfully cleaned up IKS deployment for job %s", job.ID)
+	}
 }
 
 // cleanupTempFiles removes temporary files created by openshift-install
