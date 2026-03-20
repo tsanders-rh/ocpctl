@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -9,31 +8,28 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
-// PostConfigureHandler handles post-deployment configuration for a cluster
+// PostConfigureHandler handles post-configuration tasks (e.g., installing dashboards)
 type PostConfigureHandler struct {
-	config          *Config
-	store           *store.Store
-	profileRegistry *profile.Registry
+	config *Config
+	store  *store.Store
 }
 
 // NewPostConfigureHandler creates a new post-configure handler
-func NewPostConfigureHandler(config *Config, st *store.Store, profileRegistry *profile.Registry) *PostConfigureHandler {
+func NewPostConfigureHandler(config *Config, st *store.Store) *PostConfigureHandler {
 	return &PostConfigureHandler{
-		config:          config,
-		store:           st,
-		profileRegistry: profileRegistry,
+		config: config,
+		store:  st,
 	}
 }
 
-// Handle executes post-deployment configuration for a cluster
+// Handle handles a post-configuration job
 func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Get cluster details
 	cluster, err := h.store.Clusters.GetByID(ctx, job.ClusterID)
@@ -41,731 +37,266 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 		return fmt.Errorf("get cluster: %w", err)
 	}
 
-	log.Printf("Starting post-deployment configuration for cluster %s", cluster.Name)
+	log.Printf("Running post-configuration for cluster %s (type=%s)", cluster.Name, cluster.ClusterType)
 
-	// Verify cluster is READY
-	if cluster.Status != types.ClusterStatusReady {
-		return &types.NotReadyError{
-			Resource: "cluster",
-			Current:  string(cluster.Status),
-			Required: string(types.ClusterStatusReady),
-		}
-	}
-
-	// Get profile
-	prof, err := h.profileRegistry.Get(cluster.Profile)
-	if err != nil {
-		return fmt.Errorf("get profile: %w", err)
-	}
-
-	// Check if post-deployment is enabled
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s, skipping", cluster.Profile)
+	// Route to appropriate handler based on cluster type
+	switch cluster.ClusterType {
+	case types.ClusterTypeEKS:
+		return h.handleEKSPostConfigure(ctx, job, cluster)
+	case types.ClusterTypeIKS:
+		return h.handleIKSPostConfigure(ctx, job, cluster)
+	case types.ClusterTypeOpenShift:
+		// OpenShift has built-in console, no post-configuration needed
+		log.Printf("OpenShift cluster %s has built-in console, skipping post-configuration", cluster.Name)
 		return nil
+	default:
+		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}
+}
 
-	// Update cluster post_deploy_status to 'in_progress'
-	if err := h.updatePostDeployStatus(ctx, cluster.ID, "in_progress"); err != nil {
-		return fmt.Errorf("update post-deploy status: %w", err)
-	}
+// handleEKSPostConfigure installs Kubernetes Dashboard for EKS clusters
+func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Installing Kubernetes Dashboard for EKS cluster %s", cluster.Name)
 
-	// Ensure artifacts are available locally
-	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
-		return fmt.Errorf("ensure artifacts available: %w", err)
-	}
-
-	// Get kubeconfig path
+	// Create work directory
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
-
-	// Verify kubeconfig exists
-	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("kubeconfig not found at %s", kubeconfigPath)
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return fmt.Errorf("create work directory: %w", err)
 	}
 
-	// Install operators
-	for _, op := range prof.PostDeployment.Operators {
-		if err := h.installOperator(ctx, cluster, kubeconfigPath, op); err != nil {
-			// Mark as failed
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("install operator %s: %w", op.Name, err)
-		}
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "kubeconfig")
+	eksInstaller := installer.NewEKSInstaller()
+	if err := eksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+		return fmt.Errorf("get kubeconfig: %w", err)
 	}
 
-	// Execute scripts
-	for _, script := range prof.PostDeployment.Scripts {
-		if err := h.executeScript(ctx, cluster, kubeconfigPath, script); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("execute script %s: %w", script.Name, err)
-		}
+	// Install Kubernetes Dashboard
+	if err := h.installKubernetesDashboard(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("install kubernetes dashboard: %w", err)
 	}
 
-	// Apply manifests
-	for _, manifest := range prof.PostDeployment.Manifests {
-		if err := h.applyManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
-		}
+	// Create admin service account
+	if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("create dashboard service account: %w", err)
 	}
 
-	// Install Helm charts
-	for _, chart := range prof.PostDeployment.HelmCharts {
-		if err := h.installHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("install helm chart %s: %w", chart.Name, err)
-		}
+	// Get service account token
+	token, err := h.getDashboardToken(ctx, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("get dashboard token: %w", err)
 	}
 
-	// Mark as completed
-	if err := h.updatePostDeployStatus(ctx, cluster.ID, "completed"); err != nil {
-		return fmt.Errorf("update post-deploy status: %w", err)
+	// Expose dashboard via LoadBalancer
+	dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("expose dashboard: %w", err)
 	}
 
-	log.Printf("Successfully completed post-deployment configuration for cluster %s", cluster.Name)
+	log.Printf("Kubernetes Dashboard installed successfully at: %s", dashboardURL)
+	log.Printf("Dashboard token: %s", token)
+
+	// Update cluster outputs with dashboard URL
+	if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
+		return fmt.Errorf("update cluster console URL: %w", err)
+	}
+
 	return nil
 }
 
-// installOperator installs an OpenShift operator via Subscription
-func (h *PostConfigureHandler) installOperator(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, op profile.OperatorConfig) error {
-	log.Printf("Installing operator: %s in namespace %s", op.Name, op.Namespace)
+// installKubernetesDashboard installs the Kubernetes Dashboard
+func (h *PostConfigureHandler) installKubernetesDashboard(ctx context.Context, kubeconfigPath string) error {
+	log.Println("Installing Kubernetes Dashboard...")
 
-	// Track configuration task
-	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeOperator, op.Name)
+	// Apply recommended dashboard manifest
+	// Using v2.7.0 as it's a stable version with good LoadBalancer support
+	dashboardURL := "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", dashboardURL, "--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("create config task: %w", err)
+		return fmt.Errorf("kubectl apply dashboard: %w\nOutput: %s", err, string(output))
 	}
 
-	// Update status to installing
-	if err := h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil); err != nil {
-		return fmt.Errorf("update config status: %w", err)
+	log.Printf("Dashboard installed: %s", string(output))
+
+	// Wait for dashboard to be ready
+	log.Println("Waiting for dashboard deployment to be ready...")
+	waitCmd := exec.CommandContext(ctx, "kubectl", "wait", "--for=condition=available",
+		"--timeout=300s", "deployment/kubernetes-dashboard",
+		"-n", "kubernetes-dashboard", "--kubeconfig", kubeconfigPath)
+	if output, err := waitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("wait for dashboard: %w\nOutput: %s", err, string(output))
 	}
 
-	// Create namespace if it doesn't exist
-	if err := h.ensureNamespace(ctx, kubeconfigPath, op.Namespace); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("ensure namespace: %w", err)
-	}
-
-	// Create OperatorGroup (required for OLM)
-	if err := h.createOperatorGroup(ctx, kubeconfigPath, op.Namespace); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("create operator group: %w", err)
-	}
-
-	// Create Subscription
-	if err := h.createSubscription(ctx, kubeconfigPath, op); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("create subscription: %w", err)
-	}
-
-	// Wait for operator to be ready
-	if err := h.waitForOperatorReady(ctx, kubeconfigPath, op); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("wait for operator: %w", err)
-	}
-
-	// Create custom resource if specified
-	if op.CustomResource != nil {
-		if err := h.createCustomResource(ctx, kubeconfigPath, *op.CustomResource); err != nil {
-			errMsg := err.Error()
-			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-			return fmt.Errorf("create custom resource: %w", err)
-		}
-	}
-
-	// Mark as completed
-	if err := h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil); err != nil {
-		return fmt.Errorf("update config status: %w", err)
-	}
-
-	log.Printf("Successfully installed operator %s", op.Name)
+	log.Println("Dashboard deployment is ready")
 	return nil
 }
 
-// ensureNamespace creates a namespace if it doesn't exist
-func (h *PostConfigureHandler) ensureNamespace(ctx context.Context, kubeconfigPath, namespace string) error {
-	yamlContent := fmt.Sprintf(`apiVersion: v1
-kind: Namespace
+// createDashboardServiceAccount creates an admin service account for dashboard access
+func (h *PostConfigureHandler) createDashboardServiceAccount(ctx context.Context, kubeconfigPath string) error {
+	log.Println("Creating dashboard admin service account...")
+
+	// Create service account manifest
+	manifest := `---
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: %s
-`, namespace)
-
-	return h.applyYAML(ctx, kubeconfigPath, yamlContent)
-}
-
-// createOperatorGroup creates an OperatorGroup for the namespace
-func (h *PostConfigureHandler) createOperatorGroup(ctx context.Context, kubeconfigPath, namespace string) error {
-	yamlContent := fmt.Sprintf(`apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: %s-operator-group
-  namespace: %s
-spec:
-  targetNamespaces:
-  - %s
-`, namespace, namespace, namespace)
-
-	return h.applyYAML(ctx, kubeconfigPath, yamlContent)
-}
-
-// createSubscription creates an OLM Subscription for the operator
-func (h *PostConfigureHandler) createSubscription(ctx context.Context, kubeconfigPath string, op profile.OperatorConfig) error {
-	yamlContent := fmt.Sprintf(`apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: v1
+kind: Secret
 metadata:
-  name: %s
-  namespace: %s
-spec:
-  channel: %s
-  name: %s
-  source: %s
-  sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-`, op.Name, op.Namespace, op.Channel, op.Name, op.Source)
+  name: admin-user-token
+  namespace: kubernetes-dashboard
+  annotations:
+    kubernetes.io/service-account.name: admin-user
+type: kubernetes.io/service-account-token
+`
 
-	return h.applyYAML(ctx, kubeconfigPath, yamlContent)
-}
-
-// waitForOperatorReady waits for the operator CSV to reach Succeeded phase
-func (h *PostConfigureHandler) waitForOperatorReady(ctx context.Context, kubeconfigPath string, op profile.OperatorConfig) error {
-	log.Printf("Waiting for operator %s to be ready (timeout: 10 minutes)...", op.Name)
-
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for operator %s to be ready", op.Name)
-		case <-ticker.C:
-			// Check if CSV is ready
-			cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
-				"get", "csv", "-n", op.Namespace, "-o", "jsonpath={.items[?(@.spec.displayName contains '"+op.Name+"')].status.phase}")
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				log.Printf("Checking operator status: %v (will retry)", err)
-				continue
-			}
-
-			if strings.Contains(string(output), "Succeeded") {
-				log.Printf("Operator %s is ready", op.Name)
-				return nil
-			}
-
-			log.Printf("Operator %s status: %s (waiting...)", op.Name, strings.TrimSpace(string(output)))
-		}
-	}
-}
-
-// createCustomResource creates a custom resource after operator installation
-func (h *PostConfigureHandler) createCustomResource(ctx context.Context, kubeconfigPath string, cr profile.CustomResourceConfig) error {
-	log.Printf("Creating custom resource: %s/%s", cr.Kind, cr.Name)
-
-	// Build YAML for custom resource
-	// Note: This is a simplified version. In production, you'd want to marshal the spec properly
-	namespace := cr.Namespace
-	if namespace == "" {
-		namespace = "default"
-	}
-
-	yamlContent := fmt.Sprintf(`apiVersion: %s
-kind: %s
-metadata:
-  name: %s
-  namespace: %s
-spec: {}
-`, cr.APIVersion, cr.Kind, cr.Name, namespace)
-
-	return h.applyYAML(ctx, kubeconfigPath, yamlContent)
-}
-
-// applyManifest applies a manifest file
-func (h *PostConfigureHandler) applyManifest(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, manifest profile.ManifestConfig) error {
-	log.Printf("Applying manifest: %s", manifest.Name)
-
-	// Track configuration task
-	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeManifest, manifest.Name)
-	if err != nil {
-		return fmt.Errorf("create config task: %w", err)
-	}
-
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
-
-	// Read manifest file
-	manifestPath := filepath.Join("manifests", manifest.Path)
-	content, err := os.ReadFile(manifestPath)
-	if err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("read manifest: %w", err)
+	// Write manifest to file
+	manifestPath := filepath.Join(filepath.Dir(kubeconfigPath), "dashboard-admin.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0600); err != nil {
+		return fmt.Errorf("write service account manifest: %w", err)
 	}
 
 	// Apply manifest
-	if err := h.applyYAML(ctx, kubeconfigPath, string(content)); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("apply manifest: %w", err)
-	}
-
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
-	return nil
-}
-
-// executeScript executes a shell script for post-deployment configuration
-func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, script profile.ScriptConfig) error {
-	log.Printf("Executing script: %s", script.Name)
-
-	// Track configuration task
-	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeScript, script.Name)
-	if err != nil {
-		return fmt.Errorf("create config task: %w", err)
-	}
-
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
-
-	// Build script path (absolute path to deployed manifests directory)
-	scriptPath := filepath.Join("/opt/ocpctl/manifests", script.Path)
-
-	// Verify script exists and is executable
-	info, err := os.Stat(scriptPath)
-	if err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("script not found: %w", err)
-	}
-
-	// Check if executable
-	if info.Mode()&0111 == 0 {
-		errMsg := "script is not executable"
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("%s", errMsg)
-	}
-
-	// Get cluster infrastructure details
-	infraID, region, err := h.getClusterInfraDetails(ctx, cluster)
-	if err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("get cluster details: %w", err)
-	}
-
-	// Prepare environment variables
-	env := os.Environ()
-	env = append(env,
-		fmt.Sprintf("CLUSTER_ID=%s", cluster.ID),
-		fmt.Sprintf("CLUSTER_NAME=%s", cluster.Name),
-		fmt.Sprintf("INFRA_ID=%s", infraID),
-		fmt.Sprintf("REGION=%s", region),
-		fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath),
-	)
-
-	// Add custom environment variables from script config
-	for key, value := range script.Env {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// Execute script with real-time log streaming
-	cmd := exec.CommandContext(ctx, scriptPath)
-	cmd.Env = env
-	cmd.Dir = filepath.Dir(scriptPath) // Set working directory to script's directory
-
-	// Stream stdout and stderr to deployment logs
-	if err := h.executeScriptWithLogging(ctx, cluster.ID, cluster.Name, script.Name, cmd); err != nil {
-		errMsg := err.Error()
-		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("script execution failed: %w", err)
-	}
-
-	log.Printf("Script %s completed successfully", script.Name)
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
-	return nil
-}
-
-// getClusterInfraDetails retrieves infrastructure ID and region from the cluster
-func (h *PostConfigureHandler) getClusterInfraDetails(ctx context.Context, cluster *types.Cluster) (string, string, error) {
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
-
-	// Get infraID from cluster using oc command
-	cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
-		"get", "infrastructure", "cluster",
-		"-o", "jsonpath={.status.infrastructureName}")
-
-	infraIDBytes, err := cmd.Output()
-	if err != nil {
-		return "", "", fmt.Errorf("get infrastructure name: %w", err)
-	}
-
-	infraID := strings.TrimSpace(string(infraIDBytes))
-	if infraID == "" {
-		return "", "", fmt.Errorf("infrastructure name is empty")
-	}
-
-	// Get region
-	region := cluster.Region
-	if region == "" {
-		region = "us-east-1" // Default fallback
-	}
-
-	return infraID, region, nil
-}
-
-// installHelmChart installs a Helm chart
-func (h *PostConfigureHandler) installHelmChart(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, chart profile.HelmChartConfig) error {
-	log.Printf("Installing Helm chart: %s", chart.Name)
-
-	// Track configuration task
-	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeHelm, chart.Name)
-	if err != nil {
-		return fmt.Errorf("create config task: %w", err)
-	}
-
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
-
-	// TODO: Implement Helm chart installation
-	// This would involve:
-	// 1. helm repo add
-	// 2. helm install with values
-
-	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
-	return nil
-}
-
-// applyYAML applies YAML content to the cluster
-func (h *PostConfigureHandler) applyYAML(ctx context.Context, kubeconfigPath, yamlContent string) error {
-	cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(yamlContent)
-
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", manifestPath, "--kubeconfig", kubeconfigPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("oc apply failed: %v\nOutput: %s", err, string(output))
+		return fmt.Errorf("kubectl apply service account: %w\nOutput: %s", err, string(output))
 	}
 
-	log.Printf("Applied YAML successfully: %s", strings.TrimSpace(string(output)))
+	log.Printf("Service account created: %s", string(output))
+
+	// Wait a moment for the secret to be created
+	time.Sleep(2 * time.Second)
+
 	return nil
 }
 
-// updatePostDeployStatus updates the cluster's post_deploy_status
-func (h *PostConfigureHandler) updatePostDeployStatus(ctx context.Context, clusterID, status string) error {
-	tx, err := h.store.BeginTx(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
+// getDashboardToken retrieves the admin service account token
+func (h *PostConfigureHandler) getDashboardToken(ctx context.Context, kubeconfigPath string) (string, error) {
+	log.Println("Retrieving dashboard token...")
 
-	query := `
-		UPDATE clusters
-		SET post_deploy_status = $1::text,
-		    post_deploy_completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE NULL END,
-		    updated_at = NOW()
-		WHERE id = $2
-	`
-
-	_, err = tx.Exec(ctx, query, status, clusterID)
+	cmd := exec.CommandContext(ctx, "kubectl", "get", "secret", "admin-user-token",
+		"-n", "kubernetes-dashboard", "-o", "jsonpath={.data.token}", "--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return "", fmt.Errorf("get token: %w\nOutput: %s", err, string(output))
 	}
 
-	return tx.Commit(ctx)
+	// Token is base64 encoded, decode it
+	token := strings.TrimSpace(string(output))
+	if token == "" {
+		return "", fmt.Errorf("empty token received")
+	}
+
+	// Decode base64
+	decodeCmd := exec.Command("base64", "-d")
+	decodeCmd.Stdin = strings.NewReader(token)
+	decoded, err := decodeCmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("decode token: %w", err)
+	}
+
+	return strings.TrimSpace(string(decoded)), nil
 }
 
-// createConfigTask creates or reuses a cluster configuration task
-func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID string, configType types.ConfigType, configName string) (string, error) {
-	tx, err := h.store.BeginTx(ctx)
-	if err != nil {
-		return "", fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
+// exposeDashboardLoadBalancer exposes the dashboard via LoadBalancer and returns the URL
+func (h *PostConfigureHandler) exposeDashboardLoadBalancer(ctx context.Context, kubeconfigPath string) (string, error) {
+	log.Println("Exposing dashboard via LoadBalancer...")
 
-	// Check if a task already exists for this configuration
-	checkQuery := `
-		SELECT id, status
-		FROM cluster_configurations
-		WHERE cluster_id = $1 AND config_type = $2::text AND config_name = $3
-		ORDER BY created_at DESC
-		LIMIT 1
-	`
-
-	var existingID string
-	var existingStatus string
-	err = tx.QueryRow(ctx, checkQuery, clusterID, configType, configName).Scan(&existingID, &existingStatus)
-
-	if err == nil {
-		// Task exists - reuse it if it's pending or failed, reset it to pending
-		if existingStatus == "pending" || existingStatus == "failed" {
-			updateQuery := `
-				UPDATE cluster_configurations
-				SET status = 'pending', error_message = NULL, completed_at = NULL
-				WHERE id = $1
-			`
-			_, err = tx.Exec(ctx, updateQuery, existingID)
-			if err != nil {
-				return "", fmt.Errorf("reset existing task: %w", err)
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return "", err
-			}
-			log.Printf("Reusing existing configuration task %s (was %s)", existingID, existingStatus)
-			return existingID, nil
-		}
-		// If completed, create a new task (fall through to INSERT below)
+	// Patch the kubernetes-dashboard service to be LoadBalancer type
+	patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "service", "kubernetes-dashboard",
+		"-n", "kubernetes-dashboard", "-p", `{"spec":{"type":"LoadBalancer"}}`, "--kubeconfig", kubeconfigPath)
+	if output, err := patchCmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("patch service: %w\nOutput: %s", err, string(output))
 	}
 
-	// No existing task or previous task was completed - create new one
-	insertQuery := `
-		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id
-	`
+	log.Println("Service patched to LoadBalancer type")
 
-	var configID string
-	err = tx.QueryRow(ctx, insertQuery, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
-	if err != nil {
-		return "", err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return "", err
-	}
-
-	return configID, nil
-}
-
-// updateConfigTaskStatus updates a configuration task's status
-func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, configID string, status types.ConfigStatus, errorMessage *string) error {
-	tx, err := h.store.BeginTx(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	query := `
-		UPDATE cluster_configurations
-		SET status = $1::text,
-		    error_message = $2,
-		    completed_at = CASE WHEN $1::text IN ('completed', 'failed') THEN NOW() ELSE NULL END
-		WHERE id = $3
-	`
-
-	_, err = tx.Exec(ctx, query, status, errorMessage, configID)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
-}
-
-// ensureArtifactsAvailable downloads cluster artifacts from S3 if they don't exist locally
-func (h *PostConfigureHandler) ensureArtifactsAvailable(ctx context.Context, clusterID string) error {
-	workDir := filepath.Join(h.config.WorkDir, clusterID)
-	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
-
-	// Check if kubeconfig already exists
-	if _, err := os.Stat(kubeconfigPath); err == nil {
-		log.Printf("[PostConfigureHandler] Artifacts already available locally for cluster %s", clusterID)
-		return nil
-	}
-
-	// Download artifacts from S3
-	log.Printf("[PostConfigureHandler] Downloading artifacts from S3 for cluster %s", clusterID)
-	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
-	if err != nil {
-		return fmt.Errorf("create artifact storage: %w", err)
-	}
-
-	if err := artifactStorage.DownloadClusterArtifacts(ctx, clusterID, workDir); err != nil {
-		return fmt.Errorf("download artifacts: %w", err)
-	}
-
-	log.Printf("[PostConfigureHandler] Successfully downloaded artifacts for cluster %s", clusterID)
-	return nil
-}
-
-// executeScriptWithLogging executes a command and streams its output to deployment logs in real-time
-func (h *PostConfigureHandler) executeScriptWithLogging(ctx context.Context, clusterID, clusterName, scriptName string, cmd *exec.Cmd) error {
-	// Get the job ID from context (we need to find the running POST_CONFIGURE job)
-	job, err := h.getRunningPostConfigJob(ctx, clusterID)
-	if err != nil {
-		log.Printf("Warning: could not find running POST_CONFIGURE job for logging, will log to stdout only: %v", err)
-		// Fall back to regular execution without database logging
+	// Wait for external IP (up to 5 minutes)
+	log.Println("Waiting for LoadBalancer external IP (this may take a few minutes)...")
+	var externalIP string
+	for i := 0; i < 60; i++ {
+		cmd := exec.CommandContext(ctx, "kubectl", "get", "service", "kubernetes-dashboard",
+			"-n", "kubernetes-dashboard", "-o", "jsonpath={.status.loadBalancer.ingress[0].hostname}",
+			"--kubeconfig", kubeconfigPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("%v\nOutput: %s", err, string(output))
-		}
-		log.Printf("Script %s output:\n%s", scriptName, string(output))
-		return nil
-	}
-
-	// Set up pipes to capture stdout and stderr
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("create stdout pipe: %w", err)
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("create stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start command: %w", err)
-	}
-
-	// Channel to collect logs from both stdout and stderr
-	logCh := make(chan *types.DeploymentLog, 100)
-	var sequence int64 = 0
-	var wg sync.WaitGroup
-
-	// Read stdout
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stdoutPipe)
-		for scanner.Scan() {
-			line := scanner.Text()
-			logEntry := &types.DeploymentLog{
-				ClusterID: clusterID,
-				JobID:     job.ID,
-				Sequence:  sequence,
-				Timestamp: time.Now(),
-				LogLevel:  h.inferLogLevel(line),
-				Message:   line,
-				Source:    types.DeploymentLogSourceScript,
-			}
-			sequence++
-			logCh <- logEntry
-
-			// Also log to stdout for journald
-			log.Printf("[%s] %s", scriptName, line)
-		}
-	}()
-
-	// Read stderr
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stderrPipe)
-		for scanner.Scan() {
-			line := scanner.Text()
-			level := stringPtr("error")
-			logEntry := &types.DeploymentLog{
-				ClusterID: clusterID,
-				JobID:     job.ID,
-				Sequence:  sequence,
-				Timestamp: time.Now(),
-				LogLevel:  level,
-				Message:   line,
-				Source:    types.DeploymentLogSourceScript,
-			}
-			sequence++
-			logCh <- logEntry
-
-			// Also log to stderr for journald
-			log.Printf("[%s] ERROR: %s", scriptName, line)
-		}
-	}()
-
-	// Background goroutine to batch and flush logs to database
-	flushDone := make(chan struct{})
-	go func() {
-		defer close(flushDone)
-		batch := []*types.DeploymentLog{}
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case logEntry, ok := <-logCh:
-				if !ok {
-					// Channel closed, flush remaining and exit
-					if len(batch) > 0 {
-						if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
-							log.Printf("Warning: failed to flush final logs batch: %v", err)
-						}
-					}
-					return
-				}
-				batch = append(batch, logEntry)
-
-				// Flush if batch size reached
-				if len(batch) >= 50 {
-					if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
-						log.Printf("Warning: failed to flush logs batch: %v", err)
-					} else {
-						batch = []*types.DeploymentLog{}
-					}
-				}
-
-			case <-ticker.C:
-				// Periodic flush
-				if len(batch) > 0 {
-					if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
-						log.Printf("Warning: failed to flush logs batch: %v", err)
-					} else {
-						batch = []*types.DeploymentLog{}
-					}
-				}
+			log.Printf("Attempt %d/60: Error getting LoadBalancer IP: %v", i+1, err)
+		} else {
+			externalIP = strings.TrimSpace(string(output))
+			if externalIP != "" {
+				break
 			}
 		}
-	}()
+		time.Sleep(5 * time.Second)
+	}
 
-	// Wait for command to complete
-	cmdErr := cmd.Wait()
+	if externalIP == "" {
+		return "", fmt.Errorf("timeout waiting for LoadBalancer external IP")
+	}
 
-	// Wait for readers to finish
-	wg.Wait()
+	// Dashboard runs on HTTPS port 443
+	dashboardURL := fmt.Sprintf("https://%s", externalIP)
+	log.Printf("Dashboard is available at: %s", dashboardURL)
 
-	// Close log channel and wait for final flush
-	close(logCh)
-	<-flushDone
-
-	return cmdErr
+	return dashboardURL, nil
 }
 
-// getRunningPostConfigJob finds the currently running POST_CONFIGURE job for a cluster
-func (h *PostConfigureHandler) getRunningPostConfigJob(ctx context.Context, clusterID string) (*types.Job, error) {
-	jobs, err := h.store.Jobs.ListByClusterID(ctx, clusterID)
-	if err != nil {
-		return nil, fmt.Errorf("list jobs: %w", err)
-	}
+// updateClusterConsoleURL updates the cluster's console URL in the database
+func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clusterID, consoleURL, token string) error {
+	log.Printf("Updating cluster console URL to: %s", consoleURL)
 
-	for _, job := range jobs {
-		if job.JobType == types.JobTypePostConfigure && job.Status == types.JobStatusRunning {
-			return job, nil
+	// Get existing outputs or create new ones
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, clusterID)
+	if err != nil {
+		// If outputs don't exist, we need to create them first
+		// Let's check if the error is "not found"
+		outputs = &types.ClusterOutputs{
+			ClusterID: clusterID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
 	}
 
-	return nil, fmt.Errorf("no running POST_CONFIGURE job found")
+	// Update console URL
+	outputs.ConsoleURL = &consoleURL
+	outputs.UpdatedAt = time.Now()
+
+	// Store the token in a separate field or metadata
+	// For now, we'll log it - in production you might want to store it securely
+	log.Printf("IMPORTANT: Save this dashboard token for accessing the cluster:")
+	log.Printf("Token: %s", token)
+
+	// Upsert cluster outputs
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		return fmt.Errorf("upsert cluster outputs: %w", err)
+	}
+
+	log.Printf("Successfully updated cluster console URL")
+	return nil
 }
 
-// inferLogLevel attempts to infer log level from a log line
-func (h *PostConfigureHandler) inferLogLevel(line string) *string {
-	lineLower := strings.ToLower(line)
-
-	// Check for error indicators
-	if strings.Contains(lineLower, "[error]") || strings.Contains(lineLower, "error:") ||
-	   strings.Contains(lineLower, "failed") || strings.Contains(lineLower, "failure") {
-		return stringPtr("error")
-	}
-
-	// Check for warning indicators
-	if strings.Contains(lineLower, "[warn]") || strings.Contains(lineLower, "warning:") {
-		return stringPtr("warn")
-	}
-
-	// Check for info indicators (including our custom [INFO] tags)
-	if strings.Contains(lineLower, "[info]") || strings.Contains(line, "✓") {
-		return stringPtr("info")
-	}
-
-	// Default to info level
-	return stringPtr("info")
+// handleIKSPostConfigure handles post-configuration for IKS clusters
+func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	// IKS clusters use the IBM Cloud console, no additional configuration needed
+	log.Printf("IKS cluster %s uses IBM Cloud console, skipping post-configuration", cluster.Name)
+	return nil
 }

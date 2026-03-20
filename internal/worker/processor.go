@@ -35,7 +35,7 @@ func NewJobProcessor(config *Config, st *store.Store, profileRegistry *profile.R
 		unlinkSharedStorageHandler:    NewUnlinkSharedStorageHandler(config, st),
 		hibernateHandler:              NewHibernateHandler(config, st),
 		resumeHandler:                 NewResumeHandler(config, st),
-		postConfigureHandler:          NewPostConfigureHandler(config, st, profileRegistry),
+		postConfigureHandler:          NewPostConfigureHandler(config, st),
 	}
 }
 

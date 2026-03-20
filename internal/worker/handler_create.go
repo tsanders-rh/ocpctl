@@ -565,6 +565,27 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	log.Printf("EKS cluster %s is now READY", cluster.Name)
+
+	// Create POST_CONFIGURE job to install Kubernetes Dashboard
+	log.Printf("Queueing POST_CONFIGURE job to install Kubernetes Dashboard for cluster %s", cluster.Name)
+	postConfigJob := &types.Job{
+		ID:          uuid.New().String(),
+		ClusterID:   cluster.ID,
+		JobType:     types.JobTypePostConfigure,
+		Status:      types.JobStatusPending,
+		MaxAttempts: 3,
+		Attempt:     0,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
+		// Don't fail the CREATE job if POST_CONFIGURE queueing fails
+		log.Printf("Warning: failed to queue POST_CONFIGURE job: %v", err)
+	} else {
+		log.Printf("POST_CONFIGURE job %s queued for cluster %s", postConfigJob.ID, cluster.Name)
+	}
+
 	return nil
 }
 

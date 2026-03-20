@@ -51,10 +51,19 @@ download_from_mirror() {
     local tmp_dir=$(mktemp -d)
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
-        # oc client tarball contains both 'oc' and 'kubectl', we only need 'oc'
+        # oc client tarball contains both 'oc' and 'kubectl'
         if [ -f "${tmp_dir}/${binary}" ]; then
             mv "${tmp_dir}/${binary}" "${local_path}"
             chmod +x "${local_path}"
+
+            # If this is the oc binary, also install kubectl from the same tarball
+            if [ "$binary" = "oc" ] && [ -f "${tmp_dir}/kubectl" ]; then
+                local kubectl_path="${INSTALL_DIR}/kubectl"
+                mv "${tmp_dir}/kubectl" "${kubectl_path}"
+                chmod +x "${kubectl_path}"
+                log "✓ Also installed kubectl from oc tarball"
+            fi
+
             rm -rf "${tmp_dir}"
 
             # Upload to S3 for future use
