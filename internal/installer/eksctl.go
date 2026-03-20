@@ -85,21 +85,32 @@ func NewEKSInstaller() *EKSInstaller {
 }
 
 // CreateCluster creates an EKS cluster using eksctl
-func (e *EKSInstaller) CreateCluster(ctx context.Context, configPath string) (string, error) {
+func (e *EKSInstaller) CreateCluster(ctx context.Context, configPath string, logFile string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, e.binaryPath, "create", "cluster", "-f", configPath, "--verbose", "4")
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Open log file for writing
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return "", fmt.Errorf("open log file: %w", err)
+	}
+	defer f.Close()
+
+	// Write both stdout and stderr to log file
+	cmd.Stdout = f
+	cmd.Stderr = f
 
 	if err := cmd.Run(); err != nil {
-		return stderr.String(), fmt.Errorf("eksctl create cluster failed: %w\nStderr: %s", err, stderr.String())
+		// Read log file for error context
+		logData, _ := os.ReadFile(logFile)
+		return string(logData), fmt.Errorf("eksctl create cluster failed: %w", err)
 	}
 
-	return stdout.String(), nil
+	// Read log file for output
+	logData, _ := os.ReadFile(logFile)
+	return string(logData), nil
 }
 
 // DestroyCluster destroys an EKS cluster using eksctl

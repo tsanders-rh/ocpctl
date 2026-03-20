@@ -359,15 +359,29 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 		})
 	}
 
-	// Install log
-	logPath := filepath.Join(workDir, ".openshift_install.log")
-	if stat, err := os.Stat(logPath); err == nil {
+	// Install log - check for OpenShift log
+	openshiftLogPath := filepath.Join(workDir, ".openshift_install.log")
+	if stat, err := os.Stat(openshiftLogPath); err == nil {
 		size := stat.Size()
 		artifacts = append(artifacts, types.ClusterArtifact{
 			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeLog,
 			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/openshift_install.log", h.config.S3BucketName, clusterID),
+			SizeBytes:    &size,
+			CreatedAt:    time.Now(),
+		})
+	}
+
+	// Install log - check for eksctl log
+	eksctlLogPath := filepath.Join(workDir, "eksctl.log")
+	if stat, err := os.Stat(eksctlLogPath); err == nil {
+		size := stat.Size()
+		artifacts = append(artifacts, types.ClusterArtifact{
+			ID:           uuid.New().String(),
+			ClusterID:    clusterID,
+			ArtifactType: types.ArtifactTypeLog,
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/eksctl.log", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})
@@ -475,11 +489,32 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	log.Printf("Generated eksctl config for cluster %s", cluster.Name)
 
+	// Start log streaming before running eksctl
+	// This will tail eksctl.log and stream to database in real-time
+	logPath := filepath.Join(workDir, "eksctl.log")
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
+
 	// Run eksctl create cluster
 	configPath := filepath.Join(workDir, "eksctl-config.yaml")
-	output, err := eksInstaller.CreateCluster(ctx, configPath)
+	output, err := eksInstaller.CreateCluster(ctx, configPath, logPath)
+
+	// Stop log streaming after eksctl completes
+	streamCancel()
+	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
 	if err != nil {
-		log.Printf("EKS cluster creation failed: %v\nOutput: %s", err, output)
+		// Logs are already streamed to database
+		log.Printf("EKS cluster creation failed: %v", err)
 		return fmt.Errorf("eksctl create cluster: %w", err)
 	}
 
