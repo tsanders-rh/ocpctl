@@ -67,7 +67,7 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 // GetByID retrieves a cluster by ID
 func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, error) {
 	query := `
-		SELECT id, name, platform, version, profile, region, base_domain,
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
@@ -81,6 +81,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.ID,
 		&cluster.Name,
 		&cluster.Platform,
+		&cluster.ClusterType,
 		&cluster.Version,
 		&cluster.Profile,
 		&cluster.Region,
@@ -120,7 +121,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 // GetByIDForUpdate retrieves a cluster by ID with row lock for update
 func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id string) (*types.Cluster, error) {
 	query := `
-		SELECT id, name, platform, version, profile, region, base_domain,
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
@@ -135,6 +136,7 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.ID,
 		&cluster.Name,
 		&cluster.Platform,
+		&cluster.ClusterType,
 		&cluster.Version,
 		&cluster.Profile,
 		&cluster.Region,
@@ -187,7 +189,7 @@ type ListFilters struct {
 func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.Cluster, int, error) {
 	// Build query dynamically based on filters
 	query := `
-		SELECT id, name, platform, version, profile, region, base_domain,
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
@@ -268,6 +270,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.ID,
 			&cluster.Name,
 			&cluster.Platform,
+			&cluster.ClusterType,
 			&cluster.Version,
 			&cluster.Profile,
 			&cluster.Region,
@@ -377,7 +380,7 @@ func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) e
 // GetExpiredClusters returns clusters past their TTL that should be destroyed
 func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
-		SELECT id, name, platform, version, profile, region, base_domain,
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
@@ -401,6 +404,7 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 			&cluster.ID,
 			&cluster.Name,
 			&cluster.Platform,
+			&cluster.ClusterType,
 			&cluster.Version,
 			&cluster.Profile,
 			&cluster.Region,
@@ -442,7 +446,7 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 // ListAll retrieves all clusters (used for orphan resource detection)
 func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
-		SELECT id, name, platform, version, profile, region, base_domain,
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
@@ -464,6 +468,7 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			&cluster.ID,
 			&cluster.Name,
 			&cluster.Platform,
+			&cluster.ClusterType,
 			&cluster.Version,
 			&cluster.Profile,
 			&cluster.Region,
@@ -592,6 +597,7 @@ func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) (
 			&cluster.ID,
 			&cluster.Name,
 			&cluster.Platform,
+			&cluster.ClusterType,
 			&cluster.Version,
 			&cluster.Profile,
 			&cluster.Region,
