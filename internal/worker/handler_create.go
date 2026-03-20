@@ -574,7 +574,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		JobType:     types.JobTypePostConfigure,
 		Status:      types.JobStatusPending,
 		MaxAttempts: 3,
-		Attempt:     0,
+		Attempt:     1,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
