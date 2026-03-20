@@ -13,15 +13,15 @@
 # Usage in VM Templates:
 #   dataVolumeTemplates:
 #     - spec:
-#         source:
-#           pvc:
-#             name: windows
-#             namespace: openshift-virtualization-os-images
+#         sourceRef:
+#           kind: DataSource
+#           name: windows10-datasource
+#           namespace: openshift-virtualization-os-images
 #
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataSource
 metadata:
-  name: windows
+  name: windows10-datasource
   namespace: openshift-virtualization-os-images
 spec:
   source:

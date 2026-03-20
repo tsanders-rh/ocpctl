@@ -220,7 +220,7 @@ export default function ClusterDetailPage() {
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
   const { data: outputs } = useClusterOutputs(id, cluster?.status);
-  const { data: configurations } = useClusterConfigurations(id);
+  const { data: configurations } = useClusterConfigurations(id, cluster?.status);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();
   const hibernateCluster = useHibernateCluster();
@@ -890,6 +890,11 @@ export default function ClusterDetailPage() {
         <DeploymentLogs
           clusterId={cluster.id}
           clusterStatus={cluster.status}
+          hasActiveJobs={
+            jobsData?.data?.some((job) =>
+              ["PENDING", "RUNNING", "RETRYING"].includes(job.status)
+            ) || false
+          }
         />
       )}
 

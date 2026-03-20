@@ -98,6 +98,31 @@ echo -e "${GREEN}✓ Synced profiles directory${NC}"
 echo -e "${GREEN}✓ All bootstrap artifacts uploaded to S3${NC}"
 echo ""
 
+# Terminate autoscale workers to force them to pull latest version
+echo -e "${YELLOW}Terminating autoscale workers to trigger refresh...${NC}"
+
+# Find all running autoscale worker instances (tagged with Name=ocpctl-worker)
+AUTOSCALE_INSTANCES=$(aws ec2 describe-instances \
+    --filters "Name=tag:Name,Values=ocpctl-worker" \
+              "Name=instance-state-name,Values=running" \
+    --query 'Reservations[].Instances[].InstanceId' \
+    --output text)
+
+if [ -z "$AUTOSCALE_INSTANCES" ]; then
+    echo -e "${YELLOW}  No autoscale workers found${NC}"
+else
+    echo -e "${YELLOW}  Found autoscale workers: $AUTOSCALE_INSTANCES${NC}"
+
+    for instance_id in $AUTOSCALE_INSTANCES; do
+        echo -e "${YELLOW}  Terminating $instance_id...${NC}"
+        aws ec2 terminate-instances --instance-ids "$instance_id" > /dev/null
+    done
+
+    echo -e "${GREEN}✓ Terminated autoscale workers (ASG will launch replacements with new version)${NC}"
+fi
+
+echo ""
+
 # Deploy API server
 echo -e "${YELLOW}Deploying API server to $API_HOST...${NC}"
 

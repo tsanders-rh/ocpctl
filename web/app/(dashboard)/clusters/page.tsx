@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useClusters } from "@/lib/hooks/useClusters";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useProfiles } from "@/lib/hooks/useProfiles";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -43,6 +43,29 @@ export default function ClustersPage() {
   });
 
   const { data: usersData } = useUsers();
+  const { data: profilesData } = useProfiles();
+
+  // Get all clusters (without pagination) for filter options
+  const { data: allClustersData } = useClusters({
+    per_page: 1000, // Get all clusters for filter dropdowns
+  });
+
+  // Extract unique teams and versions from all clusters
+  const uniqueTeams = useMemo(() => {
+    if (!allClustersData?.data) return [];
+    const teams = new Set(
+      allClustersData.data.map((c) => c.team).filter(Boolean)
+    );
+    return Array.from(teams).sort();
+  }, [allClustersData]);
+
+  const uniqueVersions = useMemo(() => {
+    if (!allClustersData?.data) return [];
+    const versions = new Set(
+      allClustersData.data.map((c) => c.version).filter(Boolean)
+    );
+    return Array.from(versions).sort().reverse(); // Most recent first
+  }, [allClustersData]);
 
   const clearFilters = () => {
     setFilters({});
@@ -208,35 +231,65 @@ export default function ClustersPage() {
 
                 <div className="space-y-2">
                   <Label>Team</Label>
-                  <Input
-                    placeholder="Enter team name"
-                    value={filters.team || ""}
-                    onChange={(e) =>
-                      setFilters({ ...filters, team: e.target.value })
+                  <Select
+                    value={filters.team}
+                    onValueChange={(value) =>
+                      setFilters({ ...filters, team: value })
                     }
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All teams" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueTeams.map((team) => (
+                        <SelectItem key={team} value={team}>
+                          {team}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Profile</Label>
-                  <Input
-                    placeholder="Enter profile name"
-                    value={filters.profile || ""}
-                    onChange={(e) =>
-                      setFilters({ ...filters, profile: e.target.value })
+                  <Select
+                    value={filters.profile}
+                    onValueChange={(value) =>
+                      setFilters({ ...filters, profile: value })
                     }
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All profiles" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profilesData?.map((profile) => (
+                        <SelectItem key={profile.name} value={profile.name}>
+                          {profile.display_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Version</Label>
-                  <Input
-                    placeholder="e.g., 4.14.0"
-                    value={filters.version || ""}
-                    onChange={(e) =>
-                      setFilters({ ...filters, version: e.target.value })
+                  <Select
+                    value={filters.version}
+                    onValueChange={(value) =>
+                      setFilters({ ...filters, version: value })
                     }
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All versions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueVersions.map((version) => (
+                        <SelectItem key={version} value={version}>
+                          {version}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </CardContent>

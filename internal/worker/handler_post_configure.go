@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -369,19 +371,19 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Execute script
+	// Execute script with real-time log streaming
 	cmd := exec.CommandContext(ctx, scriptPath)
 	cmd.Env = env
 	cmd.Dir = filepath.Dir(scriptPath) // Set working directory to script's directory
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		errMsg := fmt.Sprintf("script failed: %v\nOutput: %s", err, string(output))
+	// Stream stdout and stderr to deployment logs
+	if err := h.executeScriptWithLogging(ctx, cluster.ID, cluster.Name, script.Name, cmd); err != nil {
+		errMsg := err.Error()
 		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return fmt.Errorf("script execution failed: %w", err)
 	}
 
-	log.Printf("Script %s completed successfully:\n%s", script.Name, string(output))
+	log.Printf("Script %s completed successfully", script.Name)
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
 	return nil
 }
@@ -584,4 +586,186 @@ func (h *PostConfigureHandler) ensureArtifactsAvailable(ctx context.Context, clu
 
 	log.Printf("[PostConfigureHandler] Successfully downloaded artifacts for cluster %s", clusterID)
 	return nil
+}
+
+// executeScriptWithLogging executes a command and streams its output to deployment logs in real-time
+func (h *PostConfigureHandler) executeScriptWithLogging(ctx context.Context, clusterID, clusterName, scriptName string, cmd *exec.Cmd) error {
+	// Get the job ID from context (we need to find the running POST_CONFIGURE job)
+	job, err := h.getRunningPostConfigJob(ctx, clusterID)
+	if err != nil {
+		log.Printf("Warning: could not find running POST_CONFIGURE job for logging, will log to stdout only: %v", err)
+		// Fall back to regular execution without database logging
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v\nOutput: %s", err, string(output))
+		}
+		log.Printf("Script %s output:\n%s", scriptName, string(output))
+		return nil
+	}
+
+	// Set up pipes to capture stdout and stderr
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("create stderr pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start command: %w", err)
+	}
+
+	// Channel to collect logs from both stdout and stderr
+	logCh := make(chan *types.DeploymentLog, 100)
+	var sequence int64 = 0
+	var wg sync.WaitGroup
+
+	// Read stdout
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdoutPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			logEntry := &types.DeploymentLog{
+				ClusterID: clusterID,
+				JobID:     job.ID,
+				Sequence:  sequence,
+				Timestamp: time.Now(),
+				LogLevel:  h.inferLogLevel(line),
+				Message:   line,
+				Source:    types.DeploymentLogSourceScript,
+			}
+			sequence++
+			logCh <- logEntry
+
+			// Also log to stdout for journald
+			log.Printf("[%s] %s", scriptName, line)
+		}
+	}()
+
+	// Read stderr
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderrPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			level := stringPtr("error")
+			logEntry := &types.DeploymentLog{
+				ClusterID: clusterID,
+				JobID:     job.ID,
+				Sequence:  sequence,
+				Timestamp: time.Now(),
+				LogLevel:  level,
+				Message:   line,
+				Source:    types.DeploymentLogSourceScript,
+			}
+			sequence++
+			logCh <- logEntry
+
+			// Also log to stderr for journald
+			log.Printf("[%s] ERROR: %s", scriptName, line)
+		}
+	}()
+
+	// Background goroutine to batch and flush logs to database
+	flushDone := make(chan struct{})
+	go func() {
+		defer close(flushDone)
+		batch := []*types.DeploymentLog{}
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case logEntry, ok := <-logCh:
+				if !ok {
+					// Channel closed, flush remaining and exit
+					if len(batch) > 0 {
+						if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
+							log.Printf("Warning: failed to flush final logs batch: %v", err)
+						}
+					}
+					return
+				}
+				batch = append(batch, logEntry)
+
+				// Flush if batch size reached
+				if len(batch) >= 50 {
+					if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
+						log.Printf("Warning: failed to flush logs batch: %v", err)
+					} else {
+						batch = []*types.DeploymentLog{}
+					}
+				}
+
+			case <-ticker.C:
+				// Periodic flush
+				if len(batch) > 0 {
+					if err := h.store.DeploymentLogs.AppendLogs(ctx, batch); err != nil {
+						log.Printf("Warning: failed to flush logs batch: %v", err)
+					} else {
+						batch = []*types.DeploymentLog{}
+					}
+				}
+			}
+		}
+	}()
+
+	// Wait for command to complete
+	cmdErr := cmd.Wait()
+
+	// Wait for readers to finish
+	wg.Wait()
+
+	// Close log channel and wait for final flush
+	close(logCh)
+	<-flushDone
+
+	return cmdErr
+}
+
+// getRunningPostConfigJob finds the currently running POST_CONFIGURE job for a cluster
+func (h *PostConfigureHandler) getRunningPostConfigJob(ctx context.Context, clusterID string) (*types.Job, error) {
+	jobs, err := h.store.Jobs.ListByClusterID(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+
+	for _, job := range jobs {
+		if job.JobType == types.JobTypePostConfigure && job.Status == types.JobStatusRunning {
+			return job, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no running POST_CONFIGURE job found")
+}
+
+// inferLogLevel attempts to infer log level from a log line
+func (h *PostConfigureHandler) inferLogLevel(line string) *string {
+	lineLower := strings.ToLower(line)
+
+	// Check for error indicators
+	if strings.Contains(lineLower, "[error]") || strings.Contains(lineLower, "error:") ||
+	   strings.Contains(lineLower, "failed") || strings.Contains(lineLower, "failure") {
+		return stringPtr("error")
+	}
+
+	// Check for warning indicators
+	if strings.Contains(lineLower, "[warn]") || strings.Contains(lineLower, "warning:") {
+		return stringPtr("warn")
+	}
+
+	// Check for info indicators (including our custom [INFO] tags)
+	if strings.Contains(lineLower, "[info]") || strings.Contains(line, "✓") {
+		return stringPtr("info")
+	}
+
+	// Default to info level
+	return stringPtr("info")
 }

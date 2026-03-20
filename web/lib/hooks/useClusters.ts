@@ -104,14 +104,23 @@ export function useResumeCluster() {
   });
 }
 
-export function useClusterConfigurations(id: string) {
+export function useClusterConfigurations(id: string, clusterStatus?: string) {
   return useQuery({
     queryKey: ["cluster", id, "configurations"],
     queryFn: () => clustersApi.getConfigurations(id),
     enabled: !!id,
     refetchInterval: (query) => {
-      // Poll every 5 seconds if there are pending or installing configurations
+      // Poll every 5 seconds if:
+      // 1. Cluster is READY (to detect newly created configurations)
+      // 2. OR there are pending/installing configurations
       const data = query.state.data;
+
+      // If cluster is READY, poll to detect new configurations
+      if (clusterStatus === "READY") {
+        return 5000;
+      }
+
+      // Otherwise, only poll if there are active configurations
       if (!data) return false;
       const hasActiveConfig = data.configurations.some(
         (config) => config.status === "pending" || config.status === "installing"

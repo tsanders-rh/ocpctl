@@ -553,25 +553,45 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			continue
 		}
 
-		// Check for existing pending/running jobs of this type
-		existingJobs, err := j.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, jobType)
+		// Check for ANY active jobs on this cluster
+		// We don't want to hibernate/resume while other jobs are running (POST_CONFIGURE, etc.)
+		allJobs, err := j.store.Jobs.ListByClusterID(ctx, cluster.ID)
 		if err != nil {
-			log.Printf("Failed to check for existing %s jobs for cluster %s: %v", action, cluster.Name, err)
+			log.Printf("[Work Hours Action] CRITICAL: Failed to check for active jobs for cluster %s: %v", cluster.Name, err)
 			continue
 		}
 
+		// DEBUG: Log all jobs found for this cluster
+		log.Printf("[Work Hours Action] Cluster %s: found %d total jobs", cluster.Name, len(allJobs))
+		for _, job := range allJobs {
+			log.Printf("[Work Hours Action]   - Job %s: type=%s, status=%s, created=%v",
+				job.ID[:8], job.JobType, job.Status, job.CreatedAt.Format("15:04:05"))
+		}
+
 		hasActiveJob := false
-		for _, job := range existingJobs {
-			if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning {
+		var activeJobType types.JobType
+		var activeJobID string
+		for _, job := range allJobs {
+			if job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning || job.Status == types.JobStatusRetrying {
 				hasActiveJob = true
+				activeJobType = job.JobType
+				activeJobID = job.ID
 				break
 			}
 		}
 
 		if hasActiveJob {
-			log.Printf("Cluster %s already has a pending/running %s job, skipping", cluster.Name, action)
+			log.Printf("[Work Hours Action] Cluster %s has active %s job (ID: %s), skipping %s",
+				cluster.Name, activeJobType, activeJobID[:8], action)
+			// Update check timestamp so we don't spam logs
+			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
+			}
 			continue
 		}
+
+		// Log that we're about to create a HIBERNATE/RESUME job
+		log.Printf("[Work Hours Action] Creating %s job for cluster %s (no active jobs found)", action, cluster.Name)
 
 		// Create the job
 		job := &types.Job{
