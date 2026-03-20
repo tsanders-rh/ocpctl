@@ -49,7 +49,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		WorkerID:      workerID,
 		PollInterval:  10 * time.Second,
-		LockTimeout:   30 * time.Minute,
+		LockTimeout:   90 * time.Minute, // Must be longer than longest operation (eksctl: 60min)
 		WorkDir:       "/tmp/ocpctl",
 		S3BucketName:  s3Bucket,
 		MaxConcurrent: 3,
