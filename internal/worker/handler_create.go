@@ -92,13 +92,19 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 	}
 
 	// Build create cluster request for renderer
+	// Convert BaseDomain pointer to string
+	baseDomain := ""
+	if cluster.BaseDomain != nil {
+		baseDomain = *cluster.BaseDomain
+	}
+
 	createReq := &types.CreateClusterRequest{
 		Name:          cluster.Name,
 		Platform:      string(cluster.Platform),
 		Version:       cluster.Version,
 		Profile:       cluster.Profile,
 		Region:        cluster.Region,
-		BaseDomain:    cluster.BaseDomain,
+		BaseDomain:    baseDomain,
 		Owner:         cluster.Owner,
 		Team:          cluster.Team,
 		CostCenter:    cluster.CostCenter,

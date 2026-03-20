@@ -467,12 +467,17 @@ func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
 	} else {
 		// Clean up DNS records before openshift-install destroy
 		// This ensures DNS cleanup happens even if workDir doesn't exist
-		log.Printf("Cleaning up DNS records for cluster %s.%s", cluster.Name, cluster.BaseDomain)
-		dnsCleaner := NewDNSCleaner(cluster.Region)
-		if err := dnsCleaner.CleanupClusterDNS(ctx, cluster.Name, cluster.BaseDomain); err != nil {
-			log.Printf("Warning: DNS cleanup failed: %v", err)
+		// Only clean up DNS for OpenShift clusters (have base domain)
+		if cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
+			log.Printf("Cleaning up DNS records for cluster %s.%s", cluster.Name, *cluster.BaseDomain)
+			dnsCleaner := NewDNSCleaner(cluster.Region)
+			if err := dnsCleaner.CleanupClusterDNS(ctx, cluster.Name, *cluster.BaseDomain); err != nil {
+				log.Printf("Warning: DNS cleanup failed: %v", err)
+			} else {
+				log.Printf("Successfully cleaned up DNS records")
+			}
 		} else {
-			log.Printf("Successfully cleaned up DNS records")
+			log.Printf("Skipping DNS cleanup - no base domain for cluster %s", cluster.Name)
 		}
 	}
 
