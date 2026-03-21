@@ -272,15 +272,15 @@ func (s *JobStore) MarkStarted(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkSucceeded marks a job as succeeded and sets ended_at
-func (s *JobStore) MarkSucceeded(ctx context.Context, id string) error {
+// MarkSucceeded marks a job as succeeded, sets ended_at, and updates metadata
+func (s *JobStore) MarkSucceeded(ctx context.Context, id string, metadata types.JobMetadata) error {
 	query := `
 		UPDATE jobs
-		SET status = $1, ended_at = NOW(), updated_at = NOW()
-		WHERE id = $2
+		SET status = $1, metadata = $2, ended_at = NOW(), updated_at = NOW()
+		WHERE id = $3
 	`
 
-	result, err := s.pool.Exec(ctx, query, types.JobStatusSucceeded, id)
+	result, err := s.pool.Exec(ctx, query, types.JobStatusSucceeded, metadata, id)
 	if err != nil {
 		return fmt.Errorf("mark job succeeded: %w", err)
 	}

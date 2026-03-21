@@ -406,9 +406,9 @@ func (w *Worker) releaseLock(ctx context.Context, clusterID, jobID string) {
 	}
 }
 
-// handleJobSuccess marks job as succeeded
+// handleJobSuccess marks job as succeeded and saves metadata
 func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job) {
-	if err := w.store.Jobs.MarkSucceeded(ctx, job.ID); err != nil {
+	if err := w.store.Jobs.MarkSucceeded(ctx, job.ID, job.Metadata); err != nil {
 		log.Printf("Failed to mark job %s as succeeded: %v", job.ID, err)
 	}
 }
