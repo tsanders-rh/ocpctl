@@ -74,9 +74,14 @@ platformConfig:
     publicAccess: true
     privateAccess: true
 
+postDeployment:
+  enabled: true
+  timeout: 30m
+
 metadata:
   capabilities:
     - AWS EKS managed Kubernetes
+    - Kubernetes Dashboard with token authentication
     - OIDC provider for IRSA
     - Single NAT gateway (cost optimized)
     - CloudWatch logging enabled
@@ -85,3 +90,4 @@ metadata:
     - "NAT gateway costs ~$0.045/hour ($32/month) for Single mode"
     - "Nodes are t3.medium (2 vCPU, 4GB RAM) at $0.0416/hour each"
     - "Total: ~$0.15/hour or $110/month for always-on cluster"
+    - "Kubernetes Dashboard automatically installed with token-based authentication"

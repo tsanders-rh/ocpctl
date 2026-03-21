@@ -75,9 +75,14 @@ platformConfig:
     publicAccess: true
     privateAccess: true
 
+postDeployment:
+  enabled: true
+  timeout: 30m
+
 metadata:
   capabilities:
     - AWS EKS managed Kubernetes
+    - Kubernetes Dashboard with token authentication
     - OIDC provider for IRSA
     - Highly available NAT gateways
     - Full CloudWatch logging enabled
@@ -91,3 +96,4 @@ metadata:
     - "Nodes are t3.large (2 vCPU, 8GB RAM) at $0.0832/hour each"
     - "Total: ~$0.56/hour or $405/month for always-on cluster"
     - "Supports workloads requiring HA networking"
+    - "Kubernetes Dashboard automatically installed with token-based authentication"
