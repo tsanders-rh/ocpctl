@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
@@ -265,25 +266,48 @@ func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
 }
 
 // handleEKSDestroy handles EKS cluster destruction
+// Following AWS best practices: delete nodegroups first, then cluster
 func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
 	log.Printf("Starting EKS cluster destruction for %s", cluster.Name)
 
 	// Create work directory path
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 
-	// Delete Kubernetes Dashboard and LoadBalancer before destroying cluster
-	// This prevents the LoadBalancer from blocking VPC deletion
-	log.Printf("Cleaning up Kubernetes Dashboard for cluster %s", cluster.Name)
-	if err := h.cleanupKubernetesDashboard(ctx, cluster, workDir); err != nil {
-		log.Printf("Warning: failed to cleanup Kubernetes Dashboard: %v (continuing with destroy)", err)
-		// Don't fail the destroy job - continue anyway
+	// STEP 1: Delete all Kubernetes-created LoadBalancers and services
+	// This prevents orphaned ELBs/NLBs/ENIs that block VPC deletion
+	log.Printf("Step 1/4: Cleaning up Kubernetes resources (LoadBalancers, Services, Dashboard)")
+	if err := h.cleanupKubernetesResources(ctx, cluster, workDir); err != nil {
+		log.Printf("Warning: failed to cleanup Kubernetes resources: %v (continuing with destroy)", err)
+		// Don't fail - continue with nodegroup deletion
 	}
 
 	// Create EKS installer
 	eksInstaller := installer.NewEKSInstaller()
 
-	// Run eksctl delete cluster
-	log.Printf("Running eksctl delete cluster for %s in region %s", cluster.Name, cluster.Region)
+	// STEP 2: List and delete all nodegroups explicitly
+	// AWS recommends deleting nodegroups before the cluster
+	log.Printf("Step 2/4: Listing nodegroups for cluster %s", cluster.Name)
+	nodegroups, err := eksInstaller.ListNodegroups(ctx, cluster.Name, cluster.Region)
+	if err != nil {
+		log.Printf("Warning: failed to list nodegroups: %v (cluster may already be gone)", err)
+	} else if len(nodegroups) > 0 {
+		log.Printf("Found %d nodegroups to delete: %v", len(nodegroups), nodegroups)
+		for _, ng := range nodegroups {
+			log.Printf("Deleting nodegroup %s...", ng)
+			ngOutput, ngErr := eksInstaller.DeleteNodegroup(ctx, cluster.Name, ng, cluster.Region)
+			if ngErr != nil {
+				log.Printf("Warning: failed to delete nodegroup %s: %v\nOutput: %s", ng, ngErr, ngOutput)
+				// Continue with other nodegroups
+			} else {
+				log.Printf("Successfully deleted nodegroup %s", ng)
+			}
+		}
+	} else {
+		log.Printf("No nodegroups found (cluster may be hibernated or already cleaned up)")
+	}
+
+	// STEP 3: Delete the EKS cluster control plane
+	log.Printf("Step 3/4: Deleting EKS control plane for %s", cluster.Name)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer destroyCancel()
 
@@ -292,7 +316,6 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 		// Check if cluster is already deleted (ResourceNotFoundException)
 		if isClusterNotFoundError(output) {
 			log.Printf("EKS cluster %s not found (already deleted), marking as destroyed", cluster.Name)
-			// Cluster is already gone, treat as success
 			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 				return fmt.Errorf("mark cluster destroyed: %w", err)
 			}
@@ -300,23 +323,20 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 		}
 
 		log.Printf("EKS cluster destruction failed: %v\nOutput: %s", err, output)
-		// Mark as failed but don't return error - cluster resources may be partially destroyed
-		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusFailed); updateErr != nil {
-			log.Printf("Failed to update cluster status to FAILED: %v", updateErr)
-		}
 		return fmt.Errorf("eksctl delete cluster: %w", err)
 	}
 
-	log.Printf("EKS cluster %s destroyed successfully", cluster.Name)
+	log.Printf("EKS cluster %s control plane deleted successfully", cluster.Name)
+
+	// STEP 4: Clean up local artifacts
+	log.Printf("Step 4/4: Cleaning up local work directory")
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Printf("Warning: failed to remove work directory: %v", err)
+	}
 
 	// Mark cluster as destroyed
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
-	}
-
-	// Clean up work directory
-	if err := os.RemoveAll(workDir); err != nil {
-		log.Printf("Warning: failed to remove work directory: %v", err)
 	}
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
@@ -373,8 +393,9 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	return nil
 }
 
-// cleanupKubernetesDashboard deletes the Kubernetes Dashboard namespace and LoadBalancer
-func (h *DestroyHandler) cleanupKubernetesDashboard(ctx context.Context, cluster *types.Cluster, workDir string) error {
+// cleanupKubernetesResources deletes all Kubernetes-created resources that could block VPC deletion
+// This includes LoadBalancer services, Ingresses, and the Dashboard namespace
+func (h *DestroyHandler) cleanupKubernetesResources(ctx context.Context, cluster *types.Cluster, workDir string) error {
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 
@@ -391,21 +412,60 @@ func (h *DestroyHandler) cleanupKubernetesDashboard(ctx context.Context, cluster
 		}
 	}
 
-	// Delete the kubernetes-dashboard namespace (this deletes all resources including the LoadBalancer)
-	log.Printf("Deleting kubernetes-dashboard namespace...")
-	cmd := exec.CommandContext(ctx, "kubectl", "delete", "namespace", "kubernetes-dashboard",
-		"--ignore-not-found=true", "--timeout=120s", "--kubeconfig", kubeconfigPath)
-	output, err := cmd.CombinedOutput()
+	// Delete all LoadBalancer-type services across all namespaces
+	// These create ELBs/NLBs that block VPC deletion
+	log.Printf("Finding and deleting all LoadBalancer services...")
+	lbCmd := exec.CommandContext(ctx, "kubectl", "get", "svc", "-A",
+		"-o", "jsonpath={range .items[?(@.spec.type==\"LoadBalancer\")]}{.metadata.namespace}{\" \"}{.metadata.name}{\"\\n\"}{end}",
+		"--kubeconfig", kubeconfigPath)
+	lbOutput, err := lbCmd.CombinedOutput()
 	if err != nil {
-		log.Printf("kubectl delete namespace output: %s", string(output))
-		return fmt.Errorf("delete kubernetes-dashboard namespace: %w", err)
+		log.Printf("Warning: failed to list LoadBalancer services: %v", err)
+	} else {
+		lbServices := string(lbOutput)
+		if lbServices != "" {
+			log.Printf("Found LoadBalancer services:\n%s", lbServices)
+			// Parse and delete each service
+			lines := strings.Split(strings.TrimSpace(lbServices), "\n")
+			for _, line := range lines {
+				if line == "" {
+					continue
+				}
+				parts := strings.Fields(line)
+				if len(parts) == 2 {
+					namespace, name := parts[0], parts[1]
+					log.Printf("Deleting LoadBalancer service %s/%s", namespace, name)
+					delCmd := exec.CommandContext(ctx, "kubectl", "delete", "svc", name,
+						"-n", namespace, "--ignore-not-found=true", "--timeout=120s", "--kubeconfig", kubeconfigPath)
+					if delOutput, delErr := delCmd.CombinedOutput(); delErr != nil {
+						log.Printf("Warning: failed to delete service %s/%s: %v\nOutput: %s", namespace, name, delErr, string(delOutput))
+					}
+				}
+			}
+		}
 	}
 
-	log.Printf("Kubernetes Dashboard namespace deleted: %s", string(output))
+	// Delete all Ingress resources (can create ALBs)
+	log.Printf("Deleting all Ingress resources...")
+	ingressCmd := exec.CommandContext(ctx, "kubectl", "delete", "ingress", "--all", "-A",
+		"--ignore-not-found=true", "--timeout=120s", "--kubeconfig", kubeconfigPath)
+	if ingressOutput, ingressErr := ingressCmd.CombinedOutput(); ingressErr != nil {
+		log.Printf("Warning: failed to delete ingresses: %v\nOutput: %s", ingressErr, string(ingressOutput))
+	}
 
-	// Wait a moment for AWS to clean up the LoadBalancer
-	log.Printf("Waiting for AWS to clean up LoadBalancer resources...")
-	time.Sleep(30 * time.Second)
+	// Delete the kubernetes-dashboard namespace (created by POST_CONFIGURE)
+	log.Printf("Deleting kubernetes-dashboard namespace...")
+	dashCmd := exec.CommandContext(ctx, "kubectl", "delete", "namespace", "kubernetes-dashboard",
+		"--ignore-not-found=true", "--timeout=120s", "--kubeconfig", kubeconfigPath)
+	if dashOutput, dashErr := dashCmd.CombinedOutput(); dashErr != nil {
+		log.Printf("Warning: failed to delete dashboard namespace: %v\nOutput: %s", dashErr, string(dashOutput))
+	} else {
+		log.Printf("Dashboard namespace deleted: %s", string(dashOutput))
+	}
+
+	// Wait for AWS to clean up ELB/NLB resources and ENIs
+	log.Printf("Waiting 60s for AWS to clean up LoadBalancer resources and ENIs...")
+	time.Sleep(60 * time.Second)
 
 	return nil
 }

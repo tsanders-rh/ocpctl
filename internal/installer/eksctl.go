@@ -167,6 +167,62 @@ func (e *EKSInstaller) GetKubeconfig(ctx context.Context, clusterName, region, o
 	return nil
 }
 
+// ListNodegroups lists all nodegroups for a cluster
+func (e *EKSInstaller) ListNodegroups(ctx context.Context, clusterName, region string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, e.binaryPath, "get", "nodegroup",
+		"--cluster", clusterName,
+		"--region", region,
+		"-o", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("eksctl get nodegroup failed: %w\nStderr: %s", err, stderr.String())
+	}
+
+	// Parse nodegroup names from output
+	// eksctl returns JSON array with objects containing "Name" field
+	// For simplicity, just extract nodegroup names via text parsing
+	output := stdout.String()
+	var nodegroups []string
+
+	// Simple parsing: look for "Name": "nodegroup-name"
+	lines := bytes.Split(stdout.Bytes(), []byte("\n"))
+	for _, line := range lines {
+		trimmed := bytes.TrimSpace(line)
+		if bytes.Contains(trimmed, []byte("\"Name\":")) {
+			// Extract name from: "Name": "standard",
+			parts := bytes.Split(trimmed, []byte("\""))
+			if len(parts) >= 4 {
+				nodegroups = append(nodegroups, string(parts[3]))
+			}
+		}
+	}
+
+	return nodegroups, nil
+}
+
+// DeleteNodegroup deletes a specific nodegroup from a cluster
+func (e *EKSInstaller) DeleteNodegroup(ctx context.Context, clusterName, nodegroupName, region string) (string, error) {
+	cmd := exec.CommandContext(ctx, e.binaryPath, "delete", "nodegroup",
+		"--cluster", clusterName,
+		"--name", nodegroupName,
+		"--region", region,
+		"--wait")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return stderr.String(), fmt.Errorf("eksctl delete nodegroup failed: %w\nStderr: %s", err, stderr.String())
+	}
+
+	return stdout.String(), nil
+}
+
 // Version returns the eksctl version
 func (e *EKSInstaller) Version() (string, error) {
 	cmd := exec.Command(e.binaryPath, "version")
