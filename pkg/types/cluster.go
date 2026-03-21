@@ -123,6 +123,7 @@ type ClusterOutputs struct {
 	KubeconfigS3URI     *string    `db:"kubeconfig_s3_uri" json:"kubeconfig_s3_uri"`
 	KubeadminSecretRef  *string    `db:"kubeadmin_secret_ref" json:"kubeadmin_secret_ref"`
 	MetadataS3URI       *string    `db:"metadata_s3_uri" json:"metadata_s3_uri"`
+	DashboardToken      *string    `db:"dashboard_token" json:"dashboard_token,omitempty"`
 	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
 }

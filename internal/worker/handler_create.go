@@ -439,7 +439,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		NodeGroups: []installer.EKSNodeGroup{},
 	}
 
-	// Add node groups from profile
+	// Add node groups from profile (unmanaged)
 	if len(prof.Compute.NodeGroups) > 0 {
 		for _, ng := range prof.Compute.NodeGroups {
 			eksNodeGroup := installer.EKSNodeGroup{
@@ -466,6 +466,37 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 			}
 
 			eksConfig.NodeGroups = append(eksConfig.NodeGroups, eksNodeGroup)
+		}
+	}
+
+	// Add managed node groups from profile (EKS-managed)
+	if len(prof.Compute.ManagedNodeGroups) > 0 {
+		for _, ng := range prof.Compute.ManagedNodeGroups {
+			eksManagedNodeGroup := installer.EKSManagedNodeGroup{
+				Name:            ng.Name,
+				InstanceType:    ng.InstanceType,
+				DesiredCapacity: ng.DesiredCapacity,
+				MinSize:         ng.MinSize,
+				MaxSize:         ng.MaxSize,
+				VolumeSize:      ng.VolumeSize,
+				VolumeType:      ng.VolumeType,
+				AMIFamily:       ng.AMIFamily,
+				Tags:            cluster.EffectiveTags,
+			}
+
+			// Add SSH configuration if public key provided
+			if cluster.SSHPublicKey != nil {
+				sshKeyPath := filepath.Join(workDir, "ssh-key.pub")
+				if err := os.WriteFile(sshKeyPath, []byte(*cluster.SSHPublicKey), 0600); err != nil {
+					return fmt.Errorf("write SSH public key: %w", err)
+				}
+				eksManagedNodeGroup.SSH = &installer.EKSNodeGroupSSH{
+					Allow:         true,
+					PublicKeyPath: sshKeyPath,
+				}
+			}
+
+			eksConfig.ManagedNodeGroups = append(eksConfig.ManagedNodeGroups, eksManagedNodeGroup)
 		}
 	}
 

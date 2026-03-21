@@ -20,12 +20,13 @@ type EKSInstaller struct {
 
 // EKSClusterConfig represents an eksctl cluster configuration
 type EKSClusterConfig struct {
-	APIVersion string                 `yaml:"apiVersion"`
-	Kind       string                 `yaml:"kind"`
-	Metadata   EKSMetadata            `yaml:"metadata"`
-	IAM        *EKSIAM                `yaml:"iam,omitempty"`
-	NodeGroups []EKSNodeGroup         `yaml:"nodeGroups"`
-	VPC        *EKSVPC                `yaml:"vpc,omitempty"`
+	APIVersion        string                 `yaml:"apiVersion"`
+	Kind              string                 `yaml:"kind"`
+	Metadata          EKSMetadata            `yaml:"metadata"`
+	IAM               *EKSIAM                `yaml:"iam,omitempty"`
+	NodeGroups        []EKSNodeGroup         `yaml:"nodeGroups,omitempty"`
+	ManagedNodeGroups []EKSManagedNodeGroup  `yaml:"managedNodeGroups,omitempty"`
+	VPC               *EKSVPC                `yaml:"vpc,omitempty"`
 }
 
 // EKSMetadata represents cluster metadata
@@ -58,6 +59,20 @@ type EKSNodeGroup struct {
 type EKSNodeGroupSSH struct {
 	Allow         bool   `yaml:"allow"`
 	PublicKeyPath string `yaml:"publicKeyPath,omitempty"`
+}
+
+// EKSManagedNodeGroup represents a managed node group configuration
+type EKSManagedNodeGroup struct {
+	Name            string            `yaml:"name"`
+	InstanceType    string            `yaml:"instanceType"`
+	DesiredCapacity int               `yaml:"desiredCapacity"`
+	MinSize         int               `yaml:"minSize"`
+	MaxSize         int               `yaml:"maxSize"`
+	VolumeSize      int               `yaml:"volumeSize,omitempty"`
+	VolumeType      string            `yaml:"volumeType,omitempty"`
+	AMIFamily       string            `yaml:"amiFamily,omitempty"` // AmazonLinux2023, AmazonLinux2, etc.
+	SSH             *EKSNodeGroupSSH  `yaml:"ssh,omitempty"`
+	Tags            map[string]string `yaml:"tags,omitempty"`
 }
 
 // EKSVPC represents VPC configuration
@@ -220,6 +235,37 @@ func (e *EKSInstaller) DeleteNodegroup(ctx context.Context, clusterName, nodegro
 	}
 
 	return stdout.String(), nil
+}
+
+// VerifyNodegroupDeleted checks if a nodegroup has been deleted from AWS
+// Returns true if the nodegroup no longer exists (either managed or unmanaged)
+func (e *EKSInstaller) VerifyNodegroupDeleted(ctx context.Context, clusterName, nodegroupName, region string) (bool, error) {
+	// First check if it's a managed nodegroup via EKS API
+	cmd := exec.CommandContext(ctx, e.binaryPath, "get", "nodegroup",
+		"--cluster", clusterName,
+		"--name", nodegroupName,
+		"--region", region,
+		"-o", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		// If eksctl returns error and stderr contains "ResourceNotFoundException" or "not found",
+		// the nodegroup is deleted
+		stderrStr := stderr.String()
+		if bytes.Contains([]byte(stderrStr), []byte("ResourceNotFoundException")) ||
+			bytes.Contains([]byte(stderrStr), []byte("not found")) ||
+			bytes.Contains([]byte(stderrStr), []byte("No nodegroup")) {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to verify nodegroup: %w\nStderr: %s", err, stderrStr)
+	}
+
+	// If we got valid output, nodegroup still exists
+	return false, nil
 }
 
 // Version returns the eksctl version

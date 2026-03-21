@@ -63,9 +63,9 @@ export function useExtendCluster() {
 
 export function useClusterOutputs(id: string, clusterStatus?: string) {
   return useQuery({
-    queryKey: ["cluster", id, "outputs"],
+    queryKey: ["cluster", id, "outputs", clusterStatus],
     queryFn: () => clustersApi.getOutputs(id),
-    enabled: !!id,
+    enabled: !!id && (clusterStatus === "READY" || clusterStatus === "HIBERNATED"),
     refetchInterval: (query) => {
       // Poll every 3 seconds if cluster is READY but outputs aren't loaded yet
       // This handles the case where cluster just became READY and outputs are being written

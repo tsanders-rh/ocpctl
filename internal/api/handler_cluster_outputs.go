@@ -19,6 +19,7 @@ type ClusterOutputsResponse struct {
 	Status              string                 `json:"status"`
 	APIUrl              string                 `json:"api_url,omitempty"`
 	ConsoleURL          string                 `json:"console_url,omitempty"`
+	DashboardToken      string                 `json:"dashboard_token,omitempty"`      // Kubernetes Dashboard bearer token
 	Kubeconfig          string                 `json:"kubeconfig,omitempty"`           // Full kubeconfig content
 	KubeconfigS3URI     string                 `json:"kubeconfig_s3_uri,omitempty"`    // S3 URI to kubeconfig file
 	Kubeadmin           *KubeadminCredentials  `json:"kubeadmin,omitempty"`            // Actual credentials
@@ -100,6 +101,9 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 	}
 	if outputs.ConsoleURL != nil {
 		response.ConsoleURL = *outputs.ConsoleURL
+	}
+	if outputs.DashboardToken != nil {
+		response.DashboardToken = *outputs.DashboardToken
 	}
 	if outputs.KubeconfigS3URI != nil {
 		response.KubeconfigS3URI = *outputs.KubeconfigS3URI

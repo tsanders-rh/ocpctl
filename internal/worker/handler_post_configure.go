@@ -276,13 +276,12 @@ func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clus
 		}
 	}
 
-	// Update console URL
+	// Update console URL and dashboard token
 	outputs.ConsoleURL = &consoleURL
+	outputs.DashboardToken = &token
 	outputs.UpdatedAt = time.Now()
 
-	// Store the token in a separate field or metadata
-	// For now, we'll log it - in production you might want to store it securely
-	log.Printf("IMPORTANT: Save this dashboard token for accessing the cluster:")
+	log.Printf("IMPORTANT: Dashboard token stored for cluster access")
 	log.Printf("Token: %s", token)
 
 	// Upsert cluster outputs

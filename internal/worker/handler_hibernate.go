@@ -254,12 +254,11 @@ func (h *HibernateHandler) hibernateEKS(ctx context.Context, cluster *types.Clus
 	}
 
 	if len(listNgOutput.Nodegroups) == 0 {
-		log.Printf("No node groups found for EKS cluster %s", cluster.Name)
-		// Update cluster status to HIBERNATED even if no node groups
-		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
-			return fmt.Errorf("update cluster status: %w", err)
-		}
-		return nil
+		// No managed nodegroups found - this could mean:
+		// 1. Cluster was created with unmanaged nodeGroups (CloudFormation-based)
+		// 2. Cluster has no nodegroups at all
+		// Either way, hibernate/resume workflow requires managed nodegroups
+		return fmt.Errorf("cluster %s has no managed nodegroups in EKS API - hibernate/resume only supports EKS-managed nodegroups. This cluster may use unmanaged nodegroups (created via CloudFormation) which are not visible to the EKS API. To use hibernate/resume, the cluster must be recreated with managedNodeGroups in the profile", cluster.Name)
 	}
 
 	// Store original node group capacities in job metadata

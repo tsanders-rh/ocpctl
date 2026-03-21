@@ -52,9 +52,10 @@ type BaseDomainConfig struct {
 
 // ComputeConfig defines compute resource configuration
 type ComputeConfig struct {
-	ControlPlane *ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Workers      *WorkersConfig      `yaml:"workers,omitempty" json:"workers,omitempty"`
-	NodeGroups   []NodeGroupConfig   `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"` // For EKS
+	ControlPlane       *ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Workers            *WorkersConfig      `yaml:"workers,omitempty" json:"workers,omitempty"`
+	NodeGroups         []NodeGroupConfig   `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"`                 // For EKS (unmanaged)
+	ManagedNodeGroups  []NodeGroupConfig   `yaml:"managedNodeGroups,omitempty" json:"managed_node_groups,omitempty"` // For EKS (managed)
 }
 
 // ControlPlaneConfig defines control plane node configuration
@@ -87,6 +88,7 @@ type NodeGroupConfig struct {
 	MaxSize         int    `yaml:"maxSize" json:"max_size" validate:"required,gtefield=DesiredCapacity"`
 	VolumeSize      int    `yaml:"volumeSize,omitempty" json:"volume_size,omitempty"`
 	VolumeType      string `yaml:"volumeType,omitempty" json:"volume_type,omitempty"`
+	AMIFamily       string `yaml:"amiFamily,omitempty" json:"ami_family,omitempty"` // For managed node groups (AmazonLinux2023, AmazonLinux2, etc.)
 }
 
 // LifecycleConfig defines cluster lifecycle policies

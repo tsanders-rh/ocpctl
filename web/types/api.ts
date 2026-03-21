@@ -169,6 +169,7 @@ export interface ClusterOutputs {
   cluster_id: string;
   api_url?: string;
   console_url?: string;
+  dashboard_token?: string; // Kubernetes Dashboard bearer token
   kubeconfig?: string; // Full kubeconfig content
   kubeconfig_s3_uri?: string;
   kubeadmin?: {

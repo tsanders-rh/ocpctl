@@ -28,7 +28,7 @@ regions:
   default: us-east-1
 
 compute:
-  nodeGroups:
+  managedNodeGroups:
     - name: standard
       instanceType: t3.medium
       desiredCapacity: 2
@@ -36,6 +36,7 @@ compute:
       maxSize: 5
       volumeSize: 80
       volumeType: gp3
+      amiFamily: AmazonLinux2023
 
 lifecycle:
   maxTTLHours: 168      # 1 week max

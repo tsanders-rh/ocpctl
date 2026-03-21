@@ -446,6 +446,30 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
+            {outputs.dashboard_token && (
+              <div className="space-y-2">
+                <Label>Dashboard Token</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={outputs.dashboard_token}
+                    readOnly
+                    type="password"
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(outputs.dashboard_token!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use this token to authenticate to the Kubernetes Dashboard. Select &quot;Token&quot; authentication and paste this value.
+                </p>
+              </div>
+            )}
+
             {outputs.kubeconfig_s3_uri && (
               <div className="space-y-2">
                 <Label>Kubeconfig</Label>

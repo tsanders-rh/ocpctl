@@ -265,71 +265,24 @@ func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
 	}
 }
 
-// handleEKSDestroy handles EKS cluster destruction
-// Following AWS best practices: delete nodegroups first, then cluster
+// handleEKSDestroy handles EKS cluster destruction using reconciliation-based approach
 func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
-	log.Printf("Starting EKS cluster destruction for %s", cluster.Name)
+	log.Printf("Starting EKS cluster destruction for %s using reconciliation", cluster.Name)
 
-	// Create work directory path
+	// Create reconciler
+	reconciler, err := NewEKSDestroyReconciler(ctx, h.store, cluster)
+	if err != nil {
+		return fmt.Errorf("create destroy reconciler: %w", err)
+	}
+
+	// Run reconciliation loop
+	// This will continuously discover state and delete resources until nothing remains
+	if err := reconciler.ReconcileLoop(ctx); err != nil {
+		return fmt.Errorf("reconcile destroy: %w", err)
+	}
+
+	// Clean up local work directory
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-
-	// STEP 1: Delete all Kubernetes-created LoadBalancers and services
-	// This prevents orphaned ELBs/NLBs/ENIs that block VPC deletion
-	log.Printf("Step 1/4: Cleaning up Kubernetes resources (LoadBalancers, Services, Dashboard)")
-	if err := h.cleanupKubernetesResources(ctx, cluster, workDir); err != nil {
-		log.Printf("Warning: failed to cleanup Kubernetes resources: %v (continuing with destroy)", err)
-		// Don't fail - continue with nodegroup deletion
-	}
-
-	// Create EKS installer
-	eksInstaller := installer.NewEKSInstaller()
-
-	// STEP 2: List and delete all nodegroups explicitly
-	// AWS recommends deleting nodegroups before the cluster
-	log.Printf("Step 2/4: Listing nodegroups for cluster %s", cluster.Name)
-	nodegroups, err := eksInstaller.ListNodegroups(ctx, cluster.Name, cluster.Region)
-	if err != nil {
-		log.Printf("Warning: failed to list nodegroups: %v (cluster may already be gone)", err)
-	} else if len(nodegroups) > 0 {
-		log.Printf("Found %d nodegroups to delete: %v", len(nodegroups), nodegroups)
-		for _, ng := range nodegroups {
-			log.Printf("Deleting nodegroup %s...", ng)
-			ngOutput, ngErr := eksInstaller.DeleteNodegroup(ctx, cluster.Name, ng, cluster.Region)
-			if ngErr != nil {
-				log.Printf("Warning: failed to delete nodegroup %s: %v\nOutput: %s", ng, ngErr, ngOutput)
-				// Continue with other nodegroups
-			} else {
-				log.Printf("Successfully deleted nodegroup %s", ng)
-			}
-		}
-	} else {
-		log.Printf("No nodegroups found (cluster may be hibernated or already cleaned up)")
-	}
-
-	// STEP 3: Delete the EKS cluster control plane
-	log.Printf("Step 3/4: Deleting EKS control plane for %s", cluster.Name)
-	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
-	defer destroyCancel()
-
-	output, err := eksInstaller.DestroyCluster(destroyCtx, cluster.Name, cluster.Region)
-	if err != nil {
-		// Check if cluster is already deleted (ResourceNotFoundException)
-		if isClusterNotFoundError(output) {
-			log.Printf("EKS cluster %s not found (already deleted), marking as destroyed", cluster.Name)
-			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
-				return fmt.Errorf("mark cluster destroyed: %w", err)
-			}
-			return nil
-		}
-
-		log.Printf("EKS cluster destruction failed: %v\nOutput: %s", err, output)
-		return fmt.Errorf("eksctl delete cluster: %w", err)
-	}
-
-	log.Printf("EKS cluster %s control plane deleted successfully", cluster.Name)
-
-	// STEP 4: Clean up local artifacts
-	log.Printf("Step 4/4: Cleaning up local work directory")
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to remove work directory: %v", err)
 	}
