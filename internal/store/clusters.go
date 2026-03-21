@@ -189,12 +189,14 @@ type ListFilters struct {
 func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.Cluster, int, error) {
 	// Build query dynamically based on filters
 	query := `
-		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
-			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
-			destroy_at, created_at, updated_at, destroyed_at,
-			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
-		FROM clusters
+		SELECT c.id, c.name, c.platform, c.cluster_type, c.version, c.profile, c.region, c.base_domain,
+			c.owner, c.owner_id, c.team, c.cost_center, c.status, c.requested_by, c.ttl_hours,
+			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
+			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
+			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
+			co.api_url, co.console_url
+		FROM clusters c
+		LEFT JOIN cluster_outputs co ON c.id = co.cluster_id
 		WHERE 1=1
 	`
 	countQuery := "SELECT COUNT(*) FROM clusters WHERE 1=1"
@@ -203,42 +205,42 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	argPos := 1
 
 	if filters.Status != nil {
-		query += fmt.Sprintf(" AND status = $%d", argPos)
+		query += fmt.Sprintf(" AND c.status = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND status = $%d", argPos)
 		args = append(args, *filters.Status)
 		argPos++
 	}
 
 	if filters.Platform != nil {
-		query += fmt.Sprintf(" AND platform = $%d", argPos)
+		query += fmt.Sprintf(" AND c.platform = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND platform = $%d", argPos)
 		args = append(args, *filters.Platform)
 		argPos++
 	}
 
 	if filters.Owner != nil {
-		query += fmt.Sprintf(" AND owner = $%d", argPos)
+		query += fmt.Sprintf(" AND c.owner = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND owner = $%d", argPos)
 		args = append(args, *filters.Owner)
 		argPos++
 	}
 
 	if filters.OwnerID != nil {
-		query += fmt.Sprintf(" AND owner_id = $%d", argPos)
+		query += fmt.Sprintf(" AND c.owner_id = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND owner_id = $%d", argPos)
 		args = append(args, *filters.OwnerID)
 		argPos++
 	}
 
 	if filters.Team != nil {
-		query += fmt.Sprintf(" AND team = $%d", argPos)
+		query += fmt.Sprintf(" AND c.team = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND team = $%d", argPos)
 		args = append(args, *filters.Team)
 		argPos++
 	}
 
 	if filters.Profile != nil {
-		query += fmt.Sprintf(" AND profile = $%d", argPos)
+		query += fmt.Sprintf(" AND c.profile = $%d", argPos)
 		countQuery += fmt.Sprintf(" AND profile = $%d", argPos)
 		args = append(args, *filters.Profile)
 		argPos++
@@ -252,7 +254,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	}
 
 	// Add ordering and pagination
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY c.created_at DESC"
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argPos, argPos+1)
 	args = append(args, filters.Limit, filters.Offset)
 
@@ -295,6 +297,8 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.WorkHoursEnd,
 			&cluster.WorkDays,
 			&cluster.LastWorkHoursCheck,
+			&cluster.APIURL,
+			&cluster.ConsoleURL,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan cluster: %w", err)

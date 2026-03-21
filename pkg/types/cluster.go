@@ -109,6 +109,9 @@ type Cluster struct {
 	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
 	SkipPostDeployment  bool           `db:"skip_post_deployment" json:"skip_post_deployment"`
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
+	// Cluster outputs (joined from cluster_outputs table)
+	APIURL              *string        `db:"api_url" json:"api_url,omitempty"`
+	ConsoleURL          *string        `db:"console_url" json:"console_url,omitempty"`
 }
 
 // ClusterOutputs represents cluster access information
