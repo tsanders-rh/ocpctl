@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -267,6 +268,17 @@ func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
 func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
 	log.Printf("Starting EKS cluster destruction for %s", cluster.Name)
 
+	// Create work directory path
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	// Delete Kubernetes Dashboard and LoadBalancer before destroying cluster
+	// This prevents the LoadBalancer from blocking VPC deletion
+	log.Printf("Cleaning up Kubernetes Dashboard for cluster %s", cluster.Name)
+	if err := h.cleanupKubernetesDashboard(ctx, cluster, workDir); err != nil {
+		log.Printf("Warning: failed to cleanup Kubernetes Dashboard: %v (continuing with destroy)", err)
+		// Don't fail the destroy job - continue anyway
+	}
+
 	// Create EKS installer
 	eksInstaller := installer.NewEKSInstaller()
 
@@ -303,7 +315,6 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 	}
 
 	// Clean up work directory
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 	if err := os.RemoveAll(workDir); err != nil {
 		log.Printf("Warning: failed to remove work directory: %v", err)
 	}
@@ -359,6 +370,43 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	}
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
+	return nil
+}
+
+// cleanupKubernetesDashboard deletes the Kubernetes Dashboard namespace and LoadBalancer
+func (h *DestroyHandler) cleanupKubernetesDashboard(ctx context.Context, cluster *types.Cluster, workDir string) error {
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Check if kubeconfig exists - if not, try to fetch it
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		log.Printf("Kubeconfig not found locally, attempting to fetch from EKS")
+		if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+			return fmt.Errorf("create auth directory: %w", err)
+		}
+
+		eksInstaller := installer.NewEKSInstaller()
+		if err := eksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+			return fmt.Errorf("get kubeconfig: %w", err)
+		}
+	}
+
+	// Delete the kubernetes-dashboard namespace (this deletes all resources including the LoadBalancer)
+	log.Printf("Deleting kubernetes-dashboard namespace...")
+	cmd := exec.CommandContext(ctx, "kubectl", "delete", "namespace", "kubernetes-dashboard",
+		"--ignore-not-found=true", "--timeout=120s", "--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("kubectl delete namespace output: %s", string(output))
+		return fmt.Errorf("delete kubernetes-dashboard namespace: %w", err)
+	}
+
+	log.Printf("Kubernetes Dashboard namespace deleted: %s", string(output))
+
+	// Wait a moment for AWS to clean up the LoadBalancer
+	log.Printf("Waiting for AWS to clean up LoadBalancer resources...")
+	time.Sleep(30 * time.Second)
+
 	return nil
 }
 
