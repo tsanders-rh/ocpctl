@@ -23,6 +23,7 @@ type Store struct {
 	Clusters             *ClusterStore
 	Jobs                 *JobStore
 	JobLocks             *JobLockStore
+	JobRetryHistory      *JobRetryHistoryStore
 	Idempotency          *IdempotencyStore
 	RBAC                 *RBACStore
 	Audit                *AuditStore
@@ -48,6 +49,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Clusters = &ClusterStore{pool: pool}
 	s.Jobs = &JobStore{pool: pool}
 	s.JobLocks = &JobLockStore{pool: pool}
+	s.JobRetryHistory = &JobRetryHistoryStore{pool: pool}
 	s.Idempotency = &IdempotencyStore{pool: pool}
 	s.RBAC = &RBACStore{pool: pool}
 	s.Audit = &AuditStore{pool: pool}

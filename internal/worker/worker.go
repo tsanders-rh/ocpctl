@@ -432,6 +432,13 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		return
 	}
 
+	// Record retry attempt with error details for debugging
+	errorCode := "RETRY"
+	if err := w.store.JobRetryHistory.RecordRetry(ctx, job.ID, job.Attempt+1, errorCode, jobErr.Error()); err != nil {
+		log.Printf("Warning: Failed to record retry history for job %s: %v", job.ID, err)
+		// Don't fail - this is just for tracking
+	}
+
 	// Check if max attempts reached (job.Attempt is now incremented in DB)
 	// Since job object in memory hasn't been refreshed, we compare against job.Attempt + 1
 	if job.Attempt+1 > job.MaxAttempts {
