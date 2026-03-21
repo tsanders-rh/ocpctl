@@ -243,8 +243,8 @@ main() {
 
     # EKS and IKS installers
     if ! ensure_eksctl; then
-        log "WARNING: Failed to ensure eksctl (non-fatal)"
-        # Don't fail - only needed for EKS clusters
+        log "ERROR: Failed to ensure eksctl"
+        failed=1
     fi
 
     if ! ensure_ibmcloud; then
