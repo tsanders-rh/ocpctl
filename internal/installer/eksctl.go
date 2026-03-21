@@ -185,7 +185,6 @@ func (e *EKSInstaller) ListNodegroups(ctx context.Context, clusterName, region s
 	// Parse nodegroup names from output
 	// eksctl returns JSON array with objects containing "Name" field
 	// For simplicity, just extract nodegroup names via text parsing
-	output := stdout.String()
 	var nodegroups []string
 
 	// Simple parsing: look for "Name": "nodegroup-name"
