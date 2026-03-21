@@ -426,23 +426,10 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		return
 	}
 
-	// For all other errors, increment attempt counter
-	if err := w.store.Jobs.IncrementAttempt(ctx, job.ID); err != nil {
-		log.Printf("Failed to increment attempt for job %s: %v", job.ID, err)
-		return
-	}
-
-	// Record retry attempt with error details for debugging
-	errorCode := "RETRY"
-	if err := w.store.JobRetryHistory.RecordRetry(ctx, job.ID, job.Attempt+1, errorCode, jobErr.Error()); err != nil {
-		log.Printf("Warning: Failed to record retry history for job %s: %v", job.ID, err)
-		// Don't fail - this is just for tracking
-	}
-
-	// Check if max attempts reached (job.Attempt is now incremented in DB)
-	// Since job object in memory hasn't been refreshed, we compare against job.Attempt + 1
-	if job.Attempt+1 > job.MaxAttempts {
-		log.Printf("Job %s reached max attempts (%d), marking as failed", job.ID, job.MaxAttempts)
+	// Check if max attempts reached BEFORE incrementing
+	// job.Attempt is 1-indexed, so if attempt 3 just failed and max is 3, we're done
+	if job.Attempt >= job.MaxAttempts {
+		log.Printf("Job %s reached max attempts (%d/%d), marking as failed", job.ID, job.Attempt, job.MaxAttempts)
 
 		// Mark job as permanently failed
 		errorCode := "MAX_RETRIES_EXCEEDED"
@@ -455,22 +442,36 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
 			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
 		}
-	} else {
-		// Schedule retry
-		log.Printf("Job %s will be retried (attempt %d/%d)", job.ID, job.Attempt+1, job.MaxAttempts)
-
-		// For CREATE jobs, clean up partial infrastructure before retry
-		if job.JobType == types.JobTypeCreate {
-			w.cleanupPartialDeployment(ctx, job)
-		}
-
-		// Update job status back to PENDING for retry
-		if err := w.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusPending); err != nil {
-			log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
-		}
-
-		// TODO: Implement exponential backoff delay
+		return
 	}
+
+	// Job will be retried - increment attempt counter
+	if err := w.store.Jobs.IncrementAttempt(ctx, job.ID); err != nil {
+		log.Printf("Failed to increment attempt for job %s: %v", job.ID, err)
+		return
+	}
+
+	// Record retry attempt with error details for debugging
+	errorCode := "RETRY"
+	if err := w.store.JobRetryHistory.RecordRetry(ctx, job.ID, job.Attempt+1, errorCode, jobErr.Error()); err != nil {
+		log.Printf("Warning: Failed to record retry history for job %s: %v", job.ID, err)
+		// Don't fail - this is just for tracking
+	}
+
+	// Schedule retry
+	log.Printf("Job %s will be retried (attempt %d/%d)", job.ID, job.Attempt+1, job.MaxAttempts)
+
+	// For CREATE jobs, clean up partial infrastructure before retry
+	if job.JobType == types.JobTypeCreate {
+		w.cleanupPartialDeployment(ctx, job)
+	}
+
+	// Update job status back to PENDING for retry
+	if err := w.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusPending); err != nil {
+		log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
+	}
+
+	// TODO: Implement exponential backoff delay
 }
 
 // cleanupPartialDeployment cleans up partial infrastructure from a failed CREATE job
