@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -99,6 +100,12 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 	// Update cluster outputs with dashboard URL
 	if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
 		return fmt.Errorf("update cluster console URL: %w", err)
+	}
+
+	// Generate token-based kubeconfig for kubectl access
+	tokenKubeconfigPath := filepath.Join(filepath.Dir(kubeconfigPath), "auth", "kubeconfig")
+	if err := h.generateTokenKubeconfig(ctx, kubeconfigPath, tokenKubeconfigPath, cluster); err != nil {
+		return fmt.Errorf("generate token kubeconfig: %w", err)
 	}
 
 	return nil
@@ -291,6 +298,135 @@ func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clus
 
 	log.Printf("Successfully updated cluster console URL")
 	return nil
+}
+
+// generateTokenKubeconfig generates a token-based kubeconfig that doesn't require AWS credentials
+func (h *PostConfigureHandler) generateTokenKubeconfig(ctx context.Context, awsKubeconfigPath, outputPath string, cluster *types.Cluster) error {
+	log.Println("Generating token-based kubeconfig for kubectl access...")
+
+	// Create service account for kubectl access in kube-system namespace
+	manifest := `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ocpctl-kubectl
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ocpctl-kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: ocpctl-kubectl
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ocpctl-kubectl-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: ocpctl-kubectl
+type: kubernetes.io/service-account-token
+`
+
+	// Write manifest to file
+	manifestPath := filepath.Join(filepath.Dir(awsKubeconfigPath), "kubectl-sa.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0600); err != nil {
+		return fmt.Errorf("write kubectl service account manifest: %w", err)
+	}
+
+	// Apply manifest using AWS kubeconfig
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", manifestPath, "--kubeconfig", awsKubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kubectl apply service account: %w\nOutput: %s", err, string(output))
+	}
+
+	log.Printf("Service account created: %s", string(output))
+
+	// Wait for secret to be created
+	time.Sleep(2 * time.Second)
+
+	// Get the service account token
+	cmd = exec.CommandContext(ctx, "kubectl", "get", "secret", "ocpctl-kubectl-token",
+		"-n", "kube-system", "-o", "jsonpath={.data.token}", "--kubeconfig", awsKubeconfigPath)
+	tokenBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("get token: %w\nOutput: %s", err, string(tokenBytes))
+	}
+
+	// Decode base64 token
+	decodeCmd := exec.Command("base64", "-d")
+	decodeCmd.Stdin = strings.NewReader(strings.TrimSpace(string(tokenBytes)))
+	decodedToken, err := decodeCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("decode token: %w", err)
+	}
+	token := strings.TrimSpace(string(decodedToken))
+
+	// Get CA certificate
+	cmd = exec.CommandContext(ctx, "kubectl", "get", "secret", "ocpctl-kubectl-token",
+		"-n", "kube-system", "-o", "jsonpath={.data.ca\\.crt}", "--kubeconfig", awsKubeconfigPath)
+	caBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("get CA cert: %w\nOutput: %s", err, string(caBytes))
+	}
+
+	// Decode base64 CA cert
+	decodeCmd = exec.Command("base64", "-d")
+	decodeCmd.Stdin = strings.NewReader(strings.TrimSpace(string(caBytes)))
+	decodedCA, err := decodeCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("decode CA cert: %w", err)
+	}
+	caCert := strings.TrimSpace(string(decodedCA))
+
+	// Get API server URL
+	apiURL := fmt.Sprintf("https://%s.%s.eks.amazonaws.com", cluster.Name, cluster.Region)
+
+	// Generate kubeconfig with token authentication
+	kubeconfig := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: %s
+    server: %s
+  name: %s
+contexts:
+- context:
+    cluster: %s
+    user: ocpctl-kubectl
+  name: %s
+current-context: %s
+users:
+- name: ocpctl-kubectl
+  user:
+    token: %s
+`, base64Encode(caCert), apiURL, cluster.Name, cluster.Name, cluster.Name, cluster.Name, token)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+
+	// Write kubeconfig to file
+	if err := os.WriteFile(outputPath, []byte(kubeconfig), 0600); err != nil {
+		return fmt.Errorf("write kubeconfig: %w", err)
+	}
+
+	log.Printf("Token-based kubeconfig generated at: %s", outputPath)
+	return nil
+}
+
+// base64Encode encodes a string to base64
+func base64Encode(s string) string {
+	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
 // handleIKSPostConfigure handles post-configuration for IKS clusters
