@@ -19,9 +19,9 @@ func (s *ClusterOutputsStore) Create(ctx context.Context, outputs *types.Cluster
 	query := `
 		INSERT INTO cluster_outputs (
 			id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
-			kubeadmin_secret_ref, metadata_s3_uri
+			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7
+			$1, $2, $3, $4, $5, $6, $7, $8
 		)
 	`
 
@@ -33,6 +33,7 @@ func (s *ClusterOutputsStore) Create(ctx context.Context, outputs *types.Cluster
 		outputs.KubeconfigS3URI,
 		outputs.KubeadminSecretRef,
 		outputs.MetadataS3URI,
+		outputs.DashboardToken,
 	)
 
 	if err != nil {
@@ -51,8 +52,9 @@ func (s *ClusterOutputsStore) Update(ctx context.Context, outputs *types.Cluster
 			kubeconfig_s3_uri = $3,
 			kubeadmin_secret_ref = $4,
 			metadata_s3_uri = $5,
+			dashboard_token = $6,
 			updated_at = NOW()
-		WHERE cluster_id = $6
+		WHERE cluster_id = $7
 	`
 
 	result, err := s.pool.Exec(ctx, query,
@@ -61,6 +63,7 @@ func (s *ClusterOutputsStore) Update(ctx context.Context, outputs *types.Cluster
 		outputs.KubeconfigS3URI,
 		outputs.KubeadminSecretRef,
 		outputs.MetadataS3URI,
+		outputs.DashboardToken,
 		outputs.ClusterID,
 	)
 
@@ -80,9 +83,9 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 	query := `
 		INSERT INTO cluster_outputs (
 			id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
-			kubeadmin_secret_ref, metadata_s3_uri
+			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7
+			$1, $2, $3, $4, $5, $6, $7, $8
 		)
 		ON CONFLICT (cluster_id)
 		DO UPDATE SET
@@ -91,6 +94,7 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 			kubeconfig_s3_uri = EXCLUDED.kubeconfig_s3_uri,
 			kubeadmin_secret_ref = EXCLUDED.kubeadmin_secret_ref,
 			metadata_s3_uri = EXCLUDED.metadata_s3_uri,
+			dashboard_token = EXCLUDED.dashboard_token,
 			updated_at = NOW()
 	`
 
@@ -102,6 +106,7 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 		outputs.KubeconfigS3URI,
 		outputs.KubeadminSecretRef,
 		outputs.MetadataS3URI,
+		outputs.DashboardToken,
 	)
 
 	if err != nil {
@@ -115,7 +120,7 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 func (s *ClusterOutputsStore) GetByClusterID(ctx context.Context, clusterID string) (*types.ClusterOutputs, error) {
 	query := `
 		SELECT id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
-			kubeadmin_secret_ref, metadata_s3_uri, created_at, updated_at
+			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token, created_at, updated_at
 		FROM cluster_outputs
 		WHERE cluster_id = $1
 	`
@@ -129,6 +134,7 @@ func (s *ClusterOutputsStore) GetByClusterID(ctx context.Context, clusterID stri
 		&outputs.KubeconfigS3URI,
 		&outputs.KubeadminSecretRef,
 		&outputs.MetadataS3URI,
+		&outputs.DashboardToken,
 		&outputs.CreatedAt,
 		&outputs.UpdatedAt,
 	)
