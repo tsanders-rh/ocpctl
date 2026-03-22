@@ -354,13 +354,17 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 
 	// Store verification snapshot
 	verifySnapshot := types.JobMetadata{
-		"cluster_exists":             verifyResult.ClusterExists,
-		"managed_nodegroups_count":   verifyResult.ManagedNodegroupsCount,
-		"fargate_profiles_count":     verifyResult.FargateProfilesCount,
+		"cluster_exists":              verifyResult.ClusterExists,
+		"managed_nodegroups_count":    verifyResult.ManagedNodegroupsCount,
+		"fargate_profiles_count":      verifyResult.FargateProfilesCount,
 		"cloudformation_stacks_count": verifyResult.CloudFormationStacksCount,
-		"load_balancers_count":       verifyResult.LoadBalancersCount,
-		"security_groups_count":      verifyResult.SecurityGroupsCount,
-		"remaining_resources":        verifyResult.RemainingResources,
+		"load_balancers_count":        verifyResult.LoadBalancersCount,
+		"target_groups_count":         verifyResult.TargetGroupsCount,
+		"security_groups_count":       verifyResult.SecurityGroupsCount,
+		"network_interfaces_count":    verifyResult.NetworkInterfacesCount,
+		"instances_count":             verifyResult.InstancesCount,
+		"vpc_id":                      verifyResult.VPCID,
+		"remaining_resources":         verifyResult.RemainingResources,
 	}
 	destroyAudit.VerificationSnapshot = verifySnapshot
 

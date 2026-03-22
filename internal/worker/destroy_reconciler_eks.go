@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -15,8 +16,15 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
+)
+
+// Sentinel errors to distinguish retryable progress from terminal failures
+var (
+	// ErrDestroyInProgress indicates deletion is in progress (retryable)
+	ErrDestroyInProgress = errors.New("destroy in progress")
 )
 
 // EKSDestroyState represents the current state of EKS cluster resources
@@ -28,17 +36,25 @@ type EKSDestroyState struct {
 	ManagedNodegroups    []string
 	FargateProfiles      []string
 	CloudFormationStacks []string
+	// VPC-level resources
+	VPCID               string
+	NetworkInterfaceIDs []string
+	LoadBalancerARNs    []string
+	TargetGroupARNs     []string
+	InstanceIDs         []string
+	SecurityGroupIDs    []string
 }
 
 // EKSDestroyReconciler implements reconciliation-based EKS cluster deletion
 type EKSDestroyReconciler struct {
-	store       *store.Store
-	eksClient   *eks.Client
-	cfnClient   *cloudformation.Client
-	ec2Client   *ec2.Client
-	clusterName string
-	region      string
-	clusterID   string
+	store        *store.Store
+	eksClient    *eks.Client
+	cfnClient    *cloudformation.Client
+	ec2Client    *ec2.Client
+	elbv2Client  *elasticloadbalancingv2.Client
+	clusterName  string
+	region       string
+	clusterID    string
 }
 
 // NewEKSDestroyReconciler creates a new EKS destroy reconciler
@@ -54,6 +70,7 @@ func NewEKSDestroyReconciler(ctx context.Context, st *store.Store, cluster *type
 		eksClient:   eks.NewFromConfig(cfg),
 		cfnClient:   cloudformation.NewFromConfig(cfg),
 		ec2Client:   ec2.NewFromConfig(cfg),
+		elbv2Client: elasticloadbalancingv2.NewFromConfig(cfg),
 		clusterName: cluster.Name,
 		region:      cluster.Region,
 		clusterID:   cluster.ID,
@@ -98,16 +115,9 @@ func (r *EKSDestroyReconciler) Reconcile(ctx context.Context) (bool, error) {
 		return false, r.reconcileClusterDelete(ctx, state)
 	}
 
-	// Phase 5.5: Clean up orphaned security groups before VPC deletion
-	// This handles edge cases where cluster was deleted but security groups remain
-	if len(state.CloudFormationStacks) > 0 {
-		if err := r.cleanupOrphanedSecurityGroups(ctx, state.CloudFormationStacks); err != nil {
-			log.Printf("Warning: failed to cleanup orphaned security groups: %v", err)
-			// Don't fail - continue with stack deletion
-		}
-	}
-
 	// Phase 6: Delete supporting CloudFormation stacks (cluster stack, addons, VPC)
+	// Security groups and other VPC resources will be cleaned up by CloudFormation
+	// or caught by comprehensive verification
 	if len(state.CloudFormationStacks) > 0 {
 		return false, r.reconcileInfraStacks(ctx, state.CloudFormationStacks)
 	}
@@ -182,25 +192,36 @@ func (r *EKSDestroyReconciler) discover(ctx context.Context) (*EKSDestroyState, 
 		}
 	}
 
-	// List CloudFormation stacks for this cluster
+	// List CloudFormation stacks for this cluster (with pagination)
+	// Include all relevant stack states, not just a subset
 	listStacksInput := &cloudformation.ListStacksInput{
 		StackStatusFilter: []cfntypes.StackStatus{
 			cfntypes.StackStatusCreateComplete,
 			cfntypes.StackStatusUpdateComplete,
 			cfntypes.StackStatusDeleteInProgress,
+			cfntypes.StackStatusDeleteFailed,
+			cfntypes.StackStatusUpdateRollbackComplete,
+			cfntypes.StackStatusImportComplete,
+			cfntypes.StackStatusCreateFailed,
+			cfntypes.StackStatusRollbackComplete,
+			cfntypes.StackStatusUpdateCompleteCleanupInProgress,
 		},
 	}
 
-	listStacksOutput, err := r.cfnClient.ListStacks(ctx, listStacksInput)
-	if err != nil {
-		return nil, fmt.Errorf("list cloudformation stacks: %w", err)
-	}
+	// Use paginator to get all stacks
+	paginator := cloudformation.NewListStacksPaginator(r.cfnClient, listStacksInput)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list cloudformation stacks: %w", err)
+		}
 
-	// Filter stacks belonging to this cluster (eksctl naming convention)
-	for _, stack := range listStacksOutput.StackSummaries {
-		stackName := aws.ToString(stack.StackName)
-		if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
-			state.CloudFormationStacks = append(state.CloudFormationStacks, stackName)
+		// Filter stacks belonging to this cluster (eksctl naming convention)
+		for _, stack := range page.StackSummaries {
+			stackName := aws.ToString(stack.StackName)
+			if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
+				state.CloudFormationStacks = append(state.CloudFormationStacks, stackName)
+			}
 		}
 	}
 
@@ -208,7 +229,337 @@ func (r *EKSDestroyReconciler) discover(ctx context.Context) (*EKSDestroyState, 
 		log.Printf("Found %d CloudFormation stacks: %v", len(state.CloudFormationStacks), state.CloudFormationStacks)
 	}
 
+	// Discover VPC ID (needed for VPC-level resource discovery)
+	vpcID, err := r.discoverVPCID(ctx, state)
+	if err != nil {
+		log.Printf("Warning: could not discover VPC ID: %v", err)
+		// Don't fail - continue without VPC-level discovery
+	} else if vpcID != "" {
+		state.VPCID = vpcID
+		log.Printf("Found VPC ID: %s", vpcID)
+
+		// Discover VPC-level resources
+		if enis, err := r.discoverNetworkInterfaces(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to discover network interfaces: %v", err)
+		} else {
+			state.NetworkInterfaceIDs = enis
+			if len(enis) > 0 {
+				log.Printf("Found %d network interfaces", len(enis))
+			}
+		}
+
+		if lbs, tgs, err := r.discoverLoadBalancers(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to discover load balancers: %v", err)
+		} else {
+			state.LoadBalancerARNs = lbs
+			state.TargetGroupARNs = tgs
+			if len(lbs) > 0 {
+				log.Printf("Found %d load balancers and %d target groups", len(lbs), len(tgs))
+			}
+		}
+
+		if instances, err := r.discoverInstances(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to discover instances: %v", err)
+		} else {
+			state.InstanceIDs = instances
+			if len(instances) > 0 {
+				log.Printf("Found %d EC2 instances", len(instances))
+			}
+		}
+
+		if sgs, err := r.discoverSecurityGroups(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to discover security groups: %v", err)
+		} else {
+			state.SecurityGroupIDs = sgs
+			if len(sgs) > 0 {
+				log.Printf("Found %d security groups", len(sgs))
+			}
+		}
+	}
+
 	return state, nil
+}
+
+// discoverVPCID discovers the VPC ID from the cluster or CloudFormation stacks
+func (r *EKSDestroyReconciler) discoverVPCID(ctx context.Context, state *EKSDestroyState) (string, error) {
+	// Try to get VPC from cluster first
+	if state.ClusterExists {
+		describeInput := &eks.DescribeClusterInput{
+			Name: aws.String(r.clusterName),
+		}
+		describeOutput, err := r.eksClient.DescribeCluster(ctx, describeInput)
+		if err == nil && describeOutput.Cluster != nil && describeOutput.Cluster.ResourcesVpcConfig != nil {
+			vpcID := aws.ToString(describeOutput.Cluster.ResourcesVpcConfig.VpcId)
+			if vpcID != "" {
+				return vpcID, nil
+			}
+		}
+	}
+
+	// Try to get VPC from cluster stack outputs
+	for _, stackName := range state.CloudFormationStacks {
+		if strings.HasSuffix(stackName, "-cluster") {
+			describeInput := &cloudformation.DescribeStacksInput{
+				StackName: aws.String(stackName),
+			}
+			describeOutput, err := r.cfnClient.DescribeStacks(ctx, describeInput)
+			if err != nil {
+				continue
+			}
+			if len(describeOutput.Stacks) > 0 {
+				for _, output := range describeOutput.Stacks[0].Outputs {
+					if aws.ToString(output.OutputKey) == "VPC" {
+						return aws.ToString(output.OutputValue), nil
+					}
+				}
+			}
+		}
+	}
+
+	// Try to get VPC from VPC stack outputs
+	for _, stackName := range state.CloudFormationStacks {
+		if strings.Contains(stackName, "-vpc") {
+			describeInput := &cloudformation.DescribeStacksInput{
+				StackName: aws.String(stackName),
+			}
+			describeOutput, err := r.cfnClient.DescribeStacks(ctx, describeInput)
+			if err != nil {
+				continue
+			}
+			if len(describeOutput.Stacks) > 0 {
+				for _, output := range describeOutput.Stacks[0].Outputs {
+					if aws.ToString(output.OutputKey) == "VPC" {
+						return aws.ToString(output.OutputValue), nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("could not find VPC ID from cluster or stacks")
+}
+
+// discoverNetworkInterfaces finds all cluster-related ENIs in the VPC
+func (r *EKSDestroyReconciler) discoverNetworkInterfaces(ctx context.Context, vpcID string) ([]string, error) {
+	input := &ec2.DescribeNetworkInterfacesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+		},
+	}
+
+	output, err := r.ec2Client.DescribeNetworkInterfaces(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("describe network interfaces: %w", err)
+	}
+
+	var eniIDs []string
+	for _, eni := range output.NetworkInterfaces {
+		eniID := aws.ToString(eni.NetworkInterfaceId)
+		description := aws.ToString(eni.Description)
+
+		// Match by tags first
+		matched := false
+		for _, tag := range eni.TagSet {
+			key := aws.ToString(tag.Key)
+			val := aws.ToString(tag.Value)
+			if key == "kubernetes.io/cluster/"+r.clusterName && (val == "owned" || val == "shared") {
+				matched = true
+				break
+			}
+		}
+
+		// Fallback: description-based heuristics for ELB/EKS ENIs
+		if matched ||
+			strings.Contains(description, "ELB") ||
+			strings.Contains(description, "amazon-eks") ||
+			strings.Contains(description, r.clusterName) {
+			eniIDs = append(eniIDs, eniID)
+		}
+	}
+
+	return eniIDs, nil
+}
+
+// discoverLoadBalancers finds all cluster-related load balancers and target groups
+func (r *EKSDestroyReconciler) discoverLoadBalancers(ctx context.Context, vpcID string) ([]string, []string, error) {
+	// List all load balancers
+	lbInput := &elasticloadbalancingv2.DescribeLoadBalancersInput{}
+	lbOutput, err := r.elbv2Client.DescribeLoadBalancers(ctx, lbInput)
+	if err != nil {
+		return nil, nil, fmt.Errorf("describe load balancers: %w", err)
+	}
+
+	var lbARNs []string
+	for _, lb := range lbOutput.LoadBalancers {
+		// Filter by VPC
+		if aws.ToString(lb.VpcId) != vpcID {
+			continue
+		}
+
+		lbARN := aws.ToString(lb.LoadBalancerArn)
+
+		// Check tags
+		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
+			ResourceArns: []string{lbARN},
+		}
+		tagsOutput, err := r.elbv2Client.DescribeTags(ctx, tagsInput)
+		if err != nil {
+			log.Printf("Warning: failed to get tags for LB %s: %v", lbARN, err)
+			continue
+		}
+
+		// Check if this LB belongs to our cluster
+		matched := false
+		for _, tagDesc := range tagsOutput.TagDescriptions {
+			for _, tag := range tagDesc.Tags {
+				key := aws.ToString(tag.Key)
+				val := aws.ToString(tag.Value)
+				if key == "kubernetes.io/cluster/"+r.clusterName && (val == "owned" || val == "shared") {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+
+		if matched {
+			lbARNs = append(lbARNs, lbARN)
+		}
+	}
+
+	// List all target groups and filter by VPC and cluster tags
+	tgInput := &elasticloadbalancingv2.DescribeTargetGroupsInput{}
+	tgOutput, err := r.elbv2Client.DescribeTargetGroups(ctx, tgInput)
+	if err != nil {
+		return lbARNs, nil, fmt.Errorf("describe target groups: %w", err)
+	}
+
+	var tgARNs []string
+	for _, tg := range tgOutput.TargetGroups {
+		// Filter by VPC
+		if aws.ToString(tg.VpcId) != vpcID {
+			continue
+		}
+
+		tgARN := aws.ToString(tg.TargetGroupArn)
+
+		// Check tags
+		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
+			ResourceArns: []string{tgARN},
+		}
+		tagsOutput, err := r.elbv2Client.DescribeTags(ctx, tagsInput)
+		if err != nil {
+			log.Printf("Warning: failed to get tags for TG %s: %v", tgARN, err)
+			continue
+		}
+
+		// Check if this TG belongs to our cluster
+		matched := false
+		for _, tagDesc := range tagsOutput.TagDescriptions {
+			for _, tag := range tagDesc.Tags {
+				key := aws.ToString(tag.Key)
+				val := aws.ToString(tag.Value)
+				if key == "kubernetes.io/cluster/"+r.clusterName && (val == "owned" || val == "shared") {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+
+		if matched {
+			tgARNs = append(tgARNs, tgARN)
+		}
+	}
+
+	return lbARNs, tgARNs, nil
+}
+
+// discoverInstances finds all cluster-related EC2 instances
+func (r *EKSDestroyReconciler) discoverInstances(ctx context.Context, vpcID string) ([]string, error) {
+	input := &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: []string{"running", "pending", "stopping", "stopped"},
+			},
+		},
+	}
+
+	output, err := r.ec2Client.DescribeInstances(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("describe instances: %w", err)
+	}
+
+	var instanceIDs []string
+	for _, reservation := range output.Reservations {
+		for _, instance := range reservation.Instances {
+			// Check if this instance belongs to our cluster
+			matched := false
+			for _, tag := range instance.Tags {
+				key := aws.ToString(tag.Key)
+				val := aws.ToString(tag.Value)
+				if key == "kubernetes.io/cluster/"+r.clusterName && (val == "owned" || val == "shared") {
+					matched = true
+					break
+				}
+				// Also check for eksctl tags
+				if key == "alpha.eksctl.io/cluster-name" && val == r.clusterName {
+					matched = true
+					break
+				}
+			}
+
+			if matched {
+				instanceIDs = append(instanceIDs, aws.ToString(instance.InstanceId))
+			}
+		}
+	}
+
+	return instanceIDs, nil
+}
+
+// discoverSecurityGroups finds all cluster-related security groups
+func (r *EKSDestroyReconciler) discoverSecurityGroups(ctx context.Context, vpcID string) ([]string, error) {
+	input := &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+			{
+				Name:   aws.String("tag:kubernetes.io/cluster/" + r.clusterName),
+				Values: []string{"owned", "shared"},
+			},
+		},
+	}
+
+	output, err := r.ec2Client.DescribeSecurityGroups(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("describe security groups: %w", err)
+	}
+
+	var sgIDs []string
+	for _, sg := range output.SecurityGroups {
+		// Skip the default security group
+		if aws.ToString(sg.GroupName) == "default" {
+			continue
+		}
+		sgIDs = append(sgIDs, aws.ToString(sg.GroupId))
+	}
+
+	return sgIDs, nil
 }
 
 // reconcileManagedNodegroups deletes managed nodegroups via EKS API
@@ -236,7 +587,7 @@ func (r *EKSDestroyReconciler) reconcileManagedNodegroups(ctx context.Context, s
 		// If already deleting, just wait
 		if ngStatus == ekstypes.NodegroupStatusDeleting {
 			log.Printf("Nodegroup %s is already deleting (status: %s)", ng, ngStatus)
-			return fmt.Errorf("nodegroup %s still deleting", ng)
+			return fmt.Errorf("%w: nodegroup %s still deleting", ErrDestroyInProgress, ng)
 		}
 
 		// If in terminal failed state, log and skip
@@ -265,7 +616,7 @@ func (r *EKSDestroyReconciler) reconcileManagedNodegroups(ctx context.Context, s
 
 		// Return error to indicate work in progress
 		// Next reconcile loop will check if deletion completed
-		return fmt.Errorf("nodegroup %s deletion in progress", ng)
+		return fmt.Errorf("%w: nodegroup %s deletion in progress", ErrDestroyInProgress, ng)
 	}
 
 	return nil
@@ -296,7 +647,7 @@ func (r *EKSDestroyReconciler) reconcileFargateProfiles(ctx context.Context, sta
 		// If already deleting, just wait
 		if fpStatus == ekstypes.FargateProfileStatusDeleting {
 			log.Printf("Fargate profile %s is already deleting", fp)
-			return fmt.Errorf("fargate profile %s still deleting", fp)
+			return fmt.Errorf("%w: fargate profile %s still deleting", ErrDestroyInProgress, fp)
 		}
 
 		// Issue delete
@@ -316,7 +667,7 @@ func (r *EKSDestroyReconciler) reconcileFargateProfiles(ctx context.Context, sta
 		}
 
 		log.Printf("Issued delete for Fargate profile %s", fp)
-		return fmt.Errorf("fargate profile %s deletion in progress", fp)
+		return fmt.Errorf("%w: fargate profile %s deletion in progress", ErrDestroyInProgress, fp)
 	}
 
 	return nil
@@ -352,7 +703,7 @@ func (r *EKSDestroyReconciler) reconcileSelfManagedStacks(ctx context.Context, s
 		// If already deleting, wait
 		if status == cfntypes.StackStatusDeleteInProgress {
 			log.Printf("Stack %s is already deleting", stackName)
-			return fmt.Errorf("stack %s still deleting", stackName)
+			return fmt.Errorf("%w: stack %s still deleting", ErrDestroyInProgress, stackName)
 		}
 
 		// If delete failed, log and skip
@@ -391,7 +742,7 @@ func (r *EKSDestroyReconciler) reconcileSelfManagedStacks(ctx context.Context, s
 		}
 
 		log.Printf("Issued delete for stack %s", stackName)
-		return fmt.Errorf("stack %s deletion in progress", stackName)
+		return fmt.Errorf("%w: stack %s deletion in progress", ErrDestroyInProgress, stackName)
 	}
 
 	return nil
@@ -404,7 +755,7 @@ func (r *EKSDestroyReconciler) reconcileClusterDelete(ctx context.Context, state
 	// Check if already deleting
 	if state.ClusterStatus == string(ekstypes.ClusterStatusDeleting) {
 		log.Printf("Cluster %s is already deleting", r.clusterName)
-		return fmt.Errorf("cluster %s still deleting", r.clusterName)
+		return fmt.Errorf("%w: cluster %s still deleting", ErrDestroyInProgress, r.clusterName)
 	}
 
 	// Issue delete
@@ -423,7 +774,7 @@ func (r *EKSDestroyReconciler) reconcileClusterDelete(ctx context.Context, state
 	}
 
 	log.Printf("Issued delete for cluster %s", r.clusterName)
-	return fmt.Errorf("cluster %s deletion in progress", r.clusterName)
+	return fmt.Errorf("%w: cluster %s deletion in progress", ErrDestroyInProgress, r.clusterName)
 }
 
 // reconcileInfraStacks deletes supporting CloudFormation stacks (cluster, addons, VPC)
@@ -458,7 +809,7 @@ func (r *EKSDestroyReconciler) reconcileInfraStacks(ctx context.Context, stacks 
 
 		if status == cfntypes.StackStatusDeleteInProgress {
 			log.Printf("Stack %s is already deleting", stackName)
-			return fmt.Errorf("stack %s still deleting", stackName)
+			return fmt.Errorf("%w: stack %s still deleting", ErrDestroyInProgress, stackName)
 		}
 
 		if status == cfntypes.StackStatusDeleteFailed {
@@ -496,7 +847,7 @@ func (r *EKSDestroyReconciler) reconcileInfraStacks(ctx context.Context, stacks 
 		}
 
 		log.Printf("Issued delete for stack %s", stackName)
-		return fmt.Errorf("stack %s deletion in progress", stackName)
+		return fmt.Errorf("%w: stack %s deletion in progress", ErrDestroyInProgress, stackName)
 	}
 
 	return nil
@@ -679,8 +1030,13 @@ func (r *EKSDestroyReconciler) ReconcileLoop(ctx context.Context) error {
 		// Run one reconciliation iteration
 		done, err := r.Reconcile(ctx)
 		if err != nil {
-			// Log the error but continue - these are "work in progress" errors
-			log.Printf("Reconcile iteration: %v (will retry)", err)
+			// Check if this is a retryable "in progress" error or a terminal failure
+			if errors.Is(err, ErrDestroyInProgress) {
+				log.Printf("Reconcile iteration: %v (will retry)", err)
+			} else {
+				// Terminal error - fail immediately
+				return fmt.Errorf("reconcile failed: %w", err)
+			}
 		}
 
 		if done {
@@ -688,22 +1044,31 @@ func (r *EKSDestroyReconciler) ReconcileLoop(ctx context.Context) error {
 			return nil
 		}
 
-		// Wait before next iteration
+		// Wait before next iteration (context-aware)
 		log.Printf("Waiting %v before next reconcile iteration", pollInterval)
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+			// Continue to next iteration
+		}
 	}
 }
 
 // VerificationResult contains details of destroy verification
 type VerificationResult struct {
-	Passed                  bool
-	RemainingResources      map[string][]string // resource type -> resource names
-	ClusterExists           bool
-	ManagedNodegroupsCount  int
-	FargateProfilesCount    int
+	Passed                    bool
+	RemainingResources        map[string][]string // resource type -> resource names
+	ClusterExists             bool
+	ManagedNodegroupsCount    int
+	FargateProfilesCount      int
 	CloudFormationStacksCount int
-	LoadBalancersCount      int
-	SecurityGroupsCount     int
+	LoadBalancersCount        int
+	TargetGroupsCount         int
+	SecurityGroupsCount       int
+	NetworkInterfacesCount    int
+	InstancesCount            int
+	VPCID                     string
 }
 
 // VerifyDestroyed performs comprehensive verification that all cluster resources are deleted
@@ -771,26 +1136,34 @@ func (r *EKSDestroyReconciler) VerifyDestroyed(ctx context.Context) (*Verificati
 		log.Printf("[Destroy Verification] ✓ No Fargate profiles")
 	}
 
-	// 4. Verify CloudFormation stacks are deleted
+	// 4. Verify CloudFormation stacks are deleted (with pagination)
 	listStacksInput := &cloudformation.ListStacksInput{
 		StackStatusFilter: []cfntypes.StackStatus{
 			cfntypes.StackStatusCreateComplete,
 			cfntypes.StackStatusUpdateComplete,
 			cfntypes.StackStatusDeleteInProgress,
 			cfntypes.StackStatusDeleteFailed,
+			cfntypes.StackStatusUpdateRollbackComplete,
+			cfntypes.StackStatusImportComplete,
+			cfntypes.StackStatusCreateFailed,
+			cfntypes.StackStatusRollbackComplete,
+			cfntypes.StackStatusUpdateCompleteCleanupInProgress,
 		},
 	}
 
-	listStacksOutput, err := r.cfnClient.ListStacks(ctx, listStacksInput)
-	if err != nil {
-		return nil, fmt.Errorf("list cloudformation stacks: %w", err)
-	}
-
 	var remainingStacks []string
-	for _, stack := range listStacksOutput.StackSummaries {
-		stackName := aws.ToString(stack.StackName)
-		if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
-			remainingStacks = append(remainingStacks, stackName)
+	paginator := cloudformation.NewListStacksPaginator(r.cfnClient, listStacksInput)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list cloudformation stacks: %w", err)
+		}
+
+		for _, stack := range page.StackSummaries {
+			stackName := aws.ToString(stack.StackName)
+			if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
+				remainingStacks = append(remainingStacks, stackName)
+			}
 		}
 	}
 
@@ -803,65 +1176,87 @@ func (r *EKSDestroyReconciler) VerifyDestroyed(ctx context.Context) (*Verificati
 		log.Printf("[Destroy Verification] ✓ No CloudFormation stacks")
 	}
 
-	// 5. Verify LoadBalancers created by cluster are deleted
-	// Look for ELBs/NLBs tagged with cluster name
-	describeLBsInput := &ec2.DescribeTagsInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("resource-type"),
-				Values: []string{"elastic-load-balancer"},
-			},
-			{
-				Name:   aws.String("tag:kubernetes.io/cluster/" + r.clusterName),
-				Values: []string{"owned", "shared"},
-			},
-		},
+	// 5. Discover VPC ID for VPC-level resource verification
+	vpcID, err := r.discoverVPCID(ctx, &EKSDestroyState{
+		ClusterExists:        result.ClusterExists,
+		CloudFormationStacks: remainingStacks,
+		ClusterName:          r.clusterName,
+	})
+	if err != nil {
+		log.Printf("[Destroy Verification] Warning: could not discover VPC ID: %v", err)
+	} else {
+		result.VPCID = vpcID
 	}
 
-	describeLBsOutput, err := r.ec2Client.DescribeTags(ctx, describeLBsInput)
-	if err != nil {
-		log.Printf("[Destroy Verification] Warning: failed to check for LoadBalancers: %v", err)
-	} else if len(describeLBsOutput.Tags) > 0 {
-		result.Passed = false
-		result.LoadBalancersCount = len(describeLBsOutput.Tags)
-		lbNames := make([]string, 0, len(describeLBsOutput.Tags))
-		for _, tag := range describeLBsOutput.Tags {
-			if tag.ResourceId != nil {
-				lbNames = append(lbNames, *tag.ResourceId)
+	// 6. Verify LoadBalancers and Target Groups using ELBv2 (proper verification)
+	if result.VPCID != "" {
+		lbARNs, tgARNs, err := r.discoverLoadBalancers(ctx, result.VPCID)
+		if err != nil {
+			log.Printf("[Destroy Verification] Warning: failed to check for LoadBalancers: %v", err)
+		} else {
+			if len(lbARNs) > 0 {
+				result.Passed = false
+				result.LoadBalancersCount = len(lbARNs)
+				result.RemainingResources["load_balancers"] = lbARNs
+				log.Printf("[Destroy Verification] FAILED: %d LoadBalancers remain: %v", len(lbARNs), lbARNs)
+			} else {
+				log.Printf("[Destroy Verification] ✓ No LoadBalancers")
+			}
+
+			if len(tgARNs) > 0 {
+				result.Passed = false
+				result.TargetGroupsCount = len(tgARNs)
+				result.RemainingResources["target_groups"] = tgARNs
+				log.Printf("[Destroy Verification] FAILED: %d Target Groups remain: %v", len(tgARNs), tgARNs)
+			} else {
+				log.Printf("[Destroy Verification] ✓ No Target Groups")
 			}
 		}
-		result.RemainingResources["load_balancers"] = lbNames
-		log.Printf("[Destroy Verification] FAILED: %d LoadBalancers remain: %v", len(lbNames), lbNames)
-	} else {
-		log.Printf("[Destroy Verification] ✓ No LoadBalancers")
 	}
 
-	// 6. Verify security groups created by cluster are deleted
-	describeSGsInput := &ec2.DescribeSecurityGroupsInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("tag:kubernetes.io/cluster/" + r.clusterName),
-				Values: []string{"owned"},
-			},
-		},
-	}
-
-	describeSGsOutput, err := r.ec2Client.DescribeSecurityGroups(ctx, describeSGsInput)
-	if err != nil {
-		log.Printf("[Destroy Verification] Warning: failed to check for SecurityGroups: %v", err)
-	} else if len(describeSGsOutput.SecurityGroups) > 0 {
-		result.Passed = false
-		result.SecurityGroupsCount = len(describeSGsOutput.SecurityGroups)
-		sgNames := make([]string, 0, len(describeSGsOutput.SecurityGroups))
-		for _, sg := range describeSGsOutput.SecurityGroups {
-			if sg.GroupId != nil {
-				sgNames = append(sgNames, *sg.GroupId)
-			}
+	// 7. Verify security groups created by cluster are deleted
+	if result.VPCID != "" {
+		sgIDs, err := r.discoverSecurityGroups(ctx, result.VPCID)
+		if err != nil {
+			log.Printf("[Destroy Verification] Warning: failed to check for SecurityGroups: %v", err)
+		} else if len(sgIDs) > 0 {
+			result.Passed = false
+			result.SecurityGroupsCount = len(sgIDs)
+			result.RemainingResources["security_groups"] = sgIDs
+			log.Printf("[Destroy Verification] FAILED: %d SecurityGroups remain: %v", len(sgIDs), sgIDs)
+		} else {
+			log.Printf("[Destroy Verification] ✓ No SecurityGroups")
 		}
-		result.RemainingResources["security_groups"] = sgNames
-		log.Printf("[Destroy Verification] FAILED: %d SecurityGroups remain: %v", len(sgNames), sgNames)
-	} else {
-		log.Printf("[Destroy Verification] ✓ No SecurityGroups")
+	}
+
+	// 8. Verify network interfaces (ENIs) are deleted
+	if result.VPCID != "" {
+		eniIDs, err := r.discoverNetworkInterfaces(ctx, result.VPCID)
+		if err != nil {
+			log.Printf("[Destroy Verification] Warning: failed to check for NetworkInterfaces: %v", err)
+		} else if len(eniIDs) > 0 {
+			result.Passed = false
+			result.NetworkInterfacesCount = len(eniIDs)
+			result.RemainingResources["network_interfaces"] = eniIDs
+			log.Printf("[Destroy Verification] FAILED: %d Network Interfaces remain: %v", len(eniIDs), eniIDs)
+		} else {
+			log.Printf("[Destroy Verification] ✓ No Network Interfaces")
+		}
+	}
+
+	// 9. Verify EC2 instances are deleted
+	if result.VPCID != "" {
+		instanceIDs, err := r.discoverInstances(ctx, result.VPCID)
+		if err != nil {
+			log.Printf("[Destroy Verification] Warning: failed to check for Instances: %v", err)
+		} else if len(instanceIDs) > 0 {
+			result.Passed = false
+			result.InstancesCount = len(instanceIDs)
+			result.RemainingResources["instances"] = instanceIDs
+			log.Printf("[Destroy Verification] FAILED: %d EC2 Instances remain: %v", len(instanceIDs), instanceIDs)
+		} else {
+			log.Printf("[Destroy Verification] ✓ No EC2 Instances")
+		}
 	}
 
 	// Log final result
