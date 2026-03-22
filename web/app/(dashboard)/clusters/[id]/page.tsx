@@ -459,7 +459,25 @@ export default function ClusterDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigator.clipboard.writeText(outputs.dashboard_token!)}
+                    onClick={async () => {
+                      try {
+                        if (!outputs.dashboard_token) {
+                          alert('Dashboard token is not available');
+                          return;
+                        }
+                        await navigator.clipboard.writeText(outputs.dashboard_token);
+                        // Provide visual feedback
+                        const button = document.activeElement as HTMLButtonElement;
+                        const originalText = button.textContent;
+                        button.textContent = 'Copied!';
+                        setTimeout(() => {
+                          button.textContent = originalText;
+                        }, 2000);
+                      } catch (error) {
+                        console.error('Failed to copy token:', error);
+                        alert('Failed to copy token to clipboard. Please copy manually from the field.');
+                      }
+                    }}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>

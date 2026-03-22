@@ -66,21 +66,23 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		// Try to download artifacts from S3
 		artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
 		if err != nil {
-			log.Printf("Warning: failed to create artifact storage: %v", err)
-			// Mark cluster as destroyed since we can't access artifacts
-			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
-				return fmt.Errorf("mark cluster destroyed: %w", err)
+			log.Printf("ERROR: failed to create artifact storage: %v", err)
+			// Cannot proceed with destroy without install directory - mark as DESTROY_FAILED
+			// Resources may still exist in AWS and require manual cleanup
+			if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {
+				return fmt.Errorf("mark cluster destroy failed: %w", err)
 			}
-			return nil
+			return fmt.Errorf("cannot destroy cluster without install directory: %w", err)
 		}
 
 		if err := artifactStorage.DownloadClusterArtifacts(ctx, cluster.ID, workDir); err != nil {
-			log.Printf("Warning: failed to download artifacts from S3: %v", err)
-			// Mark cluster as destroyed since artifacts are not available
-			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
-				return fmt.Errorf("mark cluster destroyed: %w", err)
+			log.Printf("ERROR: failed to download artifacts from S3: %v", err)
+			// Cannot proceed with destroy without install directory - mark as DESTROY_FAILED
+			// Resources may still exist in AWS and require manual cleanup
+			if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {
+				return fmt.Errorf("mark cluster destroy failed: %w", err)
 			}
-			return nil
+			return fmt.Errorf("cannot destroy cluster without install directory: %w", err)
 		}
 
 		log.Printf("Successfully downloaded artifacts from S3 for cluster %s", cluster.Name)
@@ -120,7 +122,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Handle destroy errors
-	destroyFailed := false
+	destroySucceeded := true
 	if err != nil {
 		// Logs are already streamed to database
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
@@ -131,11 +133,12 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		if destroyCtx.Err() == context.DeadlineExceeded {
 			log.Printf("ERROR: openshift-install destroy timed out after 45 minutes for %s", cluster.Name)
 			log.Printf("This likely indicates AWS has too many IAM resources (500+) causing infinite scanning loop")
-			log.Printf("Will mark cluster as destroyed and create orphan detection records")
-			destroyFailed = true
+			log.Printf("Will mark cluster as DESTROY_FAILED - verification required before marking DESTROYED")
+			destroySucceeded = false
 		} else {
-			// Don't fail the job if destroy encounters errors - infrastructure might already be gone
-			log.Printf("Warning: openshift-install destroy cluster returned error: %v\nOutput: %s", err, output)
+			// openshift-install failed with error - cannot confirm destruction
+			log.Printf("ERROR: openshift-install destroy cluster failed: %v\nOutput: %s", err, output)
+			destroySucceeded = false
 		}
 	} else {
 		log.Printf("Cluster %s destroyed successfully", cluster.Name)
@@ -184,18 +187,24 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	// Clean up temporary files created by openshift-install
 	h.cleanupTempFiles(cluster.ID)
 
-	// Mark cluster as destroyed in database
+	// Mark cluster status based on destroy result
+	if !destroySucceeded {
+		// Destroy failed or timed out - mark as DESTROY_FAILED
+		// Resources may still exist in AWS and require manual verification
+		log.Printf("Marking cluster %s as DESTROY_FAILED - destroy operation did not complete successfully", cluster.Name)
+		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {
+			return fmt.Errorf("mark cluster destroy failed: %w", err)
+		}
+		return fmt.Errorf("destroy operation failed - resources may still exist in AWS and require manual cleanup")
+	}
+
+	// Destroy succeeded - mark as DESTROYED
+	// TODO: Add verification for OpenShift similar to EKS (check CloudFormation stacks, tagged resources)
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
 
 	log.Printf("Cluster %s is now DESTROYED", cluster.Name)
-
-	// Return error if destroy timed out - job should be marked as FAILED
-	if destroyFailed {
-		return fmt.Errorf("destroy operation timed out after 45 minutes - likely due to AWS IAM resource scanning issues. Cluster marked as DESTROYED but manual cleanup may be required for orphaned IAM roles and OIDC provider")
-	}
-
 	return nil
 }
 
@@ -269,17 +278,118 @@ func (h *DestroyHandler) cleanupTempFiles(clusterID string) {
 func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
 	log.Printf("Starting EKS cluster destruction for %s using reconciliation", cluster.Name)
 
+	// Create destroy audit record
+	auditID := fmt.Sprintf("%s-destroy-%d", cluster.ID, time.Now().Unix())
+	workerID := os.Getenv("HOSTNAME")
+	if workerID == "" {
+		workerID = "unknown"
+	}
+
+	destroyAudit := &types.DestroyAudit{
+		ID:               auditID,
+		ClusterID:        cluster.ID,
+		JobID:            job.ID,
+		WorkerID:         workerID,
+		DestroyStartedAt: time.Now(),
+		CreatedAt:        time.Now(),
+	}
+
+	log.Printf("[Destroy Audit] Created audit record: %s", auditID)
+
 	// Create reconciler
 	reconciler, err := NewEKSDestroyReconciler(ctx, h.store, cluster)
 	if err != nil {
+		terminalReason := fmt.Sprintf("Failed to create reconciler: %v", err)
+		destroyAudit.TerminalReason = &terminalReason
+		destroyAudit.CompletedAt = ptrTime(time.Now())
+		// Best effort audit save
+		_ = h.saveDestroyAudit(ctx, destroyAudit)
 		return fmt.Errorf("create destroy reconciler: %w", err)
 	}
 
 	// Run reconciliation loop
 	// This will continuously discover state and delete resources until nothing remains
+	log.Printf("[Destroy] Running reconciliation loop for cluster %s", cluster.Name)
 	if err := reconciler.ReconcileLoop(ctx); err != nil {
+		terminalReason := fmt.Sprintf("Reconciliation failed: %v", err)
+		destroyAudit.TerminalReason = &terminalReason
+		destroyAudit.CompletedAt = ptrTime(time.Now())
+		_ = h.saveDestroyAudit(ctx, destroyAudit)
+
+		// Update cluster to DESTROY_FAILED
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+		}
+
 		return fmt.Errorf("reconcile destroy: %w", err)
 	}
+
+	log.Printf("[Destroy] Reconciliation loop completed, entering verification phase")
+
+	// CRITICAL: Verify all resources are actually deleted before marking as DESTROYED
+	// This is the invariant: Never mark DESTROYED unless AWS confirms absence
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyVerifying); err != nil {
+		log.Printf("Warning: failed to update status to DESTROY_VERIFYING: %v", err)
+	}
+
+	verifyResult, err := reconciler.VerifyDestroyed(ctx)
+	if err != nil {
+		terminalReason := fmt.Sprintf("Verification error: %v", err)
+		destroyAudit.TerminalReason = &terminalReason
+		destroyAudit.CompletedAt = ptrTime(time.Now())
+		_ = h.saveDestroyAudit(ctx, destroyAudit)
+
+		// Update cluster to DESTROY_FAILED
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+		}
+
+		return fmt.Errorf("destroy verification: %w", err)
+	}
+
+	// Update audit with verification results
+	now := time.Now()
+	destroyAudit.LastVerifiedAt = &now
+	destroyAudit.VerificationPassed = &verifyResult.Passed
+
+	// Store verification snapshot
+	verifySnapshot := types.JobMetadata{
+		"cluster_exists":             verifyResult.ClusterExists,
+		"managed_nodegroups_count":   verifyResult.ManagedNodegroupsCount,
+		"fargate_profiles_count":     verifyResult.FargateProfilesCount,
+		"cloudformation_stacks_count": verifyResult.CloudFormationStacksCount,
+		"load_balancers_count":       verifyResult.LoadBalancersCount,
+		"security_groups_count":      verifyResult.SecurityGroupsCount,
+		"remaining_resources":        verifyResult.RemainingResources,
+	}
+	destroyAudit.VerificationSnapshot = verifySnapshot
+
+	// If verification failed, capture the first remaining resource
+	if !verifyResult.Passed {
+		for resourceType, resources := range verifyResult.RemainingResources {
+			if len(resources) > 0 {
+				lastResource := fmt.Sprintf("%s: %v", resourceType, resources)
+				destroyAudit.LastResourcePresent = &lastResource
+				break
+			}
+		}
+
+		terminalReason := "Verification failed: resources still exist"
+		destroyAudit.TerminalReason = &terminalReason
+		destroyAudit.CompletedAt = ptrTime(time.Now())
+		_ = h.saveDestroyAudit(ctx, destroyAudit)
+
+		// Update cluster to DESTROY_FAILED instead of DESTROYED
+		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {
+			return fmt.Errorf("mark cluster destroy failed: %w", err)
+		}
+
+		log.Printf("Cluster %s marked as DESTROY_FAILED - verification found remaining resources", cluster.Name)
+		return fmt.Errorf("destroy verification failed - resources still exist: %v", verifyResult.RemainingResources)
+	}
+
+	// Verification passed - safe to clean up local resources and mark as DESTROYED
+	log.Printf("[Destroy] ✓ Verification passed - all AWS resources deleted")
 
 	// Clean up local work directory
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
@@ -287,13 +397,53 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 		log.Printf("Warning: failed to remove work directory: %v", err)
 	}
 
-	// Mark cluster as destroyed
+	// Mark cluster as destroyed (ONLY after verification passes)
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
 
+	// Complete audit record
+	terminalReason := "Destroyed successfully - verification passed"
+	destroyAudit.TerminalReason = &terminalReason
+	destroyAudit.CompletedAt = ptrTime(time.Now())
+	if err := h.saveDestroyAudit(ctx, destroyAudit); err != nil {
+		log.Printf("Warning: failed to save final destroy audit: %v", err)
+	}
+
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
+	log.Printf("[Destroy Audit] Completed audit record: %s", auditID)
 	return nil
+}
+
+// saveDestroyAudit saves destroy audit record (best effort, doesn't fail destroy)
+func (h *DestroyHandler) saveDestroyAudit(ctx context.Context, audit *types.DestroyAudit) error {
+	// Try to create the audit record if it doesn't exist yet (initial save)
+	if audit.CompletedAt == nil {
+		if err := h.store.DestroyAudit.Create(ctx, audit); err != nil {
+			// Log but don't fail - audit is best-effort
+			log.Printf("[Destroy Audit] Warning: failed to create audit record: %v", err)
+			// Try update instead in case it already exists
+			if updateErr := h.store.DestroyAudit.Update(ctx, audit); updateErr != nil {
+				log.Printf("[Destroy Audit] Warning: failed to update audit record: %v", updateErr)
+			}
+		}
+	} else {
+		// Update existing audit record with completion data
+		if err := h.store.DestroyAudit.Update(ctx, audit); err != nil {
+			// Log but don't fail - audit is best-effort
+			log.Printf("[Destroy Audit] Warning: failed to update audit record: %v", err)
+		}
+	}
+
+	log.Printf("[Destroy Audit] Saved: cluster=%s job=%s worker=%s started=%v verified=%v passed=%v resources=%v",
+		audit.ClusterID, audit.JobID, audit.WorkerID, audit.DestroyStartedAt,
+		audit.LastVerifiedAt, audit.VerificationPassed, audit.LastResourcePresent)
+	return nil
+}
+
+// ptrTime returns a pointer to a time.Time
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }
 
 // handleIKSDestroy handles IKS cluster destruction
@@ -322,9 +472,9 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	output, err := iksInstaller.DestroyCluster(destroyCtx, cluster.Name)
 	if err != nil {
 		log.Printf("IKS cluster destruction failed: %v\nOutput: %s", err, output)
-		// Mark as failed but don't return error - cluster resources may be partially destroyed
-		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusFailed); updateErr != nil {
-			log.Printf("Failed to update cluster status to FAILED: %v", updateErr)
+		// Mark as DESTROY_FAILED - cluster resources may be partially destroyed and require manual cleanup
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
 		}
 		return fmt.Errorf("ibmcloud ks cluster rm: %w", err)
 	}
@@ -332,6 +482,7 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	log.Printf("IKS cluster %s destroyed successfully", cluster.Name)
 
 	// Mark cluster as destroyed
+	// TODO: Add verification for IKS similar to EKS (verify cluster no longer exists via ibmcloud API)
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}

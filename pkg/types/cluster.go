@@ -10,15 +10,17 @@ import (
 type ClusterStatus string
 
 const (
-	ClusterStatusPending     ClusterStatus = "PENDING"
-	ClusterStatusCreating    ClusterStatus = "CREATING"
-	ClusterStatusReady       ClusterStatus = "READY"
-	ClusterStatusHibernating ClusterStatus = "HIBERNATING"
-	ClusterStatusHibernated  ClusterStatus = "HIBERNATED"
-	ClusterStatusResuming    ClusterStatus = "RESUMING"
-	ClusterStatusDestroying  ClusterStatus = "DESTROYING"
-	ClusterStatusDestroyed   ClusterStatus = "DESTROYED"
-	ClusterStatusFailed      ClusterStatus = "FAILED"
+	ClusterStatusPending          ClusterStatus = "PENDING"
+	ClusterStatusCreating         ClusterStatus = "CREATING"
+	ClusterStatusReady            ClusterStatus = "READY"
+	ClusterStatusHibernating      ClusterStatus = "HIBERNATING"
+	ClusterStatusHibernated       ClusterStatus = "HIBERNATED"
+	ClusterStatusResuming         ClusterStatus = "RESUMING"
+	ClusterStatusDestroying       ClusterStatus = "DESTROYING"
+	ClusterStatusDestroyVerifying ClusterStatus = "DESTROY_VERIFYING" // Verifying all resources deleted
+	ClusterStatusDestroyFailed    ClusterStatus = "DESTROY_FAILED"     // Destroy attempted but resources remain
+	ClusterStatusDestroyed        ClusterStatus = "DESTROYED"
+	ClusterStatusFailed           ClusterStatus = "FAILED"
 )
 
 // Platform represents the cloud platform
@@ -181,4 +183,21 @@ type ClusterConfiguration struct {
 	CreatedAt    time.Time     `db:"created_at" json:"created_at"`
 	CompletedAt  *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
 	Metadata     JobMetadata   `db:"metadata" json:"metadata,omitempty"`
+}
+
+// DestroyAudit tracks destroy attempts for forensics and reconciliation
+type DestroyAudit struct {
+	ID                   string     `db:"id" json:"id"`
+	ClusterID            string     `db:"cluster_id" json:"cluster_id"`
+	JobID                string     `db:"job_id" json:"job_id"`
+	WorkerID             string     `db:"worker_id" json:"worker_id"`
+	DestroyStartedAt     time.Time  `db:"destroy_started_at" json:"destroy_started_at"`
+	LastVerifiedAt       *time.Time `db:"last_verified_at" json:"last_verified_at,omitempty"`
+	VerificationPassed   *bool      `db:"verification_passed" json:"verification_passed,omitempty"`
+	LastResourcePresent  *string    `db:"last_resource_present" json:"last_resource_present,omitempty"`
+	TerminalReason       *string    `db:"terminal_reason" json:"terminal_reason,omitempty"`
+	ResourcesSnapshot    JobMetadata `db:"resources_snapshot" json:"resources_snapshot,omitempty"`
+	VerificationSnapshot JobMetadata `db:"verification_snapshot" json:"verification_snapshot,omitempty"`
+	CreatedAt            time.Time  `db:"created_at" json:"created_at"`
+	CompletedAt          *time.Time `db:"completed_at" json:"completed_at,omitempty"`
 }

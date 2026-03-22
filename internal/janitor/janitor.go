@@ -265,11 +265,12 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 
 		// Handle cluster status based on job type
 		if job.JobType == types.JobTypeDestroy || job.JobType == types.JobTypeJanitorDestroy {
-			// For destroy jobs, mark cluster as DESTROYED since infrastructure is likely gone
-			// Orphan detection will catch any remaining AWS resources
-			log.Printf("Marking cluster %s as DESTROYED (stuck destroy job likely timed out)", job.ClusterID)
-			if err := j.store.Clusters.MarkDestroyed(ctx, job.ClusterID); err != nil {
-				log.Printf("Failed to mark cluster %s as destroyed: %v", job.ClusterID, err)
+			// For destroy jobs, mark cluster as DESTROY_FAILED since we cannot verify completion
+			// The destroy job timed out or got stuck, so we don't know if AWS resources were deleted
+			// An admin can manually verify and mark as DESTROYED, or reconciliation can detect drift
+			log.Printf("Marking cluster %s as DESTROY_FAILED (stuck destroy job - verification required)", job.ClusterID)
+			if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusDestroyFailed); err != nil {
+				log.Printf("Failed to mark cluster %s as destroy failed: %v", job.ClusterID, err)
 			}
 		} else {
 			// For other job types, mark cluster as FAILED

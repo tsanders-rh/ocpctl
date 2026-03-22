@@ -27,6 +27,7 @@ type Store struct {
 	Idempotency          *IdempotencyStore
 	RBAC                 *RBACStore
 	Audit                *AuditStore
+	DestroyAudit         *DestroyAuditStore
 	ClusterOutputs       *ClusterOutputsStore
 	Artifacts            *ArtifactStore
 	Usage                *UsageStore
@@ -53,6 +54,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Idempotency = &IdempotencyStore{pool: pool}
 	s.RBAC = &RBACStore{pool: pool}
 	s.Audit = &AuditStore{pool: pool}
+	s.DestroyAudit = &DestroyAuditStore{pool: pool}
 	s.ClusterOutputs = &ClusterOutputsStore{pool: pool}
 	s.Artifacts = &ArtifactStore{pool: pool}
 	s.Usage = &UsageStore{pool: pool}

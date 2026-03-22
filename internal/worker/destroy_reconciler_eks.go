@@ -693,3 +693,187 @@ func (r *EKSDestroyReconciler) ReconcileLoop(ctx context.Context) error {
 		time.Sleep(pollInterval)
 	}
 }
+
+// VerificationResult contains details of destroy verification
+type VerificationResult struct {
+	Passed                  bool
+	RemainingResources      map[string][]string // resource type -> resource names
+	ClusterExists           bool
+	ManagedNodegroupsCount  int
+	FargateProfilesCount    int
+	CloudFormationStacksCount int
+	LoadBalancersCount      int
+	SecurityGroupsCount     int
+}
+
+// VerifyDestroyed performs comprehensive verification that all cluster resources are deleted
+// This is the ONLY function that should be called before marking a cluster as DESTROYED
+func (r *EKSDestroyReconciler) VerifyDestroyed(ctx context.Context) (*VerificationResult, error) {
+	log.Printf("[Destroy Verification] Starting comprehensive verification for cluster %s", r.clusterName)
+
+	result := &VerificationResult{
+		Passed:             true,
+		RemainingResources: make(map[string][]string),
+	}
+
+	// 1. Verify EKS cluster is deleted
+	describeInput := &eks.DescribeClusterInput{
+		Name: aws.String(r.clusterName),
+	}
+
+	_, err := r.eksClient.DescribeCluster(ctx, describeInput)
+	if err == nil {
+		result.Passed = false
+		result.ClusterExists = true
+		result.RemainingResources["eks_cluster"] = []string{r.clusterName}
+		log.Printf("[Destroy Verification] FAILED: EKS cluster %s still exists", r.clusterName)
+	} else if !isEKSResourceNotFound(err) {
+		return nil, fmt.Errorf("verify cluster deleted: %w", err)
+	} else {
+		log.Printf("[Destroy Verification] ✓ EKS cluster deleted")
+	}
+
+	// 2. Verify managed nodegroups are deleted
+	listNGInput := &eks.ListNodegroupsInput{
+		ClusterName: aws.String(r.clusterName),
+	}
+
+	listNGOutput, err := r.eksClient.ListNodegroups(ctx, listNGInput)
+	if err != nil && !isEKSResourceNotFound(err) {
+		return nil, fmt.Errorf("list nodegroups: %w", err)
+	}
+
+	if listNGOutput != nil && len(listNGOutput.Nodegroups) > 0 {
+		result.Passed = false
+		result.ManagedNodegroupsCount = len(listNGOutput.Nodegroups)
+		result.RemainingResources["managed_nodegroups"] = listNGOutput.Nodegroups
+		log.Printf("[Destroy Verification] FAILED: %d managed nodegroups remain: %v", len(listNGOutput.Nodegroups), listNGOutput.Nodegroups)
+	} else {
+		log.Printf("[Destroy Verification] ✓ No managed nodegroups")
+	}
+
+	// 3. Verify Fargate profiles are deleted
+	listFPInput := &eks.ListFargateProfilesInput{
+		ClusterName: aws.String(r.clusterName),
+	}
+
+	listFPOutput, err := r.eksClient.ListFargateProfiles(ctx, listFPInput)
+	if err != nil && !isEKSResourceNotFound(err) {
+		return nil, fmt.Errorf("list fargate profiles: %w", err)
+	}
+
+	if listFPOutput != nil && len(listFPOutput.FargateProfileNames) > 0 {
+		result.Passed = false
+		result.FargateProfilesCount = len(listFPOutput.FargateProfileNames)
+		result.RemainingResources["fargate_profiles"] = listFPOutput.FargateProfileNames
+		log.Printf("[Destroy Verification] FAILED: %d Fargate profiles remain: %v", len(listFPOutput.FargateProfileNames), listFPOutput.FargateProfileNames)
+	} else {
+		log.Printf("[Destroy Verification] ✓ No Fargate profiles")
+	}
+
+	// 4. Verify CloudFormation stacks are deleted
+	listStacksInput := &cloudformation.ListStacksInput{
+		StackStatusFilter: []cfntypes.StackStatus{
+			cfntypes.StackStatusCreateComplete,
+			cfntypes.StackStatusUpdateComplete,
+			cfntypes.StackStatusDeleteInProgress,
+			cfntypes.StackStatusDeleteFailed,
+		},
+	}
+
+	listStacksOutput, err := r.cfnClient.ListStacks(ctx, listStacksInput)
+	if err != nil {
+		return nil, fmt.Errorf("list cloudformation stacks: %w", err)
+	}
+
+	var remainingStacks []string
+	for _, stack := range listStacksOutput.StackSummaries {
+		stackName := aws.ToString(stack.StackName)
+		if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
+			remainingStacks = append(remainingStacks, stackName)
+		}
+	}
+
+	if len(remainingStacks) > 0 {
+		result.Passed = false
+		result.CloudFormationStacksCount = len(remainingStacks)
+		result.RemainingResources["cloudformation_stacks"] = remainingStacks
+		log.Printf("[Destroy Verification] FAILED: %d CloudFormation stacks remain: %v", len(remainingStacks), remainingStacks)
+	} else {
+		log.Printf("[Destroy Verification] ✓ No CloudFormation stacks")
+	}
+
+	// 5. Verify LoadBalancers created by cluster are deleted
+	// Look for ELBs/NLBs tagged with cluster name
+	describeLBsInput := &ec2.DescribeTagsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("resource-type"),
+				Values: []string{"elastic-load-balancer"},
+			},
+			{
+				Name:   aws.String("tag:kubernetes.io/cluster/" + r.clusterName),
+				Values: []string{"owned", "shared"},
+			},
+		},
+	}
+
+	describeLBsOutput, err := r.ec2Client.DescribeTags(ctx, describeLBsInput)
+	if err != nil {
+		log.Printf("[Destroy Verification] Warning: failed to check for LoadBalancers: %v", err)
+	} else if len(describeLBsOutput.Tags) > 0 {
+		result.Passed = false
+		result.LoadBalancersCount = len(describeLBsOutput.Tags)
+		lbNames := make([]string, 0, len(describeLBsOutput.Tags))
+		for _, tag := range describeLBsOutput.Tags {
+			if tag.ResourceId != nil {
+				lbNames = append(lbNames, *tag.ResourceId)
+			}
+		}
+		result.RemainingResources["load_balancers"] = lbNames
+		log.Printf("[Destroy Verification] FAILED: %d LoadBalancers remain: %v", len(lbNames), lbNames)
+	} else {
+		log.Printf("[Destroy Verification] ✓ No LoadBalancers")
+	}
+
+	// 6. Verify security groups created by cluster are deleted
+	describeSGsInput := &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("tag:kubernetes.io/cluster/" + r.clusterName),
+				Values: []string{"owned"},
+			},
+		},
+	}
+
+	describeSGsOutput, err := r.ec2Client.DescribeSecurityGroups(ctx, describeSGsInput)
+	if err != nil {
+		log.Printf("[Destroy Verification] Warning: failed to check for SecurityGroups: %v", err)
+	} else if len(describeSGsOutput.SecurityGroups) > 0 {
+		result.Passed = false
+		result.SecurityGroupsCount = len(describeSGsOutput.SecurityGroups)
+		sgNames := make([]string, 0, len(describeSGsOutput.SecurityGroups))
+		for _, sg := range describeSGsOutput.SecurityGroups {
+			if sg.GroupId != nil {
+				sgNames = append(sgNames, *sg.GroupId)
+			}
+		}
+		result.RemainingResources["security_groups"] = sgNames
+		log.Printf("[Destroy Verification] FAILED: %d SecurityGroups remain: %v", len(sgNames), sgNames)
+	} else {
+		log.Printf("[Destroy Verification] ✓ No SecurityGroups")
+	}
+
+	// Log final result
+	if result.Passed {
+		log.Printf("[Destroy Verification] ✓ PASSED: All resources deleted for cluster %s", r.clusterName)
+	} else {
+		log.Printf("[Destroy Verification] ✗ FAILED: %d resource types still exist for cluster %s",
+			len(result.RemainingResources), r.clusterName)
+		for resourceType, resources := range result.RemainingResources {
+			log.Printf("[Destroy Verification]   - %s: %v", resourceType, resources)
+		}
+	}
+
+	return result, nil
+}
