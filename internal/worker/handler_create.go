@@ -229,38 +229,8 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 
 	log.Printf("Cluster %s is now READY", cluster.Name)
 
-	// Check if profile has post-deployment configuration enabled
-	prof, err := h.registry.Get(cluster.Profile)
-	if err != nil {
-		log.Printf("Warning: failed to get profile for post-deployment check: %v", err)
-	} else if prof.PostDeployment != nil && prof.PostDeployment.Enabled {
-		// Check if user opted to skip post-deployment
-		if cluster.SkipPostDeployment {
-			log.Printf("Post-deployment skipped for cluster %s (user opted out)", cluster.Name)
-		} else if cluster.PostDeployStatus != nil && *cluster.PostDeployStatus == "completed" {
-			// Check if post-deployment has already been completed (e.g., from previous run)
-			// This prevents duplicate POST_CONFIGURE jobs
-			log.Printf("Post-deployment already completed for cluster %s, skipping", cluster.Name)
-		} else {
-			// Create POST_CONFIGURE job
-			log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
-
-			postConfigJob := &types.Job{
-				ID:          uuid.New().String(),
-				ClusterID:   cluster.ID,
-				JobType:     types.JobTypePostConfigure,
-				Status:      types.JobStatusPending,
-				Attempt:     1,
-				MaxAttempts: 3,
-			}
-
-			if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
-				log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
-			} else {
-				log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
-			}
-		}
-	}
+	// Handle post-deployment configuration if enabled
+	h.handlePostDeployment(ctx, cluster)
 
 	return nil
 }
@@ -597,6 +567,9 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	log.Printf("EKS cluster %s is now READY", cluster.Name)
 
+	// Handle post-deployment configuration if enabled
+	h.handlePostDeployment(ctx, cluster)
+
 	return nil
 }
 
@@ -733,5 +706,56 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	log.Printf("IKS cluster %s is now READY", cluster.Name)
+
+	// Handle post-deployment configuration if enabled
+	h.handlePostDeployment(ctx, cluster)
+
 	return nil
+}
+
+// handlePostDeployment checks if post-deployment is enabled and creates the POST_CONFIGURE job
+// This is called by all cluster create handlers (OpenShift, EKS, IKS)
+func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types.Cluster) {
+	// Check if profile has post-deployment configuration enabled
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		log.Printf("Warning: failed to get profile for post-deployment check: %v", err)
+		return
+	}
+
+	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
+		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+		return
+	}
+
+	// Check if user opted to skip post-deployment
+	if cluster.SkipPostDeployment {
+		log.Printf("Post-deployment skipped for cluster %s (user opted out)", cluster.Name)
+		return
+	}
+
+	// Check if post-deployment has already been completed (e.g., from previous run)
+	// This prevents duplicate POST_CONFIGURE jobs
+	if cluster.PostDeployStatus != nil && *cluster.PostDeployStatus == "completed" {
+		log.Printf("Post-deployment already completed for cluster %s, skipping", cluster.Name)
+		return
+	}
+
+	// Create POST_CONFIGURE job
+	log.Printf("Profile %s has post-deployment enabled, creating POST_CONFIGURE job", cluster.Profile)
+
+	postConfigJob := &types.Job{
+		ID:          uuid.New().String(),
+		ClusterID:   cluster.ID,
+		JobType:     types.JobTypePostConfigure,
+		Status:      types.JobStatusPending,
+		Attempt:     1,
+		MaxAttempts: 3,
+	}
+
+	if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
+		log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
+	} else {
+		log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
+	}
 }
