@@ -270,6 +270,15 @@ func (w *Worker) Stop() {
 func (w *Worker) poll() {
 	ctx := context.Background()
 
+	// Clean up expired locks before processing jobs
+	// This prevents stale locks from blocking job processing
+	expiredLocks, err := w.store.JobLocks.CleanupExpiredLocks(ctx)
+	if err != nil {
+		log.Printf("Warning: Failed to cleanup expired locks: %v", err)
+	} else if len(expiredLocks) > 0 {
+		log.Printf("Cleaned up %d expired locks", len(expiredLocks))
+	}
+
 	// Get total count of all pending jobs in the queue
 	// This is used for auto-scaling metrics
 	totalPending, err := w.store.Jobs.CountPending(ctx)
