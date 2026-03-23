@@ -220,6 +220,12 @@ func (w *Worker) Start(ctx context.Context) error {
 	log.Printf("Worker %s starting (poll=%s, max_concurrent=%d)",
 		w.config.WorkerID, w.config.PollInterval, w.config.MaxConcurrent)
 
+	// Validate required binaries are installed before processing jobs
+	if err := w.validateInstallerBinaries(); err != nil {
+		return fmt.Errorf("preflight check failed: %w", err)
+	}
+	log.Printf("✓ All required installer binaries are available")
+
 	// Publish worker active metric
 	if w.metrics != nil {
 		dims := map[string]string{
@@ -629,4 +635,42 @@ func (w *Worker) cleanupTempFiles() {
 	if cleaned > 0 {
 		log.Printf("Cleaned up %d old temp files from %s", cleaned, tmpDir)
 	}
+}
+
+// validateInstallerBinaries checks that all required installer binaries are present
+func (w *Worker) validateInstallerBinaries() error {
+	// List of required binaries
+	requiredBinaries := []struct {
+		name string
+		path string
+	}{
+		{"eksctl", "/usr/local/bin/eksctl"},
+		{"ibmcloud", "/usr/local/bin/ibmcloud"},
+	}
+
+	// Check each binary
+	var missing []string
+	for _, binary := range requiredBinaries {
+		if _, err := os.Stat(binary.path); os.IsNotExist(err) {
+			missing = append(missing, binary.name)
+			log.Printf("✗ Required binary not found: %s (expected at %s)", binary.name, binary.path)
+		} else {
+			log.Printf("✓ Found %s at %s", binary.name, binary.path)
+		}
+	}
+
+	// openshift-install versions - just check the installers directory exists
+	installersDir := "/opt/ocpctl/installers"
+	if _, err := os.Stat(installersDir); os.IsNotExist(err) {
+		missing = append(missing, "openshift-install")
+		log.Printf("✗ OpenShift installers directory not found: %s", installersDir)
+	} else {
+		log.Printf("✓ Found openshift installers directory at %s", installersDir)
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required installer binaries: %v", missing)
+	}
+
+	return nil
 }
