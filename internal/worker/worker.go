@@ -641,31 +641,28 @@ func (w *Worker) cleanupTempFiles() {
 func (w *Worker) validateInstallerBinaries() error {
 	// List of required binaries
 	requiredBinaries := []struct {
-		name string
-		path string
+		name     string
+		path     string
+		optional bool
 	}{
-		{"eksctl", "/usr/local/bin/eksctl"},
-		{"ibmcloud", "/usr/local/bin/ibmcloud"},
+		{"eksctl", "/usr/local/bin/eksctl", false},
+		{"openshift-install", "/usr/local/bin/openshift-install", false},
+		{"ibmcloud", "/usr/local/bin/ibmcloud", true}, // Optional - only needed for IKS
 	}
 
 	// Check each binary
 	var missing []string
 	for _, binary := range requiredBinaries {
 		if _, err := os.Stat(binary.path); os.IsNotExist(err) {
-			missing = append(missing, binary.name)
-			log.Printf("✗ Required binary not found: %s (expected at %s)", binary.name, binary.path)
+			if !binary.optional {
+				missing = append(missing, binary.name)
+				log.Printf("✗ Required binary not found: %s (expected at %s)", binary.name, binary.path)
+			} else {
+				log.Printf("⚠ Optional binary not found: %s (expected at %s)", binary.name, binary.path)
+			}
 		} else {
 			log.Printf("✓ Found %s at %s", binary.name, binary.path)
 		}
-	}
-
-	// openshift-install versions - just check the installers directory exists
-	installersDir := "/opt/ocpctl/installers"
-	if _, err := os.Stat(installersDir); os.IsNotExist(err) {
-		missing = append(missing, "openshift-install")
-		log.Printf("✗ OpenShift installers directory not found: %s", installersDir)
-	} else {
-		log.Printf("✓ Found openshift installers directory at %s", installersDir)
 	}
 
 	if len(missing) > 0 {
