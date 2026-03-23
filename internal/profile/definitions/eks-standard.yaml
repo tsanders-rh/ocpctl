@@ -78,6 +78,11 @@ platformConfig:
 postDeployment:
   enabled: true
   timeout: 30m
+  manifests:
+    - name: kubernetes-dashboard
+      description: "Kubernetes Dashboard v2.7.0 with token-based authentication and LoadBalancer service"
+      url: "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+      namespace: kubernetes-dashboard
 
 metadata:
   capabilities:
