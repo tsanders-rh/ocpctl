@@ -135,9 +135,6 @@ export default function LoginPage() {
                   {login.isPending ? "Signing in..." : "Sign in"}
                 </Button>
               </form>
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                Default credentials: admin@example.com / changeme
-              </div>
               <div className="mt-4 text-center">
                 <Button
                   variant="ghost"
