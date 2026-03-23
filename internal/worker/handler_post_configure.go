@@ -12,21 +12,24 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // PostConfigureHandler handles post-configuration tasks (e.g., installing dashboards)
 type PostConfigureHandler struct {
-	config *Config
-	store  *store.Store
+	config   *Config
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewPostConfigureHandler creates a new post-configure handler
-func NewPostConfigureHandler(config *Config, st *store.Store) *PostConfigureHandler {
+func NewPostConfigureHandler(config *Config, st *store.Store, profileRegistry *profile.Registry) *PostConfigureHandler {
 	return &PostConfigureHandler{
-		config: config,
-		store:  st,
+		config:   config,
+		store:    st,
+		registry: profileRegistry,
 	}
 }
 
@@ -55,9 +58,21 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 	}
 }
 
-// handleEKSPostConfigure installs Kubernetes Dashboard for EKS clusters
+// handleEKSPostConfigure applies post-deployment manifests for EKS clusters
 func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
-	log.Printf("Installing Kubernetes Dashboard for EKS cluster %s", cluster.Name)
+	log.Printf("Running post-deployment for EKS cluster %s", cluster.Name)
+
+	// Get profile to read post-deployment configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Check if post-deployment is enabled
+	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
+		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+		return nil
+	}
 
 	// Create work directory
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
@@ -72,34 +87,49 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 		return fmt.Errorf("get kubeconfig: %w", err)
 	}
 
-	// Install Kubernetes Dashboard
-	if err := h.installKubernetesDashboard(ctx, kubeconfigPath); err != nil {
-		return fmt.Errorf("install kubernetes dashboard: %w", err)
+	// Apply all manifests from profile
+	hasDashboard := false
+	if len(prof.PostDeployment.Manifests) > 0 {
+		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
+		for _, manifest := range prof.PostDeployment.Manifests {
+			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
+			}
+			// Check if this is the kubernetes-dashboard
+			if manifest.Name == "kubernetes-dashboard" {
+				hasDashboard = true
+			}
+		}
 	}
 
-	// Create admin service account
-	if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
-		return fmt.Errorf("create dashboard service account: %w", err)
-	}
+	// If Kubernetes Dashboard was installed, perform dashboard-specific setup
+	if hasDashboard {
+		log.Printf("Kubernetes Dashboard detected, configuring access...")
 
-	// Get service account token
-	token, err := h.getDashboardToken(ctx, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("get dashboard token: %w", err)
-	}
+		// Create admin service account
+		if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
+			return fmt.Errorf("create dashboard service account: %w", err)
+		}
 
-	// Expose dashboard via LoadBalancer
-	dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("expose dashboard: %w", err)
-	}
+		// Get service account token
+		token, err := h.getDashboardToken(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("get dashboard token: %w", err)
+		}
 
-	log.Printf("Kubernetes Dashboard installed successfully at: %s", dashboardURL)
-	log.Printf("Dashboard token: %s", token)
+		// Expose dashboard via LoadBalancer
+		dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("expose dashboard: %w", err)
+		}
 
-	// Update cluster outputs with dashboard URL
-	if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
-		return fmt.Errorf("update cluster console URL: %w", err)
+		log.Printf("Kubernetes Dashboard configured successfully at: %s", dashboardURL)
+		log.Printf("Dashboard token: %s", token)
+
+		// Update cluster outputs with dashboard URL
+		if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
+			return fmt.Errorf("update cluster console URL: %w", err)
+		}
 	}
 
 	// Generate token-based kubeconfig for kubectl access
@@ -108,10 +138,59 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 		return fmt.Errorf("generate token kubeconfig: %w", err)
 	}
 
+	log.Printf("Post-deployment completed for cluster %s", cluster.Name)
+	return nil
+}
+
+// applyManifest applies a single manifest from the profile
+func (h *PostConfigureHandler) applyManifest(ctx context.Context, kubeconfigPath string, manifest profile.ManifestConfig) error {
+	log.Printf("Applying manifest: %s", manifest.Name)
+
+	// Determine source (URL or local file path)
+	var manifestSource string
+	if manifest.URL != "" {
+		manifestSource = manifest.URL
+	} else if manifest.Path != "" {
+		manifestSource = manifest.Path
+	} else {
+		return fmt.Errorf("manifest %s has neither URL nor Path specified", manifest.Name)
+	}
+
+	// Apply the manifest
+	args := []string{"apply", "-f", manifestSource, "--kubeconfig", kubeconfigPath}
+
+	// Add namespace if specified
+	if manifest.Namespace != "" {
+		args = append(args, "-n", manifest.Namespace)
+	}
+
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kubectl apply failed: %w\nOutput: %s", err, string(output))
+	}
+
+	log.Printf("Manifest %s applied successfully: %s", manifest.Name, string(output))
+
+	// If this is the kubernetes-dashboard, wait for it to be ready
+	if manifest.Name == "kubernetes-dashboard" && manifest.Namespace != "" {
+		log.Println("Waiting for dashboard deployment to be ready...")
+		waitCmd := exec.CommandContext(ctx, "kubectl", "wait", "--for=condition=available",
+			"--timeout=300s", "deployment/kubernetes-dashboard",
+			"-n", manifest.Namespace, "--kubeconfig", kubeconfigPath)
+		if output, err := waitCmd.CombinedOutput(); err != nil {
+			log.Printf("Warning: Failed to wait for dashboard: %v\nOutput: %s", err, string(output))
+			// Don't fail - the deployment might still be rolling out
+		} else {
+			log.Println("Dashboard deployment is ready")
+		}
+	}
+
 	return nil
 }
 
 // installKubernetesDashboard installs the Kubernetes Dashboard
+// DEPRECATED: This function is no longer used. Manifests are now applied via applyManifest()
 func (h *PostConfigureHandler) installKubernetesDashboard(ctx context.Context, kubeconfigPath string) error {
 	log.Println("Installing Kubernetes Dashboard...")
 

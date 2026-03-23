@@ -223,8 +223,10 @@ type ScriptConfig struct {
 // ManifestConfig defines a manifest file to apply post-deployment
 type ManifestConfig struct {
 	Name        string `yaml:"name" json:"name" validate:"required"`
-	Path        string `yaml:"path" json:"path" validate:"required"`
+	Path        string `yaml:"path,omitempty" json:"path,omitempty"`           // Local file path
+	URL         string `yaml:"url,omitempty" json:"url,omitempty"`             // Remote URL (e.g. GitHub raw URL)
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Namespace   string `yaml:"namespace,omitempty" json:"namespace,omitempty"` // Target namespace for the manifest
 }
 
 // HelmChartConfig defines a Helm chart to install post-deployment
