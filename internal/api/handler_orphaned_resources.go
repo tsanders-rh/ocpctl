@@ -495,41 +495,54 @@ func (h *OrphanedResourceHandler) deleteEBSVolume(ctx context.Context, volumeID,
 
 	volume := describeResult.Volumes[0]
 
-	// If volume is attached, detach it first
+	// If volume is attached to an instance, terminate the instance instead
 	if len(volume.Attachments) > 0 {
-		for _, attachment := range volume.Attachments {
-			instanceID := aws.ToString(attachment.InstanceId)
-			device := aws.ToString(attachment.Device)
-			deleteOnTermination := attachment.DeleteOnTermination != nil && *attachment.DeleteOnTermination
+		attachment := volume.Attachments[0]
+		instanceID := aws.ToString(attachment.InstanceId)
+		device := aws.ToString(attachment.Device)
+		deleteOnTermination := attachment.DeleteOnTermination != nil && *attachment.DeleteOnTermination
 
-			// Check if this is a root volume (usually /dev/sda1 or /dev/xvda)
-			isRootVolume := device == "/dev/sda1" || device == "/dev/xvda" || device == "/dev/nvme0n1"
+		log.Printf("Volume %s is attached to instance %s (device: %s, deleteOnTermination: %v)", volumeID, instanceID, device, deleteOnTermination)
 
-			if isRootVolume {
-				return fmt.Errorf("volume %s is the root volume of instance %s - cannot detach root volumes. Terminate the instance to delete this volume (or ignore this resource)", volumeID, instanceID)
+		if deleteOnTermination {
+			// Terminate the instance - volume will be automatically deleted
+			log.Printf("Terminating instance %s (volume %s will be automatically deleted)", instanceID, volumeID)
+			_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: []string{instanceID},
+			})
+			if err != nil {
+				if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+					log.Printf("Instance %s not found - assuming already terminated", instanceID)
+					// Instance already gone, try to delete volume directly
+				} else {
+					return fmt.Errorf("terminate instance %s: %w", instanceID, err)
+				}
+			} else {
+				log.Printf("Successfully initiated termination of instance %s (volume %s will be deleted automatically)", instanceID, volumeID)
+				return nil
 			}
-
-			log.Printf("Detaching EBS volume %s from instance %s (device: %s, deleteOnTermination: %v)", volumeID, instanceID, device, deleteOnTermination)
-
+		} else {
+			// DeleteOnTermination is false - detach and delete volume separately
+			log.Printf("Detaching volume %s from instance %s (deleteOnTermination is false)", volumeID, instanceID)
 			_, err = ec2Client.DetachVolume(ctx, &ec2.DetachVolumeInput{
 				VolumeId:   aws.String(volumeID),
 				InstanceId: aws.String(instanceID),
 				Device:     aws.String(device),
-				Force:      aws.Bool(true), // Force detach even if instance is running
+				Force:      aws.Bool(true),
 			})
 			if err != nil {
 				return fmt.Errorf("detach volume from instance %s: %w", instanceID, err)
 			}
-		}
 
-		// Wait a moment for detachment to complete
-		log.Printf("Waiting for volume %s detachment to complete...", volumeID)
-		waiter := ec2.NewVolumeAvailableWaiter(ec2Client)
-		err = waiter.Wait(ctx, &ec2.DescribeVolumesInput{
-			VolumeIds: []string{volumeID},
-		}, 60) // Wait up to 60 seconds
-		if err != nil {
-			log.Printf("Warning: volume detachment wait failed: %v (proceeding with delete anyway)", err)
+			// Wait for detachment
+			log.Printf("Waiting for volume %s detachment to complete...", volumeID)
+			waiter := ec2.NewVolumeAvailableWaiter(ec2Client)
+			err = waiter.Wait(ctx, &ec2.DescribeVolumesInput{
+				VolumeIds: []string{volumeID},
+			}, 60)
+			if err != nil {
+				log.Printf("Warning: volume detachment wait failed: %v (proceeding with delete anyway)", err)
+			}
 		}
 	}
 
