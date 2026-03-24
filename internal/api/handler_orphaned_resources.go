@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
@@ -273,10 +274,10 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 		err = h.deleteOIDCProvider(c.Request().Context(), resource.ResourceID)
 	case types.OrphanedResourceTypeCloudWatchLogGroup:
 		err = h.deleteCloudWatchLogGroup(c.Request().Context(), resource.ResourceID, resource.Region)
+	case types.OrphanedResourceTypeLoadBalancer:
+		err = h.deleteLoadBalancer(c.Request().Context(), resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeVPC:
 		return ErrorBadRequest(c, "VPC deletion not supported - must delete all dependent resources first (subnets, route tables, etc)")
-	case types.OrphanedResourceTypeLoadBalancer:
-		return ErrorBadRequest(c, "LoadBalancer deletion not supported - delete via AWS Console")
 	case types.OrphanedResourceTypeEC2Instance:
 		return ErrorBadRequest(c, "EC2Instance deletion not supported - delete via AWS Console")
 	default:
@@ -703,5 +704,31 @@ func (h *OrphanedResourceHandler) deleteCloudWatchLogGroup(ctx context.Context, 
 	}
 
 	log.Printf("Successfully deleted CloudWatch log group %s", logGroupName)
+	return nil
+}
+
+// deleteLoadBalancer deletes an Application/Network Load Balancer
+func (h *OrphanedResourceHandler) deleteLoadBalancer(ctx context.Context, loadBalancerArn, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+
+	// Delete the load balancer
+	_, err = elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+		LoadBalancerArn: aws.String(loadBalancerArn),
+	})
+	if err != nil {
+		// Check if load balancer doesn't exist
+		if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+			log.Printf("Load balancer %s not found - assuming already deleted", loadBalancerArn)
+			return nil
+		}
+		return fmt.Errorf("delete load balancer: %w", err)
+	}
+
+	log.Printf("Successfully deleted load balancer %s", loadBalancerArn)
 	return nil
 }
