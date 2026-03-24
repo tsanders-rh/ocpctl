@@ -39,7 +39,7 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.96.0 // indirect
 	github.com/IBM/vpc-go-sdk v0.80.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.5 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.18 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.20 // indirect
@@ -48,6 +48,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.18 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.55.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.64.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eks v1.81.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.10 // indirect
