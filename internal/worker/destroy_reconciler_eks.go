@@ -16,6 +16,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -51,6 +52,7 @@ type EKSDestroyReconciler struct {
 	eksClient    *eks.Client
 	cfnClient    *cloudformation.Client
 	ec2Client    *ec2.Client
+	elbClient    *elasticloadbalancing.Client
 	elbv2Client  *elasticloadbalancingv2.Client
 	clusterName  string
 	region       string
@@ -70,6 +72,7 @@ func NewEKSDestroyReconciler(ctx context.Context, st *store.Store, cluster *type
 		eksClient:   eks.NewFromConfig(cfg),
 		cfnClient:   cloudformation.NewFromConfig(cfg),
 		ec2Client:   ec2.NewFromConfig(cfg),
+		elbClient:   elasticloadbalancing.NewFromConfig(cfg),
 		elbv2Client: elasticloadbalancingv2.NewFromConfig(cfg),
 		clusterName: cluster.Name,
 		region:      cluster.Region,
@@ -115,9 +118,28 @@ func (r *EKSDestroyReconciler) Reconcile(ctx context.Context) (bool, error) {
 		return false, r.reconcileClusterDelete(ctx, state)
 	}
 
-	// Phase 6: Delete supporting CloudFormation stacks (cluster stack, addons, VPC)
-	// Security groups and other VPC resources will be cleaned up by CloudFormation
-	// or caught by comprehensive verification
+	// Phase 6: Delete load balancers (must happen before deleting subnets/VPC)
+	if len(state.LoadBalancerARNs) > 0 {
+		return false, r.reconcileLoadBalancers(ctx, state)
+	}
+
+	// Phase 7: Delete target groups (after load balancers)
+	if len(state.TargetGroupARNs) > 0 {
+		return false, r.reconcileTargetGroups(ctx, state)
+	}
+
+	// Phase 8: Delete network interfaces (after load balancers, before subnets)
+	if len(state.NetworkInterfaceIDs) > 0 {
+		return false, r.reconcileNetworkInterfaces(ctx, state)
+	}
+
+	// Phase 9: Delete security groups (after ENIs, before VPC)
+	if len(state.SecurityGroupIDs) > 0 {
+		return false, r.reconcileSecurityGroups(ctx, state)
+	}
+
+	// Phase 10: Delete supporting CloudFormation stacks (cluster stack, addons, VPC)
+	// VPC dependencies should now be clear
 	if len(state.CloudFormationStacks) > 0 {
 		return false, r.reconcileInfraStacks(ctx, state.CloudFormationStacks)
 	}
@@ -894,6 +916,252 @@ func (r *EKSDestroyReconciler) sortStacksByDependency(stacks []string) []string 
 	result = append(result, vpc...)
 	result = append(result, other...)
 	return result
+}
+
+// reconcileLoadBalancers deletes load balancers created by the cluster
+func (r *EKSDestroyReconciler) reconcileLoadBalancers(ctx context.Context, state *EKSDestroyState) error {
+	log.Printf("Reconciling load balancers deletion for %s", r.clusterName)
+
+	// First, check for Classic Load Balancers via network interfaces
+	// Classic ELBs create ENIs with description "ELB <lb-name>"
+	if len(state.NetworkInterfaceIDs) > 0 {
+		for _, eniID := range state.NetworkInterfaceIDs {
+			describeInput := &ec2.DescribeNetworkInterfacesInput{
+				NetworkInterfaceIds: []string{eniID},
+			}
+			describeOutput, err := r.ec2Client.DescribeNetworkInterfaces(ctx, describeInput)
+			if err != nil || len(describeOutput.NetworkInterfaces) == 0 {
+				continue
+			}
+
+			eni := describeOutput.NetworkInterfaces[0]
+			description := aws.ToString(eni.Description)
+
+			// Check if this is an ELB network interface
+			if strings.HasPrefix(description, "ELB ") {
+				lbName := strings.TrimPrefix(description, "ELB ")
+				log.Printf("Found Classic Load Balancer %s via ENI %s", lbName, eniID)
+
+				// Delete the Classic Load Balancer
+				_, err := r.elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancing.DeleteLoadBalancerInput{
+					LoadBalancerName: aws.String(lbName),
+				})
+				if err != nil {
+					if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+						log.Printf("Classic load balancer %s already deleted", lbName)
+						continue
+					}
+					return fmt.Errorf("delete classic load balancer %s: %w", lbName, err)
+				}
+				log.Printf("Deleted Classic Load Balancer %s", lbName)
+				// Return in-progress to allow ENI cleanup in next iteration
+				return fmt.Errorf("%w: classic load balancer %s deletion in progress", ErrDestroyInProgress, lbName)
+			}
+		}
+	}
+
+	// Then handle ALB/NLB (v2) load balancers
+	for _, lbARN := range state.LoadBalancerARNs {
+		log.Printf("Deleting load balancer %s", lbARN)
+
+		_, err := r.elbv2Client.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: aws.String(lbARN),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+				log.Printf("Load balancer %s already deleted", lbARN)
+				continue
+			}
+			return fmt.Errorf("delete load balancer %s: %w", lbARN, err)
+		}
+		log.Printf("Issued delete for load balancer %s", lbARN)
+
+		// Return in-progress error to trigger next reconcile iteration
+		return fmt.Errorf("%w: load balancer %s deletion in progress", ErrDestroyInProgress, lbARN)
+	}
+
+	return nil
+}
+
+// reconcileTargetGroups deletes target groups created by the cluster
+func (r *EKSDestroyReconciler) reconcileTargetGroups(ctx context.Context, state *EKSDestroyState) error {
+	log.Printf("Reconciling target groups deletion for %s", r.clusterName)
+
+	for _, tgARN := range state.TargetGroupARNs {
+		log.Printf("Deleting target group %s", tgARN)
+
+		_, err := r.elbv2Client.DeleteTargetGroup(ctx, &elasticloadbalancingv2.DeleteTargetGroupInput{
+			TargetGroupArn: aws.String(tgARN),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "TargetGroupNotFound") {
+				log.Printf("Target group %s already deleted", tgARN)
+				continue
+			}
+			// Target group might still be attached to a load balancer
+			if strings.Contains(err.Error(), "ResourceInUse") {
+				log.Printf("Target group %s still in use, will retry", tgARN)
+				return fmt.Errorf("%w: target group %s still in use", ErrDestroyInProgress, tgARN)
+			}
+			return fmt.Errorf("delete target group %s: %w", tgARN, err)
+		}
+		log.Printf("Deleted target group %s", tgARN)
+	}
+
+	return nil
+}
+
+// reconcileNetworkInterfaces deletes network interfaces created by the cluster
+func (r *EKSDestroyReconciler) reconcileNetworkInterfaces(ctx context.Context, state *EKSDestroyState) error {
+	log.Printf("Reconciling network interfaces deletion for %s", r.clusterName)
+
+	for _, eniID := range state.NetworkInterfaceIDs {
+		// Check if ENI still exists and get its status
+		describeInput := &ec2.DescribeNetworkInterfacesInput{
+			NetworkInterfaceIds: []string{eniID},
+		}
+
+		describeOutput, err := r.ec2Client.DescribeNetworkInterfaces(ctx, describeInput)
+		if err != nil {
+			if strings.Contains(err.Error(), "InvalidNetworkInterfaceID.NotFound") {
+				log.Printf("Network interface %s already deleted", eniID)
+				continue
+			}
+			return fmt.Errorf("describe network interface %s: %w", eniID, err)
+		}
+
+		if len(describeOutput.NetworkInterfaces) == 0 {
+			log.Printf("Network interface %s not found (already deleted)", eniID)
+			continue
+		}
+
+		eni := describeOutput.NetworkInterfaces[0]
+
+		// Skip ENIs that are managed by AWS services (like ELB)
+		// They'll be deleted automatically when the service resource is deleted
+		if eni.RequesterManaged != nil && *eni.RequesterManaged {
+			requesterID := aws.ToString(eni.RequesterId)
+			log.Printf("Skipping AWS-managed network interface %s (managed by %s)", eniID, requesterID)
+			continue
+		}
+
+		// If attached, try to detach first
+		if eni.Attachment != nil && eni.Attachment.Status == ec2types.AttachmentStatusAttached {
+			attachmentID := aws.ToString(eni.Attachment.AttachmentId)
+			log.Printf("Detaching network interface %s (attachment: %s)", eniID, attachmentID)
+
+			_, err := r.ec2Client.DetachNetworkInterface(ctx, &ec2.DetachNetworkInterfaceInput{
+				AttachmentId: aws.String(attachmentID),
+				Force:        aws.Bool(true),
+			})
+			if err != nil {
+				log.Printf("Warning: failed to detach network interface %s: %v", eniID, err)
+				// Continue anyway - might be able to delete
+			}
+
+			// Wait for detachment before proceeding
+			return fmt.Errorf("%w: network interface %s detaching", ErrDestroyInProgress, eniID)
+		}
+
+		// Delete the network interface
+		log.Printf("Deleting network interface %s", eniID)
+		_, err = r.ec2Client.DeleteNetworkInterface(ctx, &ec2.DeleteNetworkInterfaceInput{
+			NetworkInterfaceId: aws.String(eniID),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "InvalidNetworkInterfaceID.NotFound") {
+				log.Printf("Network interface %s already deleted", eniID)
+				continue
+			}
+			log.Printf("Warning: failed to delete network interface %s: %v", eniID, err)
+			// Don't fail - might be managed by another service
+			continue
+		}
+		log.Printf("Deleted network interface %s", eniID)
+	}
+
+	return nil
+}
+
+// reconcileSecurityGroups deletes security groups created by the cluster
+func (r *EKSDestroyReconciler) reconcileSecurityGroups(ctx context.Context, state *EKSDestroyState) error {
+	log.Printf("Reconciling security groups deletion for %s", r.clusterName)
+
+	for _, sgID := range state.SecurityGroupIDs {
+		// Check if security group still exists
+		describeInput := &ec2.DescribeSecurityGroupsInput{
+			GroupIds: []string{sgID},
+		}
+
+		describeOutput, err := r.ec2Client.DescribeSecurityGroups(ctx, describeInput)
+		if err != nil {
+			if strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Security group %s already deleted", sgID)
+				continue
+			}
+			return fmt.Errorf("describe security group %s: %w", sgID, err)
+		}
+
+		if len(describeOutput.SecurityGroups) == 0 {
+			log.Printf("Security group %s not found (already deleted)", sgID)
+			continue
+		}
+
+		sg := describeOutput.SecurityGroups[0]
+		sgName := aws.ToString(sg.GroupName)
+
+		// Skip the default security group
+		if sgName == "default" {
+			log.Printf("Skipping default security group %s", sgID)
+			continue
+		}
+
+		// First, revoke all ingress and egress rules to break dependencies
+		if len(sg.IpPermissions) > 0 {
+			log.Printf("Revoking %d ingress rules from security group %s", len(sg.IpPermissions), sgID)
+			_, err := r.ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
+				GroupId:       aws.String(sgID),
+				IpPermissions: sg.IpPermissions,
+			})
+			if err != nil && !strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Warning: failed to revoke ingress rules for %s: %v", sgID, err)
+			}
+		}
+
+		if len(sg.IpPermissionsEgress) > 0 {
+			log.Printf("Revoking %d egress rules from security group %s", len(sg.IpPermissionsEgress), sgID)
+			_, err := r.ec2Client.RevokeSecurityGroupEgress(ctx, &ec2.RevokeSecurityGroupEgressInput{
+				GroupId:       aws.String(sgID),
+				IpPermissions: sg.IpPermissionsEgress,
+			})
+			if err != nil && !strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Warning: failed to revoke egress rules for %s: %v", sgID, err)
+			}
+		}
+
+		// Delete the security group
+		log.Printf("Deleting security group %s (%s)", sgID, sgName)
+		_, err = r.ec2Client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
+			GroupId: aws.String(sgID),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Security group %s already deleted", sgID)
+				continue
+			}
+			// DependencyViolation means it's still in use - will retry
+			if strings.Contains(err.Error(), "DependencyViolation") {
+				log.Printf("Security group %s still has dependencies, will retry", sgID)
+				return fmt.Errorf("%w: security group %s has dependencies", ErrDestroyInProgress, sgID)
+			}
+			log.Printf("Warning: failed to delete security group %s: %v", sgID, err)
+			// Don't fail - might be managed by CloudFormation
+			continue
+		}
+		log.Printf("Deleted security group %s", sgID)
+	}
+
+	return nil
 }
 
 // cleanupOrphanedSecurityGroups removes EKS cluster security groups that may be left behind

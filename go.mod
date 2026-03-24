@@ -50,6 +50,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.55.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.64.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eks v1.81.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.33.22 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20 // indirect
