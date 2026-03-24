@@ -17,16 +17,19 @@ const (
 	Namespace = "OCPCTL"
 
 	// Metric names
-	MetricPendingJobs      = "PendingJobs"
-	MetricRunningJobs      = "RunningJobs"
-	MetricJobStarted       = "JobStarted"
-	MetricJobSucceeded     = "JobSucceeded"
-	MetricJobFailed        = "JobFailed"
-	MetricJobRetried       = "JobRetried"
-	MetricJobDeferred      = "JobDeferred"
-	MetricWorkerActive     = "WorkerActive"
-	MetricLockAcquired     = "LockAcquired"
-	MetricLockFailed       = "LockFailed"
+	MetricPendingJobs              = "PendingJobs"
+	MetricRunningJobs              = "RunningJobs"
+	MetricJobStarted               = "JobStarted"
+	MetricJobSucceeded             = "JobSucceeded"
+	MetricJobFailed                = "JobFailed"
+	MetricJobRetried               = "JobRetried"
+	MetricJobDeferred              = "JobDeferred"
+	MetricWorkerActive             = "WorkerActive"
+	MetricLockAcquired             = "LockAcquired"
+	MetricLockFailed               = "LockFailed"
+	MetricOrphanedResources        = "OrphanedResources"
+	MetricOrphanedResourceDetected = "OrphanedResourceDetected"
+	MetricDestroyVerificationFailed = "DestroyVerificationFailed"
 )
 
 // Publisher publishes metrics to CloudWatch

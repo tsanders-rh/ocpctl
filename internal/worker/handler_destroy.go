@@ -11,21 +11,30 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // DestroyHandler handles cluster destruction jobs
 type DestroyHandler struct {
-	config *Config
-	store  *store.Store
+	config           *Config
+	store            *store.Store
+	metricsPublisher *metrics.Publisher
 }
 
 // NewDestroyHandler creates a new destroy handler
 func NewDestroyHandler(config *Config, st *store.Store) *DestroyHandler {
+	// Create metrics publisher (best effort - don't fail if it can't be created)
+	metricsPublisher, err := metrics.NewPublisher(context.Background())
+	if err != nil {
+		log.Printf("Warning: failed to create metrics publisher for destroy handler: %v", err)
+	}
+
 	return &DestroyHandler{
-		config: config,
-		store:  st,
+		config:           config,
+		store:            st,
+		metricsPublisher: metricsPublisher,
 	}
 }
 
@@ -382,6 +391,24 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 		destroyAudit.TerminalReason = &terminalReason
 		destroyAudit.CompletedAt = ptrTime(time.Now())
 		_ = h.saveDestroyAudit(ctx, destroyAudit)
+
+		// Publish CloudWatch metric for verification failure
+		if h.metricsPublisher != nil {
+			// Count total remaining resources
+			totalRemaining := 0
+			for _, resources := range verifyResult.RemainingResources {
+				totalRemaining += len(resources)
+			}
+
+			if err := h.metricsPublisher.PublishCount(ctx, metrics.MetricDestroyVerificationFailed, 1, map[string]string{
+				"ClusterType":       string(cluster.ClusterType),
+				"Platform":          string(cluster.Platform),
+				"Region":            cluster.Region,
+				"RemainingResources": fmt.Sprintf("%d", totalRemaining),
+			}); err != nil {
+				log.Printf("Warning: failed to publish destroy verification failed metric: %v", err)
+			}
+		}
 
 		// Update cluster to DESTROY_FAILED instead of DESTROYED
 		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {

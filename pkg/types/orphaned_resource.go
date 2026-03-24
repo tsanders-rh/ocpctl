@@ -10,13 +10,16 @@ import (
 type OrphanedResourceType string
 
 const (
-	OrphanedResourceTypeVPC          OrphanedResourceType = "VPC"
-	OrphanedResourceTypeLoadBalancer OrphanedResourceType = "LoadBalancer"
-	OrphanedResourceTypeDNSRecord    OrphanedResourceType = "DNSRecord"
-	OrphanedResourceTypeEC2Instance  OrphanedResourceType = "EC2Instance"
-	OrphanedResourceTypeHostedZone   OrphanedResourceType = "HostedZone"
-	OrphanedResourceTypeIAMRole      OrphanedResourceType = "IAMRole"
-	OrphanedResourceTypeOIDCProvider OrphanedResourceType = "OIDCProvider"
+	OrphanedResourceTypeVPC               OrphanedResourceType = "VPC"
+	OrphanedResourceTypeLoadBalancer      OrphanedResourceType = "LoadBalancer"
+	OrphanedResourceTypeDNSRecord         OrphanedResourceType = "DNSRecord"
+	OrphanedResourceTypeEC2Instance       OrphanedResourceType = "EC2Instance"
+	OrphanedResourceTypeHostedZone        OrphanedResourceType = "HostedZone"
+	OrphanedResourceTypeIAMRole           OrphanedResourceType = "IAMRole"
+	OrphanedResourceTypeOIDCProvider      OrphanedResourceType = "OIDCProvider"
+	OrphanedResourceTypeEBSVolume         OrphanedResourceType = "EBSVolume"
+	OrphanedResourceTypeElasticIP         OrphanedResourceType = "ElasticIP"
+	OrphanedResourceTypeCloudWatchLogGroup OrphanedResourceType = "CloudWatchLogGroup"
 )
 
 // OrphanedResourceStatus represents the status of an orphaned resource

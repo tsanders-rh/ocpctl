@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -50,6 +51,7 @@ type Janitor struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	lastOrphanCheck  time.Time
+	metricsPublisher *metrics.Publisher
 }
 
 // NewJanitor creates a new janitor instance
@@ -58,11 +60,18 @@ func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 		config = DefaultConfig()
 	}
 
+	// Create metrics publisher (best effort - don't fail if it can't be created)
+	metricsPublisher, err := metrics.NewPublisher(context.Background())
+	if err != nil {
+		log.Printf("Warning: failed to create metrics publisher for janitor: %v", err)
+	}
+
 	return &Janitor{
-		config:  config,
-		store:   st,
-		workDir: workDir,
-		running: false,
+		config:           config,
+		store:            st,
+		workDir:          workDir,
+		running:          false,
+		metricsPublisher: metricsPublisher,
 	}
 }
 

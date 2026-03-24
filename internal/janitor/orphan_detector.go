@@ -8,18 +8,20 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // OrphanedResource represents an AWS resource without a matching cluster
 type OrphanedResource struct {
-	Type         string // "VPC", "LoadBalancer", "DNSRecord", "EC2Instance", "HostedZone", "IAMRole", "OIDCProvider"
+	Type         string // "VPC", "LoadBalancer", "DNSRecord", "EC2Instance", "HostedZone", "IAMRole", "OIDCProvider", "EBSVolume", "ElasticIP", "CloudWatchLogGroup"
 	ResourceID   string
 	ResourceName string
 	Region       string
@@ -116,6 +118,30 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		orphans = append(orphans, oidcOrphans...)
 	}
 
+	// Check EBS Volumes
+	ebsOrphans, err := j.detectOrphanedEBSVolumes(ctx, cfg, clustersByName)
+	if err != nil {
+		log.Printf("Error detecting orphaned EBS volumes: %v", err)
+	} else {
+		orphans = append(orphans, ebsOrphans...)
+	}
+
+	// Check Elastic IPs
+	eipOrphans, err := j.detectOrphanedElasticIPs(ctx, cfg, clustersByName)
+	if err != nil {
+		log.Printf("Error detecting orphaned Elastic IPs: %v", err)
+	} else {
+		orphans = append(orphans, eipOrphans...)
+	}
+
+	// Check CloudWatch Log Groups
+	cwlOrphans, err := j.detectOrphanedCloudWatchLogGroups(ctx, cfg, clustersByName)
+	if err != nil {
+		log.Printf("Error detecting orphaned CloudWatch log groups: %v", err)
+	} else {
+		orphans = append(orphans, cwlOrphans...)
+	}
+
 	// Report findings
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned AWS resources:", len(orphans))
@@ -151,8 +177,41 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		log.Printf("These resources may incur costs and should be manually cleaned up.")
 		log.Printf("Consider running AWS cleanup scripts or using openshift-install destroy with saved metadata.")
 		log.Printf("View orphaned resources in the admin console: /admin/orphaned-resources")
+
+		// Publish CloudWatch metrics for total orphaned resources
+		if j.metricsPublisher != nil {
+			if err := j.metricsPublisher.PublishGauge(ctx, metrics.MetricOrphanedResources, float64(len(orphans)), map[string]string{
+				"Region": cfg.Region,
+			}); err != nil {
+				log.Printf("Warning: failed to publish orphaned resources metric: %v", err)
+			}
+
+			// Publish metrics by resource type
+			orphansByType := make(map[string]int)
+			for _, orphan := range orphans {
+				orphansByType[orphan.Type]++
+			}
+
+			for resourceType, count := range orphansByType {
+				if err := j.metricsPublisher.PublishCount(ctx, metrics.MetricOrphanedResourceDetected, float64(count), map[string]string{
+					"ResourceType": resourceType,
+					"Region":       cfg.Region,
+				}); err != nil {
+					log.Printf("Warning: failed to publish orphaned resource metric for type %s: %v", resourceType, err)
+				}
+			}
+		}
 	} else {
 		log.Printf("No orphaned AWS resources detected")
+
+		// Publish zero metric when no orphans found
+		if j.metricsPublisher != nil {
+			if err := j.metricsPublisher.PublishGauge(ctx, metrics.MetricOrphanedResources, 0, map[string]string{
+				"Region": cfg.Region,
+			}); err != nil {
+				log.Printf("Warning: failed to publish orphaned resources metric: %v", err)
+			}
+		}
 	}
 
 	return nil
@@ -782,4 +841,199 @@ func extractClusterNameFromIAMRole(roleName string) string {
 	// If the last segment isn't exactly 5 chars, this might be an old-style role
 	// or a different naming convention - return empty to skip
 	return ""
+}
+
+// detectOrphanedEBSVolumes finds EBS volumes tagged with cluster info but no matching cluster
+func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// List all EBS volumes in the region
+	result, err := ec2Client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	orphans := []OrphanedResource{}
+	for _, volume := range result.Volumes {
+		volumeID := aws.ToString(volume.VolumeId)
+
+		// Check for ManagedBy=ocpctl tag
+		managedByOcpctl := getTagValue(volume.Tags, "ManagedBy") == "ocpctl"
+		clusterNameFromTag := getTagValue(volume.Tags, "ClusterName")
+
+		// Also check for kubernetes.io/cluster/{name} tag (created by Kubernetes PVC)
+		var kubernetesClusterName string
+		for _, tag := range volume.Tags {
+			key := aws.ToString(tag.Key)
+			if strings.HasPrefix(key, "kubernetes.io/cluster/") &&
+			   (aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
+				kubernetesClusterName = strings.TrimPrefix(key, "kubernetes.io/cluster/")
+				break
+			}
+		}
+
+		// Prefer kubernetes tag over ManagedBy tag for PVCs
+		var clusterName string
+		if kubernetesClusterName != "" {
+			clusterName = kubernetesClusterName
+		} else if managedByOcpctl {
+			clusterName = clusterNameFromTag
+		}
+
+		if clusterName == "" {
+			continue
+		}
+
+		// Check if cluster exists in database
+		cluster, exists := clustersByName[clusterName]
+		if !exists || cluster.Status == types.ClusterStatusDestroyed {
+			volumeName := getTagValue(volume.Tags, "Name")
+			if volumeName == "" {
+				volumeName = volumeID
+			}
+
+			orphans = append(orphans, OrphanedResource{
+				Type:         "EBSVolume",
+				ResourceID:   volumeID,
+				ResourceName: volumeName,
+				Region:       cfg.Region,
+				Tags:         tagsToMap(volume.Tags),
+			})
+		}
+	}
+
+	return orphans, nil
+}
+
+// detectOrphanedElasticIPs finds Elastic IPs tagged with cluster info but no matching cluster
+func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// List all Elastic IPs in the region
+	result, err := ec2Client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	orphans := []OrphanedResource{}
+	for _, address := range result.Addresses {
+		allocationID := aws.ToString(address.AllocationId)
+		if allocationID == "" {
+			// Skip classic EIPs without allocation ID
+			continue
+		}
+
+		// Check for ManagedBy=ocpctl tag
+		managedByOcpctl := getTagValue(address.Tags, "ManagedBy") == "ocpctl"
+		clusterNameFromTag := getTagValue(address.Tags, "ClusterName")
+
+		// Also check for kubernetes.io/cluster/{name} tag (created by LoadBalancer services)
+		var kubernetesClusterName string
+		for _, tag := range address.Tags {
+			key := aws.ToString(tag.Key)
+			if strings.HasPrefix(key, "kubernetes.io/cluster/") &&
+			   (aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
+				kubernetesClusterName = strings.TrimPrefix(key, "kubernetes.io/cluster/")
+				break
+			}
+		}
+
+		// Prefer kubernetes tag over ManagedBy tag
+		var clusterName string
+		if kubernetesClusterName != "" {
+			clusterName = kubernetesClusterName
+		} else if managedByOcpctl {
+			clusterName = clusterNameFromTag
+		}
+
+		if clusterName == "" {
+			continue
+		}
+
+		// Check if cluster exists in database
+		cluster, exists := clustersByName[clusterName]
+		if !exists || cluster.Status == types.ClusterStatusDestroyed {
+			eipName := getTagValue(address.Tags, "Name")
+			if eipName == "" {
+				eipName = aws.ToString(address.PublicIp)
+			}
+
+			orphans = append(orphans, OrphanedResource{
+				Type:         "ElasticIP",
+				ResourceID:   allocationID,
+				ResourceName: eipName,
+				Region:       cfg.Region,
+				Tags:         tagsToMap(address.Tags),
+			})
+		}
+	}
+
+	return orphans, nil
+}
+
+// detectOrphanedCloudWatchLogGroups finds CloudWatch log groups for clusters that no longer exist
+func (j *Janitor) detectOrphanedCloudWatchLogGroups(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+	cwlClient := cloudwatchlogs.NewFromConfig(cfg)
+
+	orphans := []OrphanedResource{}
+
+	// List all log groups
+	var nextToken *string
+	for {
+		result, err := cwlClient.DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, logGroup := range result.LogGroups {
+			logGroupName := aws.ToString(logGroup.LogGroupName)
+
+			// Check for EKS-related log groups: /aws/eks/{clustername}/*
+			if strings.HasPrefix(logGroupName, "/aws/eks/") {
+				parts := strings.Split(logGroupName, "/")
+				if len(parts) >= 4 {
+					clusterName := parts[3]
+
+					// Check if cluster exists in database
+					cluster, exists := clustersByName[clusterName]
+					if !exists || cluster.Status == types.ClusterStatusDestroyed {
+						orphans = append(orphans, OrphanedResource{
+							Type:         "CloudWatchLogGroup",
+							ResourceID:   logGroupName,
+							ResourceName: logGroupName,
+							Region:       cfg.Region,
+							Tags:         map[string]string{}, // CWL doesn't support tags on log groups
+						})
+					}
+				}
+			}
+
+			// Check for OpenShift-related log groups that might have cluster name
+			// Pattern: might vary, but typically contains cluster name
+			if strings.Contains(logGroupName, "-cluster-") {
+				clusterName := extractClusterName(logGroupName)
+				if clusterName != "" {
+					cluster, exists := clustersByName[clusterName]
+					if !exists || cluster.Status == types.ClusterStatusDestroyed {
+						orphans = append(orphans, OrphanedResource{
+							Type:         "CloudWatchLogGroup",
+							ResourceID:   logGroupName,
+							ResourceName: logGroupName,
+							Region:       cfg.Region,
+							Tags:         map[string]string{},
+						})
+					}
+				}
+			}
+		}
+
+		if result.NextToken == nil {
+			break
+		}
+		nextToken = result.NextToken
+	}
+
+	return orphans, nil
 }

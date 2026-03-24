@@ -5,7 +5,12 @@ export type OrphanedResourceType =
   | "LoadBalancer"
   | "DNSRecord"
   | "EC2Instance"
-  | "HostedZone";
+  | "HostedZone"
+  | "IAMRole"
+  | "OIDCProvider"
+  | "EBSVolume"
+  | "ElasticIP"
+  | "CloudWatchLogGroup";
 
 export type OrphanedResourceStatus = "ACTIVE" | "RESOLVED" | "IGNORED";
 

@@ -35,6 +35,11 @@ import {
   ExternalLink,
   X,
   Trash2,
+  Shield,
+  Key,
+  Disc,
+  Network,
+  FileText,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -87,6 +92,18 @@ export default function OrphanedResourcesPage() {
         return HardDrive;
       case "DNSRecord":
         return Globe;
+      case "HostedZone":
+        return Globe;
+      case "IAMRole":
+        return Shield;
+      case "OIDCProvider":
+        return Key;
+      case "EBSVolume":
+        return Disc;
+      case "ElasticIP":
+        return Network;
+      case "CloudWatchLogGroup":
+        return FileText;
       default:
         return AlertTriangle;
     }
@@ -131,6 +148,18 @@ export default function OrphanedResourcesPage() {
         return `${baseUrl}/ec2/home?region=${region}#Instances:instanceId=${resource.resource_id}`;
       case "DNSRecord":
         return `${baseUrl}/route53/v2/hostedzones`;
+      case "HostedZone":
+        return `${baseUrl}/route53/v2/hostedzones`;
+      case "IAMRole":
+        return `${baseUrl}/iam/home#/roles`;
+      case "OIDCProvider":
+        return `${baseUrl}/iam/home#/identity_providers`;
+      case "EBSVolume":
+        return `${baseUrl}/ec2/home?region=${region}#Volumes:volumeId=${resource.resource_id}`;
+      case "ElasticIP":
+        return `${baseUrl}/ec2/home?region=${region}#Addresses:`;
+      case "CloudWatchLogGroup":
+        return `${baseUrl}/cloudwatch/home?region=${region}#logsV2:log-groups/log-group/${encodeURIComponent(resource.resource_id)}`;
       default:
         return `${baseUrl}`;
     }
@@ -198,6 +227,58 @@ export default function OrphanedResourcesPage() {
             <p className="text-xs text-muted-foreground">Orphaned instances</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">EBS Volumes</CardTitle>
+            <Disc className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? "..." : stats?.by_type?.EBSVolume || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Orphaned volumes</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Elastic IPs</CardTitle>
+            <Network className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? "..." : stats?.by_type?.ElasticIP || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Orphaned IPs</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">IAM Roles</CardTitle>
+            <Shield className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? "..." : stats?.by_type?.IAMRole || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Orphaned roles</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Log Groups</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? "..." : stats?.by_type?.CloudWatchLogGroup || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Orphaned logs</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -241,6 +322,11 @@ export default function OrphanedResourcesPage() {
                   <SelectItem value="EC2Instance">EC2 Instance</SelectItem>
                   <SelectItem value="DNSRecord">DNS Record</SelectItem>
                   <SelectItem value="HostedZone">Hosted Zone</SelectItem>
+                  <SelectItem value="IAMRole">IAM Role</SelectItem>
+                  <SelectItem value="OIDCProvider">OIDC Provider</SelectItem>
+                  <SelectItem value="EBSVolume">EBS Volume</SelectItem>
+                  <SelectItem value="ElasticIP">Elastic IP</SelectItem>
+                  <SelectItem value="CloudWatchLogGroup">CloudWatch Log Group</SelectItem>
                 </SelectContent>
               </Select>
             </div>
