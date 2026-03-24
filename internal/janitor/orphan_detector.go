@@ -859,7 +859,13 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 		// Prefer kubernetes tag over ManagedBy tag for PVCs
 		var clusterName string
 		if kubernetesClusterName != "" {
-			clusterName = kubernetesClusterName
+			// Extract cluster name from infraID (pattern: {clustername}-{5chars})
+			parts := strings.Split(kubernetesClusterName, "-")
+			if len(parts) < 2 {
+				continue
+			}
+			// Remove the 5-char suffix to get cluster name
+			clusterName = strings.Join(parts[0:len(parts)-1], "-")
 		} else if managedByOcpctl {
 			clusterName = clusterNameFromTag
 		}
@@ -925,7 +931,13 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 		// Prefer kubernetes tag over ManagedBy tag
 		var clusterName string
 		if kubernetesClusterName != "" {
-			clusterName = kubernetesClusterName
+			// Extract cluster name from infraID (pattern: {clustername}-{5chars})
+			parts := strings.Split(kubernetesClusterName, "-")
+			if len(parts) < 2 {
+				continue
+			}
+			// Remove the 5-char suffix to get cluster name
+			clusterName = strings.Join(parts[0:len(parts)-1], "-")
 		} else if managedByOcpctl {
 			clusterName = clusterNameFromTag
 		}
