@@ -525,11 +525,16 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 	if address.AssociationId != nil {
 		// Check if the network interface is a NAT Gateway interface
 		if address.NetworkInterfaceId != nil {
+			log.Printf("Checking if EIP %s is attached to NAT Gateway (interface: %s)", allocationID, *address.NetworkInterfaceId)
 			niResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
 				NetworkInterfaceIds: []string{*address.NetworkInterfaceId},
 			})
-			if err == nil && len(niResult.NetworkInterfaces) > 0 {
+			if err != nil {
+				log.Printf("Warning: failed to describe network interface %s: %v", *address.NetworkInterfaceId, err)
+				// Continue anyway - if we can't check, we'll try to disassociate and let AWS return the proper error
+			} else if len(niResult.NetworkInterfaces) > 0 {
 				ni := niResult.NetworkInterfaces[0]
+				log.Printf("Network interface type: %v", ni.InterfaceType)
 				if ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
 					// Extract NAT Gateway ID from description
 					natGatewayID := ""
