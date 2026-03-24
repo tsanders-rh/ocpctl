@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
@@ -520,8 +521,30 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 
 	address := describeResult.Addresses[0]
 
-	// If the EIP is associated, disassociate it first
+	// If the EIP is associated, check if it's attached to a NAT Gateway
 	if address.AssociationId != nil {
+		// Check if the network interface is a NAT Gateway interface
+		if address.NetworkInterfaceId != nil {
+			niResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+				NetworkInterfaceIds: []string{*address.NetworkInterfaceId},
+			})
+			if err == nil && len(niResult.NetworkInterfaces) > 0 {
+				ni := niResult.NetworkInterfaces[0]
+				if ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
+					// Extract NAT Gateway ID from description
+					natGatewayID := ""
+					if ni.Description != nil && strings.Contains(*ni.Description, "nat-") {
+						parts := strings.Split(*ni.Description, " ")
+						if len(parts) > 3 {
+							natGatewayID = parts[len(parts)-1]
+						}
+					}
+					return fmt.Errorf("EIP is attached to NAT Gateway %s - cannot disassociate directly. Delete the NAT Gateway first or manually delete via AWS Console", natGatewayID)
+				}
+			}
+		}
+
+		// Not a NAT Gateway - proceed with normal disassociation
 		log.Printf("Disassociating Elastic IP %s (association: %s)", allocationID, *address.AssociationId)
 		_, err = ec2Client.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
 			AssociationId: address.AssociationId,
