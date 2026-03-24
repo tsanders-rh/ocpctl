@@ -72,6 +72,7 @@ export default function OrphanedResourcesPage() {
       IAMRole: "Delete IAM Role",
       OIDCProvider: "Delete OIDC Provider",
       CloudWatchLogGroup: "Delete Log Group",
+      LoadBalancer: "Delete Load Balancer",
     };
     return titles[resourceType] || "Delete Resource";
   };
@@ -85,6 +86,7 @@ export default function OrphanedResourcesPage() {
       IAMRole: "This will delete the IAM role and detach all policies. This action cannot be undone.",
       OIDCProvider: "This will delete the OIDC provider. This action cannot be undone.",
       CloudWatchLogGroup: "This will delete the CloudWatch log group and all its logs. This action cannot be undone.",
+      LoadBalancer: "This will delete the Application/Network Load Balancer from AWS. This action cannot be undone.",
     };
     return descriptions[resourceType] || "This will delete the resource from AWS. This action cannot be undone.";
   };
@@ -430,7 +432,8 @@ export default function OrphanedResourcesPage() {
                             resource.resource_type === "ElasticIP" ||
                             resource.resource_type === "IAMRole" ||
                             resource.resource_type === "OIDCProvider" ||
-                            resource.resource_type === "CloudWatchLogGroup") && (
+                            resource.resource_type === "CloudWatchLogGroup" ||
+                            resource.resource_type === "LoadBalancer") && (
                             <Button
                               variant="destructive"
                               size="sm"
