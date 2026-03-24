@@ -500,7 +500,38 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 
 	ec2Client := ec2.NewFromConfig(cfg)
 
-	// Release the Elastic IP
+	// First, check if the EIP is associated with anything
+	describeResult, err := ec2Client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
+		AllocationIds: []string{allocationID},
+	})
+	if err != nil {
+		// Check if EIP doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidAllocationID.NotFound") {
+			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+			return nil
+		}
+		return fmt.Errorf("describe Elastic IP: %w", err)
+	}
+
+	if len(describeResult.Addresses) == 0 {
+		log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+		return nil
+	}
+
+	address := describeResult.Addresses[0]
+
+	// If the EIP is associated, disassociate it first
+	if address.AssociationId != nil {
+		log.Printf("Disassociating Elastic IP %s (association: %s)", allocationID, *address.AssociationId)
+		_, err = ec2Client.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
+			AssociationId: address.AssociationId,
+		})
+		if err != nil {
+			return fmt.Errorf("disassociate Elastic IP: %w", err)
+		}
+	}
+
+	// Now release the Elastic IP
 	_, err = ec2Client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
 		AllocationId: aws.String(allocationID),
 	})
