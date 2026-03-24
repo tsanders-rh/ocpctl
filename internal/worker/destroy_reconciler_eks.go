@@ -1139,6 +1139,12 @@ func (r *EKSDestroyReconciler) reconcileSecurityGroups(ctx context.Context, stat
 			}
 		}
 
+		// Break circular dependencies: find other security groups that reference this one
+		vpcID := aws.ToString(sg.VpcId)
+		if err := r.breakCircularSecurityGroupDependencies(ctx, sgID, vpcID); err != nil {
+			log.Printf("Warning: failed to break circular dependencies for %s: %v", sgID, err)
+		}
+
 		// Delete the security group
 		log.Printf("Deleting security group %s (%s)", sgID, sgName)
 		_, err = r.ec2Client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
@@ -1162,6 +1168,86 @@ func (r *EKSDestroyReconciler) reconcileSecurityGroups(ctx context.Context, stat
 	}
 
 	return nil
+}
+
+// breakCircularSecurityGroupDependencies finds and revokes rules from other security groups that reference the target
+func (r *EKSDestroyReconciler) breakCircularSecurityGroupDependencies(ctx context.Context, targetSGID, vpcID string) error {
+	log.Printf("Checking for circular security group dependencies for %s", targetSGID)
+
+	// Find all security groups in the VPC
+	describeInput := &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+		},
+	}
+
+	describeOutput, err := r.ec2Client.DescribeSecurityGroups(ctx, describeInput)
+	if err != nil {
+		return fmt.Errorf("describe security groups in VPC %s: %w", vpcID, err)
+	}
+
+	// Check each security group for rules that reference the target
+	for _, sg := range describeOutput.SecurityGroups {
+		otherSGID := aws.ToString(sg.GroupId)
+
+		// Skip the target security group itself
+		if otherSGID == targetSGID {
+			continue
+		}
+
+		// Check ingress rules for references to target SG
+		ingressRulesToRevoke := r.findRulesReferencingSG(sg.IpPermissions, targetSGID)
+		if len(ingressRulesToRevoke) > 0 {
+			log.Printf("Found %d ingress rules in %s (%s) that reference %s - revoking",
+				len(ingressRulesToRevoke), otherSGID, aws.ToString(sg.GroupName), targetSGID)
+
+			_, err := r.ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
+				GroupId:       aws.String(otherSGID),
+				IpPermissions: ingressRulesToRevoke,
+			})
+			if err != nil && !strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Warning: failed to revoke ingress rules from %s: %v", otherSGID, err)
+			}
+		}
+
+		// Check egress rules for references to target SG
+		egressRulesToRevoke := r.findRulesReferencingSG(sg.IpPermissionsEgress, targetSGID)
+		if len(egressRulesToRevoke) > 0 {
+			log.Printf("Found %d egress rules in %s (%s) that reference %s - revoking",
+				len(egressRulesToRevoke), otherSGID, aws.ToString(sg.GroupName), targetSGID)
+
+			_, err := r.ec2Client.RevokeSecurityGroupEgress(ctx, &ec2.RevokeSecurityGroupEgressInput{
+				GroupId:       aws.String(otherSGID),
+				IpPermissions: egressRulesToRevoke,
+			})
+			if err != nil && !strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+				log.Printf("Warning: failed to revoke egress rules from %s: %v", otherSGID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// findRulesReferencingSG filters IP permissions to find rules that reference a specific security group
+func (r *EKSDestroyReconciler) findRulesReferencingSG(permissions []ec2types.IpPermission, targetSGID string) []ec2types.IpPermission {
+	var matchingRules []ec2types.IpPermission
+
+	for _, perm := range permissions {
+		// Check if this permission references the target security group
+		for _, groupPair := range perm.UserIdGroupPairs {
+			if aws.ToString(groupPair.GroupId) == targetSGID {
+				// This rule references the target SG - add it to the list
+				matchingRules = append(matchingRules, perm)
+				break // Only add the rule once even if it has multiple group pairs
+			}
+		}
+	}
+
+	return matchingRules
 }
 
 // cleanupOrphanedSecurityGroups removes EKS cluster security groups that may be left behind
