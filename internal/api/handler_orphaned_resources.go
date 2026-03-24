@@ -534,8 +534,10 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 				// Continue anyway - if we can't check, we'll try to disassociate and let AWS return the proper error
 			} else if len(niResult.NetworkInterfaces) > 0 {
 				ni := niResult.NetworkInterfaces[0]
-				log.Printf("Network interface type: %v", ni.InterfaceType)
+				log.Printf("Network interface type: '%v' (comparing to '%v')", ni.InterfaceType, ec2types.NetworkInterfaceTypeNatGateway)
+				log.Printf("Type comparison result: %v", ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway)
 				if ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
+					log.Printf("NAT Gateway detected! Extracting ID...")
 					// Extract NAT Gateway ID from description
 					natGatewayID := ""
 					if ni.Description != nil && strings.Contains(*ni.Description, "nat-") {
@@ -544,8 +546,10 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 							natGatewayID = parts[len(parts)-1]
 						}
 					}
+					log.Printf("Returning error for NAT Gateway %s", natGatewayID)
 					return fmt.Errorf("EIP is attached to NAT Gateway %s - cannot disassociate directly. Delete the NAT Gateway first or manually delete via AWS Console", natGatewayID)
 				}
+				log.Printf("Not a NAT Gateway (interface type didn't match)")
 			}
 		}
 
