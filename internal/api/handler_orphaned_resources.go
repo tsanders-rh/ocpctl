@@ -9,6 +9,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/labstack/echo/v4"
@@ -253,25 +256,35 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 		}
 	}
 
-	// Only support HostedZone and DNSRecord deletion
-	if resource.ResourceType != types.OrphanedResourceTypeHostedZone &&
-	   resource.ResourceType != types.OrphanedResourceTypeDNSRecord {
-		return ErrorBadRequest(c, "Only HostedZone and DNSRecord resources can be deleted via API. Other resource types must be deleted manually in AWS Console.")
+	// Delete the resource based on type
+	switch resource.ResourceType {
+	case types.OrphanedResourceTypeHostedZone:
+		err = h.deleteHostedZone(c.Request().Context(), resource.ResourceID, resource.ResourceName)
+	case types.OrphanedResourceTypeDNSRecord:
+		err = h.deleteDNSRecord(c.Request().Context(), resource.ResourceName)
+	case types.OrphanedResourceTypeEBSVolume:
+		err = h.deleteEBSVolume(c.Request().Context(), resource.ResourceID, resource.Region)
+	case types.OrphanedResourceTypeElasticIP:
+		err = h.deleteElasticIP(c.Request().Context(), resource.ResourceID, resource.Region)
+	case types.OrphanedResourceTypeIAMRole:
+		err = h.deleteIAMRole(c.Request().Context(), resource.ResourceName)
+	case types.OrphanedResourceTypeOIDCProvider:
+		err = h.deleteOIDCProvider(c.Request().Context(), resource.ResourceID)
+	case types.OrphanedResourceTypeCloudWatchLogGroup:
+		err = h.deleteCloudWatchLogGroup(c.Request().Context(), resource.ResourceID, resource.Region)
+	case types.OrphanedResourceTypeVPC:
+		return ErrorBadRequest(c, "VPC deletion not supported - must delete all dependent resources first (subnets, route tables, etc)")
+	case types.OrphanedResourceTypeLoadBalancer:
+		return ErrorBadRequest(c, "LoadBalancer deletion not supported - delete via AWS Console")
+	case types.OrphanedResourceTypeEC2Instance:
+		return ErrorBadRequest(c, "EC2Instance deletion not supported - delete via AWS Console")
+	default:
+		return ErrorBadRequest(c, fmt.Sprintf("Deletion not supported for resource type: %s", resource.ResourceType))
 	}
 
-	// Delete the resource based on type
-	if resource.ResourceType == types.OrphanedResourceTypeHostedZone {
-		err = h.deleteHostedZone(c.Request().Context(), resource.ResourceID, resource.ResourceName)
-		if err != nil {
-			log.Printf("Failed to delete hosted zone %s: %v", resource.ResourceName, err)
-			return ErrorInternal(c, fmt.Sprintf("Failed to delete hosted zone: %v", err))
-		}
-	} else if resource.ResourceType == types.OrphanedResourceTypeDNSRecord {
-		err = h.deleteDNSRecord(c.Request().Context(), resource.ResourceName)
-		if err != nil {
-			log.Printf("Failed to delete DNS record %s: %v", resource.ResourceName, err)
-			return ErrorInternal(c, fmt.Sprintf("Failed to delete DNS record: %v", err))
-		}
+	if err != nil {
+		log.Printf("Failed to delete %s %s: %v", resource.ResourceType, resource.ResourceName, err)
+		return ErrorInternal(c, fmt.Sprintf("Failed to delete resource: %v", err))
 	}
 
 	// Mark as resolved
@@ -449,5 +462,171 @@ func (h *OrphanedResourceHandler) deleteDNSRecord(ctx context.Context, recordNam
 	}
 
 	log.Printf("Successfully deleted DNS record %s from zone %s", recordName, targetZoneName)
+	return nil
+}
+
+// deleteEBSVolume deletes an EBS volume
+func (h *OrphanedResourceHandler) deleteEBSVolume(ctx context.Context, volumeID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Delete the volume
+	_, err = ec2Client.DeleteVolume(ctx, &ec2.DeleteVolumeInput{
+		VolumeId: aws.String(volumeID),
+	})
+	if err != nil {
+		// Check if volume doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidVolume.NotFound") {
+			log.Printf("EBS volume %s not found - assuming already deleted", volumeID)
+			return nil
+		}
+		return fmt.Errorf("delete EBS volume: %w", err)
+	}
+
+	log.Printf("Successfully deleted EBS volume %s", volumeID)
+	return nil
+}
+
+// deleteElasticIP releases an Elastic IP
+func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocationID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Release the Elastic IP
+	_, err = ec2Client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+		AllocationId: aws.String(allocationID),
+	})
+	if err != nil {
+		// Check if EIP doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidAllocationID.NotFound") {
+			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+			return nil
+		}
+		return fmt.Errorf("release Elastic IP: %w", err)
+	}
+
+	log.Printf("Successfully released Elastic IP %s", allocationID)
+	return nil
+}
+
+// deleteIAMRole deletes an IAM role and its attached policies
+func (h *OrphanedResourceHandler) deleteIAMRole(ctx context.Context, roleName string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// List and detach all attached policies
+	listPoliciesResult, err := iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		// Check if role doesn't exist
+		if strings.Contains(err.Error(), "NoSuchEntity") {
+			log.Printf("IAM role %s not found - assuming already deleted", roleName)
+			return nil
+		}
+		return fmt.Errorf("list attached policies: %w", err)
+	}
+
+	for _, policy := range listPoliciesResult.AttachedPolicies {
+		_, err = iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: policy.PolicyArn,
+		})
+		if err != nil {
+			return fmt.Errorf("detach policy %s: %w", aws.ToString(policy.PolicyArn), err)
+		}
+	}
+
+	// List and delete all inline policies
+	listInlinePoliciesResult, err := iamClient.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list inline policies: %w", err)
+	}
+
+	for _, policyName := range listInlinePoliciesResult.PolicyNames {
+		_, err = iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if err != nil {
+			return fmt.Errorf("delete inline policy %s: %w", policyName, err)
+		}
+	}
+
+	// Delete the role
+	_, err = iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("delete role: %w", err)
+	}
+
+	log.Printf("Successfully deleted IAM role %s", roleName)
+	return nil
+}
+
+// deleteOIDCProvider deletes an OIDC provider
+func (h *OrphanedResourceHandler) deleteOIDCProvider(ctx context.Context, providerArn string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Delete the OIDC provider
+	_, err = iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(providerArn),
+	})
+	if err != nil {
+		// Check if provider doesn't exist
+		if strings.Contains(err.Error(), "NoSuchEntity") {
+			log.Printf("OIDC provider %s not found - assuming already deleted", providerArn)
+			return nil
+		}
+		return fmt.Errorf("delete OIDC provider: %w", err)
+	}
+
+	log.Printf("Successfully deleted OIDC provider %s", providerArn)
+	return nil
+}
+
+// deleteCloudWatchLogGroup deletes a CloudWatch log group
+func (h *OrphanedResourceHandler) deleteCloudWatchLogGroup(ctx context.Context, logGroupName, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	cwlClient := cloudwatchlogs.NewFromConfig(cfg)
+
+	// Delete the log group
+	_, err = cwlClient.DeleteLogGroup(ctx, &cloudwatchlogs.DeleteLogGroupInput{
+		LogGroupName: aws.String(logGroupName),
+	})
+	if err != nil {
+		// Check if log group doesn't exist
+		if strings.Contains(err.Error(), "ResourceNotFoundException") {
+			log.Printf("CloudWatch log group %s not found - assuming already deleted", logGroupName)
+			return nil
+		}
+		return fmt.Errorf("delete log group: %w", err)
+	}
+
+	log.Printf("Successfully deleted CloudWatch log group %s", logGroupName)
 	return nil
 }

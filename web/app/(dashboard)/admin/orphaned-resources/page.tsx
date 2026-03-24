@@ -63,6 +63,32 @@ export default function OrphanedResourcesPage() {
   const markIgnored = useMarkResourceIgnored();
   const deleteResource = useDeleteResource();
 
+  const getDeleteTitle = (resourceType: OrphanedResourceType) => {
+    const titles: Record<string, string> = {
+      HostedZone: "Delete Hosted Zone",
+      DNSRecord: "Delete DNS Record",
+      EBSVolume: "Delete EBS Volume",
+      ElasticIP: "Release Elastic IP",
+      IAMRole: "Delete IAM Role",
+      OIDCProvider: "Delete OIDC Provider",
+      CloudWatchLogGroup: "Delete Log Group",
+    };
+    return titles[resourceType] || "Delete Resource";
+  };
+
+  const getDeleteDescription = (resourceType: OrphanedResourceType) => {
+    const descriptions: Record<string, string> = {
+      HostedZone: "This will delete the hosted zone and all its records from AWS Route53. This action cannot be undone.",
+      DNSRecord: "This will delete the DNS record from AWS Route53. This action cannot be undone.",
+      EBSVolume: "This will delete the EBS volume from AWS. This action cannot be undone.",
+      ElasticIP: "This will release the Elastic IP address. This action cannot be undone.",
+      IAMRole: "This will delete the IAM role and detach all policies. This action cannot be undone.",
+      OIDCProvider: "This will delete the OIDC provider. This action cannot be undone.",
+      CloudWatchLogGroup: "This will delete the CloudWatch log group and all its logs. This action cannot be undone.",
+    };
+    return descriptions[resourceType] || "This will delete the resource from AWS. This action cannot be undone.";
+  };
+
   const handleAction = async () => {
     if (!selectedResource || !actionDialog) return;
 
@@ -398,7 +424,13 @@ export default function OrphanedResourcesPage() {
 
                       {resource.status === "ACTIVE" && (
                         <>
-                          {(resource.resource_type === "HostedZone" || resource.resource_type === "DNSRecord") && (
+                          {(resource.resource_type === "HostedZone" ||
+                            resource.resource_type === "DNSRecord" ||
+                            resource.resource_type === "EBSVolume" ||
+                            resource.resource_type === "ElasticIP" ||
+                            resource.resource_type === "IAMRole" ||
+                            resource.resource_type === "OIDCProvider" ||
+                            resource.resource_type === "CloudWatchLogGroup") && (
                             <Button
                               variant="destructive"
                               size="sm"
@@ -460,10 +492,8 @@ export default function OrphanedResourcesPage() {
                 <CardTitle>
                   {actionDialog === "resolve"
                     ? "Mark as Resolved"
-                    : actionDialog === "delete"
-                    ? selectedResource?.resource_type === "HostedZone"
-                      ? "Delete Hosted Zone"
-                      : "Delete DNS Record"
+                    : actionDialog === "delete" && selectedResource
+                    ? getDeleteTitle(selectedResource.resource_type)
                     : "Mark as Ignored"}
                 </CardTitle>
                 <Button
@@ -478,10 +508,8 @@ export default function OrphanedResourcesPage() {
               <p className="text-sm text-muted-foreground mt-2">
                 {actionDialog === "resolve"
                   ? "Mark this resource as resolved (e.g., manually cleaned up in AWS Console)"
-                  : actionDialog === "delete"
-                  ? selectedResource?.resource_type === "HostedZone"
-                    ? "This will delete the hosted zone and all its records from AWS Route53. This action cannot be undone."
-                    : "This will delete the DNS record from AWS Route53. This action cannot be undone."
+                  : actionDialog === "delete" && selectedResource
+                  ? getDeleteDescription(selectedResource.resource_type)
                   : "Mark this resource as ignored (e.g., false positive or intentionally kept)"}
               </p>
             </CardHeader>
@@ -499,22 +527,17 @@ export default function OrphanedResourcesPage() {
                 </div>
               )}
 
-              {actionDialog === "delete" && (
+              {actionDialog === "delete" && selectedResource && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-4">
                   <p className="text-sm text-red-800 font-medium">
-                    {selectedResource?.resource_type === "HostedZone"
-                      ? "Are you sure you want to delete this hosted zone?"
-                      : "Are you sure you want to delete this DNS record?"}
+                    Are you sure you want to delete this {selectedResource.resource_type}?
                   </p>
                   <p className="text-sm text-red-600 mt-2">
-                    {selectedResource?.resource_type === "HostedZone" ? "Hosted Zone: " : "DNS Record: "}
-                    <span className="font-mono">{selectedResource?.resource_name}</span>
+                    <span className="font-mono">{selectedResource.resource_name}</span>
                   </p>
-                  {selectedResource?.resource_type === "HostedZone" && (
-                    <p className="text-sm text-red-600">
-                      This will delete all DNS records in the zone.
-                    </p>
-                  )}
+                  <p className="text-sm text-red-600 mt-2">
+                    {getDeleteDescription(selectedResource.resource_type)}
+                  </p>
                 </div>
               )}
 
@@ -529,10 +552,8 @@ export default function OrphanedResourcesPage() {
                 >
                   {actionDialog === "resolve"
                     ? "Mark Resolved"
-                    : actionDialog === "delete"
-                    ? selectedResource?.resource_type === "HostedZone"
-                      ? "Delete Hosted Zone"
-                      : "Delete DNS Record"
+                    : actionDialog === "delete" && selectedResource
+                    ? getDeleteTitle(selectedResource.resource_type)
                     : "Mark Ignored"}
                 </Button>
               </div>

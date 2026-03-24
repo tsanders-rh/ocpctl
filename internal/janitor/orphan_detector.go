@@ -251,41 +251,16 @@ func (j *Janitor) detectOrphanedVPCs(ctx context.Context, cfg aws.Config, cluste
 					Tags:         tagsToMap(vpc.Tags),
 				})
 			}
-			continue // Skip pattern matching for tagged resources
+			// Only rely on ManagedBy=ocpctl tag - no pattern matching fallback to avoid false positives
 		}
 
-		// Step 2: Fallback to pattern matching for backward compatibility
-		// (clusters created before comprehensive tagging was implemented)
-		vpcName := getTagValue(vpc.Tags, "Name")
-
-		// Check if VPC name contains "-cluster-" pattern
-		if !strings.Contains(vpcName, "-cluster-") {
-			continue
-		}
-
-		// Extract cluster name (e.g., "d-cluster-lqrc7-vpc" -> "d-cluster")
-		clusterName := extractClusterName(vpcName)
-		if clusterName == "" {
-			continue
-		}
-
-		// Check if cluster exists and is not destroyed
-		cluster, exists := clustersByName[clusterName]
-		if !exists || cluster.Status == types.ClusterStatusDestroyed {
-			orphans = append(orphans, OrphanedResource{
-				Type:         "VPC",
-				ResourceID:   aws.ToString(vpc.VpcId),
-				ResourceName: vpcName,
-				Region:       cfg.Region,
-				Tags:         tagsToMap(vpc.Tags),
-			})
-		}
 	}
 
 	return orphans, nil
 }
 
 // detectOrphanedLoadBalancers finds load balancers with cluster names but no matching cluster
+// detectOrphanedLoadBalancers finds load balancers with cluster tags but no matching cluster
 func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
 	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
 
@@ -296,29 +271,73 @@ func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Confi
 
 	orphans := []OrphanedResource{}
 	for _, lb := range result.LoadBalancers {
-		lbName := aws.ToString(lb.LoadBalancerName)
+		lbArn := aws.ToString(lb.LoadBalancerArn)
 
-		// Check if LB name contains cluster pattern
-		if !strings.Contains(lbName, "-cluster-") {
+		// Get tags for this load balancer
+		tagsResult, err := elbClient.DescribeTags(ctx, &elasticloadbalancingv2.DescribeTagsInput{
+			ResourceArns: []string{lbArn},
+		})
+		if err != nil {
+			log.Printf("Warning: failed to get tags for load balancer %s: %v", lbArn, err)
 			continue
 		}
 
-		// Extract cluster name
-		clusterName := extractClusterName(lbName)
-		if clusterName == "" {
+		if len(tagsResult.TagDescriptions) == 0 {
 			continue
 		}
 
-		// Check if cluster exists and is not destroyed
-		cluster, exists := clustersByName[clusterName]
-		if !exists || cluster.Status == types.ClusterStatusDestroyed {
-			orphans = append(orphans, OrphanedResource{
-				Type:         "LoadBalancer",
-				ResourceID:   aws.ToString(lb.LoadBalancerArn),
-				ResourceName: lbName,
-				Region:       cfg.Region,
-			})
+		tags := make(map[string]string)
+		for _, tag := range tagsResult.TagDescriptions[0].Tags {
+			tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 		}
+
+		// Check for ManagedBy=ocpctl tag
+		if tags["ManagedBy"] == "ocpctl" {
+			clusterName := tags["ClusterName"]
+			if clusterName == "" {
+				log.Printf("[detectOrphanedLoadBalancers] LB %s has ManagedBy=ocpctl but no ClusterName tag", lbArn)
+				continue
+			}
+
+			cluster, exists := clustersByName[clusterName]
+			if !exists || cluster.Status == types.ClusterStatusDestroyed {
+				orphans = append(orphans, OrphanedResource{
+					Type:         "LoadBalancer",
+					ResourceID:   lbArn,
+					ResourceName: aws.ToString(lb.LoadBalancerName),
+					Region:       cfg.Region,
+					Tags:         tags,
+				})
+			}
+			continue
+		}
+
+		// Check for kubernetes.io/cluster/{infraID} tag (created by Kubernetes services)
+		for key, value := range tags {
+			if strings.HasPrefix(key, "kubernetes.io/cluster/") && (value == "owned" || value == "shared") {
+				infraID := strings.TrimPrefix(key, "kubernetes.io/cluster/")
+				// Extract cluster name from infraID pattern: {clustername}-{5chars}
+				parts := strings.Split(infraID, "-")
+				if len(parts) < 2 {
+					continue
+				}
+				// Remove the 5-char suffix to get cluster name
+				clusterName := strings.Join(parts[0:len(parts)-1], "-")
+
+				cluster, exists := clustersByName[clusterName]
+				if !exists || cluster.Status == types.ClusterStatusDestroyed {
+					orphans = append(orphans, OrphanedResource{
+						Type:         "LoadBalancer",
+						ResourceID:   lbArn,
+						ResourceName: aws.ToString(lb.LoadBalancerName),
+						Region:       cfg.Region,
+						Tags:         tags,
+					})
+				}
+				break
+			}
+		}
+		// Only rely on tags - no pattern matching fallback to avoid false positives
 	}
 
 	return orphans, nil
@@ -615,44 +634,9 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 						Tags:         tags,
 					})
 				}
-				continue // Skip pattern matching for tagged resources
+				// Only rely on ManagedBy=ocpctl tag - no pattern matching fallback to avoid false positives
 			}
 
-			// Step 2: Fallback to pattern matching for backward compatibility
-			// ccoctl creates roles with pattern: <cluster-name>-<infra-id>-openshift-*
-			// Examples:
-			// - sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden
-			// - sanders12-9hfvt-openshift-ingress-operator-cloud-credentials
-			// - sanders12-9hfvt-openshift-cluster-csi-drivers-ebs-cloud-credenti
-			// Also creates master/worker roles: <cluster-name>-<infra-id>-master-role
-
-			// Check if role name contains "-openshift-" pattern or ends with "-master-role" or "-worker-role"
-			if !strings.Contains(roleName, "-openshift-") &&
-				!strings.HasSuffix(roleName, "-master-role") &&
-				!strings.HasSuffix(roleName, "-worker-role") {
-				continue
-			}
-
-			openshiftRoles++
-
-			// Extract cluster name by removing the infra ID suffix
-			// Pattern: <cluster-name>-<5-char-infra-id>-...
-			clusterName := extractClusterNameFromIAMRole(roleName)
-			if clusterName == "" {
-				continue
-			}
-
-			// Check if cluster exists and is not destroyed
-			cluster, exists := clustersByName[clusterName]
-			if !exists || cluster.Status == types.ClusterStatusDestroyed {
-				orphans = append(orphans, OrphanedResource{
-					Type:         "IAMRole",
-					ResourceID:   aws.ToString(role.Arn),
-					ResourceName: roleName,
-					Region:       "global", // IAM is global
-					Tags:         tags,
-				})
-			}
 		}
 	}
 
@@ -1009,24 +993,9 @@ func (j *Janitor) detectOrphanedCloudWatchLogGroups(ctx context.Context, cfg aws
 					}
 				}
 			}
+ttt// Only check EKS log groups - CloudWatch Log Groups dont support tags
+ttt// OpenShift clusters dont create log groups in CloudWatch by default
 
-			// Check for OpenShift-related log groups that might have cluster name
-			// Pattern: might vary, but typically contains cluster name
-			if strings.Contains(logGroupName, "-cluster-") {
-				clusterName := extractClusterName(logGroupName)
-				if clusterName != "" {
-					cluster, exists := clustersByName[clusterName]
-					if !exists || cluster.Status == types.ClusterStatusDestroyed {
-						orphans = append(orphans, OrphanedResource{
-							Type:         "CloudWatchLogGroup",
-							ResourceID:   logGroupName,
-							ResourceName: logGroupName,
-							Region:       cfg.Region,
-							Tags:         map[string]string{},
-						})
-					}
-				}
-			}
 		}
 
 		if result.NextToken == nil {
