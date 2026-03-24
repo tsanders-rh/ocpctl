@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,21 +49,56 @@ func (h *UserHandler) logAudit(c echo.Context, action string, targetUserID strin
 	_ = h.store.Audit.Log(c.Request().Context(), event)
 }
 
-// List returns all users
-// GET /api/v1/users
-// List lists all users
+// List returns all users with pagination support
+// GET /api/v1/users?limit=50&offset=0
+// List lists all users with pagination
 //
 //	@Summary		List users
-//	@Description	Returns a list of all users (admin only). Password hashes are excluded from response.
+//	@Description	Returns a paginated list of users (admin only). Password hashes are excluded from response. Supports pagination via query parameters.
 //	@Tags			Users
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}
-//	@Failure		500	{object}	map[string]string	"Failed to list users"
+//	@Param			limit	query		int	false	"Maximum number of users to return (default: 50, max: 100)"
+//	@Param			offset	query		int	false	"Number of users to skip (default: 0)"
+//	@Success		200		{object}	map[string]interface{}	"Returns users array, total count, limit, and offset"
+//	@Failure		400		{object}	map[string]string		"Invalid pagination parameters"
+//	@Failure		500		{object}	map[string]string		"Failed to list users"
 //	@Security		BearerAuth
 //	@Router			/users [get]
 func (h *UserHandler) List(c echo.Context) error {
-	users, err := h.store.Users.List(c.Request().Context())
+	// Parse pagination parameters from query string
+	limit := 50  // Default limit
+	offset := 0  // Default offset
+
+	// Parse limit parameter
+	if limitStr := c.QueryParam("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid limit parameter: must be a number")
+		}
+		if parsedLimit <= 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "limit must be greater than 0")
+		}
+		if parsedLimit > 100 {
+			return echo.NewHTTPError(http.StatusBadRequest, "limit cannot exceed 100")
+		}
+		limit = parsedLimit
+	}
+
+	// Parse offset parameter
+	if offsetStr := c.QueryParam("offset"); offsetStr != "" {
+		parsedOffset, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid offset parameter: must be a number")
+		}
+		if parsedOffset < 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "offset must be non-negative")
+		}
+		offset = parsedOffset
+	}
+
+	// Fetch paginated users
+	users, totalCount, err := h.store.Users.ListPaginated(c.Request().Context(), limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list users")
 	}
@@ -74,8 +110,10 @@ func (h *UserHandler) List(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"users": responses,
-		"total": len(responses),
+		"users":  responses,
+		"total":  totalCount,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -72,9 +73,10 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 		return nil
 	}
 
-	// Create work directory
+	// Create work directory with restrictive permissions (0700)
+	// This directory contains sensitive files like kubeconfig with cluster credentials
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 
@@ -486,12 +488,13 @@ users:
     token: %s
 `, base64Encode(caCert), apiURL, cluster.Name, cluster.Name, cluster.Name, cluster.Name, token)
 
-	// Ensure output directory exists
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+	// Ensure output directory exists with restrictive permissions (0700)
+	// This prevents other users from accessing sensitive kubeconfig files
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
-	// Write kubeconfig to file
+	// Write kubeconfig to file (0600 ensures only owner can read/write)
 	if err := os.WriteFile(outputPath, []byte(kubeconfig), 0600); err != nil {
 		return fmt.Errorf("write kubeconfig: %w", err)
 	}
@@ -824,8 +827,20 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 		fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath),
 	)
 
-	// Add custom environment variables from script config
+	// Add custom environment variables from script config (with validation)
 	for key, value := range script.Env {
+		// Validate environment variable name format (alphanumeric + underscore, must start with letter or underscore)
+		if !isValidEnvVarName(key) {
+			log.Printf("Warning: skipping invalid environment variable name: %s", key)
+			continue
+		}
+
+		// Block dangerous environment variables that could lead to privilege escalation
+		if isDangerousEnvVar(key) {
+			log.Printf("Warning: blocked dangerous environment variable: %s", key)
+			continue
+		}
+
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 
@@ -952,4 +967,35 @@ func (h *PostConfigureHandler) createConfigTask(ctx context.Context, clusterID s
 // updateConfigTaskStatus updates a configuration task's status
 func (h *PostConfigureHandler) updateConfigTaskStatus(ctx context.Context, configID string, status types.ConfigStatus, errorMessage *string) error {
 	return h.store.ClusterConfigurations.UpdateStatus(ctx, configID, status, errorMessage)
+}
+
+// isValidEnvVarName validates environment variable name format
+// Valid names: alphanumeric + underscore, must start with letter or underscore
+func isValidEnvVarName(name string) bool {
+	// Environment variable names must match: [A-Za-z_][A-Za-z0-9_]*
+	matched, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, name)
+	return matched
+}
+
+// isDangerousEnvVar checks if an environment variable is in the blocklist
+// These variables can lead to privilege escalation or code injection
+func isDangerousEnvVar(name string) bool {
+	// Blocklist of dangerous environment variables
+	dangerousVars := map[string]bool{
+		"LD_PRELOAD":       true, // Can hijack dynamic linker
+		"LD_LIBRARY_PATH":  true, // Can override library loading
+		"PYTHONPATH":       true, // Can inject Python modules
+		"PATH":             true, // Can prepend malicious binaries
+		"PERL5LIB":         true, // Can inject Perl modules
+		"RUBYLIB":          true, // Can inject Ruby modules
+		"NODE_PATH":        true, // Can inject Node.js modules
+		"CLASSPATH":        true, // Can inject Java classes
+		"JAVA_TOOL_OPTIONS": true, // Can inject Java agents
+		"PROMPT_COMMAND":   true, // Executes on each shell prompt
+		"BASH_ENV":         true, // Executes on shell startup
+		"ENV":              true, // Executes on shell startup
+		"IFS":              true, // Can break command parsing
+	}
+
+	return dangerousVars[name]
 }

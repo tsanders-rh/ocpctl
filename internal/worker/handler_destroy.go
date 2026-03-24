@@ -153,48 +153,93 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		log.Printf("Cluster %s destroyed successfully", cluster.Name)
 	}
 
-	// Store destroy log as artifact
+	// Track cleanup results for job metadata and audit trail
+	cleanupResults := make(map[string]interface{})
+	cleanupWarnings := []string{}
+
+	// Store destroy log as artifact (IMPORTANT: needed for troubleshooting and compliance)
 	if err := h.storeDestroyLog(ctx, workDir, cluster.ID); err != nil {
-		log.Printf("Warning: failed to store destroy log: %v", err)
+		errMsg := fmt.Sprintf("failed to store destroy log: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["destroy_log_stored"] = false
+		cleanupResults["destroy_log_error"] = err.Error()
+	} else {
+		cleanupResults["destroy_log_stored"] = true
 	}
 
-	// Platform-specific post-destruction cleanup
+	// Platform-specific post-destruction cleanup (IMPORTANT: prevents orphaned cloud resources)
 	if cluster.Platform == types.PlatformIBMCloud {
 		// IBM Cloud requires CCO cleanup - delete service IDs created during installation
 		log.Printf("Running IBM Cloud post-destruction cleanup (CCO service IDs)...")
 		if err := h.HandleIBMCloudDestroy(ctx, cluster, inst, workDir); err != nil {
-			// Don't fail the job - just log the warning
-			log.Printf("Warning: IBM Cloud cleanup encountered issues: %v", err)
+			errMsg := fmt.Sprintf("IBM Cloud cleanup failed: %v", err)
+			log.Printf("Warning: %s", errMsg)
+			cleanupWarnings = append(cleanupWarnings, errMsg)
+			cleanupResults["platform_cleanup"] = "failed"
+			cleanupResults["platform_cleanup_error"] = err.Error()
+		} else {
+			cleanupResults["platform_cleanup"] = "success"
 		}
 	} else if cluster.Platform == types.PlatformAWS {
 		// AWS requires CCO cleanup - delete IAM roles and OIDC provider created during installation
 		log.Printf("Running AWS post-destruction cleanup (CCO IAM roles and OIDC provider)...")
 		if err := h.HandleAWSDestroy(ctx, cluster, inst, workDir); err != nil {
-			// Don't fail the job - just log the warning
-			log.Printf("Warning: AWS cleanup encountered issues: %v", err)
+			errMsg := fmt.Sprintf("AWS cleanup failed: %v", err)
+			log.Printf("Warning: %s", errMsg)
+			cleanupWarnings = append(cleanupWarnings, errMsg)
+			cleanupResults["platform_cleanup"] = "failed"
+			cleanupResults["platform_cleanup_error"] = err.Error()
+		} else {
+			cleanupResults["platform_cleanup"] = "success"
 		}
 	}
 
-	// Clean up work directory
+	// Clean up work directory (OPTIONAL: local disk cleanup)
 	if err := os.RemoveAll(workDir); err != nil {
-		log.Printf("Warning: failed to clean up work directory %s: %v", workDir, err)
+		errMsg := fmt.Sprintf("failed to remove work directory: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["work_dir_removed"] = false
+	} else {
+		cleanupResults["work_dir_removed"] = true
 	}
 
-	// Clean up artifacts from S3
+	// Clean up artifacts from S3 (IMPORTANT: prevents storage cost accumulation)
 	log.Printf("Cleaning up artifacts from S3 for cluster %s", cluster.Name)
 	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
 	if err != nil {
-		log.Printf("Warning: failed to create artifact storage for cleanup: %v", err)
+		errMsg := fmt.Sprintf("failed to create artifact storage client: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["s3_artifacts_deleted"] = false
+		cleanupResults["s3_cleanup_error"] = err.Error()
 	} else {
 		if err := artifactStorage.DeleteClusterArtifacts(ctx, cluster.ID); err != nil {
-			log.Printf("Warning: failed to delete artifacts from S3: %v", err)
+			errMsg := fmt.Sprintf("failed to delete S3 artifacts: %v", err)
+			log.Printf("Warning: %s", errMsg)
+			cleanupWarnings = append(cleanupWarnings, errMsg)
+			cleanupResults["s3_artifacts_deleted"] = false
+			cleanupResults["s3_cleanup_error"] = err.Error()
 		} else {
 			log.Printf("Successfully deleted artifacts from S3 for cluster %s", cluster.Name)
+			cleanupResults["s3_artifacts_deleted"] = true
 		}
 	}
 
-	// Clean up temporary files created by openshift-install
+	// Clean up temporary files created by openshift-install (OPTIONAL: local disk cleanup)
 	h.cleanupTempFiles(cluster.ID)
+
+	// Record cleanup results in job metadata for audit trail
+	if len(cleanupWarnings) > 0 {
+		log.Printf("Destroy completed with %d cleanup warnings - see job metadata for details", len(cleanupWarnings))
+		if job.Metadata == nil {
+			job.Metadata = make(types.JobMetadata)
+		}
+		job.Metadata["cleanup_results"] = cleanupResults
+		job.Metadata["cleanup_warnings"] = cleanupWarnings
+		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
+	}
 
 	// Mark cluster status based on destroy result
 	if !destroySucceeded {
@@ -422,10 +467,19 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 	// Verification passed - safe to clean up local resources and mark as DESTROYED
 	log.Printf("[Destroy] ✓ Verification passed - all AWS resources deleted")
 
-	// Clean up local work directory
+	// Track cleanup results for job metadata
+	cleanupResults := make(map[string]interface{})
+	cleanupWarnings := []string{}
+
+	// Clean up local work directory (OPTIONAL: local disk cleanup)
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 	if err := os.RemoveAll(workDir); err != nil {
-		log.Printf("Warning: failed to remove work directory: %v", err)
+		errMsg := fmt.Sprintf("failed to remove work directory: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["work_dir_removed"] = false
+	} else {
+		cleanupResults["work_dir_removed"] = true
 	}
 
 	// Mark cluster as destroyed (ONLY after verification passes)
@@ -433,12 +487,29 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
 
-	// Complete audit record
+	// Complete audit record (IMPORTANT: needed for compliance and troubleshooting)
 	terminalReason := "Destroyed successfully - verification passed"
 	destroyAudit.TerminalReason = &terminalReason
 	destroyAudit.CompletedAt = ptrTime(time.Now())
 	if err := h.saveDestroyAudit(ctx, destroyAudit); err != nil {
-		log.Printf("Warning: failed to save final destroy audit: %v", err)
+		errMsg := fmt.Sprintf("failed to save destroy audit: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["audit_saved"] = false
+		cleanupResults["audit_error"] = err.Error()
+	} else {
+		cleanupResults["audit_saved"] = true
+	}
+
+	// Record cleanup results in job metadata for audit trail
+	if len(cleanupWarnings) > 0 {
+		log.Printf("Destroy completed with %d cleanup warnings - see job metadata for details", len(cleanupWarnings))
+		if job.Metadata == nil {
+			job.Metadata = make(types.JobMetadata)
+		}
+		job.Metadata["cleanup_results"] = cleanupResults
+		job.Metadata["cleanup_warnings"] = cleanupWarnings
+		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
 	}
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
@@ -512,16 +583,36 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 
 	log.Printf("IKS cluster %s destroyed successfully", cluster.Name)
 
+	// Track cleanup results for job metadata
+	cleanupResults := make(map[string]interface{})
+	cleanupWarnings := []string{}
+
 	// Mark cluster as destroyed
 	// TODO: Add verification for IKS similar to EKS (verify cluster no longer exists via ibmcloud API)
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
 
-	// Clean up work directory
+	// Clean up work directory (OPTIONAL: local disk cleanup)
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 	if err := os.RemoveAll(workDir); err != nil {
-		log.Printf("Warning: failed to remove work directory: %v", err)
+		errMsg := fmt.Sprintf("failed to remove work directory: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["work_dir_removed"] = false
+	} else {
+		cleanupResults["work_dir_removed"] = true
+	}
+
+	// Record cleanup results in job metadata for audit trail
+	if len(cleanupWarnings) > 0 {
+		log.Printf("Destroy completed with %d cleanup warnings - see job metadata for details", len(cleanupWarnings))
+		if job.Metadata == nil {
+			job.Metadata = make(types.JobMetadata)
+		}
+		job.Metadata["cleanup_results"] = cleanupResults
+		job.Metadata["cleanup_warnings"] = cleanupWarnings
+		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
 	}
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
@@ -537,7 +628,7 @@ func (h *DestroyHandler) cleanupKubernetesResources(ctx context.Context, cluster
 	// Check if kubeconfig exists - if not, try to fetch it
 	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
 		log.Printf("Kubeconfig not found locally, attempting to fetch from EKS")
-		if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
 			return fmt.Errorf("create auth directory: %w", err)
 		}
 

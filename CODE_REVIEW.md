@@ -25,8 +25,26 @@ All **CRITICAL** and **HIGH** priority issues have been addressed:
    - `idx_job_retry_history_failed_at` - Faster retry statistics
    - `idx_clusters_work_hours` - Partial index for work hours enforcement
 
-**Total Time:** ~1 hour to fix all critical and high priority issues
+### MEDIUM Priority Issues Fixed (5/12) ✅
+1. ✅ **Missing Input Validation on Script Environment Variables** - Added regex validation and dangerous variable blocklist in `handler_post_configure.go:828-842, 970-999`
+2. ✅ **Weak File Permissions** - Changed all directory creation from 0755 to 0700 in worker files (6 files modified)
+3. ✅ **Error Masking in Cleanup Operations** - Added cleanup result tracking and job metadata recording in all destroy handlers (`handler_destroy.go`)
+   - Tracks all cleanup failures (destroy logs, S3 artifacts, platform cleanup, audit records)
+   - Records warnings in job metadata for audit trail
+   - Categorizes operations as IMPORTANT or OPTIONAL for visibility
+4. ✅ **Unbounded List Query (Users)** - Added pagination support in `internal/store/users.go:254-318` and `internal/api/handler_users.go:68-117`
+   - New `ListPaginated()` method with limit/offset parameters
+   - API endpoint supports `?limit=50&offset=0` query parameters
+   - Default limit: 50, max limit: 100
+   - Returns total count for pagination UI
+5. ✅ **Incomplete Error Context (Work Hours Validation)** - Improved error messages in `internal/api/handler_clusters.go:860-868, 928-929`
+   - Specific field names when configuration is missing (work_hours_start, work_hours_end, work_days)
+   - Detailed context when calculation fails (cluster ID, time values, timezone, work days binary representation)
+   - Includes all relevant parameters for debugging
+
+**Total Time:** ~1.5 hours to fix all critical, high, and initial medium priority issues
 **Performance Improvement:** 75% reduction in database queries, 90% faster lock operations
+**Security Improvement:** Eliminated all RCE vulnerabilities, prevented privilege escalation via env vars
 
 ---
 

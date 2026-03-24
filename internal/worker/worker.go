@@ -236,8 +236,9 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 	}
 
-	// Create work directory
-	if err := os.MkdirAll(w.config.WorkDir, 0755); err != nil {
+	// Create work directory with restrictive permissions (0700)
+	// This directory will contain cluster-specific subdirectories with sensitive files
+	if err := os.MkdirAll(w.config.WorkDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 

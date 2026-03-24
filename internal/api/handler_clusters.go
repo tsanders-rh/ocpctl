@@ -856,12 +856,19 @@ func (h *ClusterHandler) calculateNextHibernateTime(ctx context.Context, cluster
 	if cluster.WorkHoursEnabled != nil {
 		workHoursEnabled = *cluster.WorkHoursEnabled
 		if workHoursEnabled {
-			if cluster.WorkHoursStart != nil && cluster.WorkHoursEnd != nil && cluster.WorkDays != nil {
-				workHoursEnd = *cluster.WorkHoursEnd
-				workDays = *cluster.WorkDays
-			} else {
-				return time.Time{}, fmt.Errorf("work hours enabled but config missing")
+			// Validate that all required work hours fields are present
+			if cluster.WorkHoursStart == nil {
+				return time.Time{}, fmt.Errorf("work hours enabled but work_hours_start is missing for cluster %s", cluster.ID)
 			}
+			if cluster.WorkHoursEnd == nil {
+				return time.Time{}, fmt.Errorf("work hours enabled but work_hours_end is missing for cluster %s", cluster.ID)
+			}
+			if cluster.WorkDays == nil {
+				return time.Time{}, fmt.Errorf("work hours enabled but work_days is missing for cluster %s", cluster.ID)
+			}
+
+			workHoursEnd = *cluster.WorkHoursEnd
+			workDays = *cluster.WorkDays
 		} else {
 			// Work hours explicitly disabled
 			return time.Time{}, nil
@@ -917,8 +924,9 @@ func (h *ClusterHandler) calculateNextHibernateTime(ctx context.Context, cluster
 		candidateDate = candidateDate.Add(24 * time.Hour)
 	}
 
-	// Couldn't find a future work hours end time (shouldn't happen)
-	return time.Time{}, fmt.Errorf("could not calculate next work hours end time")
+	// Couldn't find a future work hours end time within 14 days (shouldn't happen unless work_days is invalid)
+	return time.Time{}, fmt.Errorf("could not calculate next work hours end time for cluster %s: end_time=%02d:%02d, work_days=%d (binary: %014b), timezone=%s, current_time=%s",
+		cluster.ID, endHour, endMinute, workDays, workDays, user.Timezone, nowInTZ.Format(time.RFC3339))
 }
 
 // Resume handles POST /api/v1/clusters/:id/resume

@@ -206,6 +206,7 @@ func (s *UserStore) Delete(ctx context.Context, id string) error {
 }
 
 // List retrieves all users
+// DEPRECATED: Use ListPaginated for better performance with large user counts
 func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 	query := `
 		SELECT id, email, username, password_hash, role, timezone, work_hours_enabled, work_hours_start, work_hours_end, work_days, active, created_at, updated_at
@@ -248,6 +249,72 @@ func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 	}
 
 	return users, nil
+}
+
+// ListPaginated retrieves users with pagination support
+// Returns: (users, totalCount, error)
+// - limit: maximum number of users to return (required, should be > 0)
+// - offset: number of users to skip (optional, defaults to 0)
+// - totalCount: total number of users in the database (for pagination UI)
+func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*types.User, int, error) {
+	// Validate pagination parameters
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("limit must be greater than 0, got: %d", limit)
+	}
+	if offset < 0 {
+		return nil, 0, fmt.Errorf("offset must be non-negative, got: %d", offset)
+	}
+
+	// Get total count for pagination UI
+	countQuery := `SELECT COUNT(*) FROM users`
+	var totalCount int
+	if err := s.pool.QueryRow(ctx, countQuery).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	// Fetch paginated results
+	query := `
+		SELECT id, email, username, password_hash, role, timezone, work_hours_enabled, work_hours_start, work_hours_end, work_days, active, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := s.pool.Query(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users paginated: %w", err)
+	}
+	defer rows.Close()
+
+	users := []*types.User{}
+	for rows.Next() {
+		var user types.User
+		err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.Username,
+			&user.PasswordHash,
+			&user.Role,
+			&user.Timezone,
+			&user.WorkHoursEnabled,
+			&user.WorkHoursStart,
+			&user.WorkHoursEnd,
+			&user.WorkDays,
+			&user.Active,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, &user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate users: %w", err)
+	}
+
+	return users, totalCount, nil
 }
 
 // EmailExists checks if an email is already in use

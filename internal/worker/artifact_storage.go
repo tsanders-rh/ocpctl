@@ -133,7 +133,7 @@ func (a *ArtifactStorage) DownloadClusterArtifacts(ctx context.Context, clusterI
 	log.Printf("[ArtifactStorage] Downloading artifacts for cluster %s to %s", clusterID, workDir)
 
 	// Ensure work directory exists
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 
@@ -248,7 +248,7 @@ func (a *ArtifactStorage) uploadFile(ctx context.Context, localPath, s3Key strin
 // downloadFile downloads a single file from S3
 func (a *ArtifactStorage) downloadFile(ctx context.Context, s3Key, localPath string) error {
 	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0700); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
 

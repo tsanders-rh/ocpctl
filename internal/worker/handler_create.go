@@ -78,7 +78,7 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 
 	// Create work directory for this cluster
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 
@@ -380,7 +380,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Create work directory for this cluster
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 
@@ -523,7 +523,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
-	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
 		return fmt.Errorf("create auth directory: %w", err)
 	}
 
@@ -584,7 +584,7 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Create work directory for this cluster
 	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
 	}
 
@@ -665,7 +665,7 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
-	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
 		return fmt.Errorf("create auth directory: %w", err)
 	}
 
