@@ -500,7 +500,16 @@ func (h *OrphanedResourceHandler) deleteEBSVolume(ctx context.Context, volumeID,
 		for _, attachment := range volume.Attachments {
 			instanceID := aws.ToString(attachment.InstanceId)
 			device := aws.ToString(attachment.Device)
-			log.Printf("Detaching EBS volume %s from instance %s (device: %s)", volumeID, instanceID, device)
+			deleteOnTermination := attachment.DeleteOnTermination != nil && *attachment.DeleteOnTermination
+
+			// Check if this is a root volume (usually /dev/sda1 or /dev/xvda)
+			isRootVolume := device == "/dev/sda1" || device == "/dev/xvda" || device == "/dev/nvme0n1"
+
+			if isRootVolume {
+				return fmt.Errorf("volume %s is the root volume of instance %s - cannot detach root volumes. Terminate the instance to delete this volume (or ignore this resource)", volumeID, instanceID)
+			}
+
+			log.Printf("Detaching EBS volume %s from instance %s (device: %s, deleteOnTermination: %v)", volumeID, instanceID, device, deleteOnTermination)
 
 			_, err = ec2Client.DetachVolume(ctx, &ec2.DetachVolumeInput{
 				VolumeId:   aws.String(volumeID),
