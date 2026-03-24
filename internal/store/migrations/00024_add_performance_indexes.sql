@@ -2,6 +2,7 @@
 -- This migration adds database indexes identified in the code review to improve query performance
 -- See: CODE_REVIEW.md section "Missing Database Indexes"
 
+-- +goose Up
 -- Index 1: job_locks.expires_at
 -- Used by CleanupExpiredLocks (called every poll cycle - 5 seconds)
 -- Query: SELECT lock_id FROM job_locks WHERE expires_at < NOW()
@@ -29,3 +30,10 @@ COMMENT ON INDEX idx_job_locks_expires_at IS 'Improves performance of expired lo
 COMMENT ON INDEX idx_job_locks_lookup IS 'Composite index for lock existence checks by resource type/ID';
 COMMENT ON INDEX idx_job_retry_history_failed_at IS 'Improves performance of retry history queries';
 COMMENT ON INDEX idx_clusters_work_hours IS 'Partial index for work hours enforcement queries';
+
+-- +goose Down
+-- Drop all indexes created in the Up migration
+DROP INDEX IF EXISTS idx_job_locks_expires_at;
+DROP INDEX IF EXISTS idx_job_locks_lookup;
+DROP INDEX IF EXISTS idx_job_retry_history_failed_at;
+DROP INDEX IF EXISTS idx_clusters_work_hours;
