@@ -118,6 +118,75 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 	return &cluster, nil
 }
 
+// GetByIDs retrieves multiple clusters by their IDs in a single query
+// This prevents N+1 query patterns when fetching clusters for multiple jobs
+func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Cluster, error) {
+	if len(ids) == 0 {
+		return []*types.Cluster{}, nil
+	}
+
+	query := `
+		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
+			destroy_at, created_at, updated_at, destroyed_at,
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+		FROM clusters
+		WHERE id = ANY($1)
+	`
+
+	rows, err := s.pool.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("query clusters by IDs: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		var cluster types.Cluster
+		err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.Platform,
+			&cluster.ClusterType,
+			&cluster.Version,
+			&cluster.Profile,
+			&cluster.Region,
+			&cluster.BaseDomain,
+			&cluster.Owner,
+			&cluster.OwnerID,
+			&cluster.Team,
+			&cluster.CostCenter,
+			&cluster.Status,
+			&cluster.RequestedBy,
+			&cluster.TTLHours,
+			&cluster.DestroyAt,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.DestroyedAt,
+			&cluster.RequestTags,
+			&cluster.EffectiveTags,
+			&cluster.SSHPublicKey,
+			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan cluster: %w", err)
+		}
+		clusters = append(clusters, &cluster)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters: %w", err)
+	}
+
+	return clusters, nil
+}
+
 // GetByIDForUpdate retrieves a cluster by ID with row lock for update
 func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id string) (*types.Cluster, error) {
 	query := `

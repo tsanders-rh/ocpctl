@@ -274,7 +274,8 @@ func (w *Worker) Stop() {
 
 // poll fetches and processes pending jobs
 func (w *Worker) poll() {
-	ctx := context.Background()
+	// Use worker's context (not Background) to enable graceful shutdown
+	ctx := w.ctx
 
 	// Clean up expired locks before processing jobs
 	// This prevents stale locks from blocking job processing
@@ -315,15 +316,62 @@ func (w *Worker) poll() {
 
 	log.Printf("Found %d pending jobs", len(jobs))
 
-	// Process jobs concurrently
+	// Extract unique cluster IDs from jobs
+	clusterIDs := make([]string, 0, len(jobs))
+	clusterIDSet := make(map[string]bool)
 	for _, job := range jobs {
-		go w.processJob(job)
+		if !clusterIDSet[job.ClusterID] {
+			clusterIDs = append(clusterIDs, job.ClusterID)
+			clusterIDSet[job.ClusterID] = true
+		}
+	}
+
+	// Batch fetch all clusters in a SINGLE query (prevents N+1 pattern)
+	clusters, err := w.store.Clusters.GetByIDs(ctx, clusterIDs)
+	if err != nil {
+		log.Printf("Error batch fetching clusters: %v", err)
+		return
+	}
+
+	// Create lookup map for O(1) access
+	clusterMap := make(map[string]*types.Cluster)
+	for _, cluster := range clusters {
+		clusterMap[cluster.ID] = cluster
+	}
+
+	// Process jobs concurrently with pre-fetched cluster data
+	// Pass worker context so jobs can be cancelled on shutdown
+	for _, job := range jobs {
+		cluster := clusterMap[job.ClusterID]
+		if cluster == nil {
+			log.Printf("Cluster %s not found for job %s, skipping", job.ClusterID, job.ID)
+			// Mark job as failed since cluster doesn't exist
+			errorMsg := "Cluster not found"
+			if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_NOT_FOUND", errorMsg); markErr != nil {
+				log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
+			}
+			continue
+		}
+		go w.processJob(w.ctx, job, cluster)
 	}
 }
 
 // processJob processes a single job
-func (w *Worker) processJob(job *types.Job) {
-	ctx := context.Background()
+// Accepts parent context to enable cancellation during shutdown
+// Cluster is passed as parameter (pre-fetched) to avoid N+1 query pattern
+func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.Cluster) {
+	// Check if context is already cancelled (worker shutting down)
+	select {
+	case <-ctx.Done():
+		log.Printf("Job %s cancelled before processing (worker shutdown)", job.ID)
+		return
+	default:
+	}
+
+	// Create child context with timeout for this specific job
+	// This allows both timeout-based cancellation AND parent cancellation
+	ctx, cancel := context.WithTimeout(ctx, w.config.LockTimeout)
+	defer cancel()
 
 	// Try to acquire lock
 	lock, err := w.acquireLock(ctx, job)
@@ -338,18 +386,6 @@ func (w *Worker) processJob(job *types.Job) {
 
 	// Ensure lock is released
 	defer w.releaseLock(ctx, job.ClusterID, job.ID)
-
-	// Check if cluster still exists and is in a valid state for this job
-	cluster, err := w.store.Clusters.GetByID(ctx, job.ClusterID)
-	if err != nil {
-		log.Printf("Failed to get cluster %s for job %s: %v", job.ClusterID, job.ID, err)
-		// Mark job as failed if cluster doesn't exist
-		errorMsg := fmt.Sprintf("Cluster not found: %v", err)
-		if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_NOT_FOUND", errorMsg); markErr != nil {
-			log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
-		}
-		return
-	}
 
 	// Auto-cancel jobs for DESTROYED clusters (except DESTROY jobs themselves)
 	if cluster.Status == types.ClusterStatusDestroyed && job.JobType != types.JobTypeDestroy {

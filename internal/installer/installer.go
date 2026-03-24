@@ -3,8 +3,11 @@ package installer
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/tls"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -624,23 +627,46 @@ func (i *Installer) fixOIDCThumbprint(ctx context.Context, clusterName, region s
 }
 
 // getS3CertThumbprint retrieves the TLS certificate thumbprint for an S3 endpoint
+// Uses Go's crypto/tls instead of shelling out to openssl (prevents command injection)
 func (i *Installer) getS3CertThumbprint(ctx context.Context, s3Endpoint string) (string, error) {
-	// Use openssl to get the certificate thumbprint
-	cmd := exec.CommandContext(ctx, "sh", "-c",
-		fmt.Sprintf("echo | openssl s_client -servername %s -showcerts -connect %s:443 2>/dev/null | openssl x509 -fingerprint -sha1 -noout | cut -d'=' -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]'",
-			s3Endpoint, s3Endpoint))
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("get certificate thumbprint: %w\nStderr: %s", err, stderr.String())
+	// Create TLS dialer with context support
+	dialer := &tls.Dialer{
+		Config: &tls.Config{
+			ServerName:         s3Endpoint,
+			InsecureSkipVerify: true, // We only need the cert, not validation
+		},
 	}
 
-	thumbprint := strings.TrimSpace(stdout.String())
+	// Connect to the endpoint
+	conn, err := dialer.DialContext(ctx, "tcp", s3Endpoint+":443")
+	if err != nil {
+		return "", fmt.Errorf("dial TLS connection to %s:443: %w", s3Endpoint, err)
+	}
+	defer conn.Close()
+
+	// Get the TLS connection state
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return "", fmt.Errorf("connection is not TLS")
+	}
+
+	// Get the peer certificates
+	state := tlsConn.ConnectionState()
+	if len(state.PeerCertificates) == 0 {
+		return "", fmt.Errorf("no peer certificates found")
+	}
+
+	// Get the leaf certificate (first in chain)
+	cert := state.PeerCertificates[0]
+
+	// Calculate SHA1 fingerprint of the certificate
+	fingerprint := sha1.Sum(cert.Raw)
+
+	// Convert to lowercase hex string (matching openssl format)
+	thumbprint := strings.ToLower(hex.EncodeToString(fingerprint[:]))
+
 	if thumbprint == "" {
-		return "", fmt.Errorf("empty thumbprint returned")
+		return "", fmt.Errorf("empty thumbprint generated")
 	}
 
 	return thumbprint, nil

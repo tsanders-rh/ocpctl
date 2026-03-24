@@ -122,7 +122,7 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 		}
 
 		log.Printf("Kubernetes Dashboard configured successfully at: %s", dashboardURL)
-		log.Printf("Dashboard token: %s", token)
+		log.Printf("Dashboard token stored securely in cluster outputs")
 
 		// Update cluster outputs with dashboard URL
 		if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
@@ -365,8 +365,7 @@ func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clus
 	outputs.DashboardToken = &token
 	outputs.UpdatedAt = time.Now()
 
-	log.Printf("IMPORTANT: Dashboard token stored for cluster access")
-	log.Printf("Token: %s", token)
+	log.Printf("Dashboard token securely stored in database for cluster access")
 
 	// Upsert cluster outputs
 	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {

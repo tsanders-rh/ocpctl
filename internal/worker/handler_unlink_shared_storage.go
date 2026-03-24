@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -185,12 +188,10 @@ func (h *UnlinkSharedStorageHandler) cleanupAWSResources(ctx context.Context, st
 					}
 				}
 
-				// Wait for mount targets to be deleted
+				// Wait for mount targets to be deleted (polling with Go, no shell interpolation)
 				log.Printf("Waiting for mount targets to be deleted...")
-				waitCmd := exec.CommandContext(ctx, "bash", "-c",
-					fmt.Sprintf("for i in {1..30}; do mt_count=$(aws efs describe-mount-targets --region %s --file-system-id %s --query 'length(MountTargets)' --output text 2>/dev/null || echo 0); if [ \"$mt_count\" == \"0\" ]; then exit 0; fi; sleep 10; done; exit 1", region, *storageGroup.EFSID))
-				if err := waitCmd.Run(); err != nil {
-					log.Printf("Warning: timeout waiting for mount targets to be deleted")
+				if err := h.waitForMountTargetsDeletion(ctx, region, *storageGroup.EFSID); err != nil {
+					log.Printf("Warning: timeout waiting for mount targets to be deleted: %v", err)
 				}
 			}
 		}
@@ -250,6 +251,55 @@ func (h *UnlinkSharedStorageHandler) cleanupAWSResources(ctx context.Context, st
 	}
 
 	return nil
+}
+
+// waitForMountTargetsDeletion polls AWS to wait for all mount targets to be deleted
+// Uses proper exec.CommandContext with argument arrays to prevent command injection
+func (h *UnlinkSharedStorageHandler) waitForMountTargetsDeletion(ctx context.Context, region, efsID string) error {
+	maxAttempts := 30
+	pollInterval := 10 * time.Second
+
+	for i := 0; i < maxAttempts; i++ {
+		// Use exec.CommandContext with array args - NOT shell interpolation
+		cmd := exec.CommandContext(ctx, "aws", "efs", "describe-mount-targets",
+			"--region", region,
+			"--file-system-id", efsID,
+			"--query", "length(MountTargets)",
+			"--output", "text")
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Mount targets might already be deleted, which is fine
+			log.Printf("Attempt %d/%d: Error checking mount targets (may be deleted): %v", i+1, maxAttempts, err)
+			return nil
+		}
+
+		// Parse the count
+		countStr := strings.TrimSpace(string(output))
+		count, err := strconv.Atoi(countStr)
+		if err != nil {
+			log.Printf("Attempt %d/%d: Could not parse mount target count: %v", i+1, maxAttempts, err)
+			// Assume 0 if we can't parse
+			return nil
+		}
+
+		if count == 0 {
+			log.Printf("All mount targets deleted after %d attempts", i+1)
+			return nil
+		}
+
+		log.Printf("Attempt %d/%d: %d mount targets still exist, waiting %v...", i+1, maxAttempts, count, pollInterval)
+
+		// Context-aware sleep
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+			// Continue to next iteration
+		}
+	}
+
+	return fmt.Errorf("timeout after %d attempts waiting for mount targets to be deleted", maxAttempts)
 }
 
 // splitWhitespace splits a string by whitespace
