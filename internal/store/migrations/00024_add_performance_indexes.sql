@@ -10,8 +10,8 @@
 CREATE INDEX IF NOT EXISTS idx_job_locks_expires_at ON job_locks(expires_at);
 
 -- Composite index for IsLocked query
--- Query: SELECT COUNT(*) FROM job_locks WHERE resource_type = $1 AND resource_id = $2 AND expires_at > NOW()
-CREATE INDEX IF NOT EXISTS idx_job_locks_lookup ON job_locks(resource_type, resource_id, expires_at);
+-- Query: SELECT EXISTS(SELECT 1 FROM job_locks WHERE cluster_id = $1 AND expires_at > NOW())
+CREATE INDEX IF NOT EXISTS idx_job_locks_lookup ON job_locks(cluster_id, expires_at);
 
 -- Index 2: job_retry_history.failed_at
 -- Used by GetRecentRetries for retry statistics
