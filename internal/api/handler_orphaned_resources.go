@@ -534,7 +534,7 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 				// Continue anyway - if we can't check, we'll try to disassociate and let AWS return the proper error
 			} else if len(niResult.NetworkInterfaces) > 0 {
 				ni := niResult.NetworkInterfaces[0]
-				// Check if interface type is nat_gateway (case-insensitive string comparison)
+				// Check if interface type is nat_gateway
 				interfaceTypeStr := string(ni.InterfaceType)
 				if interfaceTypeStr == "nat_gateway" || ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
 					// Extract NAT Gateway ID from description
@@ -545,7 +545,22 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 							natGatewayID = parts[len(parts)-1]
 						}
 					}
-					return fmt.Errorf("EIP is attached to NAT Gateway %s - cannot disassociate directly. Delete the NAT Gateway first or manually delete via AWS Console", natGatewayID)
+
+					// Delete the NAT Gateway - this will automatically release the EIP when deletion completes
+					log.Printf("Deleting NAT Gateway %s (EIP will be released automatically)", natGatewayID)
+					_, err = ec2Client.DeleteNatGateway(ctx, &ec2.DeleteNatGatewayInput{
+						NatGatewayId: aws.String(natGatewayID),
+					})
+					if err != nil {
+						if strings.Contains(err.Error(), "NatGatewayNotFound") {
+							log.Printf("NAT Gateway %s not found - assuming already deleted", natGatewayID)
+							return nil
+						}
+						return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
+					}
+
+					log.Printf("NAT Gateway %s deletion initiated - EIP %s will be released automatically when NAT Gateway is deleted", natGatewayID, allocationID)
+					return nil
 				}
 			}
 		}
