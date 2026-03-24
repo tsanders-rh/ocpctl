@@ -82,6 +82,23 @@ func (s *ClusterConfigurationStore) GetByID(ctx context.Context, id string) (*ty
 	return config, nil
 }
 
+// Create creates a new cluster configuration task
+func (s *ClusterConfigurationStore) Create(ctx context.Context, clusterID string, configType types.ConfigType, configName string) (string, error) {
+	query := `
+		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`
+
+	var configID string
+	err := s.pool.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
+	if err != nil {
+		return "", fmt.Errorf("create configuration: %w", err)
+	}
+
+	return configID, nil
+}
+
 // UpdateStatus updates the status of a configuration
 func (s *ClusterConfigurationStore) UpdateStatus(ctx context.Context, id string, status types.ConfigStatus, errorMessage *string) error {
 	query := `
