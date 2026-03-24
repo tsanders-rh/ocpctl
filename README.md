@@ -1,10 +1,10 @@
-# ocpctl - OpenShift Ephemeral Cluster Control Plane
+# ocpctl - Kubernetes Cluster Control Plane
 
-Self-service provisioning and lifecycle management for ephemeral OpenShift clusters on AWS and IBM Cloud.
+Self-service provisioning and lifecycle management for ephemeral Kubernetes clusters on AWS and IBM Cloud.
 
 ## Overview
 
-`ocpctl` is a production-ready service that provides a standardized workflow for requesting, managing, and terminating ephemeral OpenShift 4.20 clusters with:
+`ocpctl` is a production-ready service that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters (OpenShift, EKS, IKS) with:
 
 - **Reliable cleanup**: Preserves installer state artifacts for deterministic teardown
 - **Cost control**: Automatic TTL-based destruction and resource tagging
@@ -14,28 +14,36 @@ Self-service provisioning and lifecycle management for ephemeral OpenShift clust
 
 ## Status
 
-🎯 **Production Ready** - Core features complete with comprehensive security controls
+🎯 **Production Ready** - Multi-platform Kubernetes cluster management with comprehensive security controls
 
-- ✅ Full cluster lifecycle (create, monitor, destroy)
-- ✅ AWS support with standardized profiles
+- ✅ Full cluster lifecycle (create, monitor, destroy, hibernate, resume)
+- ✅ **OpenShift** - Full support for OpenShift 4.x clusters on AWS and IBM Cloud
+- ✅ **AWS EKS** - Production-ready support for Elastic Kubernetes Service
+- ✅ **IBM Cloud IKS** - IBM Kubernetes Service support
 - ✅ Web UI with Next.js + TypeScript
 - ✅ Dual authentication (JWT + AWS IAM)
 - ✅ Enterprise security features
+- ✅ Orphaned resource detection and automated cleanup
 - ✅ Production deployment guides
-- 🚧 IBM Cloud support (planned)
 
 ## Key Features
 
 ### Cluster Management
+- **Multi-platform support**:
+  - **OpenShift** (OCP) on AWS and IBM Cloud
+  - **AWS EKS** (Elastic Kubernetes Service)
+  - **IBM Cloud IKS** (IBM Kubernetes Service)
 - **Standardized profiles**: Pre-configured cluster templates with policy controls
 - **State preservation**: S3-backed artifact storage ensures clean destroy operations
-- **Auto-cleanup**: TTL janitor and orphan resource detection
-- **Work hours hibernation**: Automatic cluster hibernation outside business hours (AWS)
+- **Auto-cleanup**: TTL janitor and comprehensive orphan resource detection
+- **Work hours hibernation**: Automatic cluster hibernation outside business hours (OpenShift on AWS)
 - **Comprehensive resource tagging**: Automatic tagging of ALL AWS resources (EC2, ELB, Route53, S3, IAM) with cluster metadata
-- **Orphaned resource management**: Track and clean up AWS resources without database entries
+- **Orphaned resource management**:
+  - Automated detection of orphaned AWS resources (VPCs, Load Balancers, EBS volumes, Elastic IPs, Security Groups, etc.)
+  - Admin UI for reviewing and deleting orphaned resources
+  - Automated deletion with proper dependency handling (load balancers before subnets, security groups after ENIs, etc.)
 - **Cost attribution**: Tag-based tracking and FinOps reporting with ManagedBy:ocpctl tags
 - **Retroactive tagging**: Tool to tag existing cluster resources for improved tracking
-- **Multi-cloud ready**: AWS (active), IBM Cloud (planned)
 
 ### Security & Compliance
 - **Dual authentication**: JWT (email/password) + AWS IAM support
@@ -233,53 +241,89 @@ ocpctl/
 
 ## Cluster Profiles
 
-### aws-sno-test (Default)
+### OpenShift Profiles (AWS)
+
+#### aws-sno-test (Default)
 - 1 control-plane node (schedulable, Single Node OpenShift)
 - 0 worker nodes
 - Max TTL: 24 hours, Default: 8 hours
 - Cost: ~$0.80/hour
 - Use case: Rapid testing and development (fastest deployment, lowest cost)
 
-### aws-minimal-test
+#### aws-minimal-test
 - 3 control-plane nodes (schedulable)
 - 0 worker nodes
 - Max TTL: 72 hours
 - Use case: Quick testing without dedicated worker nodes
 
-### aws-standard
+#### aws-standard
 - 3 control-plane nodes
 - 3 worker nodes (m6i.2xlarge)
 - Max TTL: 168 hours
 - Use case: Standard development and integration testing
 
-### aws-virtualization
+#### aws-virtualization
 - 3 control-plane nodes (m6i.2xlarge)
 - 3 worker nodes (m6i.metal with nested virtualization)
 - Max TTL: 168 hours, Default: 72 hours
 - Cost: ~$35.50/hour
 - Use case: OpenShift Virtualization workloads
 
-### aws-sno-shared-vpc
-- 1 control-plane node (template for shared VPC deployments)
+#### aws-virt-windows-minimal
+- Virtualization-enabled cluster with Windows support
+- Use case: Testing Windows containers and VMs
+
+#### aws-sno-shared
+- Single Node OpenShift in shared VPC
+- Use case: Cost-effective shared infrastructure deployments
+
+#### aws-sno-shared-vpc
+- Template for shared VPC deployments
 - Enabled: false (template - copy and customize)
 - Use case: Template for deploying SNO clusters in persistent shared VPCs
 
-### aws-sno-shared-vpc-custom
+#### aws-sno-shared-vpc-custom
 - Custom shared VPC configuration
 - Pre-configured subnets for specific VPC
 - Use case: Production shared VPC deployments
 
-### ibmcloud-minimal-test
+### EKS Profiles (AWS)
+
+#### eks-minimal
+- EKS managed Kubernetes cluster
+- Minimal configuration for testing
+- Use case: AWS-native Kubernetes for testing
+
+#### eks-standard
+- EKS with managed node groups
+- Standard configuration
+- Use case: Production-like EKS testing
+
+### OpenShift Profiles (IBM Cloud)
+
+#### ibmcloud-minimal-test
 - 3 control-plane nodes (schedulable)
 - 0 worker nodes
 - Max TTL: 72 hours
 - Use case: IBM Cloud testing
 
-### ibmcloud-standard
+#### ibmcloud-standard
 - 3 control-plane nodes
 - 3 worker nodes
 - Max TTL: 168 hours
 - Use case: IBM Cloud development
+
+### IKS Profiles (IBM Cloud)
+
+#### iks-minimal
+- IBM Kubernetes Service cluster
+- Minimal configuration
+- Use case: IKS testing
+
+#### iks-standard
+- IKS with worker nodes
+- Standard configuration
+- Use case: IKS development and testing
 
 ## Development
 
@@ -460,7 +504,7 @@ See [Development](#development) section above.
 - [x] JWT authentication system
 - [x] User management and RBAC
 
-### Phase 2 (Enterprise Security) ✅ COMPLETE
+### Phase 2 (Enterprise Security & Resource Management) ✅ COMPLETE
 - [x] Rate limiting (login, cluster creation, global)
 - [x] Audit logging (user management, cluster operations)
 - [x] AWS IAM authentication (Next.js API routes)
@@ -471,11 +515,19 @@ See [Development](#development) section above.
 - [x] Production deployment guides
 - [x] Security configuration documentation
 - [x] Work hours hibernation (automatic cluster hibernation)
-- [x] Orphaned resource management (admin UI and cleanup)
+- [x] Orphaned resource management:
+  - [x] Admin UI for reviewing orphaned resources
+  - [x] Automated deletion of orphaned AWS resources
+  - [x] Support for VPCs, Load Balancers, EBS Volumes, Elastic IPs, Security Groups, Network Interfaces, IAM Roles, OIDC Providers, CloudWatch Log Groups
+  - [x] Proper dependency handling (delete LBs before subnets, SGs after ENIs)
+  - [x] Classic Load Balancer support
+  - [x] NAT Gateway detection and cleanup
+  - [x] Intelligent instance termination for attached EBS volumes
 - [x] Comprehensive AWS resource tagging (EC2, ELB, Route53, S3, IAM)
 - [x] Hybrid orphan detection (tag-based + pattern matching)
 - [x] Retroactive tagging tool for existing clusters
-- [x] IAM permissions for tagging operations
+- [x] IAM permissions for tagging and cleanup operations
+- [x] EKS destroy reconciler with VPC dependency cleanup
 
 ### Phase 3 (Production Operations) 🚧 IN PROGRESS
 - [ ] CloudWatch/monitoring integration
@@ -483,8 +535,9 @@ See [Development](#development) section above.
 - [ ] Automated backups and disaster recovery
 - [ ] Performance testing and optimization
 
-### Phase 4 (Platform Expansion) 📋 PLANNED
-- [ ] IBM Cloud implementation (profiles ready, execution pending)
+### Phase 4 (Platform Expansion) 🚧 IN PROGRESS
+- [x] AWS EKS implementation (production-ready)
+- [x] IBM Cloud IKS implementation (production-ready)
 - [ ] Multi-region support
 - [ ] Cost reporting and analytics
 - [ ] Off-hours worker scaling ([Issue #11](https://github.com/tsanders-rh/ocpctl/issues/11))
@@ -504,12 +557,16 @@ See [Development](#development) section above.
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Latest Version:** v0.20260317.bca1feb (March 17, 2024)
+**Latest Version:** v0.20260324.a8f1e09 (March 24, 2026)
+- ✅ EKS destroy reconciler with VPC dependency cleanup
+- ✅ Automated deletion of orphaned AWS resources (Load Balancers, Security Groups, Network Interfaces, EBS Volumes, Elastic IPs)
+- ✅ Classic Load Balancer support in orphan cleanup
+- ✅ Intelligent instance termination for attached EBS volumes
+- ✅ NAT Gateway detection and cleanup
+- ✅ CloudWatch Log Group cleanup
+- ✅ Proper dependency ordering (LBs before subnets, SGs after ENIs)
+- ✅ Multi-platform support: OpenShift, EKS, and IKS
 - ✅ Phase 2: AWS Resource Tagging complete
-- ✅ Comprehensive tagging for EC2, ELB, Route53, S3, IAM
-- ✅ Hybrid orphan detection (tag-based + pattern matching)
-- ✅ Retroactive tagging tool
-- ✅ Updated documentation
 
 ## Contributing
 
