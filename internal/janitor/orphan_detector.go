@@ -993,8 +993,8 @@ func (j *Janitor) detectOrphanedCloudWatchLogGroups(ctx context.Context, cfg aws
 					}
 				}
 			}
-ttt// Only check EKS log groups - CloudWatch Log Groups dont support tags
-ttt// OpenShift clusters dont create log groups in CloudWatch by default
+			// Only check EKS log groups - CloudWatch Log Groups dont support tags
+			// OpenShift clusters dont create log groups in CloudWatch by default
 
 		}
 
