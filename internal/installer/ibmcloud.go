@@ -57,57 +57,24 @@ func NewIKSInstaller() *IKSInstaller {
 }
 
 // Login authenticates with IBM Cloud
-// If resourceGroup is empty, it queries for available resource groups and uses the first one
+// If resourceGroup is empty, login without specifying a resource group
 func (i *IKSInstaller) Login(ctx context.Context, apiKey, region, resourceGroup string) error {
-	// If no resource group specified, query for available resource groups
-	if resourceGroup == "" {
-		fmt.Printf("No resource group specified, querying available resource groups...\n")
+	var cmd *exec.Cmd
 
-		// Login without resource group to query available groups
-		loginCmd := exec.CommandContext(ctx, i.binaryPath, "login",
+	if resourceGroup == "" {
+		fmt.Printf("Logging into IBM Cloud (region: %s, no resource group specified)...\n", region)
+		// Login without resource group - IBM Cloud will use account default
+		cmd = exec.CommandContext(ctx, i.binaryPath, "login",
+			"--apikey", apiKey,
+			"-r", region)
+	} else {
+		fmt.Printf("Logging into IBM Cloud (region: %s, resource group: %s)...\n", region, resourceGroup)
+		// Login with specified resource group
+		cmd = exec.CommandContext(ctx, i.binaryPath, "login",
 			"--apikey", apiKey,
 			"-r", region,
-			"--no-region") // Don't set region yet
-
-		var stderr bytes.Buffer
-		loginCmd.Stderr = &stderr
-
-		if err := loginCmd.Run(); err != nil {
-			return fmt.Errorf("ibmcloud login (without resource group) failed: %w\nStderr: %s", err, stderr.String())
-		}
-
-		// Query available resource groups
-		rgCmd := exec.CommandContext(ctx, i.binaryPath, "resource", "groups", "--output", "json")
-		var stdout bytes.Buffer
-		rgCmd.Stdout = &stdout
-		rgCmd.Stderr = &stderr
-
-		if err := rgCmd.Run(); err != nil {
-			return fmt.Errorf("query resource groups failed: %w\nStderr: %s", err, stderr.String())
-		}
-
-		// Parse JSON to get first resource group
-		var resourceGroups []struct {
-			Name string `json:"name"`
-			ID   string `json:"id"`
-		}
-		if err := json.Unmarshal(stdout.Bytes(), &resourceGroups); err != nil {
-			return fmt.Errorf("parse resource groups: %w", err)
-		}
-
-		if len(resourceGroups) == 0 {
-			return fmt.Errorf("no resource groups found in IBM Cloud account")
-		}
-
-		resourceGroup = resourceGroups[0].Name
-		fmt.Printf("Using resource group: %s\n", resourceGroup)
+			"-g", resourceGroup)
 	}
-
-	// Login with resource group and region
-	cmd := exec.CommandContext(ctx, i.binaryPath, "login",
-		"--apikey", apiKey,
-		"-r", region,
-		"-g", resourceGroup)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
