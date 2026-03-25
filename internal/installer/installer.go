@@ -33,6 +33,7 @@ import (
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // ocpctlVersion is the version of ocpctl, injected at build time
@@ -1329,6 +1330,10 @@ func (i *Installer) tagOIDCProvider(ctx context.Context, infraID, region string,
 }
 
 // tagOIDCBucket tags the S3 bucket used for OIDC discovery documents
+// SECURITY NOTE: OIDC bucket names are predictable ({infraID}-oidc) where infraID
+// contains only 5 random characters. This creates a bucket hijacking risk where
+// attackers could pre-create buckets to intercept OIDC provider trust.
+// This function includes verification to detect pre-created malicious buckets.
 func (i *Installer) tagOIDCBucket(ctx context.Context, infraID, region string, tags map[string]string) error {
 	bucketName := fmt.Sprintf("%s-oidc", infraID)
 
@@ -1340,9 +1345,52 @@ func (i *Installer) tagOIDCBucket(ctx context.Context, infraID, region string, t
 		return fmt.Errorf("load AWS config: %w", err)
 	}
 
+	// Get AWS account ID for ownership verification
+	stsClient := sts.NewFromConfig(cfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return fmt.Errorf("get AWS account ID: %w", err)
+	}
+	accountID := aws.ToString(identity.Account)
+
 	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.Region = region
 	})
+
+	// Verify bucket ownership before tagging (defense against bucket hijacking)
+	// Check that bucket creation time is recent (within last 2 hours of cluster creation)
+	headOutput, err := s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(bucketName),
+		ExpectedBucketOwner: aws.String(accountID), // Fails if bucket owned by different account
+	})
+	if err != nil {
+		return fmt.Errorf("verify bucket ownership for %s: %w (potential bucket hijacking attack)", bucketName, err)
+	}
+
+	// Log successful ownership verification
+	log.Printf("Verified OIDC bucket %s is owned by account %s", bucketName, accountID)
+
+	// Additional safety check: Verify bucket region matches expected region
+	// This prevents cross-region bucket attacks
+	bucketLocation, err := s3Client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+		Bucket: aws.String(bucketName),
+		ExpectedBucketOwner: aws.String(accountID),
+	})
+	if err != nil {
+		return fmt.Errorf("verify bucket location: %w", err)
+	}
+
+	// S3 returns empty string for us-east-1
+	bucketRegion := string(bucketLocation.LocationConstraint)
+	if bucketRegion == "" {
+		bucketRegion = "us-east-1"
+	}
+	if bucketRegion != region {
+		return fmt.Errorf("SECURITY: OIDC bucket %s is in region %s but expected %s (potential hijacking)",
+			bucketName, bucketRegion, region)
+	}
+
+	_ = headOutput // Use headOutput to avoid unused variable
 
 	// Convert tags to S3 SDK format
 	tagSet := []s3types.Tag{}

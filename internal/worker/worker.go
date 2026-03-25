@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -182,6 +183,7 @@ type Worker struct {
 	running   bool
 	ctx       context.Context
 	cancel    context.CancelFunc
+	jobWg     sync.WaitGroup // Tracks running job goroutines for graceful shutdown
 }
 
 // NewWorker creates a new worker instance
@@ -267,10 +269,28 @@ func (w *Worker) Start(ctx context.Context) error {
 
 // Stop stops the worker gracefully
 func (w *Worker) Stop() {
+	log.Printf("Stopping worker, waiting for running jobs to complete...")
+
+	// Cancel context to signal all jobs to stop
 	if w.cancel != nil {
 		w.cancel()
 	}
 	w.running = false
+
+	// Wait for all running jobs to complete (with timeout)
+	// Use a channel to implement timeout on WaitGroup
+	done := make(chan struct{})
+	go func() {
+		w.jobWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Printf("All running jobs completed, worker stopped gracefully")
+	case <-time.After(30 * time.Second):
+		log.Printf("WARNING: Timeout waiting for jobs to complete, some jobs may still be running")
+	}
 }
 
 // poll fetches and processes pending jobs
@@ -342,6 +362,7 @@ func (w *Worker) poll() {
 
 	// Process jobs concurrently with pre-fetched cluster data
 	// Pass worker context so jobs can be cancelled on shutdown
+	// Use WaitGroup to track running jobs for graceful shutdown
 	for _, job := range jobs {
 		cluster := clusterMap[job.ClusterID]
 		if cluster == nil {
@@ -353,6 +374,9 @@ func (w *Worker) poll() {
 			}
 			continue
 		}
+
+		// Track this job goroutine
+		w.jobWg.Add(1)
 		go w.processJob(w.ctx, job, cluster)
 	}
 }
@@ -361,6 +385,9 @@ func (w *Worker) poll() {
 // Accepts parent context to enable cancellation during shutdown
 // Cluster is passed as parameter (pre-fetched) to avoid N+1 query pattern
 func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.Cluster) {
+	// Signal WaitGroup when job completes (for graceful shutdown)
+	defer w.jobWg.Done()
+
 	// Check if context is already cancelled (worker shutting down)
 	select {
 	case <-ctx.Done():
