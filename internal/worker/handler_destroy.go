@@ -600,15 +600,21 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 
 	output, err := iksInstaller.DestroyCluster(destroyCtx, cluster.Name)
 	if err != nil {
-		log.Printf("IKS cluster destruction failed: %v\nOutput: %s", err, output)
-		// Mark as DESTROY_FAILED - cluster resources may be partially destroyed and require manual cleanup
-		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
-			log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+		// Check if this is a "cluster not found" error - treat as already destroyed
+		if isIKSClusterNotFoundError(output) {
+			log.Printf("IKS cluster %s does not exist - treating as already destroyed", cluster.Name)
+			log.Printf("IBM Cloud response: %s", output)
+		} else {
+			log.Printf("IKS cluster destruction failed: %v\nOutput: %s", err, output)
+			// Mark as DESTROY_FAILED - cluster resources may be partially destroyed and require manual cleanup
+			if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+				log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+			}
+			return fmt.Errorf("ibmcloud ks cluster rm: %w", err)
 		}
-		return fmt.Errorf("ibmcloud ks cluster rm: %w", err)
+	} else {
+		log.Printf("IKS cluster %s destroyed successfully", cluster.Name)
 	}
-
-	log.Printf("IKS cluster %s destroyed successfully", cluster.Name)
 
 	// Track cleanup results for job metadata
 	cleanupResults := make(map[string]interface{})
@@ -723,11 +729,19 @@ func (h *DestroyHandler) cleanupKubernetesResources(ctx context.Context, cluster
 	return nil
 }
 
-// isClusterNotFoundError checks if the error message indicates the cluster doesn't exist
+// isClusterNotFoundError checks if the error message indicates the cluster doesn't exist (EKS)
 func isClusterNotFoundError(output string) bool {
 	return stringContains(output, "ResourceNotFoundException") ||
 		stringContains(output, "No cluster found for name") ||
 		stringContains(output, "cluster not found")
+}
+
+// isIKSClusterNotFoundError checks if the error message indicates the IKS cluster doesn't exist
+func isIKSClusterNotFoundError(output string) bool {
+	return stringContains(output, "cluster could not be found") ||
+		stringContains(output, "The specified cluster could not be found") ||
+		stringContains(output, "(G0004)") || // IBM Cloud error code for cluster not found
+		stringContains(output, "(A0006)") // IBM Cloud error code for cluster not found in resource group/region
 }
 
 // stringContains is a helper function to check if a string contains a substring
