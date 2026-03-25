@@ -240,9 +240,20 @@ export default function NewClusterPage() {
                 <Select
                   value={watchedValues.platform || ""}
                   onValueChange={(value) => {
-                    setValue("platform", value as Platform);
-                    setSelectedPlatform(value as Platform);
+                    const newPlatform = value as Platform;
+                    setValue("platform", newPlatform);
+                    setSelectedPlatform(newPlatform);
                     setValue("profile", ""); // Reset profile when platform changes
+
+                    // Reset cluster type if incompatible with new platform
+                    const currentClusterType = watchedValues.cluster_type;
+                    if (newPlatform === Platform.AWS && currentClusterType === ClusterType.IKS) {
+                      setValue("cluster_type", ClusterType.OpenShift);
+                      setSelectedClusterType(ClusterType.OpenShift);
+                    } else if (newPlatform === Platform.IBMCloud && currentClusterType === ClusterType.EKS) {
+                      setValue("cluster_type", ClusterType.OpenShift);
+                      setSelectedClusterType(ClusterType.OpenShift);
+                    }
                   }}
                 >
                   <SelectTrigger>
@@ -280,8 +291,12 @@ export default function NewClusterPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="openshift">OpenShift</SelectItem>
-                    <SelectItem value="eks">Amazon EKS</SelectItem>
-                    <SelectItem value="iks">IBM Cloud IKS</SelectItem>
+                    {selectedPlatform === Platform.AWS && (
+                      <SelectItem value="eks">Amazon EKS</SelectItem>
+                    )}
+                    {selectedPlatform === Platform.IBMCloud && (
+                      <SelectItem value="iks">IBM Cloud IKS</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-muted-foreground">
