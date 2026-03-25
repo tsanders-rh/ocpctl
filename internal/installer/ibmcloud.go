@@ -87,6 +87,53 @@ func (i *IKSInstaller) Login(ctx context.Context, apiKey, region, resourceGroup 
 	return nil
 }
 
+// ResolvedVLANs contains resolved VLAN IDs for a zone
+type ResolvedVLANs struct {
+	PublicVLAN  string
+	PrivateVLAN string
+}
+
+// ResolveClassicVLANs queries available VLANs for a zone and returns the first public/private pair
+func (i *IKSInstaller) ResolveClassicVLANs(ctx context.Context, zone string) (*ResolvedVLANs, error) {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "vlan", "ls", "--zone", zone, "--output", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("list VLANs: %w\nStderr: %s", err, stderr.String())
+	}
+
+	// Parse VLAN list
+	var vlans []struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &vlans); err != nil {
+		return nil, fmt.Errorf("parse VLAN list: %w", err)
+	}
+
+	resolved := &ResolvedVLANs{}
+	for _, vlan := range vlans {
+		if vlan.Type == "public" && resolved.PublicVLAN == "" {
+			resolved.PublicVLAN = vlan.ID
+		}
+		if vlan.Type == "private" && resolved.PrivateVLAN == "" {
+			resolved.PrivateVLAN = vlan.ID
+		}
+	}
+
+	if resolved.PublicVLAN == "" {
+		return nil, fmt.Errorf("no public VLAN found in zone %s", zone)
+	}
+	if resolved.PrivateVLAN == "" {
+		return nil, fmt.Errorf("no private VLAN found in zone %s", zone)
+	}
+
+	return resolved, nil
+}
+
 // CreateCluster creates an IKS cluster
 func (i *IKSInstaller) CreateCluster(ctx context.Context, opts *IKSClusterCreateOptions) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, i.timeout)

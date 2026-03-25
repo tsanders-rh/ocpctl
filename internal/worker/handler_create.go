@@ -623,6 +623,9 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	machineType := "bx2.4x16" // Default machine type
 	workerCount := 2          // Default worker count
 
+	publicVLAN := ""
+	privateVLAN := ""
+
 	if prof.Compute.Workers != nil {
 		if prof.Compute.Workers.MachineType != "" {
 			machineType = prof.Compute.Workers.MachineType
@@ -630,6 +633,26 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 		if prof.Compute.Workers.Count > 0 {
 			workerCount = prof.Compute.Workers.Count
 		}
+		publicVLAN = prof.Compute.Workers.PublicVLAN
+		privateVLAN = prof.Compute.Workers.PrivateVLAN
+	}
+
+	// Resolve VLANs dynamically if not specified or set to "auto"
+	if publicVLAN == "" || publicVLAN == "auto" || privateVLAN == "" || privateVLAN == "auto" {
+		log.Printf("Resolving classic VLANs for zone %s...", zone)
+		resolved, err := iksInstaller.ResolveClassicVLANs(ctx, zone)
+		if err != nil {
+			return fmt.Errorf("resolve classic VLANs for zone %s: %w", zone, err)
+		}
+
+		if publicVLAN == "" || publicVLAN == "auto" {
+			publicVLAN = resolved.PublicVLAN
+		}
+		if privateVLAN == "" || privateVLAN == "auto" {
+			privateVLAN = resolved.PrivateVLAN
+		}
+
+		log.Printf("Resolved VLANs: public=%s, private=%s", publicVLAN, privateVLAN)
 	}
 
 	createOpts := &installer.IKSClusterCreateOptions{
@@ -638,13 +661,14 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 		MachineType:  machineType,
 		Workers:      workerCount,
 		KubeVersion:  cluster.Version,
-		PublicVLAN:   "auto",
-		PrivateVLAN:  "auto",
+		PublicVLAN:   publicVLAN,
+		PrivateVLAN:  privateVLAN,
 		PublicServiceEndpoint:  prof.Features.PublicServiceEndpoint,
 		PrivateServiceEndpoint: prof.Features.PrivateServiceEndpoint,
 	}
 
-	log.Printf("Creating IKS cluster with options: zone=%s, machine=%s, workers=%d", zone, machineType, workerCount)
+	log.Printf("Creating IKS cluster: zone=%s, machine=%s, workers=%d, publicVLAN=%s, privateVLAN=%s",
+		zone, machineType, workerCount, publicVLAN, privateVLAN)
 
 	// Create the cluster
 	output, err := iksInstaller.CreateCluster(ctx, createOpts)
