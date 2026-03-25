@@ -618,7 +618,8 @@ func (w *Worker) cleanupIKSDeployment(ctx context.Context, job *types.Job, clust
 		return
 	}
 
-	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+	// Use empty resource group - Login will query for available resource groups
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, ""); err != nil {
 		log.Printf("Warning: IBM Cloud login failed: %v", err)
 		return
 	}

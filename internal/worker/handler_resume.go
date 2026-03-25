@@ -16,21 +16,36 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // ResumeHandler handles cluster resume jobs
 type ResumeHandler struct {
-	config *Config
-	store  *store.Store
+	config   *Config
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewResumeHandler creates a new resume handler
 func NewResumeHandler(cfg *Config, st *store.Store) *ResumeHandler {
+	// Load profile registry
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "internal/profile/definitions"
+	}
+
+	loader := profile.NewLoader(profilesDir)
+	registry, err := profile.NewRegistry(loader)
+	if err != nil {
+		log.Fatalf("Failed to load profile registry: %v", err)
+	}
+
 	return &ResumeHandler{
-		config: cfg,
-		store:  st,
+		config:   cfg,
+		store:    st,
+		registry: registry,
 	}
 }
 

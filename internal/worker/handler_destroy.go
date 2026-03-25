@@ -12,6 +12,7 @@ import (
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/metrics"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -20,11 +21,24 @@ import (
 type DestroyHandler struct {
 	config           *Config
 	store            *store.Store
+	registry         *profile.Registry
 	metricsPublisher *metrics.Publisher
 }
 
 // NewDestroyHandler creates a new destroy handler
 func NewDestroyHandler(config *Config, st *store.Store) *DestroyHandler {
+	// Load profile registry
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "internal/profile/definitions"
+	}
+
+	loader := profile.NewLoader(profilesDir)
+	registry, err := profile.NewRegistry(loader)
+	if err != nil {
+		log.Fatalf("Failed to load profile registry: %v", err)
+	}
+
 	// Create metrics publisher (best effort - don't fail if it can't be created)
 	metricsPublisher, err := metrics.NewPublisher(context.Background())
 	if err != nil {
@@ -34,6 +48,7 @@ func NewDestroyHandler(config *Config, st *store.Store) *DestroyHandler {
 	return &DestroyHandler{
 		config:           config,
 		store:            st,
+		registry:         registry,
 		metricsPublisher: metricsPublisher,
 	}
 }

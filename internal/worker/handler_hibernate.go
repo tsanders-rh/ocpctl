@@ -14,21 +14,36 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // HibernateHandler handles cluster hibernation jobs
 type HibernateHandler struct {
-	config *Config
-	store  *store.Store
+	config   *Config
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewHibernateHandler creates a new hibernate handler
 func NewHibernateHandler(cfg *Config, st *store.Store) *HibernateHandler {
+	// Load profile registry
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "internal/profile/definitions"
+	}
+
+	loader := profile.NewLoader(profilesDir)
+	registry, err := profile.NewRegistry(loader)
+	if err != nil {
+		log.Fatalf("Failed to load profile registry: %v", err)
+	}
+
 	return &HibernateHandler{
-		config: cfg,
-		store:  st,
+		config:   cfg,
+		store:    st,
+		registry: registry,
 	}
 }
 
