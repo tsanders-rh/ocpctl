@@ -330,6 +330,18 @@ func (h *HibernateHandler) hibernateEKS(ctx context.Context, cluster *types.Clus
 func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	log.Printf("Hibernating IKS cluster %s by scaling workers to 0", cluster.Name)
 
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Extract resource group from profile (if specified)
+	resourceGroup := ""
+	if prof.PlatformConfig.IBMCloud != nil {
+		resourceGroup = prof.PlatformConfig.IBMCloud.ResourceGroup
+	}
+
 	// Create IKS installer
 	iksInstaller := installer.NewIKSInstaller()
 
@@ -339,8 +351,8 @@ func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Clus
 		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
 	}
 
-	// Login to IBM Cloud
-	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+	// Login to IBM Cloud (will query for resource groups if not specified)
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, resourceGroup); err != nil {
 		return fmt.Errorf("IBM Cloud login: %w", err)
 	}
 

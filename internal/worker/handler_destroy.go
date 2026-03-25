@@ -552,6 +552,18 @@ func ptrTime(t time.Time) *time.Time {
 func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
 	log.Printf("Starting IKS cluster destruction for %s", cluster.Name)
 
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Extract resource group from profile (if specified)
+	resourceGroup := ""
+	if prof.PlatformConfig.IBMCloud != nil {
+		resourceGroup = prof.PlatformConfig.IBMCloud.ResourceGroup
+	}
+
 	// Create IKS installer
 	iksInstaller := installer.NewIKSInstaller()
 
@@ -561,8 +573,8 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
 	}
 
-	// Login to IBM Cloud
-	if err := iksInstaller.Login(ctx, apiKey, cluster.Region); err != nil {
+	// Login to IBM Cloud (will query for resource groups if not specified)
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, resourceGroup); err != nil {
 		return fmt.Errorf("IBM Cloud login: %w", err)
 	}
 
