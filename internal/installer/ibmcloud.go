@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -135,7 +137,8 @@ func (i *IKSInstaller) ResolveClassicVLANs(ctx context.Context, zone string) (*R
 }
 
 // CreateCluster creates an IKS cluster
-func (i *IKSInstaller) CreateCluster(ctx context.Context, opts *IKSClusterCreateOptions) (string, error) {
+// If logPath is provided, outputs are written to the log file for streaming
+func (i *IKSInstaller) CreateCluster(ctx context.Context, opts *IKSClusterCreateOptions, logPath string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, i.timeout)
 	defer cancel()
 
@@ -172,11 +175,42 @@ func (i *IKSInstaller) CreateCluster(ctx context.Context, opts *IKSClusterCreate
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// If logPath is provided, also write to log file
+	var logFile *os.File
+	if logPath != "" {
+		var err error
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return "", fmt.Errorf("open log file: %w", err)
+		}
+		defer logFile.Close()
+
+		// Write command being executed to log
+		fmt.Fprintf(logFile, "$ ibmcloud %s\n", joinArgs(args))
+
+		// Write to both buffer and log file
+		cmd.Stdout = io.MultiWriter(&stdout, logFile)
+		cmd.Stderr = io.MultiWriter(&stderr, logFile)
+	}
+
 	if err := cmd.Run(); err != nil {
 		return stderr.String(), fmt.Errorf("ibmcloud ks cluster create failed: %w\nStderr: %s", err, stderr.String())
 	}
 
 	return stdout.String(), nil
+}
+
+// joinArgs joins command arguments for logging
+func joinArgs(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, " ") {
+			quoted[i] = fmt.Sprintf("\"%s\"", arg)
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
 }
 
 // DestroyCluster destroys an IKS cluster
@@ -250,8 +284,21 @@ func (i *IKSInstaller) GetKubeconfig(ctx context.Context, clusterNameOrID, outpu
 }
 
 // WaitForCluster waits for a cluster to reach the desired state
-func (i *IKSInstaller) WaitForCluster(ctx context.Context, clusterNameOrID, desiredState string, timeout time.Duration) error {
+// If logPath is provided, status updates are written to the log file
+func (i *IKSInstaller) WaitForCluster(ctx context.Context, clusterNameOrID, desiredState string, timeout time.Duration, logPath string) error {
 	deadline := time.Now().Add(timeout)
+
+	var logFile *os.File
+	if logPath != "" {
+		var err error
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		defer logFile.Close()
+
+		fmt.Fprintf(logFile, "\nWaiting for cluster %s to reach state '%s' (timeout: %v)...\n", clusterNameOrID, desiredState, timeout)
+	}
 
 	for time.Now().Before(deadline) {
 		info, err := i.GetClusterInfo(ctx, clusterNameOrID)
@@ -259,7 +306,14 @@ func (i *IKSInstaller) WaitForCluster(ctx context.Context, clusterNameOrID, desi
 			return fmt.Errorf("get cluster info: %w", err)
 		}
 
+		if logFile != nil {
+			fmt.Fprintf(logFile, "[%s] Cluster state: %s (target: %s)\n", time.Now().Format("15:04:05"), info.State, desiredState)
+		}
+
 		if info.State == desiredState {
+			if logFile != nil {
+				fmt.Fprintf(logFile, "[%s] Cluster reached desired state: %s\n", time.Now().Format("15:04:05"), desiredState)
+			}
 			return nil
 		}
 

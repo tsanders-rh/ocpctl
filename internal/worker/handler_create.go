@@ -357,6 +357,20 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 		})
 	}
 
+	// Install log - check for ibmcloud-ks log
+	ibmcloudLogPath := filepath.Join(workDir, "ibmcloud-ks.log")
+	if stat, err := os.Stat(ibmcloudLogPath); err == nil {
+		size := stat.Size()
+		artifacts = append(artifacts, types.ClusterArtifact{
+			ID:           uuid.New().String(),
+			ClusterID:    clusterID,
+			ArtifactType: types.ArtifactTypeLog,
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/ibmcloud-ks.log", h.config.S3BucketName, clusterID),
+			SizeBytes:    &size,
+			CreatedAt:    time.Now(),
+		})
+	}
+
 	// Store artifact records
 	for _, artifact := range artifacts {
 		if err := h.store.Artifacts.Create(ctx, &artifact); err != nil {
@@ -670,9 +684,29 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	log.Printf("Creating IKS cluster: zone=%s, machine=%s, workers=%d, publicVLAN=%s, privateVLAN=%s",
 		zone, machineType, workerCount, publicVLAN, privateVLAN)
 
+	// Start log streaming before running ibmcloud CLI
+	// This will tail ibmcloud-ks.log and stream to database in real-time
+	logPath := filepath.Join(workDir, "ibmcloud-ks.log")
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
+
 	// Create the cluster
-	output, err := iksInstaller.CreateCluster(ctx, createOpts)
+	output, err := iksInstaller.CreateCluster(ctx, createOpts, logPath)
+
 	if err != nil {
+		// Stop log streaming after cluster creation fails
+		streamCancel()
+		time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+		if stopErr := streamer.Stop(); stopErr != nil {
+			log.Printf("Warning: error stopping log streamer: %v", stopErr)
+		}
+
 		log.Printf("IKS cluster creation failed: %v\nOutput: %s", err, output)
 		return fmt.Errorf("ibmcloud ks cluster create: %w", err)
 	}
@@ -681,8 +715,22 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Wait for cluster to be ready (IKS clusters take 20-30 minutes)
 	log.Printf("Waiting for IKS cluster %s to reach READY state...", cluster.Name)
-	if err := iksInstaller.WaitForCluster(ctx, cluster.Name, "normal", 60*time.Minute); err != nil {
+	if err := iksInstaller.WaitForCluster(ctx, cluster.Name, "normal", 60*time.Minute, logPath); err != nil {
+		// Stop log streaming after wait fails
+		streamCancel()
+		time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+		if stopErr := streamer.Stop(); stopErr != nil {
+			log.Printf("Warning: error stopping log streamer: %v", stopErr)
+		}
+
 		return fmt.Errorf("wait for cluster ready: %w", err)
+	}
+
+	// Stop log streaming after cluster is ready
+	streamCancel()
+	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
 
 	log.Printf("IKS cluster %s is ready", cluster.Name)
