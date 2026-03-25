@@ -242,7 +242,7 @@ func (s *Server) setupRoutes() {
 	clustersGroup.PATCH("/:id/configurations/:config_id/retry", configHandler.RetryConfiguration)
 
 	// Profile routes (require authentication)
-	profileHandler := NewProfileHandler(s.registry)
+	profileHandler := NewProfileHandler(s.registry, s.store)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))
 	profilesGroup.GET("", profileHandler.List)
 	profilesGroup.GET("/:name", profileHandler.Get)

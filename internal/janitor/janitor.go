@@ -172,6 +172,11 @@ func (j *Janitor) run() {
 		}
 	}
 
+	// Update deployment time metrics
+	if err := j.updateDeploymentMetrics(ctx); err != nil {
+		log.Printf("Error updating deployment metrics: %v", err)
+	}
+
 	log.Printf("Janitor cleanup tasks completed")
 }
 
@@ -664,4 +669,20 @@ func isWithinWorkHours(now time.Time, start, end time.Time, workDaysMask int16) 
 	// Handle wraparound case (start > end, e.g., 22:00 - 06:00 night shift)
 	// Current time is within work hours if it's >= start OR < end
 	return currentMinutes >= startMinutes || currentMinutes < endMinutes
+}
+
+// updateDeploymentMetrics calculates and updates deployment time statistics for all profiles.
+// This runs every 5 minutes (as part of the janitor cycle) to keep metrics fresh based on
+// the last 30 successful CREATE jobs per profile.
+func (j *Janitor) updateDeploymentMetrics(ctx context.Context) error {
+	count, err := j.store.ProfileDeploymentMetrics.UpdateAllMetrics(ctx)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		log.Printf("Updated deployment metrics for %d profiles", count)
+	}
+
+	return nil
 }

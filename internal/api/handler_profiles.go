@@ -1,41 +1,47 @@
 package api
 
 import (
+	"log"
+
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // ProfileHandler handles profile-related API endpoints
 type ProfileHandler struct {
 	registry *profile.Registry
+	store    *store.Store
 }
 
 // NewProfileHandler creates a new profile handler
-func NewProfileHandler(registry *profile.Registry) *ProfileHandler {
+func NewProfileHandler(registry *profile.Registry, st *store.Store) *ProfileHandler {
 	return &ProfileHandler{
 		registry: registry,
+		store:    st,
 	}
 }
 
 // ProfileResponse represents a profile in API responses
 type ProfileResponse struct {
-	Name               string                        `json:"name"`
-	DisplayName        string                        `json:"display_name"`
-	Description        string                        `json:"description"`
-	Platform           string                        `json:"platform"`
-	Enabled            bool                          `json:"enabled"`
-	OpenshiftVersions  *profile.VersionConfig        `json:"openshift_versions,omitempty"`
-	KubernetesVersions *profile.VersionConfig        `json:"kubernetes_versions,omitempty"`
-	Regions            profile.RegionConfig          `json:"regions"`
-	BaseDomains        *profile.BaseDomainConfig     `json:"base_domains,omitempty"`
-	Compute            profile.ComputeConfig         `json:"compute"`
-	Lifecycle          profile.LifecycleConfig       `json:"lifecycle"`
-	Networking         *profile.NetworkingConfig     `json:"networking,omitempty"`
-	Tags               profile.TagsConfig            `json:"tags"`
-	Features           profile.FeaturesConfig        `json:"features"`
-	CostControls       *profile.CostControlsConfig   `json:"cost_controls,omitempty"`
-	PostDeployment     *profile.PostDeploymentConfig `json:"post_deployment,omitempty"`
+	Name               string                            `json:"name"`
+	DisplayName        string                            `json:"display_name"`
+	Description        string                            `json:"description"`
+	Platform           string                            `json:"platform"`
+	Enabled            bool                              `json:"enabled"`
+	OpenshiftVersions  *profile.VersionConfig            `json:"openshift_versions,omitempty"`
+	KubernetesVersions *profile.VersionConfig            `json:"kubernetes_versions,omitempty"`
+	Regions            profile.RegionConfig              `json:"regions"`
+	BaseDomains        *profile.BaseDomainConfig         `json:"base_domains,omitempty"`
+	Compute            profile.ComputeConfig             `json:"compute"`
+	Lifecycle          profile.LifecycleConfig           `json:"lifecycle"`
+	Networking         *profile.NetworkingConfig         `json:"networking,omitempty"`
+	Tags               profile.TagsConfig                `json:"tags"`
+	Features           profile.FeaturesConfig            `json:"features"`
+	CostControls       *profile.CostControlsConfig       `json:"cost_controls,omitempty"`
+	PostDeployment     *profile.PostDeploymentConfig     `json:"post_deployment,omitempty"`
+	DeploymentMetrics  *types.ProfileDeploymentMetrics   `json:"deployment_metrics,omitempty"`
 }
 
 // toProfileResponse converts a profile to API response format
@@ -73,6 +79,8 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 //	@Security		BearerAuth
 //	@Router			/profiles [get]
 func (h *ProfileHandler) List(c echo.Context) error {
+	ctx := c.Request().Context()
+
 	// Parse platform filter
 	platformParam := c.QueryParam("platform")
 
@@ -95,10 +103,27 @@ func (h *ProfileHandler) List(c echo.Context) error {
 		profiles = h.registry.List()
 	}
 
-	// Convert to response format
+	// Load deployment metrics for all profiles
+	metrics, err := h.store.ProfileDeploymentMetrics.GetAll(ctx)
+	if err != nil {
+		log.Printf("Failed to load deployment metrics: %v", err)
+		// Continue without metrics (non-critical)
+	}
+
+	// Map metrics by profile name for quick lookup
+	metricsMap := make(map[string]*types.ProfileDeploymentMetrics)
+	for _, m := range metrics {
+		metricsMap[m.Profile] = m
+	}
+
+	// Convert to response format and attach metrics
 	response := make([]*ProfileResponse, len(profiles))
 	for i, p := range profiles {
 		response[i] = toProfileResponse(p)
+		// Attach deployment metrics if available
+		if metric, ok := metricsMap[p.Name]; ok {
+			response[i].DeploymentMetrics = metric
+		}
 	}
 
 	return SuccessOK(c, response)

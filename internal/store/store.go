@@ -35,10 +35,11 @@ type Store struct {
 	RefreshTokens        *RefreshTokenStore
 	IAMMappings          *IAMMappingStore
 	DeploymentLogs       *DeploymentLogStore
-	StorageGroups        *StorageGroupStore
-	ClusterStorageLinks  *ClusterStorageLinkStore
-	OrphanedResources    *OrphanedResourceStore
-	ClusterConfigurations *ClusterConfigurationStore
+	StorageGroups             *StorageGroupStore
+	ClusterStorageLinks       *ClusterStorageLinkStore
+	OrphanedResources         *OrphanedResourceStore
+	ClusterConfigurations     *ClusterConfigurationStore
+	ProfileDeploymentMetrics  *ProfileDeploymentMetricsStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -70,6 +71,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.ClusterStorageLinks = &ClusterStorageLinkStore{pool: pool}
 	s.OrphanedResources = &OrphanedResourceStore{pool: pool}
 	s.ClusterConfigurations = &ClusterConfigurationStore{pool: pool}
+	s.ProfileDeploymentMetrics = &ProfileDeploymentMetricsStore{pool: pool}
 
 	return s
 }

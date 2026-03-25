@@ -351,6 +351,25 @@ export default function NewClusterPage() {
                         </div>
                       </div>
                     )}
+                    {selectedProfile.deployment_metrics && selectedProfile.deployment_metrics.sample_count >= 5 && (
+                      <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                        <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm space-y-1">
+                          <p className="font-medium text-blue-900 dark:text-blue-100">
+                            Estimated Deployment Time
+                          </p>
+                          <p className="text-blue-800 dark:text-blue-200">
+                            Typical: ~{Math.round(selectedProfile.deployment_metrics.p50_duration_seconds ? selectedProfile.deployment_metrics.p50_duration_seconds / 60 : selectedProfile.deployment_metrics.avg_duration_seconds / 60)} minutes
+                            {selectedProfile.deployment_metrics.p95_duration_seconds && (
+                              <span> (up to {Math.round(selectedProfile.deployment_metrics.p95_duration_seconds / 60)} minutes)</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-blue-600 dark:text-blue-400">
+                            Based on {selectedProfile.deployment_metrics.sample_count} recent deployments
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

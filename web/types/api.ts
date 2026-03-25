@@ -229,6 +229,21 @@ export interface HelmChartConfig {
   values?: Record<string, any>;
 }
 
+// Profile Deployment Metrics
+export interface ProfileDeploymentMetrics {
+  profile: string;
+  avg_duration_seconds: number;
+  min_duration_seconds: number;
+  max_duration_seconds: number;
+  p50_duration_seconds?: number;
+  p95_duration_seconds?: number;
+  sample_count: number;
+  success_count: number;
+  last_deployment_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   name: string;
   display_name: string;
@@ -301,6 +316,7 @@ export interface Profile {
     ibmcloud?: Record<string, any>;
   };
   post_deployment?: PostDeploymentConfig;
+  deployment_metrics?: ProfileDeploymentMetrics;
 }
 
 // Cluster Configuration Types
