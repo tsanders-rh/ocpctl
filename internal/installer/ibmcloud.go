@@ -83,14 +83,7 @@ func (i *IKSInstaller) Login(ctx context.Context, apiKey, region, resourceGroup 
 		return fmt.Errorf("ibmcloud login failed: %w\nStderr: %s", err, stderr.String())
 	}
 
-	// Install container-service plugin if not already installed
-	pluginCmd := exec.CommandContext(ctx, i.binaryPath, "plugin", "install", "container-service", "-f")
-	pluginCmd.Stderr = &stderr
-	if err := pluginCmd.Run(); err != nil {
-		// Ignore error if plugin already installed
-		fmt.Printf("Note: container-service plugin may already be installed\n")
-	}
-
+	fmt.Printf("✓ IBM Cloud login successful\n")
 	return nil
 }
 

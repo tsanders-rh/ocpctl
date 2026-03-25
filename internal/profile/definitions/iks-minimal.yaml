@@ -48,7 +48,7 @@ zones:
 compute:
   workers:
     count: 2
-    machineType: bx2.4x16  # 4 vCPU, 16 GB RAM
+    machineType: b3c.4x16  # 4 vCPU, 16 GB RAM
     publicVLAN: auto
     privateVLAN: auto
 
@@ -69,7 +69,7 @@ tags:
 
 features:
   publicServiceEndpoint: true
-  privateServiceEndpoint: false
+  privateServiceEndpoint: true  # Required for accounts with VRF enabled
 
 costControls:
   estimatedHourlyCost: 0.28   # 2x bx2.4x16 workers (free control plane)

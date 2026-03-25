@@ -167,40 +167,35 @@ ensure_eksctl() {
 ensure_ibmcloud() {
     local binary_path="${INSTALL_DIR}/ibmcloud"
 
-    # Check if already installed
-    if [ -f "${binary_path}" ] || command -v ibmcloud &> /dev/null; then
-        log "✓ ibmcloud already installed"
-        return 0
-    fi
+    # Check if ibmcloud CLI is installed
+    if ! command -v ibmcloud &> /dev/null; then
+        log "Installing IBM Cloud CLI..."
 
-    log "Installing IBM Cloud CLI..."
-
-    # Use the official IBM Cloud CLI installer script
-    # This is the recommended installation method from IBM Cloud docs
-    if curl -fsSL https://clis.cloud.ibm.com/install/linux | sh; then
-        log "✓ Installed IBM Cloud CLI"
-
-        # Verify installation
-        if command -v ibmcloud &> /dev/null; then
-            log "✓ IBM Cloud CLI is available in PATH"
-
-            # Install container-service plugin (needed for IKS)
-            log "Installing IBM Cloud container-service plugin..."
-            if ibmcloud plugin install container-service -f 2>/dev/null; then
-                log "✓ Installed container-service plugin"
-            else
-                log "WARNING: Failed to install container-service plugin (non-fatal)"
-            fi
-
-            return 0
+        # Use the official IBM Cloud CLI installer script
+        if curl -fsSL https://clis.cloud.ibm.com/install/linux | sh; then
+            log "✓ Installed IBM Cloud CLI"
         else
-            log "✗ IBM Cloud CLI installed but not found in PATH"
+            log "✗ Failed to install IBM Cloud CLI"
             return 1
         fi
     else
-        log "✗ Failed to install IBM Cloud CLI"
-        return 1
+        log "✓ IBM Cloud CLI already installed"
     fi
+
+    # Always ensure container-service plugin is installed (needed for IKS)
+    log "Checking IBM Cloud container-service plugin..."
+    if ibmcloud plugin list | grep -q container-service; then
+        log "✓ container-service plugin already installed"
+    else
+        log "Installing container-service plugin..."
+        if ibmcloud plugin install container-service -f; then
+            log "✓ Installed container-service plugin"
+        else
+            log "WARNING: Failed to install container-service plugin (non-fatal)"
+        fi
+    fi
+
+    return 0
 }
 
 main() {
