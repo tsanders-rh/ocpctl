@@ -33,6 +33,7 @@ type ServerConfig struct {
 	MaxBodySize       string
 	RateLimitRequests int
 	RateLimitDuration time.Duration
+	Environment       string // Environment name (development, production, etc.)
 	// Version information
 	Version   string
 	Commit    string
@@ -74,7 +75,7 @@ func NewServer(
 	store *store.Store,
 	registry *profile.Registry,
 	policyEngine *policy.Engine,
-) *Server {
+) (*Server, error) {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -100,8 +101,12 @@ func NewServer(
 		config.IAMAllowedGroup,
 	)
 	if err != nil {
-		// Log warning but continue (IAM auth will be disabled)
-		e.Logger.Warn("Failed to initialize IAM authenticator: ", err)
+		// In production with IAM auth enabled, this is a critical failure
+		if config.Environment == "production" && config.EnableIAMAuth {
+			return nil, fmt.Errorf("CRITICAL: IAM authentication required in production but initialization failed: %w", err)
+		}
+		// In development, log warning and continue (IAM auth will be disabled)
+		e.Logger.Warn("Failed to initialize IAM authenticator (IAM auth will be unavailable): ", err)
 	}
 
 	s := &Server{
@@ -117,7 +122,7 @@ func NewServer(
 	s.setupMiddleware()
 	s.setupRoutes()
 
-	return s
+	return s, nil
 }
 
 // setupMiddleware configures middleware stack
@@ -256,16 +261,22 @@ func (s *Server) setupRoutes() {
 // healthCheck returns basic health status
 //
 //	@Summary		Health check
-//	@Description	Returns basic health status of the API server
+//	@Description	Returns basic health status of the API server including auth availability
 //	@Tags			system
 //	@Produce		json
-//	@Success		200	{object}	map[string]string
+//	@Success		200	{object}	map[string]interface{}
 //	@Router			/health [get]
 func (s *Server) healthCheck(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{
+	health := map[string]interface{}{
 		"status": "healthy",
 		"time":   time.Now().Format(time.RFC3339),
-	})
+		"auth": map[string]interface{}{
+			"jwt_enabled": s.config.EnableAuth,
+			"iam_enabled": s.config.EnableIAMAuth,
+			"iam_available": s.iamAuth != nil,
+		},
+	}
+	return c.JSON(http.StatusOK, health)
 }
 
 // readyCheck checks if server is ready to handle requests

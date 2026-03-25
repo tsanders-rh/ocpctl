@@ -75,9 +75,9 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 
 	// Create work directory with restrictive permissions (0700)
 	// This directory contains sensitive files like kubeconfig with cluster credentials
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0700); err != nil {
-		return fmt.Errorf("create work directory: %w", err)
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
 	}
 
 	// Get kubeconfig

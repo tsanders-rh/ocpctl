@@ -132,9 +132,13 @@ func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, c
 func (a *ArtifactStorage) DownloadClusterArtifacts(ctx context.Context, clusterID, workDir string) error {
 	log.Printf("[ArtifactStorage] Downloading artifacts for cluster %s to %s", clusterID, workDir)
 
-	// Ensure work directory exists
+	// Ensure work directory exists with secure permissions
 	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return fmt.Errorf("create work directory: %w", err)
+	}
+	// Enforce permissions even if directory already existed
+	if err := os.Chmod(workDir, 0700); err != nil {
+		return fmt.Errorf("enforce work directory permissions: %w", err)
 	}
 
 	// List all artifacts for this cluster

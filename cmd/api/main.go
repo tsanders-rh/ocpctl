@@ -127,6 +127,7 @@ func main() {
 	config.AllowedOrigins = []string{corsOrigins}
 	config.EnableIAMAuth = enableIAMAuth
 	config.IAMAllowedGroup = iamAllowedGroup
+	config.Environment = environment
 
 	log.Printf("Server configured:")
 	log.Printf("  Port: %d", config.Port)
@@ -139,7 +140,10 @@ func main() {
 	config.BuildTime = BuildTime
 
 	// Create API server
-	server := api.NewServer(config, st, registry, policyEngine)
+	server, err := api.NewServer(config, st, registry, policyEngine)
+	if err != nil {
+		log.Fatalf("Failed to create API server: %v", err)
+	}
 
 	// Start server in a goroutine
 	go func() {

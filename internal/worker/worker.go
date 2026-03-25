@@ -453,8 +453,25 @@ func (w *Worker) acquireLock(ctx context.Context, job *types.Job) (*types.JobLoc
 
 // releaseLock releases the cluster lock
 func (w *Worker) releaseLock(ctx context.Context, clusterID, jobID string) {
-	if err := w.store.JobLocks.Release(ctx, clusterID, jobID); err != nil {
-		log.Printf("Failed to release lock for cluster %s: %v", clusterID, err)
+	// Try to release lock with the current context first
+	err := w.store.JobLocks.Release(ctx, clusterID, jobID)
+	if err == nil {
+		return
+	}
+
+	// If release failed (possibly due to context timeout), retry with background context
+	log.Printf("Lock release failed (attempt 1), retrying with background context: %v", err)
+
+	retryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if retryErr := w.store.JobLocks.Release(retryCtx, clusterID, jobID); retryErr != nil {
+		// CRITICAL: Lock release failed after retry - cluster will be locked indefinitely
+		log.Printf("CRITICAL: Failed to release lock for cluster %s (job %s) after retry: %v",
+			clusterID, jobID, retryErr)
+		log.Printf("CRITICAL: Manual intervention required - cluster %s may be locked. Run: DELETE FROM job_locks WHERE cluster_id = '%s'",
+			clusterID, clusterID)
+		// TODO: Send alert to operations team when alerting system is available
 	}
 }
 

@@ -76,10 +76,10 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	// Create work directory for this cluster
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0700); err != nil {
-		return fmt.Errorf("create work directory: %w", err)
+	// Create work directory for this cluster with secure permissions
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
 	}
 
 	// Render install-config.yaml
@@ -392,10 +392,10 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	// Create work directory for this cluster
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0700); err != nil {
-		return fmt.Errorf("create work directory: %w", err)
+	// Create work directory for this cluster with secure permissions
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
 	}
 
 	// Create EKS installer
@@ -596,10 +596,10 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	// Create work directory for this cluster
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
-	if err := os.MkdirAll(workDir, 0700); err != nil {
-		return fmt.Errorf("create work directory: %w", err)
+	// Create work directory for this cluster with secure permissions
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
 	}
 
 	// Get profile to extract configuration
