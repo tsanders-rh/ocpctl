@@ -62,7 +62,7 @@ func DefaultConfig() *Config {
 // getEC2InstanceID retrieves the EC2 instance ID from metadata service
 func getEC2InstanceID() string {
 	// Use IMDSv2 (more secure)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), IMDSRequestTimeout)
 	defer cancel()
 
 	// Get token first (IMDSv2)
@@ -119,7 +119,7 @@ func getEC2InstanceID() string {
 // getEC2ASGName retrieves the Auto Scaling Group name from EC2 tags
 func getEC2ASGName() string {
 	// Use IMDSv2
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), IMDSRequestTimeout)
 	defer cancel()
 
 	// Get token first (IMDSv2)
@@ -288,7 +288,7 @@ func (w *Worker) Stop() {
 	select {
 	case <-done:
 		log.Printf("All running jobs completed, worker stopped gracefully")
-	case <-time.After(30 * time.Second):
+	case <-time.After(WorkerShutdownTimeout):
 		log.Printf("WARNING: Timeout waiting for jobs to complete, some jobs may still be running")
 	}
 }
@@ -489,7 +489,7 @@ func (w *Worker) releaseLock(ctx context.Context, clusterID, jobID string) {
 	// If release failed (possibly due to context timeout), retry with background context
 	log.Printf("Lock release failed (attempt 1), retrying with background context: %v", err)
 
-	retryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	retryCtx, cancel := context.WithTimeout(context.Background(), LockReleaseRetryTimeout)
 	defer cancel()
 
 	if retryErr := w.store.JobLocks.Release(retryCtx, clusterID, jobID); retryErr != nil {

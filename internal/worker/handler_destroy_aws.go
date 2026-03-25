@@ -15,8 +15,9 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
-// HandleAWSDestroy handles AWS-specific cluster cleanup
-// This should be called AFTER openshift-install destroy cluster completes
+// HandleAWSDestroy handles AWS-specific cluster cleanup including CCO IAM roles, OIDC provider, and Route53 hosted zone.
+// This should be called AFTER openshift-install destroy cluster completes to clean up resources created by ccoctl.
+// Uses the infrastructure ID from metadata.json to identify and delete AWS resources.
 func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cluster, inst *installer.Installer, workDir string) error {
 	log.Printf("AWS cluster cleanup: cleaning up CCO IAM roles and OIDC provider for %s", cluster.Name)
 
@@ -33,7 +34,7 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 
 	// Run ccoctl aws delete to clean up IAM roles and OIDC provider
 	// ccoctl aws delete --name <infra-id> --region <region>
-	cmdCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	cmdCtx, cancel := context.WithTimeout(ctx, DNSCleanupTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "ccoctl", "aws", "delete",
@@ -112,7 +113,7 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 	log.Printf("Looking for Route53 hosted zone: %s", zoneName)
 
 	// Find the hosted zone ID
-	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, AWSCommandTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "aws", "route53", "list-hosted-zones",
@@ -136,7 +137,7 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 	log.Printf("Found hosted zone ID: %s", zoneID)
 
 	// List all resource record sets
-	cmdCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	cmdCtx, cancel = context.WithTimeout(ctx, AWSCommandTimeout)
 	defer cancel()
 
 	cmd = exec.CommandContext(cmdCtx, "aws", "route53", "list-resource-record-sets",
@@ -179,7 +180,7 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 			}]
 		}`, getRecordSetJSON(output, record.Name, record.Type))
 
-		cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		cmdCtx, cancel := context.WithTimeout(ctx, AWSCommandTimeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(cmdCtx, "aws", "route53", "change-resource-record-sets",
@@ -197,12 +198,12 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 	if deletedCount > 0 {
 		log.Printf("Deleted %d DNS records from zone %s", deletedCount, zoneName)
 		// Wait a moment for DNS propagation
-		time.Sleep(2 * time.Second)
+		time.Sleep(CleanupRetryDelay)
 	}
 
 	// Delete the hosted zone
 	log.Printf("Deleting hosted zone: %s (ID: %s)", zoneName, zoneID)
-	cmdCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	cmdCtx, cancel = context.WithTimeout(ctx, AWSCommandTimeout)
 	defer cancel()
 
 	cmd = exec.CommandContext(cmdCtx, "aws", "route53", "delete-hosted-zone",

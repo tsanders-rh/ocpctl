@@ -34,7 +34,10 @@ func NewPostConfigureHandler(config *Config, st *store.Store, profileRegistry *p
 	}
 }
 
-// Handle handles a post-configuration job
+// Handle handles post-deployment configuration tasks such as installing operators, dashboards, and manifests.
+// Routes to the appropriate platform-specific handler based on cluster type.
+// For EKS clusters, installs Kubernetes Dashboard and generates token-based kubeconfig.
+// For OpenShift clusters, executes profile-driven configuration (operators, scripts, manifests, helm charts).
 func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Get cluster details
 	cluster, err := h.store.Clusters.GetByID(ctx, job.ClusterID)
@@ -270,7 +273,7 @@ type: kubernetes.io/service-account-token
 	log.Printf("Service account created: %s", string(output))
 
 	// Wait a moment for the secret to be created
-	time.Sleep(2 * time.Second)
+	time.Sleep(APIStabilizationDelay)
 
 	return nil
 }
@@ -332,7 +335,7 @@ func (h *PostConfigureHandler) exposeDashboardLoadBalancer(ctx context.Context, 
 				break
 			}
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(NodeReadyCheckInterval)
 	}
 
 	if externalIP == "" {
@@ -378,11 +381,31 @@ func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clus
 	return nil
 }
 
-// generateTokenKubeconfig generates a token-based kubeconfig that doesn't require AWS credentials
+// generateTokenKubeconfig generates a token-based kubeconfig that doesn't require AWS credentials.
+// This is broken down into smaller helper functions for better maintainability.
 func (h *PostConfigureHandler) generateTokenKubeconfig(ctx context.Context, awsKubeconfigPath, outputPath string, cluster *types.Cluster) error {
 	log.Println("Generating token-based kubeconfig for kubectl access...")
 
-	// Create service account for kubectl access in kube-system namespace
+	// Create and apply service account manifest
+	if err := h.createKubectlServiceAccount(ctx, awsKubeconfigPath); err != nil {
+		return err
+	}
+
+	// Wait for Kubernetes API to create the secret
+	time.Sleep(APIStabilizationDelay)
+
+	// Extract token and CA cert from the service account secret
+	token, caCert, err := h.extractServiceAccountCredentials(ctx, awsKubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Build and write the kubeconfig file
+	return h.writeTokenBasedKubeconfig(cluster, token, caCert, outputPath)
+}
+
+// createKubectlServiceAccount creates and applies a service account manifest for kubectl access
+func (h *PostConfigureHandler) createKubectlServiceAccount(ctx context.Context, kubeconfigPath string) error {
 	manifest := `---
 apiVersion: v1
 kind: ServiceAccount
@@ -413,62 +436,61 @@ metadata:
 type: kubernetes.io/service-account-token
 `
 
-	// Write manifest to file
-	manifestPath := filepath.Join(filepath.Dir(awsKubeconfigPath), "kubectl-sa.yaml")
+	// Write manifest to temporary file
+	manifestPath := filepath.Join(filepath.Dir(kubeconfigPath), "kubectl-sa.yaml")
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0600); err != nil {
 		return fmt.Errorf("write kubectl service account manifest: %w", err)
 	}
 
-	// Apply manifest using AWS kubeconfig
-	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", manifestPath, "--kubeconfig", awsKubeconfigPath)
+	// Apply manifest
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", manifestPath, "--kubeconfig", kubeconfigPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("kubectl apply service account: %w\nOutput: %s", err, string(output))
 	}
 
 	log.Printf("Service account created: %s", string(output))
+	return nil
+}
 
-	// Wait for secret to be created
-	time.Sleep(2 * time.Second)
-
-	// Get the service account token
-	cmd = exec.CommandContext(ctx, "kubectl", "get", "secret", "ocpctl-kubectl-token",
-		"-n", "kube-system", "-o", "jsonpath={.data.token}", "--kubeconfig", awsKubeconfigPath)
+// extractServiceAccountCredentials retrieves the token and CA certificate from the service account secret
+func (h *PostConfigureHandler) extractServiceAccountCredentials(ctx context.Context, kubeconfigPath string) (token, caCert string, err error) {
+	// Get service account token (base64 encoded)
+	cmd := exec.CommandContext(ctx, "kubectl", "get", "secret", "ocpctl-kubectl-token",
+		"-n", "kube-system", "-o", "jsonpath={.data.token}", "--kubeconfig", kubeconfigPath)
 	tokenBytes, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("get token: %w\nOutput: %s", err, string(tokenBytes))
+		return "", "", fmt.Errorf("get token: %w\nOutput: %s", err, string(tokenBytes))
 	}
 
-	// Decode base64 token
-	decodeCmd := exec.Command("base64", "-d")
-	decodeCmd.Stdin = strings.NewReader(strings.TrimSpace(string(tokenBytes)))
-	decodedToken, err := decodeCmd.CombinedOutput()
+	// Decode token
+	token, err = decodeBase64String(strings.TrimSpace(string(tokenBytes)))
 	if err != nil {
-		return fmt.Errorf("decode token: %w", err)
+		return "", "", fmt.Errorf("decode token: %w", err)
 	}
-	token := strings.TrimSpace(string(decodedToken))
 
-	// Get CA certificate
+	// Get CA certificate (base64 encoded)
 	cmd = exec.CommandContext(ctx, "kubectl", "get", "secret", "ocpctl-kubectl-token",
-		"-n", "kube-system", "-o", "jsonpath={.data.ca\\.crt}", "--kubeconfig", awsKubeconfigPath)
+		"-n", "kube-system", "-o", "jsonpath={.data.ca\\.crt}", "--kubeconfig", kubeconfigPath)
 	caBytes, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("get CA cert: %w\nOutput: %s", err, string(caBytes))
+		return "", "", fmt.Errorf("get CA cert: %w\nOutput: %s", err, string(caBytes))
 	}
 
-	// Decode base64 CA cert
-	decodeCmd = exec.Command("base64", "-d")
-	decodeCmd.Stdin = strings.NewReader(strings.TrimSpace(string(caBytes)))
-	decodedCA, err := decodeCmd.CombinedOutput()
+	// Decode CA certificate
+	caCert, err = decodeBase64String(strings.TrimSpace(string(caBytes)))
 	if err != nil {
-		return fmt.Errorf("decode CA cert: %w", err)
+		return "", "", fmt.Errorf("decode CA cert: %w", err)
 	}
-	caCert := strings.TrimSpace(string(decodedCA))
 
-	// Get API server URL
+	return token, caCert, nil
+}
+
+// writeTokenBasedKubeconfig generates and writes a token-based kubeconfig file
+func (h *PostConfigureHandler) writeTokenBasedKubeconfig(cluster *types.Cluster, token, caCert, outputPath string) error {
 	apiURL := fmt.Sprintf("https://%s.%s.eks.amazonaws.com", cluster.Name, cluster.Region)
 
-	// Generate kubeconfig with token authentication
+	// Generate kubeconfig YAML
 	kubeconfig := fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
@@ -488,19 +510,29 @@ users:
     token: %s
 `, base64Encode(caCert), apiURL, cluster.Name, cluster.Name, cluster.Name, cluster.Name, token)
 
-	// Ensure output directory exists with restrictive permissions (0700)
-	// This prevents other users from accessing sensitive kubeconfig files
+	// Ensure output directory exists with restrictive permissions
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
-	// Write kubeconfig to file (0600 ensures only owner can read/write)
+	// Write kubeconfig with restrictive permissions (owner read/write only)
 	if err := os.WriteFile(outputPath, []byte(kubeconfig), 0600); err != nil {
 		return fmt.Errorf("write kubeconfig: %w", err)
 	}
 
 	log.Printf("Token-based kubeconfig generated at: %s", outputPath)
 	return nil
+}
+
+// decodeBase64String decodes a base64-encoded string using the base64 command
+func decodeBase64String(encoded string) (string, error) {
+	cmd := exec.Command("base64", "-d")
+	cmd.Stdin = strings.NewReader(encoded)
+	decoded, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(decoded)), nil
 }
 
 // base64Encode encodes a string to base64
@@ -727,8 +759,8 @@ spec:
 func (h *PostConfigureHandler) waitForOperatorReady(ctx context.Context, kubeconfigPath string, op profile.OperatorConfig) error {
 	log.Printf("Waiting for operator %s to be ready (timeout: 10 minutes)...", op.Name)
 
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(10 * time.Second)
+	timeout := time.After(PostConfigWaitTimeout)
+	ticker := time.NewTicker(PostConfigPollInterval)
 	defer ticker.Stop()
 
 	for {

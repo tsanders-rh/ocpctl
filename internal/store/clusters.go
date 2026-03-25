@@ -16,7 +16,8 @@ type ClusterStore struct {
 	pool *pgxpool.Pool
 }
 
-// Create inserts a new cluster record
+// Create inserts a new cluster record into the database.
+// Returns an error if the cluster ID already exists or if the database operation fails.
 func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error {
 	query := `
 		INSERT INTO clusters (
@@ -64,7 +65,8 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 	return nil
 }
 
-// GetByID retrieves a cluster by ID
+// GetByID retrieves a cluster by its unique identifier.
+// Returns ErrNotFound if no cluster exists with the given ID.
 func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
@@ -187,7 +189,8 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 	return clusters, nil
 }
 
-// GetByIDForUpdate retrieves a cluster by ID with row lock for update
+// GetByIDForUpdate retrieves a cluster by ID with a row-level lock (FOR UPDATE) to prevent concurrent modifications.
+// Must be called within a transaction. Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id string) (*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
@@ -254,7 +257,9 @@ type ListFilters struct {
 	Offset   int
 }
 
-// List retrieves clusters with optional filtering
+// List retrieves clusters with optional filtering and pagination.
+// Returns a slice of clusters, the total count (before pagination), and an error if the query fails.
+// Clusters are ordered by creation time in descending order (newest first).
 func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.Cluster, int, error) {
 	// Build query dynamically based on filters
 	query := `
@@ -382,7 +387,9 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	return clusters, total, nil
 }
 
-// UpdateStatus updates a cluster's status and updated_at timestamp
+// UpdateStatus updates a cluster's status and automatically updates the updated_at timestamp.
+// Can be called with or without a transaction (tx can be nil for non-transactional updates).
+// Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, status types.ClusterStatus) error {
 	query := `
 		UPDATE clusters
@@ -410,7 +417,9 @@ func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, s
 	return nil
 }
 
-// MarkDestroyed updates a cluster to DESTROYED status and sets destroyed_at
+// MarkDestroyed updates a cluster to DESTROYED status and sets the destroyed_at timestamp.
+// This is typically called after successful cluster resource cleanup.
+// Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 	query := `
 		UPDATE clusters
@@ -430,7 +439,9 @@ func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 	return nil
 }
 
-// UpdateTTL updates a cluster's TTL and destroy_at timestamp
+// UpdateTTL updates a cluster's TTL (time-to-live) in hours and recalculates the destroy_at timestamp.
+// The destroy_at timestamp is set to the current time plus ttlHours.
+// Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) error {
 	query := `
 		UPDATE clusters
@@ -450,7 +461,9 @@ func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) e
 	return nil
 }
 
-// GetExpiredClusters returns clusters past their TTL that should be destroyed
+// GetExpiredClusters returns clusters past their TTL that should be destroyed.
+// Only returns clusters with status READY or FAILED whose destroy_at timestamp has passed.
+// Clusters are ordered by destroy_at in ascending order (oldest expiration first).
 func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
@@ -580,7 +593,8 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	return clusters, nil
 }
 
-// UpdateLastWorkHoursCheck updates the last_work_hours_check timestamp for a cluster
+// UpdateLastWorkHoursCheck updates the last_work_hours_check timestamp to the current time.
+// This is used to track when work hours enforcement was last checked for a cluster.
 func (s *ClusterStore) UpdateLastWorkHoursCheck(ctx context.Context, clusterID string) error {
 	query := `UPDATE clusters SET last_work_hours_check = NOW() WHERE id = $1`
 	_, err := s.pool.Exec(ctx, query, clusterID)
@@ -595,7 +609,8 @@ func (s *ClusterStore) SetLastWorkHoursCheck(ctx context.Context, clusterID stri
 	return err
 }
 
-// CheckNameExists checks if a cluster name already exists for the platform/domain
+// CheckNameExists checks if a cluster name already exists for the given platform and base domain combination.
+// Only considers clusters that are not DESTROYED or FAILED. Returns true if a matching cluster exists.
 func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platform types.Platform, baseDomain string) (bool, error) {
 	query := `
 		SELECT EXISTS(
@@ -709,7 +724,8 @@ func (s *ClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) (
 	return clusters, nil
 }
 
-// UpdatePostDeployStatus updates the cluster's post_deploy_status
+// UpdatePostDeployStatus updates the cluster's post-deployment status.
+// When status is "completed", automatically sets the post_deploy_completed_at timestamp.
 func (s *ClusterStore) UpdatePostDeployStatus(ctx context.Context, clusterID, status string) error {
 	query := `
 		UPDATE clusters

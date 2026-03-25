@@ -26,7 +26,8 @@ type ClusterHandler struct {
 	registry *profile.Registry
 }
 
-// NewClusterHandler creates a new cluster handler
+// NewClusterHandler creates a new cluster handler with dependencies for database access, policy enforcement, and profile management.
+// The handler provides endpoints for cluster lifecycle operations (create, list, update, delete, extend TTL).
 func NewClusterHandler(s *store.Store, p *policy.Engine, r *profile.Registry) *ClusterHandler {
 	return &ClusterHandler{
 		store:    s,

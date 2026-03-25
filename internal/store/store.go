@@ -41,7 +41,8 @@ type Store struct {
 	ClusterConfigurations *ClusterConfigurationStore
 }
 
-// New creates a new Store with all sub-stores initialized
+// New creates a new Store with all sub-stores initialized using the provided database connection pool.
+// All store operations (Clusters, Jobs, etc.) share the same connection pool for efficient resource usage.
 func New(pool *pgxpool.Pool) *Store {
 	s := &Store{
 		pool: pool,
@@ -73,7 +74,8 @@ func New(pool *pgxpool.Pool) *Store {
 	return s
 }
 
-// BeginTx starts a new transaction
+// BeginTx starts a new database transaction.
+// The caller is responsible for committing or rolling back the transaction.
 func (s *Store) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return s.pool.Begin(ctx)
 }

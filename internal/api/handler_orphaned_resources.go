@@ -113,7 +113,7 @@ func (h *OrphanedResourceHandler) List(c echo.Context) error {
 	// Get orphaned resources
 	resources, total, err := h.store.OrphanedResources.List(c.Request().Context(), filters)
 	if err != nil {
-		return ErrorInternal(c, "Failed to list orphaned resources")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to list orphaned resources: %w", err))
 	}
 
 	// Return paginated response
@@ -139,7 +139,7 @@ func (h *OrphanedResourceHandler) List(c echo.Context) error {
 func (h *OrphanedResourceHandler) GetStats(c echo.Context) error {
 	stats, err := h.store.OrphanedResources.GetStats(c.Request().Context())
 	if err != nil {
-		return ErrorInternal(c, "Failed to get statistics")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get orphaned resources statistics: %w", err))
 	}
 
 	return c.JSON(200, stats)
@@ -178,13 +178,13 @@ func (h *OrphanedResourceHandler) MarkResolved(c echo.Context) error {
 	// Mark as resolved
 	err := h.store.OrphanedResources.MarkResolved(c.Request().Context(), id, userEmail, req.Notes)
 	if err != nil {
-		return ErrorInternal(c, "Failed to mark resource as resolved")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to mark resource %s as resolved: %w", id, err))
 	}
 
 	// Get updated resource
 	resource, err := h.store.OrphanedResources.GetByID(c.Request().Context(), id)
 	if err != nil {
-		return ErrorInternal(c, "Failed to get updated resource")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get updated resource %s: %w", id, err))
 	}
 
 	return c.JSON(200, resource)
@@ -215,13 +215,13 @@ func (h *OrphanedResourceHandler) MarkIgnored(c echo.Context) error {
 	// Mark as ignored
 	err := h.store.OrphanedResources.MarkIgnored(c.Request().Context(), id, req.Notes)
 	if err != nil {
-		return ErrorInternal(c, "Failed to mark resource as ignored")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to mark resource %s as ignored: %w", id, err))
 	}
 
 	// Get updated resource
 	resource, err := h.store.OrphanedResources.GetByID(c.Request().Context(), id)
 	if err != nil {
-		return ErrorInternal(c, "Failed to get updated resource")
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get updated resource %s: %w", id, err))
 	}
 
 	return c.JSON(200, resource)
@@ -285,21 +285,20 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	}
 
 	if err != nil {
-		log.Printf("Failed to delete %s %s: %v", resource.ResourceType, resource.ResourceName, err)
-		return ErrorInternal(c, fmt.Sprintf("Failed to delete resource: %v", err))
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to delete %s resource %s: %w", resource.ResourceType, resource.ResourceName, err))
 	}
 
 	// Mark as resolved
 	notes := fmt.Sprintf("Automatically deleted via API by %s", userEmail)
 	err = h.store.OrphanedResources.MarkResolved(c.Request().Context(), id, userEmail, notes)
 	if err != nil {
-		return ErrorInternal(c, "Resource deleted but failed to update database")
+		return LogAndReturnGenericError(c, fmt.Errorf("resource deleted but failed to update database for %s: %w", id, err))
 	}
 
 	// Get updated resource
 	resource, err = h.store.OrphanedResources.GetByID(c.Request().Context(), id)
 	if err != nil {
-		return ErrorInternal(c, "Resource deleted but failed to get updated status")
+		return LogAndReturnGenericError(c, fmt.Errorf("resource deleted but failed to get updated status for %s: %w", id, err))
 	}
 
 	return c.JSON(200, resource)

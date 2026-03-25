@@ -32,7 +32,8 @@ type LogStreamer struct {
 	logRegex *regexp.Regexp
 }
 
-// NewLogStreamer creates a new log streamer
+// NewLogStreamer creates a new log streamer that tails a log file and streams entries to the database.
+// The streamer batches log entries for efficient database writes and parses log levels from openshift-install format.
 func NewLogStreamer(store *store.Store, clusterID, jobID, logPath string) *LogStreamer {
 	return &LogStreamer{
 		store:         store,
@@ -49,15 +50,17 @@ func NewLogStreamer(store *store.Store, clusterID, jobID, logPath string) *LogSt
 	}
 }
 
-// Start begins tailing the log file and streaming to database
-// This is non-blocking and runs in a goroutine
+// Start begins tailing the log file and streaming entries to the database.
+// This is non-blocking and runs in a goroutine. The streamer will wait up to 30 seconds for the log file to be created.
+// Call Stop() to gracefully shutdown the streamer and flush remaining log entries.
 func (ls *LogStreamer) Start(ctx context.Context) error {
 	ls.wg.Add(1)
 	go ls.tailLogFile(ctx)
 	return nil
 }
 
-// Stop gracefully stops the log streamer and flushes any pending logs
+// Stop gracefully stops the log streamer and flushes any pending log entries to the database.
+// Blocks until the streamer goroutine has completed and all logs are flushed.
 func (ls *LogStreamer) Stop() error {
 	close(ls.stopCh)
 	ls.wg.Wait()
@@ -115,7 +118,7 @@ func (ls *LogStreamer) tailLogFile(ctx context.Context) {
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				// No more data available, sleep briefly and retry
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(LogStreamPollInterval)
 				continue
 			}
 
@@ -162,7 +165,7 @@ func (ls *LogStreamer) waitForLogFile(ctx context.Context, timeout time.Duration
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(LogStreamFlushInterval):
 			// Continue waiting
 		}
 	}

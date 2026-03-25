@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -49,7 +48,9 @@ func NewResumeHandler(cfg *Config, st *store.Store) *ResumeHandler {
 	}
 }
 
-// Handle handles a cluster resume job
+// Handle handles a cluster resume job by starting stopped instances or scaling node groups back up.
+// Routes to the appropriate platform-specific resume handler based on cluster type.
+// Supports OpenShift (AWS), EKS, and IKS cluster types.
 func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Get cluster details
 	cluster, err := h.store.Clusters.GetByID(ctx, job.ClusterID)
@@ -216,10 +217,10 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 		InstanceIds: instanceIDs,
 	}
 
-	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	waitCtx, cancel := context.WithTimeout(ctx, ClusterStatusCheckTimeout)
 	defer cancel()
 
-	if err := waiter.Wait(waitCtx, waitInput, 10*time.Minute); err != nil {
+	if err := waiter.Wait(waitCtx, waitInput, ClusterStatusCheckTimeout); err != nil {
 		log.Printf("Warning: instances may not be fully running yet: %v", err)
 		// Don't fail the job, just log the warning
 	} else {

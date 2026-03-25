@@ -15,7 +15,8 @@ type JobStore struct {
 	pool *pgxpool.Pool
 }
 
-// Create inserts a new job record
+// Create inserts a new job record into the database.
+// The job is initialized with PENDING status and attempt counter at 1.
 func (s *JobStore) Create(ctx context.Context, job *types.Job) error {
 	query := `
 		INSERT INTO jobs (
@@ -42,7 +43,8 @@ func (s *JobStore) Create(ctx context.Context, job *types.Job) error {
 	return nil
 }
 
-// GetByID retrieves a job by ID
+// GetByID retrieves a job by its unique identifier.
+// Returns ErrNotFound if no job exists with the given ID.
 func (s *JobStore) GetByID(ctx context.Context, id string) (*types.Job, error) {
 	query := `
 		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
@@ -79,7 +81,8 @@ func (s *JobStore) GetByID(ctx context.Context, id string) (*types.Job, error) {
 	return &job, nil
 }
 
-// ListByClusterID retrieves all jobs for a cluster
+// ListByClusterID retrieves all jobs for a specific cluster.
+// Jobs are ordered by creation time in descending order (newest first).
 func (s *JobStore) ListByClusterID(ctx context.Context, clusterID string) ([]*types.Job, error) {
 	query := `
 		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
@@ -175,7 +178,9 @@ func (s *JobStore) GetByClusterIDAndType(ctx context.Context, clusterID string, 
 	return jobs, nil
 }
 
-// List retrieves jobs with pagination and returns total count
+// List retrieves jobs with pagination and returns the total count.
+// Jobs are ordered by creation time in descending order (newest first).
+// Returns a slice of jobs, the total count (before pagination), and an error if the query fails.
 func (s *JobStore) List(ctx context.Context, offset, limit int) ([]*types.Job, int, error) {
 	// Get total count
 	var total int
@@ -232,7 +237,8 @@ func (s *JobStore) List(ctx context.Context, offset, limit int) ([]*types.Job, i
 	return jobs, total, nil
 }
 
-// UpdateStatus updates job status
+// UpdateStatus updates a job's status and automatically updates the updated_at timestamp.
+// Returns ErrNotFound if the job does not exist.
 func (s *JobStore) UpdateStatus(ctx context.Context, id string, status types.JobStatus) error {
 	query := `
 		UPDATE jobs
@@ -252,7 +258,8 @@ func (s *JobStore) UpdateStatus(ctx context.Context, id string, status types.Job
 	return nil
 }
 
-// MarkStarted marks a job as running and sets started_at
+// MarkStarted marks a job as RUNNING and sets the started_at timestamp to the current time.
+// Returns ErrNotFound if the job does not exist.
 func (s *JobStore) MarkStarted(ctx context.Context, id string) error {
 	query := `
 		UPDATE jobs
@@ -272,7 +279,9 @@ func (s *JobStore) MarkStarted(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkSucceeded marks a job as succeeded, sets ended_at, and updates metadata
+// MarkSucceeded marks a job as SUCCEEDED, sets the ended_at timestamp, and updates the job metadata.
+// The metadata typically contains result information from the job execution.
+// Returns ErrNotFound if the job does not exist.
 func (s *JobStore) MarkSucceeded(ctx context.Context, id string, metadata types.JobMetadata) error {
 	query := `
 		UPDATE jobs
@@ -292,7 +301,9 @@ func (s *JobStore) MarkSucceeded(ctx context.Context, id string, metadata types.
 	return nil
 }
 
-// MarkFailed marks a job as failed with error details
+// MarkFailed marks a job as FAILED with error details and sets the ended_at timestamp.
+// The errorCode and errorMessage provide diagnostic information about the failure.
+// Returns ErrNotFound if the job does not exist.
 func (s *JobStore) MarkFailed(ctx context.Context, id string, errorCode, errorMessage string) error {
 	query := `
 		UPDATE jobs
@@ -313,7 +324,9 @@ func (s *JobStore) MarkFailed(ctx context.Context, id string, errorCode, errorMe
 	return nil
 }
 
-// IncrementAttempt increments the job attempt counter for retries
+// IncrementAttempt increments the job attempt counter and sets status to RETRYING.
+// This is used when a job fails and will be retried based on its max_attempts setting.
+// Returns ErrNotFound if the job does not exist.
 func (s *JobStore) IncrementAttempt(ctx context.Context, id string) error {
 	query := `
 		UPDATE jobs
@@ -333,7 +346,9 @@ func (s *JobStore) IncrementAttempt(ctx context.Context, id string) error {
 	return nil
 }
 
-// GetStuckJobs returns jobs in RUNNING status for longer than the threshold
+// GetStuckJobs returns jobs in RUNNING status for longer than the specified threshold duration.
+// These jobs may have failed without updating their status, typically due to worker crashes.
+// Jobs are ordered by started_at in ascending order (oldest stuck jobs first).
 func (s *JobStore) GetStuckJobs(ctx context.Context, threshold time.Duration) ([]*types.Job, error) {
 	query := `
 		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
@@ -382,7 +397,9 @@ func (s *JobStore) GetStuckJobs(ctx context.Context, threshold time.Duration) ([
 	return jobs, nil
 }
 
-// GetPending returns pending jobs up to the specified limit
+// GetPending returns pending jobs (PENDING or RETRYING status) up to the specified limit.
+// Jobs are ordered by creation time in ascending order (oldest jobs are returned first).
+// This is used by workers to fetch jobs from the queue for processing.
 func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, error) {
 	query := `
 		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
@@ -431,7 +448,8 @@ func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, err
 	return jobs, nil
 }
 
-// CountPending returns the total count of pending jobs in the queue
+// CountPending returns the total count of jobs with PENDING or RETRYING status.
+// This is used for monitoring queue depth and worker capacity planning.
 func (s *JobStore) CountPending(ctx context.Context) (int, error) {
 	query := `
 		SELECT COUNT(*)

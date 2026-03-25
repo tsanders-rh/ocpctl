@@ -133,14 +133,14 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	// Run openshift-install destroy cluster with explicit timeout
 	// Use 45-minute timeout to ensure destroy completes or fails definitively
 	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: 45m)", cluster.Name, cluster.Version)
-	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
 
 	output, err := inst.DestroyCluster(destroyCtx, workDir)
 
 	// Stop log streaming after installer completes
 	streamCancel()
-	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
@@ -595,7 +595,7 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 
 	// Run ibmcloud ks cluster rm
 	log.Printf("Running ibmcloud ks cluster rm for %s", cluster.Name)
-	destroyCtx, destroyCancel := context.WithTimeout(ctx, 45*time.Minute)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
 
 	output, err := iksInstaller.DestroyCluster(destroyCtx, cluster.Name)
@@ -724,7 +724,7 @@ func (h *DestroyHandler) cleanupKubernetesResources(ctx context.Context, cluster
 
 	// Wait for AWS to clean up ELB/NLB resources and ENIs
 	log.Printf("Waiting 60s for AWS to clean up LoadBalancer resources and ENIs...")
-	time.Sleep(60 * time.Second)
+	time.Sleep(EKSCleanupWaitDelay)
 
 	return nil
 }

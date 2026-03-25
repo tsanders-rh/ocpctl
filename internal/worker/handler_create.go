@@ -43,7 +43,9 @@ func NewCreateHandler(config *Config, st *store.Store) *CreateHandler {
 	}
 }
 
-// Handle handles a cluster creation job
+// Handle handles a cluster creation job by provisioning infrastructure via platform-specific installers.
+// Routes to the appropriate handler based on cluster type (OpenShift, EKS, or IKS).
+// Streams deployment logs to the database in real-time and stores artifacts (kubeconfig, metadata) upon completion.
 func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Get cluster details
 	cluster, err := h.store.Clusters.GetByID(ctx, job.ClusterID)
@@ -179,7 +181,7 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 
 	// Stop log streaming after installer completes
 	streamCancel()
-	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
@@ -522,7 +524,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Stop log streaming after eksctl completes
 	streamCancel()
-	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
@@ -702,7 +704,7 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	if err != nil {
 		// Stop log streaming after cluster creation fails
 		streamCancel()
-		time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+		time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 		if stopErr := streamer.Stop(); stopErr != nil {
 			log.Printf("Warning: error stopping log streamer: %v", stopErr)
 		}
@@ -718,7 +720,7 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	if err := iksInstaller.WaitForCluster(ctx, cluster.Name, "normal", 60*time.Minute, logPath); err != nil {
 		// Stop log streaming after wait fails
 		streamCancel()
-		time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+		time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 		if stopErr := streamer.Stop(); stopErr != nil {
 			log.Printf("Warning: error stopping log streamer: %v", stopErr)
 		}
@@ -728,7 +730,7 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 
 	// Stop log streaming after cluster is ready
 	streamCancel()
-	time.Sleep(500 * time.Millisecond) // Allow final batch to flush
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}

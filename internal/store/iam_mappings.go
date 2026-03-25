@@ -10,11 +10,14 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
-// IAMMappingStore handles IAM principal mapping database operations
+// IAMMappingStore handles IAM principal mapping database operations with an in-memory cache.
+// The cache is thread-safe and protected by a read-write mutex (mu).
+// Read operations (GetByPrincipalARN) use RLock for concurrent reads,
+// while write operations (Create, Update, Delete, RefreshCache) use exclusive Lock.
 type IAMMappingStore struct {
 	pool  *pgxpool.Pool
-	cache map[string]*types.IAMPrincipalMapping // Cache by ARN for performance
-	mu    sync.RWMutex
+	cache map[string]*types.IAMPrincipalMapping // Thread-safe cache by ARN for performance (protected by mu)
+	mu    sync.RWMutex                          // Protects cache from concurrent access
 }
 
 // GetByPrincipalARN retrieves an IAM mapping by principal ARN
