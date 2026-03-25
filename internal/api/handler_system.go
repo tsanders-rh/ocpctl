@@ -74,7 +74,7 @@ type InfrastructureInfo struct {
 //	@Success		200	{object}	InfrastructureInfo
 //	@Failure		500	{object}	ErrorResponse
 //	@Security		BearerAuth
-//	@Router			/system/infrastructure [get]
+//	@Router			/admin/system/infrastructure [get]
 func (h *SystemHandler) GetInfrastructure(c echo.Context) error {
 	ctx := c.Request().Context()
 

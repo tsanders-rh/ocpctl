@@ -365,6 +365,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/system/infrastructure": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns information about API server, workers, and autoscaling groups",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Get infrastructure status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.InfrastructureInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticates user with email and password. Returns JWT access token and sets httpOnly refresh token cookie.",
@@ -2314,7 +2345,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a list of all users (admin only). Password hashes are excluded from response.",
+                "description": "Returns a paginated list of users (admin only). Password hashes are excluded from response. Supports pagination via query parameters.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2325,12 +2356,35 @@ const docTemplate = `{
                     "Users"
                 ],
                 "summary": "List users",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of users to return (default: 50, max: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of users to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Returns users array, total count, limit, and offset",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid pagination parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "500": {
@@ -2666,13 +2720,23 @@ const docTemplate = `{
         },
         "github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig": {
             "type": "object",
-            "required": [
-                "control_plane",
-                "workers"
-            ],
             "properties": {
                 "control_plane": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig"
+                },
+                "managed_node_groups": {
+                    "description": "For EKS (managed)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
+                    }
+                },
+                "node_groups": {
+                    "description": "For EKS (unmanaged)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
+                    }
                 },
                 "workers": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig"
@@ -2752,7 +2816,18 @@ const docTemplate = `{
                 "off_hours_scaling": {
                     "type": "boolean"
                 },
+                "oidc_provider": {
+                    "description": "EKS-specific",
+                    "type": "boolean"
+                },
                 "private_cluster": {
+                    "type": "boolean"
+                },
+                "private_service_endpoint": {
+                    "type": "boolean"
+                },
+                "public_service_endpoint": {
+                    "description": "IKS-specific",
                     "type": "boolean"
                 }
             }
@@ -2815,14 +2890,25 @@ const docTemplate = `{
         "github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig": {
             "type": "object",
             "required": [
-                "name",
-                "path"
+                "name"
             ],
             "properties": {
+                "description": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
+                "namespace": {
+                    "description": "Target namespace for the manifest",
+                    "type": "string"
+                },
                 "path": {
+                    "description": "Local file path",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "Remote URL (e.g. GitHub raw URL)",
                     "type": "string"
                 }
             }
@@ -2842,6 +2928,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig"
                     }
                 },
+                "nat_gateway": {
+                    "description": "\"Single\" or \"HighlyAvailable\"",
+                    "type": "string"
+                },
                 "networkType": {
                     "type": "string"
                 },
@@ -2850,6 +2940,49 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "vpc_cidr": {
+                    "description": "EKS-specific fields",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig": {
+            "type": "object",
+            "required": [
+                "desired_capacity",
+                "instance_type",
+                "max_size",
+                "min_size",
+                "name"
+            ],
+            "properties": {
+                "ami_family": {
+                    "description": "For managed node groups (AmazonLinux2023, AmazonLinux2, etc.)",
+                    "type": "string"
+                },
+                "desired_capacity": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "instance_type": {
+                    "type": "string"
+                },
+                "max_size": {
+                    "type": "integer"
+                },
+                "min_size": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string"
+                },
+                "volume_size": {
+                    "type": "integer"
+                },
+                "volume_type": {
+                    "type": "string"
                 }
             }
         },
@@ -2904,6 +3037,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig"
                     }
                 },
+                "scripts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig"
+                    }
+                },
                 "timeout": {
                     "description": "Duration string, e.g. \"30m\"",
                     "type": "string"
@@ -2925,6 +3064,31 @@ const docTemplate = `{
                     }
                 },
                 "default": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig": {
+            "type": "object",
+            "required": [
+                "name",
+                "path"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "env": {
+                    "description": "Additional environment variables",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
                     "type": "string"
                 }
             }
@@ -2970,14 +3134,18 @@ const docTemplate = `{
         },
         "github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig": {
             "type": "object",
-            "required": [
-                "instance_type"
-            ],
             "properties": {
                 "autoscaling": {
                     "type": "boolean"
                 },
+                "count": {
+                    "type": "integer"
+                },
                 "instance_type": {
+                    "type": "string"
+                },
+                "machine_type": {
+                    "description": "IKS-specific fields",
                     "type": "string"
                 },
                 "max_replicas": {
@@ -2986,6 +3154,12 @@ const docTemplate = `{
                 "min_replicas": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "private_vlan": {
+                    "type": "string"
+                },
+                "public_vlan": {
+                    "type": "string"
                 },
                 "replicas": {
                     "type": "integer",
@@ -3012,7 +3186,17 @@ const docTemplate = `{
         "github_com_tsanders-rh_ocpctl_pkg_types.Cluster": {
             "type": "object",
             "properties": {
+                "api_url": {
+                    "description": "Cluster outputs (joined from cluster_outputs table)",
+                    "type": "string"
+                },
                 "base_domain": {
+                    "type": "string"
+                },
+                "cluster_type": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterType"
+                },
+                "console_url": {
                     "type": "string"
                 },
                 "cost_center": {
@@ -3121,8 +3305,27 @@ const docTemplate = `{
                 "HIBERNATED",
                 "RESUMING",
                 "DESTROYING",
+                "DESTROY_VERIFYING",
+                "DESTROY_FAILED",
                 "DESTROYED",
                 "FAILED"
+            ],
+            "x-enum-comments": {
+                "ClusterStatusDestroyFailed": "Destroy attempted but resources remain",
+                "ClusterStatusDestroyVerifying": "Verifying all resources deleted"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Verifying all resources deleted",
+                "Destroy attempted but resources remain",
+                "",
+                ""
             ],
             "x-enum-varnames": [
                 "ClusterStatusPending",
@@ -3132,6 +3335,8 @@ const docTemplate = `{
                 "ClusterStatusHibernated",
                 "ClusterStatusResuming",
                 "ClusterStatusDestroying",
+                "ClusterStatusDestroyVerifying",
+                "ClusterStatusDestroyFailed",
                 "ClusterStatusDestroyed",
                 "ClusterStatusFailed"
             ]
@@ -3147,6 +3352,29 @@ const docTemplate = `{
                 "ClusterStorageLinkRoleSource",
                 "ClusterStorageLinkRoleTarget",
                 "ClusterStorageLinkRoleShared"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterType": {
+            "type": "string",
+            "enum": [
+                "openshift",
+                "eks",
+                "iks"
+            ],
+            "x-enum-comments": {
+                "ClusterTypeEKS": "AWS Elastic Kubernetes Service",
+                "ClusterTypeIKS": "IBM Cloud Kubernetes Service",
+                "ClusterTypeOpenShift": "OpenShift (OCP/ROSA)"
+            },
+            "x-enum-descriptions": [
+                "OpenShift (OCP/ROSA)",
+                "AWS Elastic Kubernetes Service",
+                "IBM Cloud Kubernetes Service"
+            ],
+            "x-enum-varnames": [
+                "ClusterTypeOpenShift",
+                "ClusterTypeEKS",
+                "ClusterTypeIKS"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest": {
@@ -3380,7 +3608,10 @@ const docTemplate = `{
                 "EC2Instance",
                 "HostedZone",
                 "IAMRole",
-                "OIDCProvider"
+                "OIDCProvider",
+                "EBSVolume",
+                "ElasticIP",
+                "CloudWatchLogGroup"
             ],
             "x-enum-varnames": [
                 "OrphanedResourceTypeVPC",
@@ -3389,7 +3620,10 @@ const docTemplate = `{
                 "OrphanedResourceTypeEC2Instance",
                 "OrphanedResourceTypeHostedZone",
                 "OrphanedResourceTypeIAMRole",
-                "OrphanedResourceTypeOIDCProvider"
+                "OrphanedResourceTypeOIDCProvider",
+                "OrphanedResourceTypeEBSVolume",
+                "OrphanedResourceTypeElasticIP",
+                "OrphanedResourceTypeCloudWatchLogGroup"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.Platform": {
@@ -3565,6 +3799,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.ASGInfo": {
+            "type": "object",
+            "properties": {
+                "desired_capacity": {
+                    "type": "integer"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.WorkerInfo"
+                    }
+                },
+                "max_size": {
+                    "type": "integer"
+                },
+                "min_size": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.ClusterOutputsResponse": {
             "type": "object",
             "properties": {
@@ -3578,6 +3835,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "console_url": {
+                    "type": "string"
+                },
+                "dashboard_token": {
+                    "description": "Kubernetes Dashboard bearer token",
                     "type": "string"
                 },
                 "kubeadmin": {
@@ -3695,7 +3956,7 @@ const docTemplate = `{
         "internal_api.CreateClusterRequest": {
             "type": "object",
             "required": [
-                "base_domain",
+                "cluster_type",
                 "cost_center",
                 "name",
                 "owner",
@@ -3707,7 +3968,16 @@ const docTemplate = `{
             ],
             "properties": {
                 "base_domain": {
+                    "description": "Only required for OpenShift",
                     "type": "string"
+                },
+                "cluster_type": {
+                    "type": "string",
+                    "enum": [
+                        "openshift",
+                        "eks",
+                        "iks"
+                    ]
                 },
                 "cost_center": {
                     "type": "string"
@@ -3798,6 +4068,51 @@ const docTemplate = `{
                 "ttl_hours": {
                     "type": "integer",
                     "minimum": 1
+                }
+            }
+        },
+        "internal_api.InfrastructureInfo": {
+            "type": "object",
+            "properties": {
+                "api_server": {
+                    "type": "object",
+                    "properties": {
+                        "ip": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        },
+                        "uptime": {
+                            "type": "string"
+                        },
+                        "version": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "autoscale_group": {
+                    "$ref": "#/definitions/internal_api.ASGInfo"
+                },
+                "database": {
+                    "type": "object",
+                    "properties": {
+                        "host": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "static_workers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.WorkerInfo"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
                 }
             }
         },
@@ -3933,6 +4248,9 @@ const docTemplate = `{
                 "features": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig"
                 },
+                "kubernetes_versions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
                 "lifecycle": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig"
                 },
@@ -4016,6 +4334,36 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.WorkerInfo": {
+            "type": "object",
+            "properties": {
+                "health_status": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "launch_time": {
+                    "type": "string"
+                },
+                "private_ip": {
+                    "type": "string"
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"static\" or \"autoscale\"",
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }
