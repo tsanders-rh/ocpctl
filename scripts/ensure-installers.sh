@@ -168,28 +168,25 @@ ensure_ibmcloud() {
     local binary_path="${INSTALL_DIR}/ibmcloud"
 
     # Check if already installed
-    if [ -f "${binary_path}" ]; then
+    if [ -f "${binary_path}" ] || command -v ibmcloud &> /dev/null; then
         log "✓ ibmcloud already installed"
         return 0
     fi
 
     log "Installing IBM Cloud CLI..."
-    local tmp_dir=$(mktemp -d)
 
-    # Download from IBM Cloud (using a recent stable version)
-    local download_url="https://download.clis.cloud.ibm.com/ibm-cloud-cli/2.24.0/IBM_Cloud_CLI_2.24.0_linux_amd64.tar.gz"
+    # Use the official IBM Cloud CLI installer script
+    # This is the recommended installation method from IBM Cloud docs
+    if curl -fsSL https://clis.cloud.ibm.com/install/linux | sh; then
+        log "✓ Installed IBM Cloud CLI"
 
-    if curl -sL "${download_url}" | tar xzf - -C "${tmp_dir}"; then
-        # IBM Cloud CLI extracts to a subdirectory
-        if [ -f "${tmp_dir}/Bluemix_CLI/bin/ibmcloud" ]; then
-            mv "${tmp_dir}/Bluemix_CLI/bin/ibmcloud" "${binary_path}"
-            chmod +x "${binary_path}"
-            rm -rf "${tmp_dir}"
-            log "✓ Installed IBM Cloud CLI"
+        # Verify installation
+        if command -v ibmcloud &> /dev/null; then
+            log "✓ IBM Cloud CLI is available in PATH"
 
-            # Install container-service plugin
+            # Install container-service plugin (needed for IKS)
             log "Installing IBM Cloud container-service plugin..."
-            if "${binary_path}" plugin install container-service -f 2>/dev/null; then
+            if ibmcloud plugin install container-service -f 2>/dev/null; then
                 log "✓ Installed container-service plugin"
             else
                 log "WARNING: Failed to install container-service plugin (non-fatal)"
@@ -197,13 +194,11 @@ ensure_ibmcloud() {
 
             return 0
         else
-            log "✗ ibmcloud binary not found in tarball"
-            rm -rf "${tmp_dir}"
+            log "✗ IBM Cloud CLI installed but not found in PATH"
             return 1
         fi
     else
-        rm -rf "${tmp_dir}"
-        log "✗ Failed to download IBM Cloud CLI"
+        log "✗ Failed to install IBM Cloud CLI"
         return 1
     fi
 }
