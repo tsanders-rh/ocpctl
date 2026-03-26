@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -389,23 +388,31 @@ func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, j
 		return fmt.Errorf("no successful hibernate job found for cluster %s", cluster.ID)
 	}
 
-	// Get original worker count from job metadata
-	workerCountVal, ok := lastHibernateJob.Metadata["original_worker_count"]
+	// Get original worker pool sizes from job metadata
+	poolSizesVal, ok := lastHibernateJob.Metadata["worker_pool_sizes"]
 	if !ok {
-		return fmt.Errorf("original_worker_count not found in hibernate job metadata")
+		// Fallback to legacy metadata format if new format not available
+		return fmt.Errorf("worker_pool_sizes not found in hibernate job metadata (cluster may have been hibernated before this feature was implemented)")
 	}
 
-	workerCountStr, ok := workerCountVal.(string)
+	poolSizesStr, ok := poolSizesVal.(string)
 	if !ok {
-		return fmt.Errorf("original_worker_count is not a string")
+		return fmt.Errorf("worker_pool_sizes is not a string")
 	}
 
-	originalWorkerCount, err := strconv.Atoi(workerCountStr)
-	if err != nil {
-		return fmt.Errorf("parse worker count: %w", err)
+	// Parse the worker pool sizes map
+	var originalPoolSizes map[string]int
+	if err := json.Unmarshal([]byte(poolSizesStr), &originalPoolSizes); err != nil {
+		return fmt.Errorf("parse worker pool sizes: %w", err)
 	}
 
-	log.Printf("Restoring IKS cluster to %d workers", originalWorkerCount)
+	// Calculate total worker count for logging
+	totalWorkers := 0
+	for _, size := range originalPoolSizes {
+		totalWorkers += size
+	}
+
+	log.Printf("Restoring IKS cluster to original configuration (%d worker pools, %d total workers)", len(originalPoolSizes), totalWorkers)
 
 	// Get profile to extract configuration
 	prof, err := h.registry.Get(cluster.Profile)
@@ -433,17 +440,30 @@ func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, j
 		return fmt.Errorf("IBM Cloud login: %w", err)
 	}
 
-	// TODO: Scale workers back to original count
-	// This requires IBM Cloud Kubernetes Service API to resize worker pools
-	log.Printf("Warning: IKS worker pool scaling requires IBM Cloud Kubernetes Service API")
-	log.Printf("Current implementation limitation: Cannot programmatically scale IKS workers")
-	log.Printf("Manual action required: Scale cluster %s to %d workers", cluster.Name, originalWorkerCount)
+	// Restore each worker pool to its original size
+	log.Printf("Restoring worker pools to original sizes...")
+	restoredCount := 0
+	for poolName, originalSize := range originalPoolSizes {
+		if originalSize == 0 {
+			log.Printf("Skipping pool '%s' (original size was 0)", poolName)
+			continue
+		}
 
-	// Update cluster status to READY (even though manual action is required)
+		log.Printf("Restoring worker pool '%s' to %d workers per zone", poolName, originalSize)
+		if err := iksInstaller.ResizeWorkerPool(ctx, cluster.Name, poolName, originalSize); err != nil {
+			return fmt.Errorf("restore worker pool %s: %w", poolName, err)
+		}
+
+		restoredCount++
+	}
+
+	log.Printf("Successfully restored %d worker pools to original sizes", restoredCount)
+
+	// Update cluster status to READY
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	log.Printf("IKS cluster %s marked as resumed (Note: actual worker scaling not yet implemented)", cluster.Name)
+	log.Printf("IKS cluster %s resumed successfully (%d workers restored)", cluster.Name, totalWorkers)
 	return nil
 }

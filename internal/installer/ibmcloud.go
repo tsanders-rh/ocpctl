@@ -45,6 +45,19 @@ type IKSClusterInfo struct {
 	} `json:"ingress"`
 }
 
+// IKSWorkerPoolInfo represents worker pool information
+type IKSWorkerPoolInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	SizePerZone int    `json:"sizePerZone"`
+	MachineType string `json:"machineType"`
+	State       string `json:"state"`
+	Zones       []struct {
+		ID          string `json:"id"`
+		WorkerCount int    `json:"workerCount"`
+	} `json:"zones"`
+}
+
 // NewIKSInstaller creates a new IKS installer instance
 func NewIKSInstaller() *IKSInstaller {
 	binaryPath := os.Getenv("IBMCLOUD_BINARY")
@@ -342,4 +355,114 @@ func (i *IKSInstaller) Version() (string, error) {
 	}
 
 	return stdout.String(), nil
+}
+
+// ListWorkerPools lists all worker pools for a cluster
+func (i *IKSInstaller) ListWorkerPools(ctx context.Context, clusterNameOrID string) ([]IKSWorkerPoolInfo, error) {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "worker-pool", "ls",
+		"--cluster", clusterNameOrID,
+		"--output", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("list worker pools: %w\nStderr: %s", err, stderr.String())
+	}
+
+	var pools []IKSWorkerPoolInfo
+	if err := json.Unmarshal(stdout.Bytes(), &pools); err != nil {
+		return nil, fmt.Errorf("parse worker pools: %w", err)
+	}
+
+	return pools, nil
+}
+
+// GetWorkerPool retrieves details about a specific worker pool
+func (i *IKSInstaller) GetWorkerPool(ctx context.Context, clusterNameOrID, poolNameOrID string) (*IKSWorkerPoolInfo, error) {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "worker-pool", "get",
+		"--cluster", clusterNameOrID,
+		"--worker-pool", poolNameOrID,
+		"--output", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("get worker pool: %w\nStderr: %s", err, stderr.String())
+	}
+
+	var pool IKSWorkerPoolInfo
+	if err := json.Unmarshal(stdout.Bytes(), &pool); err != nil {
+		return nil, fmt.Errorf("parse worker pool: %w", err)
+	}
+
+	return &pool, nil
+}
+
+// ResizeWorkerPool resizes a worker pool to the specified size per zone
+func (i *IKSInstaller) ResizeWorkerPool(ctx context.Context, clusterNameOrID, poolNameOrID string, sizePerZone int) error {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "worker-pool", "resize",
+		"--cluster", clusterNameOrID,
+		"--worker-pool", poolNameOrID,
+		"--size-per-zone", fmt.Sprintf("%d", sizePerZone))
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("resize worker pool: %w\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
+	}
+
+	return nil
+}
+
+// GetTotalWorkerCount calculates the total worker count across all pools
+func (i *IKSInstaller) GetTotalWorkerCount(ctx context.Context, clusterNameOrID string) (int, error) {
+	pools, err := i.ListWorkerPools(ctx, clusterNameOrID)
+	if err != nil {
+		return 0, fmt.Errorf("list worker pools: %w", err)
+	}
+
+	totalCount := 0
+	for _, pool := range pools {
+		// Sum up worker count across all zones in the pool
+		for _, zone := range pool.Zones {
+			totalCount += zone.WorkerCount
+		}
+	}
+
+	return totalCount, nil
+}
+
+// ScaleAllWorkerPools scales all worker pools to the specified size per zone
+// Returns a map of pool name to original size for later restoration
+func (i *IKSInstaller) ScaleAllWorkerPools(ctx context.Context, clusterNameOrID string, sizePerZone int) (map[string]int, error) {
+	pools, err := i.ListWorkerPools(ctx, clusterNameOrID)
+	if err != nil {
+		return nil, fmt.Errorf("list worker pools: %w", err)
+	}
+
+	originalSizes := make(map[string]int)
+	for _, pool := range pools {
+		// Store original size
+		originalSizes[pool.Name] = pool.SizePerZone
+
+		// Skip if already at target size
+		if pool.SizePerZone == sizePerZone {
+			continue
+		}
+
+		// Resize the pool
+		if err := i.ResizeWorkerPool(ctx, clusterNameOrID, pool.Name, sizePerZone); err != nil {
+			return originalSizes, fmt.Errorf("resize worker pool %s: %w", pool.Name, err)
+		}
+
+		fmt.Printf("Scaled worker pool '%s' from %d to %d workers per zone\n", pool.Name, pool.SizePerZone, sizePerZone)
+	}
+
+	return originalSizes, nil
 }

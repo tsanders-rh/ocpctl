@@ -2,9 +2,13 @@ package ibmcloud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"time"
 )
 
 // CredentialSource represents where credentials are sourced from
@@ -62,15 +66,122 @@ func getRegionFromEnv() string {
 func getCredentialsFromInstanceMetadata() (*Credentials, error) {
 	// IBM Cloud VPC instances have a metadata service similar to AWS IMDS
 	// Endpoint: http://169.254.169.254/metadata/v1/
+	const metadataBaseURL = "http://169.254.169.254/metadata/v1"
 
-	// TODO: Implement instance metadata service credential retrieval
-	// This requires:
-	// 1. Check if metadata service is accessible
-	// 2. Retrieve instance identity token
-	// 3. Exchange for IAM token
-	// 4. Use IAM token for API authentication
+	// Create HTTP client with short timeout for metadata service
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
 
-	return nil, fmt.Errorf("instance metadata service not implemented yet")
+	// 1. Check if metadata service is accessible and get instance identity token
+	tokenURL := metadataBaseURL + "/instance_identity/token"
+	req, err := http.NewRequest("PUT", tokenURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create metadata request: %w", err)
+	}
+
+	// IBM Cloud metadata service requires this header
+	req.Header.Set("Metadata-Flavor", "ibm")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("metadata service not accessible: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("metadata service returned status %d", resp.StatusCode)
+	}
+
+	// Read instance identity token
+	tokenBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read instance identity token: %w", err)
+	}
+
+	var tokenResponse struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+
+	if err := json.Unmarshal(tokenBytes, &tokenResponse); err != nil {
+		return nil, fmt.Errorf("parse instance identity token: %w", err)
+	}
+
+	if tokenResponse.AccessToken == "" {
+		return nil, fmt.Errorf("empty access token from metadata service")
+	}
+
+	// 2. Get instance metadata to retrieve account ID and region
+	instanceURL := metadataBaseURL + "/instance"
+	req, err = http.NewRequest("GET", instanceURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create instance metadata request: %w", err)
+	}
+	req.Header.Set("Metadata-Flavor", "ibm")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get instance metadata: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("instance metadata returned status %d", resp.StatusCode)
+	}
+
+	instanceBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read instance metadata: %w", err)
+	}
+
+	var instanceMetadata struct {
+		VPC struct {
+			ID     string `json:"id"`
+			CRN    string `json:"crn"`
+			Region string `json:"region"`
+		} `json:"vpc"`
+		Zone      string `json:"zone"`
+		AccountID string `json:"account_id"`
+	}
+
+	if err := json.Unmarshal(instanceBytes, &instanceMetadata); err != nil {
+		return nil, fmt.Errorf("parse instance metadata: %w", err)
+	}
+
+	// Extract region from zone (e.g., "us-south-1" -> "us-south")
+	region := instanceMetadata.VPC.Region
+	if region == "" && instanceMetadata.Zone != "" {
+		// Fallback: extract region from zone name
+		region = extractRegionFromZone(instanceMetadata.Zone)
+	}
+
+	// 3. The access token from metadata service can be used directly for IBM Cloud API calls
+	// Store it as the "API key" - IBM Cloud SDK accepts IAM tokens in place of API keys
+	return &Credentials{
+		APIKey:        tokenResponse.AccessToken,
+		AccountID:     instanceMetadata.AccountID,
+		Region:        region,
+		ResourceGroup: "", // Will be retrieved from environment or defaulted
+		Source:        CredentialSourceInstanceMetadata,
+	}, nil
+}
+
+// extractRegionFromZone extracts region from zone name (e.g., "us-south-1" -> "us-south")
+func extractRegionFromZone(zone string) string {
+	// Zone format is typically "<region>-<number>"
+	if len(zone) < 3 {
+		return ""
+	}
+
+	// Find last dash and strip the zone number
+	for i := len(zone) - 1; i >= 0; i-- {
+		if zone[i] == '-' {
+			return zone[:i]
+		}
+	}
+
+	return zone
 }
 
 // ValidateIAMPermissions validates that the credentials have required IAM permissions

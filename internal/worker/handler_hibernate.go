@@ -371,35 +371,50 @@ func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Clus
 		return fmt.Errorf("IBM Cloud login: %w", err)
 	}
 
-	// Get cluster info to find current worker count
+	// Get cluster info to find cluster ID
 	info, err := iksInstaller.GetClusterInfo(ctx, cluster.Name)
 	if err != nil {
 		return fmt.Errorf("get cluster info: %w", err)
 	}
 
-	// TODO: Get actual worker count from IKS API
-	// For now, store a placeholder - this would need the actual IBM Cloud SDK
-	// to query worker pools and get current worker counts
+	// Get current worker pool configurations before scaling down
+	log.Printf("Retrieving worker pool configurations for cluster %s...", cluster.Name)
+	originalSizes, err := iksInstaller.ScaleAllWorkerPools(ctx, cluster.Name, 0)
+	if err != nil {
+		return fmt.Errorf("scale worker pools to 0: %w", err)
+	}
 
-	log.Printf("Warning: IKS worker pool scaling requires IBM Cloud Kubernetes Service API")
-	log.Printf("Current implementation limitation: Cannot programmatically scale IKS workers to 0")
-	log.Printf("Cluster info: %+v", info)
+	// Calculate total original worker count
+	totalOriginalCount := 0
+	for _, size := range originalSizes {
+		totalOriginalCount += size
+	}
 
-	// Store cluster ID in job metadata for resume
+	log.Printf("Scaled down %d worker pools (total %d workers) for cluster %s", len(originalSizes), totalOriginalCount, cluster.Name)
+
+	// Store cluster ID and worker pool sizes in job metadata for resume
 	// Note: Metadata will be saved when the job completes via MarkSucceeded
 	if job.Metadata == nil {
 		job.Metadata = make(types.JobMetadata)
 	}
 	job.Metadata["cluster_id"] = info.ID
-	job.Metadata["original_worker_count"] = "2" // Placeholder - should query actual count
-	log.Printf("Stored cluster info in job metadata for resume")
+	job.Metadata["total_worker_count"] = fmt.Sprintf("%d", totalOriginalCount)
+
+	// Store each pool's original size for restoration
+	poolSizesJSON, err := json.Marshal(originalSizes)
+	if err != nil {
+		return fmt.Errorf("marshal pool sizes: %w", err)
+	}
+	job.Metadata["worker_pool_sizes"] = string(poolSizesJSON)
+
+	log.Printf("Stored cluster info and worker pool configurations in job metadata for resume")
 
 	// Update cluster status to HIBERNATED
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	log.Printf("IKS cluster %s marked as hibernated (Note: actual worker scaling not yet implemented)", cluster.Name)
+	log.Printf("IKS cluster %s hibernated successfully (scaled %d workers to 0)", cluster.Name, totalOriginalCount)
 	return nil
 }
 
