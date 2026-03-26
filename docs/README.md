@@ -103,7 +103,20 @@ User documentation and guides:
 
 Operations and maintenance guides:
 
-- **[resource-tagging-operations.md](operations/resource-tagging-operations.md)** - **NEW!** Operational procedures for AWS resource tagging and monitoring
+- **[resource-tagging-operations.md](operations/resource-tagging-operations.md)** - Operational procedures for AWS resource tagging and monitoring
+- **[AWS_IAM_PERMISSIONS.md](operations/AWS_IAM_PERMISSIONS.md)** - IAM permissions required for OCPCTL operations
+  - OpenShift cluster creation/destruction
+  - EKS cluster management
+  - IKS cluster management
+  - Resource tagging and cleanup
+  - S3 artifact storage
+- **[DISASTER_RECOVERY.md](operations/DISASTER_RECOVERY.md)** - **NEW!** Disaster recovery runbook and procedures
+  - RTO/RPO objectives (< 30 min RTO, < 5 min RPO)
+  - Database backup and recovery procedures
+  - S3 versioning and cross-region replication
+  - Recovery scenarios and step-by-step procedures
+  - Monthly DR drill checklist
+  - Cost estimates (~$6.71/month)
 
 ### 🔬 [issues/](issues/)
 
@@ -126,8 +139,10 @@ Feature specifications and technical documentation:
 
 - **Setting up development environment**: [../DEVELOPMENT.md](../DEVELOPMENT.md)
 - **Deploying to production**: [deployment/DEPLOYMENT_WEB.md](deployment/DEPLOYMENT_WEB.md)
+- **Configuring disaster recovery**: [operations/DISASTER_RECOVERY.md](operations/DISASTER_RECOVERY.md)
 - **Installing OpenShift**: [setup/OPENSHIFT_INSTALL_SETUP.md](setup/OPENSHIFT_INSTALL_SETUP.md)
 - **Testing without provisioning**: [setup/TESTING_WITHOUT_OPENSHIFT.md](setup/TESTING_WITHOUT_OPENSHIFT.md)
+- **Managing AWS resources**: [user-guide/aws-resource-management.md](user-guide/aws-resource-management.md)
 
 ### Reference
 
