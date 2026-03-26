@@ -291,53 +291,70 @@ func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Confi
 			tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 		}
 
-		// Check for ManagedBy=ocpctl tag
-		if tags["ManagedBy"] == "ocpctl" {
-			clusterName := tags["ClusterName"]
-			if clusterName == "" {
-				log.Printf("[detectOrphanedLoadBalancers] LB %s has ManagedBy=ocpctl but no ClusterName tag", lbArn)
-				continue
-			}
-
-			cluster, exists := clustersByName[clusterName]
-			if !exists || cluster.Status == types.ClusterStatusDestroyed {
-				orphans = append(orphans, OrphanedResource{
-					Type:         "LoadBalancer",
-					ResourceID:   lbArn,
-					ResourceName: aws.ToString(lb.LoadBalancerName),
-					Region:       cfg.Region,
-					Tags:         tags,
-				})
-			}
+		// IMPORTANT: Only check resources that are managed by ocpctl
+		// Resources with only kubernetes.io/cluster tags (e.g., from Cluster API, standalone K8s)
+		// should NOT be flagged as orphaned - they're not ocpctl's responsibility
+		if tags["ManagedBy"] != "ocpctl" {
 			continue
 		}
 
-		// Check for kubernetes.io/cluster/{infraID} tag (created by Kubernetes services)
+		// Extract cluster name from ocpctl tags
+		// For OpenShift on AWS, LoadBalancer services create kubernetes.io/cluster/{infraID} tags
+		// We need to handle both direct ClusterName tags and infraID tags
+		var clusterName string
+		var kubernetesClusterName string
+
+		// Check for kubernetes.io/cluster/{infraID} tag
 		for key, value := range tags {
 			if strings.HasPrefix(key, "kubernetes.io/cluster/") && (value == "owned" || value == "shared") {
-				infraID := strings.TrimPrefix(key, "kubernetes.io/cluster/")
-				// Extract cluster name from infraID pattern: {clustername}-{5chars}
-				parts := strings.Split(infraID, "-")
-				if len(parts) < 2 {
-					continue
-				}
-				// Remove the 5-char suffix to get cluster name
-				clusterName := strings.Join(parts[0:len(parts)-1], "-")
-
-				cluster, exists := clustersByName[clusterName]
-				if !exists || cluster.Status == types.ClusterStatusDestroyed {
-					orphans = append(orphans, OrphanedResource{
-						Type:         "LoadBalancer",
-						ResourceID:   lbArn,
-						ResourceName: aws.ToString(lb.LoadBalancerName),
-						Region:       cfg.Region,
-						Tags:         tags,
-					})
-				}
+				kubernetesClusterName = strings.TrimPrefix(key, "kubernetes.io/cluster/")
 				break
 			}
 		}
-		// Only rely on tags - no pattern matching fallback to avoid false positives
+
+		// Prefer kubernetes tag (infraID) over ClusterName tag
+		if kubernetesClusterName != "" {
+			// Try the full name first (in case user named cluster with infraID pattern)
+			clusterName = kubernetesClusterName
+		} else {
+			clusterName = tags["ClusterName"]
+		}
+
+		if clusterName == "" {
+			log.Printf("[detectOrphanedLoadBalancers] LB %s has ManagedBy=ocpctl but no ClusterName tag", lbArn)
+			continue
+		}
+
+		// Check if cluster exists in database (try full name first)
+		cluster, exists := clustersByName[clusterName]
+
+		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
+		// OpenShift infraID pattern: {clustername}-{5chars}
+		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
+			parts := strings.Split(kubernetesClusterName, "-")
+			if len(parts) >= 2 {
+				// Check if last part looks like a 5-char infraID suffix
+				lastPart := parts[len(parts)-1]
+				if len(lastPart) == 5 {
+					// Try removing the 5-char suffix
+					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
+					cluster, exists = clustersByName[clusterNameWithoutSuffix]
+					if exists {
+						clusterName = clusterNameWithoutSuffix
+					}
+				}
+			}
+		}
+
+		if !exists || cluster.Status == types.ClusterStatusDestroyed {
+			orphans = append(orphans, OrphanedResource{
+				Type:         "LoadBalancer",
+				ResourceID:   lbArn,
+				ResourceName: aws.ToString(lb.LoadBalancerName),
+				Region:       cfg.Region,
+				Tags:         tags,
+			})
+		}
 	}
 
 	return orphans, nil
@@ -845,7 +862,16 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 		managedByOcpctl := getTagValue(volume.Tags, "ManagedBy") == "ocpctl"
 		clusterNameFromTag := getTagValue(volume.Tags, "ClusterName")
 
-		// Also check for kubernetes.io/cluster/{name} tag (created by Kubernetes PVC)
+		// IMPORTANT: Only check resources that are managed by ocpctl
+		// Resources with only kubernetes.io/cluster tags (e.g., from Cluster API, standalone K8s)
+		// should NOT be flagged as orphaned - they're not ocpctl's responsibility
+		if !managedByOcpctl {
+			continue
+		}
+
+		// Extract cluster name from ocpctl tags
+		// For OpenShift on AWS, PVCs create kubernetes.io/cluster/{infraID} tags
+		// We need to handle both direct ClusterName tags and infraID tags
 		var kubernetesClusterName string
 		for _, tag := range volume.Tags {
 			key := aws.ToString(tag.Key)
@@ -856,17 +882,12 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 			}
 		}
 
-		// Prefer kubernetes tag over ManagedBy tag for PVCs
+		// Prefer kubernetes tag (infraID) over ClusterName tag
 		var clusterName string
 		if kubernetesClusterName != "" {
-			// Extract cluster name from infraID (pattern: {clustername}-{5chars})
-			parts := strings.Split(kubernetesClusterName, "-")
-			if len(parts) < 2 {
-				continue
-			}
-			// Remove the 5-char suffix to get cluster name
-			clusterName = strings.Join(parts[0:len(parts)-1], "-")
-		} else if managedByOcpctl {
+			// Try the full name first (in case user named cluster with infraID pattern)
+			clusterName = kubernetesClusterName
+		} else {
 			clusterName = clusterNameFromTag
 		}
 
@@ -874,8 +895,26 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 			continue
 		}
 
-		// Check if cluster exists in database
+		// Check if cluster exists in database (try full name first)
 		cluster, exists := clustersByName[clusterName]
+
+		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
+		// OpenShift infraID pattern: {clustername}-{5chars}
+		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
+			parts := strings.Split(kubernetesClusterName, "-")
+			if len(parts) >= 2 {
+				// Check if last part looks like a 5-char infraID suffix
+				lastPart := parts[len(parts)-1]
+				if len(lastPart) == 5 {
+					// Try removing the 5-char suffix
+					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
+					cluster, exists = clustersByName[clusterNameWithoutSuffix]
+					if exists {
+						clusterName = clusterNameWithoutSuffix
+					}
+				}
+			}
+		}
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
 			volumeName := getTagValue(volume.Tags, "Name")
 			if volumeName == "" {
@@ -917,7 +956,16 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 		managedByOcpctl := getTagValue(address.Tags, "ManagedBy") == "ocpctl"
 		clusterNameFromTag := getTagValue(address.Tags, "ClusterName")
 
-		// Also check for kubernetes.io/cluster/{name} tag (created by LoadBalancer services)
+		// IMPORTANT: Only check resources that are managed by ocpctl
+		// Resources with only kubernetes.io/cluster tags (e.g., from Cluster API, standalone K8s)
+		// should NOT be flagged as orphaned - they're not ocpctl's responsibility
+		if !managedByOcpctl {
+			continue
+		}
+
+		// Extract cluster name from ocpctl tags
+		// For OpenShift on AWS, LoadBalancer services create kubernetes.io/cluster/{infraID} tags
+		// We need to handle both direct ClusterName tags and infraID tags
 		var kubernetesClusterName string
 		for _, tag := range address.Tags {
 			key := aws.ToString(tag.Key)
@@ -928,17 +976,12 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 			}
 		}
 
-		// Prefer kubernetes tag over ManagedBy tag
+		// Prefer kubernetes tag (infraID) over ClusterName tag
 		var clusterName string
 		if kubernetesClusterName != "" {
-			// Extract cluster name from infraID (pattern: {clustername}-{5chars})
-			parts := strings.Split(kubernetesClusterName, "-")
-			if len(parts) < 2 {
-				continue
-			}
-			// Remove the 5-char suffix to get cluster name
-			clusterName = strings.Join(parts[0:len(parts)-1], "-")
-		} else if managedByOcpctl {
+			// Try the full name first (in case user named cluster with infraID pattern)
+			clusterName = kubernetesClusterName
+		} else {
 			clusterName = clusterNameFromTag
 		}
 
@@ -946,8 +989,26 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 			continue
 		}
 
-		// Check if cluster exists in database
+		// Check if cluster exists in database (try full name first)
 		cluster, exists := clustersByName[clusterName]
+
+		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
+		// OpenShift infraID pattern: {clustername}-{5chars}
+		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
+			parts := strings.Split(kubernetesClusterName, "-")
+			if len(parts) >= 2 {
+				// Check if last part looks like a 5-char infraID suffix
+				lastPart := parts[len(parts)-1]
+				if len(lastPart) == 5 {
+					// Try removing the 5-char suffix
+					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
+					cluster, exists = clustersByName[clusterNameWithoutSuffix]
+					if exists {
+						clusterName = clusterNameWithoutSuffix
+					}
+				}
+			}
+		}
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
 			eipName := getTagValue(address.Tags, "Name")
 			if eipName == "" {
