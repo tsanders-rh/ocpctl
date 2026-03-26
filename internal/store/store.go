@@ -261,3 +261,63 @@ func (s *Store) Migrate() error {
 
 	return nil
 }
+
+// GetSchemaVersion returns the current database schema version
+func (s *Store) GetSchemaVersion(ctx context.Context) (string, error) {
+	var version string
+	err := s.pool.QueryRow(ctx, `
+		SELECT version FROM schema_migrations
+		ORDER BY version DESC
+		LIMIT 1
+	`).Scan(&version)
+	if err != nil {
+		return "", fmt.Errorf("get schema version: %w", err)
+	}
+	return version, nil
+}
+
+// GetExpectedSchemaVersion returns the latest migration version from embedded files
+func (s *Store) GetExpectedSchemaVersion() (string, error) {
+	// Read migration files from embedded filesystem
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return "", fmt.Errorf("read migrations directory: %w", err)
+	}
+
+	// Find the highest version number
+	var latestVersion string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			// Extract version from filename (e.g., "00024" from "00024_description.sql")
+			version := strings.Split(entry.Name(), "_")[0]
+			if version > latestVersion {
+				latestVersion = version
+			}
+		}
+	}
+
+	if latestVersion == "" {
+		return "", fmt.Errorf("no migration files found")
+	}
+
+	return latestVersion, nil
+}
+
+// VerifyMigrations verifies that all expected migrations have been applied
+func (s *Store) VerifyMigrations(ctx context.Context) error {
+	expected, err := s.GetExpectedSchemaVersion()
+	if err != nil {
+		return fmt.Errorf("get expected schema version: %w", err)
+	}
+
+	current, err := s.GetSchemaVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("get current schema version: %w", err)
+	}
+
+	if current != expected {
+		return fmt.Errorf("schema version mismatch: expected %s, got %s (run migrations)", expected, current)
+	}
+
+	return nil
+}

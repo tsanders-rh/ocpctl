@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,10 +46,26 @@ var (
 )
 
 func main() {
+	// Get environment for configuration validation
+	environment := os.Getenv("ENVIRONMENT")
+
 	// Load configuration from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		if environment == "production" {
+			log.Fatalf("CRITICAL: DATABASE_URL must be set in production environment")
+		}
+		// Development fallback with warning
+		log.Println("WARNING: DATABASE_URL not set, using localhost (development only)")
+		log.Println("         Set DATABASE_URL environment variable before deploying to production!")
 		dbURL = "postgres://localhost:5432/ocpctl?sslmode=disable"
+	}
+
+	// Validate SSL mode in production
+	if environment == "production" {
+		if strings.Contains(dbURL, "sslmode=disable") || !strings.Contains(dbURL, "sslmode=") {
+			log.Fatalf("CRITICAL: Database connections must use SSL in production (sslmode=require or sslmode=verify-full)")
+		}
 	}
 
 	profilesDir := os.Getenv("PROFILES_DIR")
@@ -63,7 +80,6 @@ func main() {
 
 	// JWT configuration
 	jwtSecret := os.Getenv("JWT_SECRET")
-	environment := os.Getenv("ENVIRONMENT")
 	if jwtSecret == "" {
 		if environment == "production" {
 			log.Fatalf("CRITICAL: JWT_SECRET must be set in production environment")
@@ -104,6 +120,16 @@ func main() {
 	if err := st.Migrate(); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
+
+	// Verify migrations completed successfully
+	log.Println("Verifying database schema...")
+	ctx := context.Background()
+	if err := st.VerifyMigrations(ctx); err != nil {
+		log.Fatalf("Migration verification failed: %v", err)
+	}
+
+	currentVersion, _ := st.GetSchemaVersion(ctx)
+	log.Printf("Database schema version: %s", currentVersion)
 
 	// Initialize profile registry
 	log.Println("Loading cluster profiles...")

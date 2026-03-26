@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -124,10 +125,26 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Get environment for configuration validation
+	environment := os.Getenv("ENVIRONMENT")
+
 	// Load configuration from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		if environment == "production" {
+			log.Fatalf("CRITICAL: DATABASE_URL must be set in production environment")
+		}
+		// Development fallback with warning
+		log.Println("WARNING: DATABASE_URL not set, using localhost (development only)")
+		log.Println("         Set DATABASE_URL environment variable before deploying to production!")
 		dbURL = "postgres://localhost:5432/ocpctl?sslmode=disable"
+	}
+
+	// Validate SSL mode in production
+	if environment == "production" {
+		if strings.Contains(dbURL, "sslmode=disable") || !strings.Contains(dbURL, "sslmode=") {
+			log.Fatalf("CRITICAL: Database connections must use SSL in production (sslmode=require or sslmode=verify-full)")
+		}
 	}
 
 	workDir := os.Getenv("WORKER_WORK_DIR")
@@ -143,7 +160,6 @@ func main() {
 	// Validate OPENSHIFT_PULL_SECRET (prefer file, fall back to env var)
 	pullSecret := os.Getenv("OPENSHIFT_PULL_SECRET")
 	pullSecretFile := os.Getenv("OPENSHIFT_PULL_SECRET_FILE")
-	environment := os.Getenv("ENVIRONMENT")
 
 	// If a file path is specified, read from file
 	if pullSecretFile != "" {
@@ -201,6 +217,15 @@ func main() {
 	}
 
 	log.Println("Database connection successful")
+
+	// Verify database schema version matches expected version
+	log.Println("Verifying database schema...")
+	if err := st.VerifyMigrations(ctx); err != nil {
+		log.Fatalf("Migration verification failed: %v", err)
+	}
+
+	currentVersion, _ := st.GetSchemaVersion(ctx)
+	log.Printf("Database schema version: %s", currentVersion)
 
 	// Load profiles
 	profilesDir := os.Getenv("PROFILES_DIR")

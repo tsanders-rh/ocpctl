@@ -38,10 +38,25 @@ func main() {
 
 	ctx := context.Background()
 
+	// Get environment for configuration validation
+	environment := os.Getenv("ENVIRONMENT")
+
 	// Connect to database
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		if environment == "production" {
+			log.Fatalf("CRITICAL: DATABASE_URL must be set in production environment")
+		}
+		// Development fallback with warning
+		log.Println("WARNING: DATABASE_URL not set, using localhost (development only)")
 		dbURL = "postgres://localhost:5432/ocpctl?sslmode=disable"
+	}
+
+	// Validate SSL mode in production
+	if environment == "production" {
+		if strings.Contains(dbURL, "sslmode=disable") || !strings.Contains(dbURL, "sslmode=") {
+			log.Fatalf("CRITICAL: Database connections must use SSL in production (sslmode=require or sslmode=verify-full)")
+		}
 	}
 
 	st, err := store.NewStore(dbURL)
