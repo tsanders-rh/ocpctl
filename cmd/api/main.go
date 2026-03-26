@@ -35,6 +35,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/api"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/secrets"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 )
 
@@ -78,14 +79,28 @@ func main() {
 		fmt.Sscanf(portStr, "%d", &port)
 	}
 
-	// JWT configuration
-	jwtSecret := os.Getenv("JWT_SECRET")
+	// Initialize secrets manager
+	log.Println("Initializing secrets manager...")
+	ctx := context.Background()
+	secretsManager, err := secrets.NewManager(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize secrets manager: %v", err)
+	}
+
+	// JWT configuration - retrieve from AWS Secrets Manager (or env var in development)
+	jwtSecretName := os.Getenv("JWT_SECRET_NAME") // Name of secret in AWS Secrets Manager
+	jwtSecret, err := secretsManager.GetSecretWithFallback(ctx, jwtSecretName, "JWT_SECRET", true)
+	if err != nil {
+		log.Fatalf("CRITICAL: Failed to retrieve JWT_SECRET: %v", err)
+	}
+
+	// Use default for development if still empty
 	if jwtSecret == "" {
 		if environment == "production" {
 			log.Fatalf("CRITICAL: JWT_SECRET must be set in production environment")
 		}
 		log.Println("WARNING: Using default JWT_SECRET for development only")
-		log.Println("         Set JWT_SECRET environment variable before deploying to production!")
+		log.Println("         Set JWT_SECRET environment variable or JWT_SECRET_NAME for AWS Secrets Manager!")
 		jwtSecret = "change-me-in-production-min-32-chars"
 	}
 
@@ -123,7 +138,6 @@ func main() {
 
 	// Verify migrations completed successfully
 	log.Println("Verifying database schema...")
-	ctx := context.Background()
 	if err := st.VerifyMigrations(ctx); err != nil {
 		log.Fatalf("Migration verification failed: %v", err)
 	}

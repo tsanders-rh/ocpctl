@@ -15,6 +15,7 @@ import (
 
 	"github.com/tsanders-rh/ocpctl/internal/janitor"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/secrets"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/internal/worker"
 )
@@ -157,26 +158,60 @@ func main() {
 		healthCheckPort = "8081"
 	}
 
-	// Validate OPENSHIFT_PULL_SECRET (prefer file, fall back to env var)
-	pullSecret := os.Getenv("OPENSHIFT_PULL_SECRET")
-	pullSecretFile := os.Getenv("OPENSHIFT_PULL_SECRET_FILE")
+	// Initialize secrets manager
+	log.Println("Initializing secrets manager...")
+	ctx := context.Background()
+	secretsManager, err := secrets.NewManager(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize secrets manager: %v", err)
+	}
 
-	// If a file path is specified, read from file
-	if pullSecretFile != "" {
-		fileData, err := os.ReadFile(pullSecretFile)
+	// Retrieve OPENSHIFT_PULL_SECRET from AWS Secrets Manager (or fallback sources in development)
+	var pullSecret string
+	pullSecretName := os.Getenv("OPENSHIFT_PULL_SECRET_NAME") // Name of secret in AWS Secrets Manager
+	pullSecretFile := os.Getenv("OPENSHIFT_PULL_SECRET_FILE") // File path for development
+
+	// In production, always use Secrets Manager
+	if environment == "production" {
+		if pullSecretName == "" {
+			log.Fatalf("CRITICAL: OPENSHIFT_PULL_SECRET_NAME must be set in production environment")
+		}
+		pullSecret, err = secretsManager.GetSecret(ctx, pullSecretName)
 		if err != nil {
-			if environment == "production" {
-				log.Fatalf("CRITICAL: Failed to read OPENSHIFT_PULL_SECRET_FILE (%s): %v", pullSecretFile, err)
+			log.Fatalf("CRITICAL: Failed to retrieve OPENSHIFT_PULL_SECRET from Secrets Manager: %v", err)
+		}
+	} else {
+		// In development, try Secrets Manager, then file, then env var
+		if pullSecretName != "" {
+			pullSecret, err = secretsManager.GetSecret(ctx, pullSecretName)
+			if err == nil {
+				log.Printf("Retrieved OPENSHIFT_PULL_SECRET from AWS Secrets Manager")
+			} else {
+				log.Printf("Failed to retrieve from Secrets Manager (will try other sources): %v", err)
 			}
-			log.Printf("WARNING: Failed to read OPENSHIFT_PULL_SECRET_FILE (%s): %v", pullSecretFile, err)
-			pullSecret = "" // Clear any env var value
-		} else {
-			pullSecret = string(fileData)
-			log.Printf("Loaded pull secret from file: %s", pullSecretFile)
-			os.Setenv("OPENSHIFT_PULL_SECRET", pullSecret)
+		}
+
+		// If still empty, try file
+		if pullSecret == "" && pullSecretFile != "" {
+			fileData, err := os.ReadFile(pullSecretFile)
+			if err != nil {
+				log.Printf("WARNING: Failed to read OPENSHIFT_PULL_SECRET_FILE (%s): %v", pullSecretFile, err)
+			} else {
+				pullSecret = string(fileData)
+				log.Printf("Loaded pull secret from file: %s", pullSecretFile)
+			}
+		}
+
+		// If still empty, try environment variable
+		if pullSecret == "" {
+			pullSecret = os.Getenv("OPENSHIFT_PULL_SECRET")
+			if pullSecret != "" {
+				log.Println("Using OPENSHIFT_PULL_SECRET from environment variable (development mode)")
+			}
 		}
 	}
 
+	// Validate pull secret
 	if pullSecret == "" {
 		if environment == "production" {
 			log.Fatalf("CRITICAL: OPENSHIFT_PULL_SECRET must be set in production environment")
@@ -191,15 +226,18 @@ func main() {
 				log.Fatalf("CRITICAL: OPENSHIFT_PULL_SECRET is not valid JSON: %v", err)
 			}
 			log.Printf("WARNING: OPENSHIFT_PULL_SECRET is not valid JSON: %v", err)
+		} else {
+			// Validate that pull secret has expected structure (should have "auths" key)
+			if _, ok := js["auths"]; !ok {
+				if environment == "production" {
+					log.Fatalf("CRITICAL: OPENSHIFT_PULL_SECRET missing required 'auths' key")
+				}
+				log.Println("WARNING: OPENSHIFT_PULL_SECRET missing required 'auths' key")
+			}
 		}
 
-		// Validate that pull secret has expected structure (should have "auths" key)
-		if _, ok := js["auths"]; !ok {
-			if environment == "production" {
-				log.Fatalf("CRITICAL: OPENSHIFT_PULL_SECRET missing required 'auths' key")
-			}
-			log.Println("WARNING: OPENSHIFT_PULL_SECRET missing required 'auths' key")
-		}
+		// Set environment variable for openshift-install to use
+		os.Setenv("OPENSHIFT_PULL_SECRET", pullSecret)
 	}
 
 	// Initialize store
@@ -211,7 +249,6 @@ func main() {
 	defer st.Close()
 
 	// Test database connection
-	ctx := context.Background()
 	if err := st.Ping(ctx); err != nil {
 		log.Fatalf("Failed to ping database: %v", err)
 	}
