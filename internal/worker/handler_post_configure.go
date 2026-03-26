@@ -350,6 +350,73 @@ func (h *PostConfigureHandler) exposeDashboardLoadBalancer(ctx context.Context, 
 	return dashboardURL, nil
 }
 
+// exposeDashboardNodePort exposes the dashboard via NodePort and returns the URL
+// This is used for IKS clusters which don't support LoadBalancer without portable subnets
+func (h *PostConfigureHandler) exposeDashboardNodePort(ctx context.Context, kubeconfigPath string, cluster *types.Cluster) (string, error) {
+	log.Println("Exposing dashboard via NodePort (IKS doesn't support LoadBalancer without portable subnets)...")
+
+	// Patch the kubernetes-dashboard service to be NodePort type
+	patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "service", "kubernetes-dashboard",
+		"-n", "kubernetes-dashboard", "-p", `{"spec":{"type":"NodePort"}}`, "--kubeconfig", kubeconfigPath)
+	if output, err := patchCmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("patch service: %w\nOutput: %s", err, string(output))
+	}
+
+	log.Println("Service patched to NodePort type")
+
+	// Get the NodePort value
+	cmd := exec.CommandContext(ctx, "kubectl", "get", "service", "kubernetes-dashboard",
+		"-n", "kubernetes-dashboard", "-o", "jsonpath={.spec.ports[0].nodePort}",
+		"--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("get NodePort: %w\nOutput: %s", err, string(output))
+	}
+
+	nodePort := strings.TrimSpace(string(output))
+	if nodePort == "" {
+		return "", fmt.Errorf("empty NodePort received")
+	}
+
+	log.Printf("Dashboard exposed on NodePort: %s", nodePort)
+
+	// Get a worker node's public IP using ibmcloud CLI
+	log.Println("Getting worker node public IP...")
+	workersCmd := exec.CommandContext(ctx, "ibmcloud", "ks", "workers", "--cluster", cluster.Name, "--output", "json")
+	workersOutput, err := workersCmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("get workers: %w\nOutput: %s", err, string(workersOutput))
+	}
+
+	// Parse JSON to extract public IP
+	var workers []struct {
+		PublicIP string `json:"publicIP"`
+		State    string `json:"state"`
+	}
+	if err := json.Unmarshal(workersOutput, &workers); err != nil {
+		return "", fmt.Errorf("parse workers JSON: %w", err)
+	}
+
+	// Find first worker with a public IP in normal state
+	var publicIP string
+	for _, worker := range workers {
+		if worker.State == "normal" && worker.PublicIP != "" && worker.PublicIP != "-" {
+			publicIP = worker.PublicIP
+			break
+		}
+	}
+
+	if publicIP == "" {
+		return "", fmt.Errorf("no worker nodes with public IP found")
+	}
+
+	// Dashboard runs on HTTPS at the NodePort
+	dashboardURL := fmt.Sprintf("https://%s:%s", publicIP, nodePort)
+	log.Printf("Dashboard is available at: %s", dashboardURL)
+
+	return dashboardURL, nil
+}
+
 // updateClusterConsoleURL updates the cluster's console URL in the database
 func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clusterID, consoleURL, token string) error {
 	log.Printf("Updating cluster console URL to: %s", consoleURL)
@@ -600,8 +667,8 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 			return fmt.Errorf("get dashboard token: %w", err)
 		}
 
-		// Expose dashboard via LoadBalancer
-		dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
+		// Expose dashboard via NodePort (IBM Cloud IKS doesn't support LoadBalancer without portable subnets)
+		dashboardURL, err := h.exposeDashboardNodePort(ctx, kubeconfigPath, cluster)
 		if err != nil {
 			return fmt.Errorf("expose dashboard: %w", err)
 		}
