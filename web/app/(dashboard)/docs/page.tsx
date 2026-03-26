@@ -16,13 +16,19 @@ Welcome to OCPCTL! This guide will help you get started with creating and managi
 
 ## What is OCPCTL?
 
-OCPCTL is a self-service platform for provisioning and managing ephemeral OpenShift 4.20 clusters on AWS. It provides:
+OCPCTL is a self-service platform for provisioning and managing ephemeral Kubernetes and OpenShift clusters on AWS and IBM Cloud. It provides:
 
-- **Self-service cluster creation** - Request clusters through an easy-to-use web interface
+- **Self-service cluster creation** - Request OpenShift, EKS, or IKS clusters through an easy-to-use web interface
 - **Automated lifecycle management** - Clusters are automatically destroyed after their TTL expires
 - **Work hours hibernation** - Clusters can automatically hibernate outside business hours to save costs
 - **Policy enforcement** - Cluster configurations are validated against organizational policies
 - **Audit trail** - All operations are logged for compliance and tracking
+- **Post-deployment automation** - Automatically configure operators, scripts, and dashboards
+
+**Supported Platforms:**
+- **AWS OpenShift** - OpenShift 4.20+ clusters on AWS
+- **AWS EKS** - Managed Kubernetes clusters with Kubernetes Dashboard
+- **IBM Cloud IKS** - Managed Kubernetes clusters on IBM Cloud classic infrastructure
 
 ## Logging In
 
@@ -81,10 +87,14 @@ Each cluster card displays:
 
 Click on a cluster card to view details and perform actions:
 - **Download Kubeconfig** - Get credentials to access the cluster
+- **Console URL** (OpenShift) - Access OpenShift web console
+- **Dashboard URL** (EKS) - Access Kubernetes Dashboard with provided token
 - **Extend TTL** - Postpone automatic destruction
 - **Hibernate** - Shut down cluster to save costs
 - **Resume** - Start a hibernated cluster
 - **Destroy** - Immediately delete the cluster
+
+**Note:** EKS clusters include an automatically configured Kubernetes Dashboard accessible via LoadBalancer with token-based authentication. The dashboard token is securely stored and displayed in cluster outputs.
 
 ## What's Next?
 
@@ -141,6 +151,25 @@ Select a cluster profile that matches your needs:
 - **Post-Deployment:** Automatically configures IRSA for Windows VM image access
 - **Best for:** OpenShift Virtualization with Windows VM workloads
 
+#### eks-minimal (AWS EKS)
+- **Configuration:** 2-node managed Kubernetes cluster (t3.medium)
+- **Cost:** ~$0.15/hour ($110/month with EKS control plane)
+- **Max TTL:** 168 hours, Default: 48 hours
+- **Post-Deployment:** Automatically installs Kubernetes Dashboard with token authentication
+- **Best for:** Kubernetes development and testing without OpenShift
+
+#### eks-standard (AWS EKS)
+- **Configuration:** 3-node managed Kubernetes cluster with larger instances
+- **Max TTL:** 168 hours
+- **Post-Deployment:** Kubernetes Dashboard and monitoring tools
+- **Best for:** Standard Kubernetes workloads
+
+#### iks-minimal (IBM Cloud IKS)
+- **Configuration:** 2-node managed Kubernetes cluster (b3c.4x16 - 4 vCPU, 16GB RAM)
+- **Cost:** ~$0.28/hour ($202/month, free control plane)
+- **Max TTL:** 168 hours, Default: 48 hours
+- **Best for:** Kubernetes development on IBM Cloud
+
 **Note:** Some profiles include automated post-deployment configuration. See [Post-Deployment Configuration](#post-deployment-configuration) below for details.
 
 ### Step 3: Configure Cluster Details
@@ -149,9 +178,9 @@ Fill in the required fields:
 
 **Basic Information:**
 - **Cluster Name** - Unique identifier (3-63 characters, lowercase, numbers, hyphens)
-- **Platform** - Select \`aws\` (IBM Cloud coming soon)
-- **Version** - OpenShift version (e.g., 4.20.3)
-- **Region** - AWS region (e.g., us-east-1)
+- **Platform** - Select \`aws\` (OpenShift, EKS) or \`ibmcloud\` (OpenShift, IKS)
+- **Version** - OpenShift version (e.g., 4.20.3) or Kubernetes version (e.g., 1.30)
+- **Region** - AWS region (e.g., us-east-1) or IBM Cloud region (e.g., us-south)
 
 **Organization Details:**
 - **Owner Email** - Your email address (pre-filled)
@@ -584,6 +613,73 @@ OCPCTL uses a **hybrid detection** approach:
 3. Verify resource tags in AWS Console
 4. Confirm resource is truly orphaned before deleting
 
+## Disaster Recovery
+
+**Access:** See operations documentation on GitHub or internal deployment docs
+
+### Backup and Recovery Strategy
+
+OCPCTL uses AWS-managed solutions for disaster recovery:
+
+**RDS Database Backups:**
+- **Automated backups:** 30-day retention
+- **Point-in-time recovery:** Restore to any moment within retention period
+- **RPO:** < 5 minutes (WAL archiving)
+- **RTO:** < 30 minutes (automated restore)
+- **Deletion protection:** Enabled to prevent accidental database deletion
+
+**S3 Artifact Storage:**
+- **Versioning:** Enabled on primary bucket (ocpctl-binaries)
+- **Cross-region replication:** us-east-1 → us-west-2
+- **Replication lag:** < 15 minutes
+- **Recovery:** Instant for deleted files via versioning
+
+### DR Scripts and Procedures
+
+**Setup Disaster Recovery (first time):**
+\`\`\`bash
+./scripts/setup-disaster-recovery.sh
+\`\`\`
+
+**Verify Backups (monthly):**
+\`\`\`bash
+./scripts/verify-backups.sh
+\`\`\`
+
+**Monthly DR Drill:**
+Perform disaster recovery drills on the first Monday of each month to ensure recovery procedures work correctly.
+
+### Recovery Scenarios
+
+**Database Corruption or Data Loss:**
+- Restore from latest automated backup (< 15 minutes)
+- Point-in-time recovery to specific timestamp (< 20 minutes)
+- Full documentation in \`docs/operations/DISASTER_RECOVERY.md\`
+
+**Accidental File Deletion from S3:**
+- Restore from S3 version history (< 5 minutes)
+- Zero data loss due to versioning
+
+**Region Failure:**
+- Switch to replica bucket in us-west-2 (< 2 hours)
+- Promote read replica if configured (< 2 hours)
+
+**Complete Disaster:**
+- Full rebuild from backups (< 4 hours)
+- Restore database from latest snapshot
+- Sync from replica bucket
+
+### Cost Estimates
+
+Disaster recovery backup storage costs approximately **$6.71/month**:
+- RDS automated backups (30 days): ~$1.00
+- RDS snapshot storage: ~$0.95
+- S3 versioning overhead: ~$0.46
+- S3 cross-region replication: ~$2.00
+- S3 replica storage: ~$2.30
+
+**Note:** These costs are essential for production deployments and scale with data volume.
+
 ## User Management
 
 **Access:** Admin Dashboard → Users tab
@@ -642,8 +738,9 @@ All administrative actions are logged:
 - Cluster creation/destruction
 - Orphaned resource resolution
 - Kubeconfig downloads
+- Disaster recovery operations
 
-**Access:** Currently via database queries (web UI coming soon)
+**Access:** Database queries (web UI export planned for future release)
 
 \`\`\`sql
 SELECT * FROM audit_events
@@ -698,7 +795,7 @@ View system-wide metrics including:
 - Popular profiles
 
 **Export Data:**
-Currently requires database queries. Web UI export coming soon.
+Currently requires database queries. Web UI export planned for future release.
 
 ## Administrative Best Practices
 
