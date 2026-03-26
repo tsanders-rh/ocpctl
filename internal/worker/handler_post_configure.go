@@ -566,7 +566,7 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "kubeconfig")
 	iksInstaller := installer.NewIKSInstaller()
-	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
 		return fmt.Errorf("get kubeconfig: %w", err)
 	}
 
