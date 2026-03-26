@@ -81,12 +81,22 @@ platformConfig:
     classicInfrastructure: true
     dataCenter: dal10
 
+postDeployment:
+  enabled: true
+  timeout: 30m
+  manifests:
+    - name: kubernetes-dashboard
+      description: "Kubernetes Dashboard v2.7.0 with token-based authentication and LoadBalancer service"
+      url: "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+      namespace: kubernetes-dashboard
+
 metadata:
   capabilities:
     - IBM Cloud IKS managed Kubernetes
     - Free control plane (no charge for masters)
     - Classic infrastructure with VLANs
     - Public service endpoint
+    - Kubernetes Dashboard with token authentication
   capacity:
     totalWorkerCPU: 8         # 2 workers x 4 vCPU
     totalWorkerRAM: 32        # 2 workers x 16 GB
@@ -95,3 +105,4 @@ metadata:
     - "Workers are bx2.4x16 (4 vCPU, 16GB RAM) at ~$0.14/hour each"
     - "Total: ~$0.28/hour or $202/month for always-on cluster"
     - "VLAN charges may apply depending on existing infrastructure"
+    - "Kubernetes Dashboard automatically installed with token-based authentication"

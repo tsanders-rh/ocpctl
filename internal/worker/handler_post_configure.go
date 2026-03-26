@@ -543,8 +543,79 @@ func base64Encode(s string) string {
 
 // handleIKSPostConfigure handles post-configuration for IKS clusters
 func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
-	// IKS clusters use the IBM Cloud console, no additional configuration needed
-	log.Printf("IKS cluster %s uses IBM Cloud console, skipping post-configuration", cluster.Name)
+	log.Printf("Running post-deployment for IKS cluster %s", cluster.Name)
+
+	// Get profile to read post-deployment configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Check if post-deployment is enabled
+	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
+		log.Printf("Post-deployment not enabled for profile %s, skipping", cluster.Profile)
+		return nil
+	}
+
+	// Create work directory with restrictive permissions (0700)
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
+	}
+
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "kubeconfig")
+	iksInstaller := installer.NewIKSInstaller()
+	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+		return fmt.Errorf("get kubeconfig: %w", err)
+	}
+
+	// Apply all manifests from profile
+	hasDashboard := false
+	if len(prof.PostDeployment.Manifests) > 0 {
+		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
+		for _, manifest := range prof.PostDeployment.Manifests {
+			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
+			}
+			// Check if this is the kubernetes-dashboard
+			if manifest.Name == "kubernetes-dashboard" {
+				hasDashboard = true
+			}
+		}
+	}
+
+	// If Kubernetes Dashboard was installed, perform dashboard-specific setup
+	if hasDashboard {
+		log.Printf("Kubernetes Dashboard detected, configuring access...")
+
+		// Create admin service account
+		if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
+			return fmt.Errorf("create dashboard service account: %w", err)
+		}
+
+		// Get service account token
+		token, err := h.getDashboardToken(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("get dashboard token: %w", err)
+		}
+
+		// Expose dashboard via LoadBalancer
+		dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("expose dashboard: %w", err)
+		}
+
+		log.Printf("Kubernetes Dashboard configured successfully at: %s", dashboardURL)
+		log.Printf("Dashboard token stored securely in cluster outputs")
+
+		// Update cluster outputs with dashboard URL
+		if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
+			return fmt.Errorf("update cluster console URL: %w", err)
+		}
+	}
+
+	log.Printf("Post-deployment completed for cluster %s", cluster.Name)
 	return nil
 }
 
