@@ -383,6 +383,7 @@ func (h *PostConfigureHandler) exposeDashboardNodePort(ctx context.Context, kube
 	dashboardHost := fmt.Sprintf("dashboard.%s", clusterInfo.IngressHostname)
 
 	// Create Ingress resource for the dashboard
+	// Note: Kubernetes Dashboard backend uses HTTPS, so we need backend-protocol annotation
 	ingressYAML := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -390,6 +391,7 @@ metadata:
   namespace: kubernetes-dashboard
   annotations:
     kubernetes.io/ingress.class: "public-iks-k8s-nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 spec:
   tls:
   - hosts:
