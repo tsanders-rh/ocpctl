@@ -365,6 +365,19 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 
 	log.Printf("[Destroy Audit] Created audit record: %s", auditID)
 
+	// Clean up Kubernetes resources BEFORE reconciliation
+	// This includes LoadBalancer services, Ingress resources, and the dashboard namespace
+	// These can block VPC deletion if not cleaned up explicitly
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	log.Printf("[Destroy] Cleaning up Kubernetes resources (LoadBalancers, Ingress, Dashboard namespace)...")
+	if err := h.cleanupKubernetesResources(ctx, cluster, workDir); err != nil {
+		// Log warning but don't fail destroy - reconciler will clean up remaining resources
+		log.Printf("Warning: Kubernetes resource cleanup encountered errors: %v", err)
+		log.Printf("Continuing with reconciliation - resources will be cleaned up during reconciliation")
+	} else {
+		log.Printf("[Destroy] ✓ Kubernetes resources cleaned up successfully")
+	}
+
 	// Create reconciler
 	reconciler, err := NewEKSDestroyReconciler(ctx, h.store, cluster)
 	if err != nil {
@@ -487,7 +500,7 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 	cleanupWarnings := []string{}
 
 	// Clean up local work directory (OPTIONAL: local disk cleanup)
-	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	// Note: workDir already declared earlier for Kubernetes resource cleanup
 	if err := os.RemoveAll(workDir); err != nil {
 		errMsg := fmt.Sprintf("failed to remove work directory: %v", err)
 		log.Printf("Warning: %s", errMsg)
@@ -594,6 +607,8 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	}
 
 	// Run ibmcloud ks cluster rm
+	// Note: This destroys the entire IKS cluster including all Kubernetes resources
+	// (dashboard namespace, Ingress, services, etc.) - no pre-cleanup needed
 	log.Printf("Running ibmcloud ks cluster rm for %s", cluster.Name)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
