@@ -350,68 +350,85 @@ func (h *PostConfigureHandler) exposeDashboardLoadBalancer(ctx context.Context, 
 	return dashboardURL, nil
 }
 
-// exposeDashboardNodePort exposes the dashboard via NodePort and returns the URL
-// This is used for IKS clusters which don't support LoadBalancer without portable subnets
+// exposeDashboardNodePort exposes the dashboard via Ingress and returns the URL
+// This is used for IKS clusters which use IBM Cloud's built-in Ingress controller (ALB)
 func (h *PostConfigureHandler) exposeDashboardNodePort(ctx context.Context, kubeconfigPath string, cluster *types.Cluster) (string, error) {
-	log.Println("Exposing dashboard via NodePort (IKS doesn't support LoadBalancer without portable subnets)...")
+	log.Println("Exposing dashboard via IKS Ingress (IBM Cloud ALB)...")
 
-	// Patch the kubernetes-dashboard service to be NodePort type
-	patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "service", "kubernetes-dashboard",
-		"-n", "kubernetes-dashboard", "-p", `{"spec":{"type":"NodePort"}}`, "--kubeconfig", kubeconfigPath)
-	if output, err := patchCmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("patch service: %w\nOutput: %s", err, string(output))
-	}
-
-	log.Println("Service patched to NodePort type")
-
-	// Get the NodePort value
-	cmd := exec.CommandContext(ctx, "kubectl", "get", "service", "kubernetes-dashboard",
-		"-n", "kubernetes-dashboard", "-o", "jsonpath={.spec.ports[0].nodePort}",
-		"--kubeconfig", kubeconfigPath)
-	output, err := cmd.CombinedOutput()
+	// Get IKS cluster Ingress configuration
+	log.Println("Getting IKS cluster Ingress configuration...")
+	clusterInfoCmd := exec.CommandContext(ctx, "ibmcloud", "ks", "cluster", "get", "--cluster", cluster.Name, "--output", "json")
+	clusterInfoOutput, err := clusterInfoCmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("get NodePort: %w\nOutput: %s", err, string(output))
+		return "", fmt.Errorf("get cluster info: %w\nOutput: %s", err, string(clusterInfoOutput))
 	}
 
-	nodePort := strings.TrimSpace(string(output))
-	if nodePort == "" {
-		return "", fmt.Errorf("empty NodePort received")
+	// Parse cluster info to extract Ingress hostname and secret
+	var clusterInfo struct {
+		IngressHostname  string `json:"ingressHostname"`
+		IngressSecretName string `json:"ingressSecretName"`
+	}
+	if err := json.Unmarshal(clusterInfoOutput, &clusterInfo); err != nil {
+		return "", fmt.Errorf("parse cluster info JSON: %w", err)
 	}
 
-	log.Printf("Dashboard exposed on NodePort: %s", nodePort)
+	if clusterInfo.IngressHostname == "" {
+		return "", fmt.Errorf("cluster does not have Ingress configured")
+	}
 
-	// Get a worker node's public IP using ibmcloud CLI
-	log.Println("Getting worker node public IP...")
-	workersCmd := exec.CommandContext(ctx, "ibmcloud", "ks", "workers", "--cluster", cluster.Name, "--output", "json")
-	workersOutput, err := workersCmd.CombinedOutput()
+	log.Printf("IKS Ingress hostname: %s", clusterInfo.IngressHostname)
+	log.Printf("IKS TLS secret: %s", clusterInfo.IngressSecretName)
+
+	// Construct dashboard hostname using IBM's Ingress subdomain
+	dashboardHost := fmt.Sprintf("dashboard.%s", clusterInfo.IngressHostname)
+
+	// Create Ingress resource for the dashboard
+	ingressYAML := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+  annotations:
+    kubernetes.io/ingress.class: "public-iks-k8s-nginx"
+spec:
+  tls:
+  - hosts:
+    - %s
+    secretName: %s
+  rules:
+  - host: %s
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kubernetes-dashboard
+            port:
+              number: 443
+`, dashboardHost, clusterInfo.IngressSecretName, dashboardHost)
+
+	// Write Ingress manifest to file
+	ingressPath := filepath.Join(filepath.Dir(kubeconfigPath), "dashboard-ingress.yaml")
+	if err := os.WriteFile(ingressPath, []byte(ingressYAML), 0600); err != nil {
+		return "", fmt.Errorf("write ingress manifest: %w", err)
+	}
+
+	// Apply Ingress manifest
+	log.Println("Creating Ingress resource for dashboard...")
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", ingressPath, "--kubeconfig", kubeconfigPath)
+	applyOutput, err := applyCmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("get workers: %w\nOutput: %s", err, string(workersOutput))
+		return "", fmt.Errorf("apply ingress: %w\nOutput: %s", err, string(applyOutput))
 	}
 
-	// Parse JSON to extract public IP
-	var workers []struct {
-		PublicIP string `json:"publicIP"`
-		State    string `json:"state"`
-	}
-	if err := json.Unmarshal(workersOutput, &workers); err != nil {
-		return "", fmt.Errorf("parse workers JSON: %w", err)
-	}
+	log.Printf("Ingress created: %s", string(applyOutput))
 
-	// Find first worker with a public IP in normal state
-	var publicIP string
-	for _, worker := range workers {
-		if worker.State == "normal" && worker.PublicIP != "" && worker.PublicIP != "-" {
-			publicIP = worker.PublicIP
-			break
-		}
-	}
+	// Wait a moment for Ingress to be configured
+	time.Sleep(5 * time.Second)
 
-	if publicIP == "" {
-		return "", fmt.Errorf("no worker nodes with public IP found")
-	}
-
-	// Dashboard runs on HTTPS at the NodePort
-	dashboardURL := fmt.Sprintf("https://%s:%s", publicIP, nodePort)
+	// Dashboard URL
+	dashboardURL := fmt.Sprintf("https://%s", dashboardHost)
 	log.Printf("Dashboard is available at: %s", dashboardURL)
 
 	return dashboardURL, nil
@@ -667,7 +684,7 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 			return fmt.Errorf("get dashboard token: %w", err)
 		}
 
-		// Expose dashboard via NodePort (IBM Cloud IKS doesn't support LoadBalancer without portable subnets)
+		// Expose dashboard via Ingress (using IBM Cloud's built-in Ingress controller)
 		dashboardURL, err := h.exposeDashboardNodePort(ctx, kubeconfigPath, cluster)
 		if err != nil {
 			return fmt.Errorf("expose dashboard: %w", err)
