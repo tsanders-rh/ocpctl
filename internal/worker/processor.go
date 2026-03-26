@@ -48,14 +48,8 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 	case types.JobTypeDestroy:
 		return p.destroyHandler.Handle(ctx, job)
 
-	case types.JobTypeScaleWorkers:
-		return fmt.Errorf("scale workers not implemented yet")
-
 	case types.JobTypeJanitorDestroy:
 		return p.destroyHandler.Handle(ctx, job)
-
-	case types.JobTypeOrphanSweep:
-		return fmt.Errorf("orphan sweep not implemented yet")
 
 	case types.JobTypeConfigureEFS:
 		return p.configureEFSHandler.Handle(ctx, job)

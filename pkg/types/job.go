@@ -13,15 +13,17 @@ type JobType string
 const (
 	JobTypeCreate                 JobType = "CREATE"
 	JobTypeDestroy                JobType = "DESTROY"
-	JobTypeScaleWorkers           JobType = "SCALE_WORKERS"
 	JobTypeJanitorDestroy         JobType = "JANITOR_DESTROY"
-	JobTypeOrphanSweep            JobType = "ORPHAN_SWEEP"
 	JobTypeConfigureEFS           JobType = "CONFIGURE_EFS"
 	JobTypeProvisionSharedStorage JobType = "PROVISION_SHARED_STORAGE"
 	JobTypeUnlinkSharedStorage    JobType = "UNLINK_SHARED_STORAGE"
 	JobTypeHibernate              JobType = "HIBERNATE"
 	JobTypeResume                 JobType = "RESUME"
 	JobTypePostConfigure          JobType = "POST_CONFIGURE"
+
+	// Future job types (not yet implemented):
+	// JobTypeScaleWorkers           JobType = "SCALE_WORKERS"  // Off-hours worker scaling
+	// JobTypeOrphanSweep            JobType = "ORPHAN_SWEEP"   // Automated orphan resource cleanup
 )
 
 // JobStatus represents the current state of a job

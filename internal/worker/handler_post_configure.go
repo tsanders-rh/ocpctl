@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -953,7 +954,7 @@ func (h *PostConfigureHandler) applyOpenShiftManifest(ctx context.Context, clust
 
 // installHelmChart installs a Helm chart
 func (h *PostConfigureHandler) installHelmChart(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, chart profile.HelmChartConfig) error {
-	log.Printf("Installing Helm chart: %s", chart.Name)
+	log.Printf("Installing Helm chart: %s from repo %s", chart.Name, chart.Repo)
 
 	// Track configuration task
 	configID, err := h.createConfigTask(ctx, cluster.ID, types.ConfigTypeHelm, chart.Name)
@@ -963,10 +964,82 @@ func (h *PostConfigureHandler) installHelmChart(ctx context.Context, cluster *ty
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
-	// TODO: Implement Helm chart installation
-	// This would involve:
-	// 1. helm repo add
-	// 2. helm install with values
+	// 1. Add Helm repository
+	repoName := fmt.Sprintf("%s-repo", chart.Name)
+	log.Printf("Adding Helm repository: %s", repoName)
+
+	addRepoCmd := exec.CommandContext(ctx, "helm", "repo", "add", repoName, chart.Repo)
+	addRepoCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+	output, err := addRepoCmd.CombinedOutput()
+	if err != nil {
+		// Check if repo already exists (not a fatal error)
+		if !strings.Contains(string(output), "already exists") {
+			errorMsg := fmt.Sprintf("helm repo add failed: %v\nOutput: %s", err, string(output))
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errorMsg)
+			return fmt.Errorf("%s", errorMsg)
+		}
+		log.Printf("Helm repository %s already exists, continuing...", repoName)
+	}
+
+	// 2. Update Helm repositories
+	log.Printf("Updating Helm repositories...")
+	updateCmd := exec.CommandContext(ctx, "helm", "repo", "update")
+	updateCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+	if output, err := updateCmd.CombinedOutput(); err != nil {
+		log.Printf("WARNING: helm repo update failed (non-fatal): %v\nOutput: %s", err, string(output))
+	}
+
+	// 3. Install Helm chart
+	chartRef := fmt.Sprintf("%s/%s", repoName, chart.Chart)
+	log.Printf("Installing Helm chart: %s", chartRef)
+
+	installArgs := []string{"install", chart.Name, chartRef}
+
+	// Add custom values if provided
+	if len(chart.Values) > 0 {
+		// Marshal values to YAML and pass via --set-json or create temp values file
+		valuesJSON, err := json.Marshal(chart.Values)
+		if err != nil {
+			errorMsg := fmt.Sprintf("marshal helm values: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errorMsg)
+			return fmt.Errorf("marshal helm values: %w", err)
+		}
+
+		// Create temporary values file
+		valuesFile, err := os.CreateTemp("", fmt.Sprintf("helm-values-%s-*.json", chart.Name))
+		if err != nil {
+			errorMsg := fmt.Sprintf("create temp values file: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errorMsg)
+			return fmt.Errorf("create temp values file: %w", err)
+		}
+		defer os.Remove(valuesFile.Name())
+		defer valuesFile.Close()
+
+		if _, err := valuesFile.Write(valuesJSON); err != nil {
+			errorMsg := fmt.Sprintf("write values file: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errorMsg)
+			return fmt.Errorf("write values file: %w", err)
+		}
+		valuesFile.Close()
+
+		installArgs = append(installArgs, "-f", valuesFile.Name())
+	}
+
+	// Execute helm install
+	installCmd := exec.CommandContext(ctx, "helm", installArgs...)
+	installCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+	output, err = installCmd.CombinedOutput()
+	if err != nil {
+		errorMsg := fmt.Sprintf("helm install failed: %v\nOutput: %s", err, string(output))
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errorMsg)
+		return fmt.Errorf("%s", errorMsg)
+	}
+
+	log.Printf("Helm chart %s installed successfully", chart.Name)
+	log.Printf("Output: %s", strings.TrimSpace(string(output)))
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
 	return nil
