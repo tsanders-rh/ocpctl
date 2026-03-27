@@ -649,19 +649,55 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 		return err
 	}
 
+	// Start log streaming for job output visibility
+	logPath := filepath.Join(workDir, "post-configure.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		log.Printf("Warning: failed to create log file: %v", err)
+	} else {
+		defer logFile.Close()
+	}
+
+	logWriter := func(format string, args ...interface{}) {
+		msg := fmt.Sprintf(format, args...)
+		log.Print(msg)
+		if logFile != nil {
+			fmt.Fprintln(logFile, strings.TrimPrefix(msg, "Running post-deployment for IKS cluster "+cluster.Name))
+		}
+	}
+
+	// Start log streaming to database
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		logWriter("Warning: failed to start log streaming: %v", err)
+	}
+
+	logWriter("Getting kubeconfig for IKS cluster %s...", cluster.Name)
+
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "kubeconfig")
 	iksInstaller := installer.NewIKSInstaller()
 	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
+		streamCancel()
+		time.Sleep(LogBatchFlushDelay)
+		_ = streamer.Stop()
 		return fmt.Errorf("get kubeconfig: %w", err)
 	}
+	logWriter("Kubeconfig retrieved successfully")
 
 	// Apply all manifests from profile
 	hasDashboard := false
 	if len(prof.PostDeployment.Manifests) > 0 {
-		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
+		logWriter("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
+			logWriter("Applying manifest: %s", manifest.Name)
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				streamCancel()
+				time.Sleep(LogBatchFlushDelay)
+				_ = streamer.Stop()
 				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
 			}
 			// Check if this is the kubernetes-dashboard
@@ -672,37 +708,103 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 	}
 
 	// If Kubernetes Dashboard was installed, perform dashboard-specific setup
+	var dashboardURL string
 	if hasDashboard {
-		log.Printf("Kubernetes Dashboard detected, configuring access...")
+		logWriter("Kubernetes Dashboard detected, configuring access...")
 
 		// Create admin service account
+		logWriter("Creating dashboard admin service account...")
 		if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
 			return fmt.Errorf("create dashboard service account: %w", err)
 		}
 
 		// Get service account token
+		logWriter("Retrieving dashboard token...")
 		token, err := h.getDashboardToken(ctx, kubeconfigPath)
 		if err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
 			return fmt.Errorf("get dashboard token: %w", err)
 		}
 
 		// Expose dashboard via Ingress (using IBM Cloud's built-in Ingress controller)
-		dashboardURL, err := h.exposeDashboardNodePort(ctx, kubeconfigPath, cluster)
+		logWriter("Exposing dashboard via IBM Cloud Ingress (ALB)...")
+		dashboardURL, err = h.exposeDashboardNodePort(ctx, kubeconfigPath, cluster)
 		if err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
 			return fmt.Errorf("expose dashboard: %w", err)
 		}
 
-		log.Printf("Kubernetes Dashboard configured successfully at: %s", dashboardURL)
-		log.Printf("Dashboard token stored securely in cluster outputs")
+		logWriter("Dashboard Ingress created: %s", dashboardURL)
+		logWriter("Waiting for IBM Cloud ALB to configure route (may take 2-3 minutes)...")
+
+		// Wait for dashboard URL to be accessible
+		if err := h.waitForDashboardURL(ctx, dashboardURL, logWriter); err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
+			return fmt.Errorf("dashboard URL verification: %w", err)
+		}
+
+		logWriter("Dashboard is accessible at: %s", dashboardURL)
+		logWriter("Dashboard token stored securely in cluster outputs")
 
 		// Update cluster outputs with dashboard URL
 		if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
 			return fmt.Errorf("update cluster console URL: %w", err)
 		}
 	}
 
-	log.Printf("Post-deployment completed for cluster %s", cluster.Name)
+	logWriter("Post-deployment completed successfully for cluster %s", cluster.Name)
+
+	// Stop log streaming
+	streamCancel()
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
 	return nil
+}
+
+// waitForDashboardURL polls the dashboard URL until it responds with HTTP 200
+func (h *PostConfigureHandler) waitForDashboardURL(ctx context.Context, url string, logWriter func(string, ...interface{})) error {
+	maxAttempts := 40 // 40 attempts * 5 seconds = 3 minutes 20 seconds timeout
+	retryDelay := 5 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Use curl to test the URL (accepts self-signed certs)
+		cmd := exec.CommandContext(ctx, "curl", "-k", "-s", "-o", "/dev/null", "-w", "%{http_code}", url)
+		output, err := cmd.CombinedOutput()
+
+		if err == nil && strings.TrimSpace(string(output)) == "200" {
+			logWriter("Dashboard URL is now accessible (HTTP 200)")
+			return nil
+		}
+
+		if attempt%6 == 0 { // Log every 30 seconds (6 attempts * 5s)
+			logWriter("Still waiting for dashboard URL... (attempt %d/%d)", attempt, maxAttempts)
+		}
+
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for dashboard URL")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("dashboard URL did not become accessible after %d attempts (%v)", maxAttempts, time.Duration(maxAttempts)*retryDelay)
 }
 
 // handleOpenShiftPostConfigure handles profile-driven post-deployment for OpenShift clusters
