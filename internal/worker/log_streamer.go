@@ -103,12 +103,21 @@ func (ls *LogStreamer) tailLogFile(ctx context.Context) {
 		case <-ls.stopCh:
 			// Stop signal received, drain any remaining lines from file, then flush and exit
 			// This ensures we capture all logs written before Stop() was called
-			for {
+			// Retry reading with small delays to give file system time to make final writes visible
+			emptyAttempts := 0
+			maxEmptyAttempts := 10 // Allow up to 10 failed read attempts (10 * 50ms = 500ms total)
+
+			for emptyAttempts < maxEmptyAttempts {
 				line, err := reader.ReadString('\n')
 				if err != nil {
-					// No more data available, we're done draining
-					break
+					// No data available right now, wait a bit and retry
+					emptyAttempts++
+					time.Sleep(50 * time.Millisecond)
+					continue
 				}
+
+				// Successfully read a line, reset empty counter
+				emptyAttempts = 0
 
 				line = strings.TrimSpace(line)
 				if line == "" {
