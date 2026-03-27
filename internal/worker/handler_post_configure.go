@@ -663,6 +663,7 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 		log.Print(msg)
 		if logFile != nil {
 			fmt.Fprintln(logFile, strings.TrimPrefix(msg, "Running post-deployment for IKS cluster "+cluster.Name))
+			logFile.Sync() // Flush to disk so LogStreamer can read it
 		}
 	}
 
