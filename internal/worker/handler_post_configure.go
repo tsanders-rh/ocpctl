@@ -675,11 +675,38 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 		logWriter("Warning: failed to start log streaming: %v", err)
 	}
 
+	// Extract resource group from profile (if specified)
+	resourceGroup := ""
+	if prof.PlatformConfig.IBMCloud != nil {
+		resourceGroup = prof.PlatformConfig.IBMCloud.ResourceGroup
+	}
+
+	// Create IKS installer
+	iksInstaller := installer.NewIKSInstaller()
+
+	// Get IBM Cloud API key from environment
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey == "" {
+		streamCancel()
+		time.Sleep(LogBatchFlushDelay)
+		_ = streamer.Stop()
+		return fmt.Errorf("IBMCLOUD_API_KEY environment variable not set")
+	}
+
+	// Login to IBM Cloud (required for ibmcloud commands)
+	logWriter("Logging in to IBM Cloud (region: %s)...", cluster.Region)
+	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, resourceGroup); err != nil {
+		streamCancel()
+		time.Sleep(LogBatchFlushDelay)
+		_ = streamer.Stop()
+		return fmt.Errorf("IBM Cloud login: %w", err)
+	}
+	logWriter("IBM Cloud login successful")
+
 	logWriter("Getting kubeconfig for IKS cluster %s...", cluster.Name)
 
 	// Get kubeconfig
 	kubeconfigPath := filepath.Join(workDir, "kubeconfig")
-	iksInstaller := installer.NewIKSInstaller()
 	if err := iksInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
 		streamCancel()
 		time.Sleep(LogBatchFlushDelay)
