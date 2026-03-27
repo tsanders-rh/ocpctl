@@ -694,7 +694,6 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 	}
 
 	// Login to IBM Cloud (required for ibmcloud commands)
-	log.Printf("DEBUG: About to login to IBM Cloud for cluster %s, region %s", cluster.Name, cluster.Region)
 	logWriter("Logging in to IBM Cloud (region: %s)...", cluster.Region)
 	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, resourceGroup); err != nil {
 		streamCancel()
@@ -758,6 +757,17 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 			_ = streamer.Stop()
 			return fmt.Errorf("get dashboard token: %w", err)
 		}
+
+		// Wait for IKS Ingress to be configured
+		// IKS takes additional time after cluster is READY to set up Ingress controller
+		logWriter("Waiting for IBM Cloud Ingress (ALB) to be configured...")
+		if err := h.waitForIKSIngressReady(ctx, cluster.Name, logWriter); err != nil {
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			_ = streamer.Stop()
+			return fmt.Errorf("wait for Ingress: %w", err)
+		}
+		logWriter("IBM Cloud Ingress is ready")
 
 		// Expose dashboard via Ingress (using IBM Cloud's built-in Ingress controller)
 		logWriter("Exposing dashboard via IBM Cloud Ingress (ALB)...")
@@ -833,6 +843,53 @@ func (h *PostConfigureHandler) waitForDashboardURL(ctx context.Context, url stri
 	}
 
 	return fmt.Errorf("dashboard URL did not become accessible after %d attempts (%v)", maxAttempts, time.Duration(maxAttempts)*retryDelay)
+}
+
+// waitForIKSIngressReady polls the cluster until Ingress is configured
+func (h *PostConfigureHandler) waitForIKSIngressReady(ctx context.Context, clusterName string, logWriter func(string, ...interface{})) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes timeout
+	retryDelay := 10 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Query cluster info for Ingress status
+		cmd := exec.CommandContext(ctx, "ibmcloud", "ks", "cluster", "get", "--cluster", clusterName, "--output", "json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logWriter("Warning: failed to query cluster info (attempt %d/%d): %v", attempt, maxAttempts, err)
+		} else {
+			// Parse cluster info
+			var clusterInfo struct {
+				IngressHostname string `json:"ingressHostname"`
+				IngressStatus   string `json:"ingressStatus"`
+			}
+			if err := json.Unmarshal(output, &clusterInfo); err == nil {
+				// Check if Ingress is configured
+				if clusterInfo.IngressHostname != "" && clusterInfo.IngressStatus == "healthy" {
+					logWriter("Ingress is configured and healthy (hostname: %s)", clusterInfo.IngressHostname)
+					return nil
+				}
+
+				// Log progress
+				if attempt%6 == 0 { // Log every minute (6 attempts * 10s)
+					if clusterInfo.IngressHostname == "" {
+						logWriter("Ingress hostname not yet assigned (attempt %d/%d)", attempt, maxAttempts)
+					} else {
+						logWriter("Ingress status: %s (attempt %d/%d)", clusterInfo.IngressStatus, attempt, maxAttempts)
+					}
+				}
+			}
+		}
+
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for Ingress")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("Ingress did not become ready after %d attempts (%v)", maxAttempts, time.Duration(maxAttempts)*retryDelay)
 }
 
 // handleOpenShiftPostConfigure handles profile-driven post-deployment for OpenShift clusters
