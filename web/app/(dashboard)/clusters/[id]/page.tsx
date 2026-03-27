@@ -219,7 +219,13 @@ export default function ClusterDetailPage() {
   const { user } = useAuthStore();
   const { data: cluster, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
-  const { data: outputs } = useClusterOutputs(id, cluster?.status);
+
+  // Check if there's an active POST_CONFIGURE job
+  const hasActivePostConfigureJob = jobsData?.data?.some((job) =>
+    job.job_type === "POST_CONFIGURE" && ["PENDING", "RUNNING", "RETRYING"].includes(job.status)
+  ) || false;
+
+  const { data: outputs } = useClusterOutputs(id, cluster?.status, hasActivePostConfigureJob);
   const { data: configurations } = useClusterConfigurations(id, cluster?.status);
   const deleteCluster = useDeleteCluster();
   const extendCluster = useExtendCluster();

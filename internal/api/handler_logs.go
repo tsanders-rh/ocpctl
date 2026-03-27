@@ -25,14 +25,14 @@ func NewLogHandler(s *store.Store) *LogHandler {
 // GetClusterLogs handles GET /api/v1/clusters/:id/logs
 //
 //	@Summary		Get cluster deployment logs
-//	@Description	Returns deployment logs for a cluster with cursor-based pagination. Defaults to latest CREATE job if job_id not specified.
+//	@Description	Returns deployment logs for a cluster with cursor-based pagination. Returns logs from all jobs (CREATE, POST_CONFIGURE, etc.) if job_id not specified.
 //	@Tags			Clusters
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path		string	true	"Cluster ID"
-//	@Param			job_id	query		string	false	"Job ID to get logs for (defaults to latest CREATE job)"
+//	@Param			job_id	query		string	false	"Job ID to get logs for (returns logs from all jobs if not specified)"
 //	@Param			cursor	query		string	false	"Cursor for pagination"
-//	@Param			limit	query		int		false	"Number of log lines to return (default 100)"
+//	@Param			limit	query		int		false	"Number of log lines to return (default 500)"
 //	@Success		200		{object}	map[string]interface{}
 //	@Failure		403		{object}	map[string]string	"Forbidden - not cluster owner"
 //	@Failure		404		{object}	map[string]string	"Cluster or logs not found"
@@ -60,44 +60,11 @@ func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 	// Parse query parameters
 	jobID := c.QueryParam("job_id")
 
-	// If no job_id specified, default to latest CREATE job for this cluster
-	if jobID == "" {
-		jobs, err := h.store.Jobs.ListByClusterID(ctx, clusterID)
-		if err != nil {
-			return LogAndReturnGenericError(c, err)
-		}
-
-		// Find the most recent CREATE job
-		for _, job := range jobs {
-			if job.JobType == types.JobTypeCreate {
-				jobID = job.ID
-				break
-			}
-		}
-
-		// If still no job ID, return empty logs
-		if jobID == "" {
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"logs": []types.DeploymentLog{},
-				"meta": map[string]interface{}{
-					"cluster_id":     clusterID,
-					"job_id":         "",
-					"after_sequence": 0,
-					"limit":          0,
-					"count":          0,
-					"stats": map[string]interface{}{
-						"total_lines":  0,
-						"error_count":  0,
-						"warn_count":   0,
-						"last_updated": nil,
-					},
-				},
-			})
-		}
-	}
-
 	// Parse pagination parameters
+	// For backwards compatibility, accept both after_sequence (old) and after_id (new)
+	// When no job_id is specified, we use after_id for global ordering
 	afterSequence := parseInt64Param(c.QueryParam("after_sequence"), 0)
+	afterID := parseInt64Param(c.QueryParam("after_id"), 0)
 	limit := parseIntParam(c.QueryParam("limit"), 500)
 	if limit > 2000 {
 		limit = 2000
@@ -106,13 +73,46 @@ func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 		limit = 500
 	}
 
-	// Fetch logs from database
+	// If no job_id specified, return logs from ALL jobs for this cluster
+	// This allows UI to see CREATE, POST_CONFIGURE, and other job logs together
+	if jobID == "" {
+		// Use after_id for pagination (not after_sequence, since sequence is per-job)
+		// Fetch all logs from database
+		logs, err := h.store.DeploymentLogs.GetAllLogs(ctx, clusterID, afterID, limit)
+		if err != nil {
+			return LogAndReturnGenericError(c, err)
+		}
+
+		// Get log statistics for all jobs
+		stats, err := h.store.DeploymentLogs.GetAllLogStats(ctx, clusterID)
+		if err != nil {
+			// Non-fatal, log and continue
+			c.Logger().Warnf("Failed to get all log stats: %v", err)
+			stats = &types.DeploymentLogStats{}
+		}
+
+		// Return logs with metadata
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"logs": logs,
+			"meta": map[string]interface{}{
+				"cluster_id":     clusterID,
+				"job_id":         "", // Empty indicates all jobs
+				"after_id":       afterID,
+				"after_sequence": afterSequence, // Kept for backwards compatibility
+				"limit":          limit,
+				"count":          len(logs),
+				"stats":          stats,
+			},
+		})
+	}
+
+	// Fetch logs from database for specific job
 	logs, err := h.store.DeploymentLogs.GetLogs(ctx, clusterID, jobID, afterSequence, limit)
 	if err != nil {
 		return LogAndReturnGenericError(c, err)
 	}
 
-	// Get log statistics
+	// Get log statistics for specific job
 	stats, err := h.store.DeploymentLogs.GetLogStats(ctx, clusterID, jobID)
 	if err != nil {
 		// Non-fatal, log and continue

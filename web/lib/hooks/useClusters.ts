@@ -61,7 +61,7 @@ export function useExtendCluster() {
   });
 }
 
-export function useClusterOutputs(id: string, clusterStatus?: string) {
+export function useClusterOutputs(id: string, clusterStatus?: string, hasActivePostConfigureJob?: boolean) {
   return useQuery({
     queryKey: ["cluster", id, "outputs", clusterStatus],
     queryFn: () => clustersApi.getOutputs(id),
@@ -72,6 +72,11 @@ export function useClusterOutputs(id: string, clusterStatus?: string) {
       const data = query.state.data;
       if (clusterStatus === "READY" && !data) {
         return 3000;
+      }
+      // Keep polling every 5 seconds if POST_CONFIGURE job is active
+      // This ensures dashboard URL/token appear automatically when job completes
+      if (clusterStatus === "READY" && hasActivePostConfigureJob) {
+        return 5000;
       }
       return false;
     },

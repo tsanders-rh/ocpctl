@@ -393,6 +393,7 @@ export interface DeploymentLogsResponse {
   meta: {
     cluster_id: string;
     job_id: string;
+    after_id?: number;
     after_sequence: number;
     limit: number;
     count: number;

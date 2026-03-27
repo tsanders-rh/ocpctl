@@ -27,7 +27,7 @@ export function DeploymentLogs({
   );
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [accumulatedLogs, setAccumulatedLogs] = useState<DeploymentLog[]>([]);
-  const [lastSequence, setLastSequence] = useState(0);
+  const [lastId, setLastId] = useState(0);
   const [isInitialLoad, setIsInitialLoad] = useState(
     (clusterStatus !== "READY" && clusterStatus !== "FAILED") || hasActiveJobs
   );
@@ -42,7 +42,7 @@ export function DeploymentLogs({
 
   const { data, isLoading, error } = useDeploymentLogs(clusterId, {
     jobId,
-    afterSequence: lastSequence,
+    afterId: lastId,
     refreshInterval,
   });
 
@@ -50,8 +50,8 @@ export function DeploymentLogs({
   useEffect(() => {
     if (data?.logs && data.logs.length > 0) {
       setAccumulatedLogs(prev => [...prev, ...data.logs]);
-      const maxSeq = Math.max(...data.logs.map(l => l.sequence));
-      setLastSequence(maxSeq);
+      const maxId = Math.max(...data.logs.map(l => l.id));
+      setLastId(maxId);
     }
   }, [data]);
 

@@ -4,7 +4,8 @@ import type { DeploymentLogsResponse } from "@/types/api";
 
 interface UseDeploymentLogsOptions {
   jobId?: string;
-  afterSequence?: number;
+  afterId?: number;
+  afterSequence?: number; // Deprecated - kept for backwards compatibility
   limit?: number;
   refreshInterval?: number | false;
 }
@@ -14,10 +15,11 @@ export function useDeploymentLogs(
   options?: UseDeploymentLogsOptions
 ) {
   return useQuery<DeploymentLogsResponse>({
-    queryKey: ["deployment-logs", clusterId, options?.jobId, options?.afterSequence],
+    queryKey: ["deployment-logs", clusterId, options?.jobId, options?.afterId],
     queryFn: () =>
       clustersApi.getDeploymentLogs(clusterId, {
         job_id: options?.jobId,
+        after_id: options?.afterId,
         after_sequence: options?.afterSequence,
         limit: options?.limit,
       }),

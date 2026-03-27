@@ -101,7 +101,36 @@ func (ls *LogStreamer) tailLogFile(ctx context.Context) {
 			return
 
 		case <-ls.stopCh:
-			// Stop signal received, flush remaining logs and exit
+			// Stop signal received, drain any remaining lines from file, then flush and exit
+			// This ensures we capture all logs written before Stop() was called
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					// No more data available, we're done draining
+					break
+				}
+
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
+				level := ls.extractLogLevel(line)
+				logEntry := &types.DeploymentLog{
+					ClusterID: ls.clusterID,
+					JobID:     ls.jobID,
+					Sequence:  ls.sequence,
+					Timestamp: time.Now(),
+					LogLevel:  level,
+					Message:   line,
+					Source:    types.DeploymentLogSourceInstaller,
+				}
+
+				ls.sequence++
+				batch = append(batch, logEntry)
+			}
+
+			// Flush final batch
 			if len(batch) > 0 {
 				ls.flushBatch(context.Background(), batch)
 			}

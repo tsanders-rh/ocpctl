@@ -97,6 +97,50 @@ func (s *DeploymentLogStore) GetLogs(ctx context.Context, clusterID, jobID strin
 	return logs, nil
 }
 
+// GetAllLogs retrieves deployment logs for all jobs in a cluster with cursor-based pagination
+// Logs are ordered by ID to show chronological order across all jobs
+// Uses ID instead of sequence because sequence is per-job, not global
+func (s *DeploymentLogStore) GetAllLogs(ctx context.Context, clusterID string, afterID int64, limit int) ([]*types.DeploymentLog, error) {
+	query := `
+		SELECT id, cluster_id, job_id, sequence, timestamp, log_level, message, source
+		FROM deployment_logs
+		WHERE cluster_id = $1 AND id > $2
+		ORDER BY id ASC
+		LIMIT $3
+	`
+
+	rows, err := s.pool.Query(ctx, query, clusterID, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query all logs: %w", err)
+	}
+	defer rows.Close()
+
+	logs := []*types.DeploymentLog{}
+	for rows.Next() {
+		var log types.DeploymentLog
+		err := rows.Scan(
+			&log.ID,
+			&log.ClusterID,
+			&log.JobID,
+			&log.Sequence,
+			&log.Timestamp,
+			&log.LogLevel,
+			&log.Message,
+			&log.Source,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan log: %w", err)
+		}
+		logs = append(logs, &log)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate all logs: %w", err)
+	}
+
+	return logs, nil
+}
+
 // GetLogStats returns statistics about deployment logs
 func (s *DeploymentLogStore) GetLogStats(ctx context.Context, clusterID, jobID string) (*types.DeploymentLogStats, error) {
 	query := `
@@ -120,6 +164,38 @@ func (s *DeploymentLogStore) GetLogStats(ctx context.Context, clusterID, jobID s
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query stats: %w", err)
+	}
+
+	if lastUpdated != nil {
+		stats.LastUpdated = *lastUpdated
+	}
+
+	return &stats, nil
+}
+
+// GetAllLogStats returns statistics about deployment logs for all jobs in a cluster
+func (s *DeploymentLogStore) GetAllLogStats(ctx context.Context, clusterID string) (*types.DeploymentLogStats, error) {
+	query := `
+		SELECT
+			COUNT(*) as total_lines,
+			COUNT(*) FILTER (WHERE log_level = 'error') as error_count,
+			COUNT(*) FILTER (WHERE log_level = 'warn' OR log_level = 'warning') as warn_count,
+			MAX(timestamp) as last_updated
+		FROM deployment_logs
+		WHERE cluster_id = $1
+	`
+
+	var stats types.DeploymentLogStats
+	var lastUpdated *time.Time
+
+	err := s.pool.QueryRow(ctx, query, clusterID).Scan(
+		&stats.TotalLines,
+		&stats.ErrorCount,
+		&stats.WarnCount,
+		&lastUpdated,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query all stats: %w", err)
 	}
 
 	if lastUpdated != nil {

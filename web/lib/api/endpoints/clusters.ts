@@ -64,7 +64,8 @@ export const clustersApi = {
     id: string,
     params?: {
       job_id?: string;
-      after_sequence?: number;
+      after_id?: number;
+      after_sequence?: number; // Deprecated
       limit?: number;
     }
   ): Promise<DeploymentLogsResponse> => {
@@ -72,6 +73,9 @@ export const clustersApi = {
 
     if (params?.job_id) {
       queryParams.append("job_id", params.job_id);
+    }
+    if (params?.after_id !== undefined) {
+      queryParams.append("after_id", String(params.after_id));
     }
     if (params?.after_sequence !== undefined) {
       queryParams.append("after_sequence", String(params.after_sequence));
