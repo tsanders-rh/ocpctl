@@ -694,6 +694,7 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 	}
 
 	// Login to IBM Cloud (required for ibmcloud commands)
+	log.Printf("DEBUG: About to login to IBM Cloud for cluster %s, region %s", cluster.Name, cluster.Region)
 	logWriter("Logging in to IBM Cloud (region: %s)...", cluster.Region)
 	if err := iksInstaller.Login(ctx, apiKey, cluster.Region, resourceGroup); err != nil {
 		streamCancel()
