@@ -730,12 +730,12 @@ func (s *ClusterStore) UpdatePostDeployStatus(ctx context.Context, clusterID, st
 	query := `
 		UPDATE clusters
 		SET post_deploy_status = $1,
-		    post_deploy_completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE NULL END,
+		    post_deploy_completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE NULL END,
 		    updated_at = NOW()
-		WHERE id = $2
+		WHERE id = $3
 	`
 
-	_, err := s.pool.Exec(ctx, query, status, clusterID)
+	_, err := s.pool.Exec(ctx, query, status, status, clusterID)
 	if err != nil {
 		return fmt.Errorf("update post-deploy status: %w", err)
 	}
