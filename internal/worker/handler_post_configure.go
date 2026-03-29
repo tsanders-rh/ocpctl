@@ -1169,8 +1169,8 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
-	// Build script path
-	scriptPath := filepath.Join("manifests", script.Path)
+	// Build script path (use absolute path to manifests directory)
+	scriptPath := filepath.Join(OcpctlBaseDir, "manifests", script.Path)
 
 	// Verify script exists and is executable
 	info, err := os.Stat(scriptPath)

@@ -4,6 +4,9 @@ import "time"
 
 // Timeout constants for various operations
 const (
+	// Base directory paths
+	OcpctlBaseDir = "/opt/ocpctl" // Base directory for ocpctl installation
+
 	// Worker lifecycle timeouts
 	WorkerShutdownTimeout = 30 * time.Second // Maximum time to wait for jobs to complete during shutdown
 	IMDSRequestTimeout    = 2 * time.Second  // Timeout for EC2 instance metadata requests
