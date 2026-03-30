@@ -579,8 +579,8 @@ func (h *ResumeHandler) updateLoadBalancerHealthChecks(ctx context.Context, clus
 			strings.Contains(*lb.LoadBalancerName, "ext") {
 			// Check if this LB has port 80/443 listeners (ingress LB)
 			for _, listener := range lb.ListenerDescriptions {
-				if listener.Listener.LoadBalancerPort != nil &&
-					(*listener.Listener.LoadBalancerPort == 80 || *listener.Listener.LoadBalancerPort == 443) {
+				if listener.Listener != nil &&
+					(listener.Listener.LoadBalancerPort == 80 || listener.Listener.LoadBalancerPort == 443) {
 					ingressLB = &lb
 					break
 				}
@@ -664,8 +664,8 @@ func (h *ResumeHandler) waitForLoadBalancerHealth(ctx context.Context, cluster *
 			strings.Contains(*lb.LoadBalancerName, "ext") {
 			// Check if this LB has port 80/443 listeners
 			for _, listener := range lb.ListenerDescriptions {
-				if listener.Listener.LoadBalancerPort != nil &&
-					(*listener.Listener.LoadBalancerPort == 80 || *listener.Listener.LoadBalancerPort == 443) {
+				if listener.Listener != nil &&
+					(listener.Listener.LoadBalancerPort == 80 || listener.Listener.LoadBalancerPort == 443) {
 					lbName = lb.LoadBalancerName
 					break
 				}
