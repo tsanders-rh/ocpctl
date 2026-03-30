@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -226,6 +231,11 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 		log.Printf("All instances are now running")
 	}
 
+	// Wait for OpenShift cluster to become healthy
+	if err := h.waitForClusterHealth(ctx, cluster); err != nil {
+		return fmt.Errorf("wait for cluster health: %w", err)
+	}
+
 	// Update cluster status to READY
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
 		return fmt.Errorf("update cluster status: %w", err)
@@ -362,6 +372,362 @@ func (h *ResumeHandler) resumeEKS(ctx context.Context, cluster *types.Cluster, j
 
 	log.Printf("EKS cluster %s resumed successfully", cluster.Name)
 	return nil
+}
+
+// waitForClusterHealth waits for OpenShift cluster to become fully healthy after resume
+func (h *ResumeHandler) waitForClusterHealth(ctx context.Context, cluster *types.Cluster) error {
+	log.Printf("Waiting for cluster %s to become healthy...", cluster.Name)
+
+	// Ensure we have kubeconfig available
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Check if kubeconfig exists locally
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		log.Printf("Kubeconfig not found locally, downloading from S3...")
+		if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+			return fmt.Errorf("ensure artifacts available: %w", err)
+		}
+	}
+
+	// Wait for API server to be accessible (with retries)
+	log.Printf("Waiting for API server to be accessible...")
+	if err := h.waitForAPIServer(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for API server: %w", err)
+	}
+
+	// Wait for cluster operators to be ready
+	log.Printf("Waiting for cluster operators to be ready...")
+	if err := h.waitForClusterOperators(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for cluster operators: %w", err)
+	}
+
+	// Wait for router pods to be running
+	log.Printf("Waiting for router pods to be running...")
+	if err := h.waitForRouterPods(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for router pods: %w", err)
+	}
+
+	// Update load balancer health checks if needed
+	log.Printf("Verifying load balancer health check configuration...")
+	if err := h.updateLoadBalancerHealthChecks(ctx, cluster, kubeconfigPath); err != nil {
+		return fmt.Errorf("update load balancer health checks: %w", err)
+	}
+
+	// Wait for load balancer health checks to pass
+	log.Printf("Waiting for load balancer health checks to pass...")
+	if err := h.waitForLoadBalancerHealth(ctx, cluster); err != nil {
+		return fmt.Errorf("wait for load balancer health: %w", err)
+	}
+
+	log.Printf("Cluster %s is now healthy and ready", cluster.Name)
+	return nil
+}
+
+// waitForAPIServer waits for the Kubernetes API server to be accessible
+func (h *ResumeHandler) waitForAPIServer(ctx context.Context, kubeconfigPath string) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
+	retryDelay := 10 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "cluster-info")
+		if err := cmd.Run(); err == nil {
+			log.Printf("API server is accessible")
+			return nil
+		}
+
+		if attempt%6 == 0 { // Log every minute
+			log.Printf("API server not yet accessible (attempt %d/%d)...", attempt, maxAttempts)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for API server")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("API server did not become accessible after %d attempts", maxAttempts)
+}
+
+// waitForClusterOperators waits for critical cluster operators to be ready
+func (h *ResumeHandler) waitForClusterOperators(ctx context.Context, kubeconfigPath string) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
+	retryDelay := 10 * time.Second
+
+	// Critical operators that must be ready
+	criticalOperators := []string{"kube-apiserver", "kube-controller-manager", "kube-scheduler", "ingress", "network"}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		allReady := true
+
+		for _, op := range criticalOperators {
+			cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"get", "co", op, "-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
+			output, err := cmd.Output()
+			if err != nil || string(output) != "True" {
+				allReady = false
+				break
+			}
+		}
+
+		if allReady {
+			log.Printf("All critical cluster operators are ready")
+			return nil
+		}
+
+		if attempt%6 == 0 { // Log every minute
+			log.Printf("Cluster operators not yet ready (attempt %d/%d)...", attempt, maxAttempts)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for cluster operators")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("cluster operators did not become ready after %d attempts", maxAttempts)
+}
+
+// waitForRouterPods waits for router pods to be running and ready
+func (h *ResumeHandler) waitForRouterPods(ctx context.Context, kubeconfigPath string) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
+	retryDelay := 10 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "pods", "-n", "openshift-ingress", "-l", "ingresscontroller.operator.openshift.io/deployment-ingresscontroller=default",
+			"-o", "jsonpath={.items[*].status.containerStatuses[0].ready}")
+		output, err := cmd.Output()
+		if err == nil {
+			// Check if all pods are ready (all outputs should be "true")
+			statuses := strings.Fields(string(output))
+			if len(statuses) > 0 {
+				allReady := true
+				for _, status := range statuses {
+					if status != "true" {
+						allReady = false
+						break
+					}
+				}
+				if allReady {
+					log.Printf("All %d router pods are ready", len(statuses))
+					return nil
+				}
+			}
+		}
+
+		if attempt%6 == 0 { // Log every minute
+			log.Printf("Router pods not yet ready (attempt %d/%d)...", attempt, maxAttempts)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for router pods")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("router pods did not become ready after %d attempts", maxAttempts)
+}
+
+// updateLoadBalancerHealthChecks updates ELB health check configuration if NodePort changed
+func (h *ResumeHandler) updateLoadBalancerHealthChecks(ctx context.Context, cluster *types.Cluster, kubeconfigPath string) error {
+	// Get infraID to find load balancer
+	infraID, err := h.getInfraID(cluster)
+	if err != nil {
+		return fmt.Errorf("get infrastructure ID: %w", err)
+	}
+
+	// Get router service NodePort
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "svc", "-n", "openshift-ingress", "router-default",
+		"-o", "jsonpath={.spec.ports[?(@.name==\"http\")].nodePort}")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("get router service NodePort: %w", err)
+	}
+
+	nodePort := strings.TrimSpace(string(output))
+	if nodePort == "" {
+		return fmt.Errorf("could not determine router service NodePort")
+	}
+
+	log.Printf("Router service is using NodePort: %s", nodePort)
+
+	// Load AWS config
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	// Find the ingress load balancer (classic ELB)
+	elbClient := elasticloadbalancing.NewFromConfig(awsCfg)
+	describeInput := &elasticloadbalancing.DescribeLoadBalancersInput{}
+	lbResult, err := elbClient.DescribeLoadBalancers(ctx, describeInput)
+	if err != nil {
+		return fmt.Errorf("describe load balancers: %w", err)
+	}
+
+	var ingressLB *elbtypes.LoadBalancerDescription
+	for _, lb := range lbResult.LoadBalancerDescriptions {
+		if lb.LoadBalancerName != nil && strings.Contains(*lb.LoadBalancerName, infraID) &&
+			strings.Contains(*lb.LoadBalancerName, "ext") {
+			// Check if this LB has port 80/443 listeners (ingress LB)
+			for _, listener := range lb.ListenerDescriptions {
+				if listener.Listener.LoadBalancerPort != nil &&
+					(*listener.Listener.LoadBalancerPort == 80 || *listener.Listener.LoadBalancerPort == 443) {
+					ingressLB = &lb
+					break
+				}
+			}
+		}
+		if ingressLB != nil {
+			break
+		}
+	}
+
+	if ingressLB == nil {
+		log.Printf("No classic ELB ingress load balancer found (cluster may use NLB)")
+		return nil
+	}
+
+	log.Printf("Found ingress load balancer: %s", *ingressLB.LoadBalancerName)
+
+	// Check current health check configuration
+	currentHealthCheck := ingressLB.HealthCheck
+	if currentHealthCheck == nil {
+		log.Printf("No health check configured on load balancer")
+		return nil
+	}
+
+	log.Printf("Current health check: %s", *currentHealthCheck.Target)
+
+	// Parse current health check port
+	expectedTarget := fmt.Sprintf("HTTP:%s/healthz", nodePort)
+	if *currentHealthCheck.Target == expectedTarget {
+		log.Printf("Health check already configured correctly")
+		return nil
+	}
+
+	// Update health check to use current NodePort
+	log.Printf("Updating health check from %s to %s", *currentHealthCheck.Target, expectedTarget)
+	configureInput := &elasticloadbalancing.ConfigureHealthCheckInput{
+		LoadBalancerName: ingressLB.LoadBalancerName,
+		HealthCheck: &elbtypes.HealthCheck{
+			Target:             &expectedTarget,
+			Interval:           currentHealthCheck.Interval,
+			Timeout:            currentHealthCheck.Timeout,
+			UnhealthyThreshold: currentHealthCheck.UnhealthyThreshold,
+			HealthyThreshold:   currentHealthCheck.HealthyThreshold,
+		},
+	}
+
+	_, err = elbClient.ConfigureHealthCheck(ctx, configureInput)
+	if err != nil {
+		return fmt.Errorf("configure health check: %w", err)
+	}
+
+	log.Printf("Successfully updated load balancer health check configuration")
+	return nil
+}
+
+// waitForLoadBalancerHealth waits for all instances in the load balancer to be healthy
+func (h *ResumeHandler) waitForLoadBalancerHealth(ctx context.Context, cluster *types.Cluster) error {
+	// Get infraID to find load balancer
+	infraID, err := h.getInfraID(cluster)
+	if err != nil {
+		return fmt.Errorf("get infrastructure ID: %w", err)
+	}
+
+	// Load AWS config
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	// Find the ingress load balancer
+	elbClient := elasticloadbalancing.NewFromConfig(awsCfg)
+	describeInput := &elasticloadbalancing.DescribeLoadBalancersInput{}
+	lbResult, err := elbClient.DescribeLoadBalancers(ctx, describeInput)
+	if err != nil {
+		return fmt.Errorf("describe load balancers: %w", err)
+	}
+
+	var lbName *string
+	for _, lb := range lbResult.LoadBalancerDescriptions {
+		if lb.LoadBalancerName != nil && strings.Contains(*lb.LoadBalancerName, infraID) &&
+			strings.Contains(*lb.LoadBalancerName, "ext") {
+			// Check if this LB has port 80/443 listeners
+			for _, listener := range lb.ListenerDescriptions {
+				if listener.Listener.LoadBalancerPort != nil &&
+					(*listener.Listener.LoadBalancerPort == 80 || *listener.Listener.LoadBalancerPort == 443) {
+					lbName = lb.LoadBalancerName
+					break
+				}
+			}
+		}
+		if lbName != nil {
+			break
+		}
+	}
+
+	if lbName == nil {
+		log.Printf("No classic ELB ingress load balancer found, skipping health check wait")
+		return nil
+	}
+
+	log.Printf("Waiting for load balancer %s instances to be healthy...", *lbName)
+
+	maxAttempts := 30 // 30 attempts * 10 seconds = 5 minutes
+	retryDelay := 10 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		healthInput := &elasticloadbalancing.DescribeInstanceHealthInput{
+			LoadBalancerName: lbName,
+		}
+
+		healthResult, err := elbClient.DescribeInstanceHealth(ctx, healthInput)
+		if err != nil {
+			log.Printf("Warning: failed to check instance health: %v", err)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Count healthy instances
+		healthyCount := 0
+		totalCount := len(healthResult.InstanceStates)
+		for _, state := range healthResult.InstanceStates {
+			if state.State != nil && *state.State == "InService" {
+				healthyCount++
+			}
+		}
+
+		log.Printf("Load balancer health: %d/%d instances healthy", healthyCount, totalCount)
+
+		// We need at least one instance healthy (not all, since masters may not have router pods)
+		if healthyCount > 0 {
+			log.Printf("Load balancer has healthy instances")
+			return nil
+		}
+
+		if attempt%6 == 0 { // Log every minute
+			log.Printf("Load balancer instances not yet healthy (attempt %d/%d)...", attempt, maxAttempts)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for load balancer health")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("load balancer instances did not become healthy after %d attempts", maxAttempts)
 }
 
 // resumeIKS resumes an IKS cluster by scaling workers back to original count
