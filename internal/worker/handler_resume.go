@@ -202,6 +202,24 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 
 	ec2Client := ec2.NewFromConfig(cfg)
 
+	// Wait for instances to be fully stopped before attempting to start them
+	// This prevents "IncorrectInstanceState" errors when instances are still stopping
+	log.Printf("Waiting for all instances to be fully stopped...")
+	stoppedWaiter := ec2.NewInstanceStoppedWaiter(ec2Client)
+	waitInput := &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer waitCancel()
+
+	if err := stoppedWaiter.Wait(waitCtx, waitInput, 5*time.Minute); err != nil {
+		log.Printf("Warning: instances may not be fully stopped yet: %v", err)
+		// Don't fail the job - instances might already be stopped or will be soon
+	} else {
+		log.Printf("All instances are confirmed stopped")
+	}
+
 	// Start instances
 	startInput := &ec2.StartInstancesInput{
 		InstanceIds: instanceIDs,
@@ -216,15 +234,13 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 
 	// Wait for instances to reach running state (with timeout)
 	log.Printf("Waiting for instances to reach running state...")
-	waiter := ec2.NewInstanceRunningWaiter(ec2Client)
-	waitInput := &ec2.DescribeInstancesInput{
-		InstanceIds: instanceIDs,
-	}
+	runningWaiter := ec2.NewInstanceRunningWaiter(ec2Client)
+	// Reuse waitInput from above
 
-	waitCtx, cancel := context.WithTimeout(ctx, ClusterStatusCheckTimeout)
-	defer cancel()
+	waitCtx2, cancel2 := context.WithTimeout(ctx, ClusterStatusCheckTimeout)
+	defer cancel2()
 
-	if err := waiter.Wait(waitCtx, waitInput, ClusterStatusCheckTimeout); err != nil {
+	if err := runningWaiter.Wait(waitCtx2, waitInput, ClusterStatusCheckTimeout); err != nil {
 		log.Printf("Warning: instances may not be fully running yet: %v", err)
 		// Don't fail the job, just log the warning
 	} else {
