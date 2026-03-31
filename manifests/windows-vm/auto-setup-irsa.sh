@@ -242,9 +242,32 @@ reclaimPolicy: Delete
 volumeBindingMode: Immediate
 EOF
     fi
+
+    # Create gp3-csi-wfc for VM disks (WaitForFirstConsumer prevents AZ mismatch)
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-wfc &>/dev/null; then
+        log_info "Creating gp3-csi-wfc storage class for VM disks..."
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-csi-wfc
+  annotations:
+    storageclass.kubernetes.io/description: "AWS EBS gp3 with WaitForFirstConsumer - prevents AZ mismatch for VM clones"
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+  type: gp3
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+EOF
+        log_info "✓ Created gp3-csi-wfc storage class for VM disks (prevents AZ mismatch)"
+    fi
+
     STORAGE_CLASS="gp3-csi-immediate"
     ACCESS_MODE="ReadWriteOnce"
-    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (immediate binding for CDI)"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS for image import"
+    log_info "✓ VM template will use gp3-csi-wfc for VM disks"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi &>/dev/null; then
     # Create gp2-csi-immediate for CDI imports
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-immediate &>/dev/null; then

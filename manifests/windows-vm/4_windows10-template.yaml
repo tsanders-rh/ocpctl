@@ -178,5 +178,5 @@ parameters:
     required: true
   - name: STORAGE_CLASS
     description: "Storage class for the VM disk"
-    value: "gp3-csi-immediate"
+    value: "gp3-csi-wfc"
     required: true

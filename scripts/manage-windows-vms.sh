@@ -17,7 +17,7 @@ VM_PREFIX="windows-test"
 VM_NAMESPACE="default"
 TEMPLATE_NAME="windows10-oadp-vm"
 TEMPLATE_NAMESPACE="openshift-virtualization-os-images"
-STORAGE_CLASS="gp3-csi-immediate"
+STORAGE_CLASS="gp3-csi-wfc"
 
 # Function to print colored messages
 log_info() {
