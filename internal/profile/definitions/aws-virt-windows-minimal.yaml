@@ -92,7 +92,7 @@ platformConfig:
 
 postDeployment:
   enabled: true
-  timeout: "45m"  # Extended for Windows image import from S3 (5-10min download + buffer)
+  timeout: "5h"  # Extended for Windows image import (2-4h) + VM clone/snapshot creation (20-30min)
   operators:
     - name: kubevirt-hyperconverged
       namespace: openshift-cnv
