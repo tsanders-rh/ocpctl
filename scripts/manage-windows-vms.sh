@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Add oc to PATH if needed
+export PATH="$HOME/.local/bin:$PATH"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
