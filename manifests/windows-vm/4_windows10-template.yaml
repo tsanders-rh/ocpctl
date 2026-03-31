@@ -112,7 +112,7 @@ objects:
               disks:
                 - name: rootdisk
                   disk:
-                    bus: virtio
+                    bus: sata
               interfaces:
                 - name: default
                   masquerade: {}
