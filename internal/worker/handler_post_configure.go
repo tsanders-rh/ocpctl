@@ -1498,7 +1498,7 @@ func isDangerousEnvVar(name string) bool {
 
 // installCustomOperator installs a user-defined operator with tracking
 func (h *PostConfigureHandler) installCustomOperator(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customOp types.CustomOperatorConfig) error {
-	log.Printf("Installing custom operator: %s in namespace %s (user-defined)", customOp.Name, customOp.Namespace)
+	log.Printf("[CUSTOM POST-CONFIG] Installing custom operator: %s in namespace %s (user-defined, owner: %s)", customOp.Name, customOp.Namespace, cluster.OwnerID)
 
 	// Convert to profile OperatorConfig
 	profileOp := profile.OperatorConfig{
@@ -1519,14 +1519,14 @@ func (h *PostConfigureHandler) installCustomOperator(ctx context.Context, cluste
 		}
 	}
 
-	// Call existing installOperator method
-	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	// Call existing installOperator method (creates its own tracking)
+	// TODO: Phase 4 - Enhance to use CreateWithTracking for full audit trail
 	return h.installOperator(ctx, cluster, kubeconfigPath, profileOp)
 }
 
 // executeCustomScript executes a user-defined script with tracking
 func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customScript types.CustomScriptConfig) error {
-	log.Printf("Executing custom script: %s (user-defined)", customScript.Name)
+	log.Printf("[CUSTOM POST-CONFIG] Executing custom script: %s (user-defined, owner: %s)", customScript.Name, cluster.OwnerID)
 
 	// Handle inline content or URL
 	scriptPath := ""
@@ -1559,15 +1559,14 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 		Env:         customScript.Env,
 	}
 
-	// Call existing executeScript method
-	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	// Call existing executeScript method (creates its own tracking)
+	// TODO: Phase 4 - Enhance to use CreateWithTracking for full audit trail
 	return h.executeScript(ctx, cluster, kubeconfigPath, profileScript)
 }
 
-
 // applyCustomManifest applies a user-defined manifest with tracking
 func (h *PostConfigureHandler) applyCustomManifest(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customManifest types.CustomManifestConfig) error {
-	log.Printf("Applying custom manifest: %s (user-defined)", customManifest.Name)
+	log.Printf("[CUSTOM POST-CONFIG] Applying custom manifest: %s (user-defined, owner: %s)", customManifest.Name, cluster.OwnerID)
 
 	// Handle inline content or URL
 	manifestPath := ""
@@ -1612,7 +1611,7 @@ func (h *PostConfigureHandler) applyCustomManifest(ctx context.Context, cluster 
 
 // installCustomHelmChart installs a user-defined Helm chart with tracking
 func (h *PostConfigureHandler) installCustomHelmChart(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customChart types.CustomHelmChartConfig) error {
-	log.Printf("Installing custom Helm chart: %s (user-defined)", customChart.Name)
+	log.Printf("[CUSTOM POST-CONFIG] Installing custom Helm chart: %s from repo %s (user-defined, owner: %s)", customChart.Name, customChart.Repo, cluster.OwnerID)
 
 	// Convert to profile HelmChartConfig
 	profileChart := profile.HelmChartConfig{

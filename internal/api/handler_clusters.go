@@ -16,6 +16,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	validation2 "github.com/tsanders-rh/ocpctl/internal/validation"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
@@ -184,6 +185,15 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		return ErrorValidation(c, validation)
 	}
 
+	// Validate custom post-config if provided
+	if req.CustomPostConfig != nil {
+		if errs := validation2.ValidateCustomPostConfig(req.CustomPostConfig); len(errs) > 0 {
+			log.Printf("[ERROR] Custom post-config validation failed: %v", errs)
+			// Return first validation error
+			return ErrorBadRequest(c, errs[0].Error())
+		}
+	}
+
 	// Get authenticated user ID
 	ownerID, err := auth.GetUserID(c)
 	if err != nil {
@@ -297,6 +307,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig.Scripts = append(req.CustomPostConfig.Scripts, addon.Config.Scripts...)
 			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
 			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
+		}
+
+		// Re-validate custom post-config after merging add-ons to ensure limits are respected
+		if errs := validation2.ValidateCustomPostConfig(req.CustomPostConfig); len(errs) > 0 {
+			log.Printf("[ERROR] Custom post-config validation failed after merging add-ons: %v", errs)
+			return ErrorBadRequest(c, fmt.Sprintf("validation failed after merging add-ons: %v", errs[0]))
 		}
 	}
 
