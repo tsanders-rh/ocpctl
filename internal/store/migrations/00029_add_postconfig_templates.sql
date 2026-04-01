@@ -5,7 +5,7 @@ CREATE TABLE postconfig_templates (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   config JSONB NOT NULL,
-  owner_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   is_public BOOLEAN DEFAULT FALSE,
   tags TEXT[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

@@ -6,7 +6,7 @@ ADD COLUMN custom_post_config JSONB;
 -- Add tracking columns to cluster_configurations table for user-defined configs
 ALTER TABLE cluster_configurations
 ADD COLUMN user_defined BOOLEAN DEFAULT FALSE,
-ADD COLUMN created_by_user_id VARCHAR(64) REFERENCES users(id),
+ADD COLUMN created_by_user_id UUID REFERENCES users(id),
 ADD COLUMN source VARCHAR(20) CHECK (source IN ('profile', 'addon', 'custom'));
 
 -- Create index on user_defined configs for faster querying
