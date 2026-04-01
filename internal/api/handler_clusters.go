@@ -77,6 +77,7 @@ type CreateClusterRequest struct {
 	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
 	SkipPostDeployment bool                       `json:"skip_post_deployment,omitempty"`
 	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
+	PostConfigAddOns   []string                   `json:"postConfigAddOns,omitempty"`
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
@@ -277,7 +278,29 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		len(prof.PostDeployment.Manifests) > 0 ||
 		len(prof.PostDeployment.HelmCharts) > 0)
 
-	// Check if user provided custom post-config
+	// Load add-ons and merge into custom post-config if specified
+	if len(req.PostConfigAddOns) > 0 {
+		// Initialize custom post-config if it doesn't exist
+		if req.CustomPostConfig == nil {
+			req.CustomPostConfig = &types.CustomPostConfig{}
+		}
+
+		// Load each add-on and merge into custom post-config
+		for _, addonID := range req.PostConfigAddOns {
+			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+			if err != nil {
+				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' not found or disabled", addonID))
+			}
+
+			// Merge add-on config into custom post-config
+			req.CustomPostConfig.Operators = append(req.CustomPostConfig.Operators, addon.Config.Operators...)
+			req.CustomPostConfig.Scripts = append(req.CustomPostConfig.Scripts, addon.Config.Scripts...)
+			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
+			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
+		}
+	}
+
+	// Check if user provided custom post-config (including from add-ons)
 	hasCustomPostConfig := req.CustomPostConfig != nil && (
 		len(req.CustomPostConfig.Operators) > 0 ||
 		len(req.CustomPostConfig.Scripts) > 0 ||

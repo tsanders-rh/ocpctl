@@ -247,6 +247,11 @@ func (s *Server) setupRoutes() {
 	profilesGroup.GET("", profileHandler.List)
 	profilesGroup.GET("/:name", profileHandler.Get)
 
+	// Post-config add-ons routes (require authentication)
+	addonsHandler := NewAddonsHandler(s.store)
+	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
+	postConfigGroup.GET("/addons", addonsHandler.List)
+
 	// Job routes (require authentication)
 	jobHandler := NewJobHandler(s.store)
 	jobsGroup := v1.Group("/jobs", auth.RequireAuthDual(s.auth, s.iamAuth))

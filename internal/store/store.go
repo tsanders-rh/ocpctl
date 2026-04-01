@@ -40,6 +40,7 @@ type Store struct {
 	OrphanedResources         *OrphanedResourceStore
 	ClusterConfigurations     *ClusterConfigurationStore
 	ProfileDeploymentMetrics  *ProfileDeploymentMetricsStore
+	PostConfigAddons          *PostConfigAddonStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -72,6 +73,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.OrphanedResources = &OrphanedResourceStore{pool: pool}
 	s.ClusterConfigurations = &ClusterConfigurationStore{pool: pool}
 	s.ProfileDeploymentMetrics = &ProfileDeploymentMetricsStore{pool: pool}
+	s.PostConfigAddons = &PostConfigAddonStore{pool: pool}
 
 	return s
 }
