@@ -75,9 +75,10 @@ type CreateClusterRequest struct {
 	OffhoursOptIn      bool                      `json:"offhours_opt_in,omitempty"`
 	WorkHoursEnabled   *bool                     `json:"work_hours_enabled,omitempty"`
 	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
-	SkipPostDeployment bool                      `json:"skip_post_deployment,omitempty"`
-	EnableEFSStorage   bool                      `json:"enable_efs_storage,omitempty"`
-	IdempotencyKey     string                    `json:"idempotency_key,omitempty"`
+	SkipPostDeployment bool                       `json:"skip_post_deployment,omitempty"`
+	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
+	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`
+	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 
 // ExtendClusterRequest represents the API request to extend cluster TTL
@@ -230,6 +231,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		DestroyAt:          destroyAt,
 		OffhoursOptIn:      req.OffhoursOptIn,
 		SkipPostDeployment: req.SkipPostDeployment,
+		CustomPostConfig:   req.CustomPostConfig,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
@@ -275,7 +277,14 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		len(prof.PostDeployment.Manifests) > 0 ||
 		len(prof.PostDeployment.HelmCharts) > 0)
 
-	if req.SkipPostDeployment || !hasPostDeployment {
+	// Check if user provided custom post-config
+	hasCustomPostConfig := req.CustomPostConfig != nil && (
+		len(req.CustomPostConfig.Operators) > 0 ||
+		len(req.CustomPostConfig.Scripts) > 0 ||
+		len(req.CustomPostConfig.Manifests) > 0 ||
+		len(req.CustomPostConfig.HelmCharts) > 0)
+
+	if req.SkipPostDeployment || (!hasPostDeployment && !hasCustomPostConfig) {
 		// No post-deployment needed - set to 'skipped' so hibernation works immediately
 		skipped := "skipped"
 		cluster.PostDeployStatus = &skipped

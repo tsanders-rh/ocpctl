@@ -84,14 +84,19 @@ func (s *ClusterConfigurationStore) GetByID(ctx context.Context, id string) (*ty
 
 // Create creates a new cluster configuration task
 func (s *ClusterConfigurationStore) Create(ctx context.Context, clusterID string, configType types.ConfigType, configName string) (string, error) {
+	return s.CreateWithTracking(ctx, clusterID, configType, configName, false, nil, nil)
+}
+
+// CreateWithTracking creates a new cluster configuration task with user tracking
+func (s *ClusterConfigurationStore) CreateWithTracking(ctx context.Context, clusterID string, configType types.ConfigType, configName string, userDefined bool, createdByUserID *string, source *types.ConfigSource) (string, error) {
 	query := `
-		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO cluster_configurations (cluster_id, config_type, config_name, status, user_defined, created_by_user_id, source)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 
 	var configID string
-	err := s.pool.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending).Scan(&configID)
+	err := s.pool.QueryRow(ctx, query, clusterID, configType, configName, types.ConfigStatusPending, userDefined, createdByUserID, source).Scan(&configID)
 	if err != nil {
 		return "", fmt.Errorf("create configuration: %w", err)
 	}

@@ -903,9 +903,12 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		return fmt.Errorf("get profile: %w", err)
 	}
 
-	// Check if post-deployment is enabled
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s, skipping (OpenShift has built-in console)", cluster.Profile)
+	// Check if post-deployment is enabled or if custom post-config exists
+	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
+	hasCustomConfig := cluster.CustomPostConfig != nil
+
+	if !hasProfileConfig && !hasCustomConfig {
+		log.Printf("Post-deployment not enabled for profile %s and no custom config, skipping (OpenShift has built-in console)", cluster.Profile)
 		return nil
 	}
 
@@ -928,36 +931,77 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		return fmt.Errorf("kubeconfig not found at %s", kubeconfigPath)
 	}
 
-	// Install operators
-	for _, op := range prof.PostDeployment.Operators {
-		if err := h.installOperator(ctx, cluster, kubeconfigPath, op); err != nil {
-			// Mark as failed
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("install operator %s: %w", op.Name, err)
+	// Execute profile-defined post-deployment configuration first
+	if hasProfileConfig {
+		log.Printf("Executing profile-defined post-deployment configuration")
+
+		// Install operators
+		for _, op := range prof.PostDeployment.Operators {
+			if err := h.installOperator(ctx, cluster, kubeconfigPath, op); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("install operator %s: %w", op.Name, err)
+			}
+		}
+
+		// Execute scripts
+		for _, script := range prof.PostDeployment.Scripts {
+			if err := h.executeScript(ctx, cluster, kubeconfigPath, script); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("execute script %s: %w", script.Name, err)
+			}
+		}
+
+		// Apply manifests
+		for _, manifest := range prof.PostDeployment.Manifests {
+			if err := h.applyOpenShiftManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
+			}
+		}
+
+		// Install Helm charts
+		for _, chart := range prof.PostDeployment.HelmCharts {
+			if err := h.installHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("install helm chart %s: %w", chart.Name, err)
+			}
 		}
 	}
 
-	// Execute scripts
-	for _, script := range prof.PostDeployment.Scripts {
-		if err := h.executeScript(ctx, cluster, kubeconfigPath, script); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("execute script %s: %w", script.Name, err)
-		}
-	}
+	// Execute user-defined custom post-deployment configuration
+	if hasCustomConfig {
+		log.Printf("Executing user-defined custom post-deployment configuration")
 
-	// Apply manifests
-	for _, manifest := range prof.PostDeployment.Manifests {
-		if err := h.applyOpenShiftManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
+		// Install custom operators
+		for _, op := range cluster.CustomPostConfig.Operators {
+			if err := h.installCustomOperator(ctx, cluster, kubeconfigPath, op); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("install custom operator %s: %w", op.Name, err)
+			}
 		}
-	}
 
-	// Install Helm charts
-	for _, chart := range prof.PostDeployment.HelmCharts {
-		if err := h.installHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
-			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-			return fmt.Errorf("install helm chart %s: %w", chart.Name, err)
+		// Execute custom scripts
+		for _, script := range cluster.CustomPostConfig.Scripts {
+			if err := h.executeCustomScript(ctx, cluster, kubeconfigPath, script); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("execute custom script %s: %w", script.Name, err)
+			}
+		}
+
+		// Apply custom manifests
+		for _, manifest := range cluster.CustomPostConfig.Manifests {
+			if err := h.applyCustomManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("apply custom manifest %s: %w", manifest.Name, err)
+			}
+		}
+
+		// Install custom Helm charts
+		for _, chart := range cluster.CustomPostConfig.HelmCharts {
+			if err := h.installCustomHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("install custom helm chart %s: %w", chart.Name, err)
+			}
 		}
 	}
 
@@ -1448,4 +1492,137 @@ func isDangerousEnvVar(name string) bool {
 	}
 
 	return dangerousVars[name]
+}
+
+// Custom post-config handlers with user tracking
+
+// installCustomOperator installs a user-defined operator with tracking
+func (h *PostConfigureHandler) installCustomOperator(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customOp types.CustomOperatorConfig) error {
+	log.Printf("Installing custom operator: %s in namespace %s (user-defined)", customOp.Name, customOp.Namespace)
+
+	// Convert to profile OperatorConfig
+	profileOp := profile.OperatorConfig{
+		Name:      customOp.Name,
+		Namespace: customOp.Namespace,
+		Source:    customOp.Source,
+		Channel:   customOp.Channel,
+	}
+
+	// Convert CustomResource if provided
+	if customOp.CustomResource != nil {
+		profileOp.CustomResource = &profile.CustomResourceConfig{
+			APIVersion: customOp.CustomResource.APIVersion,
+			Kind:       customOp.CustomResource.Kind,
+			Name:       customOp.CustomResource.Name,
+			Namespace:  customOp.CustomResource.Namespace,
+			Spec:       customOp.CustomResource.Spec,
+		}
+	}
+
+	// Call existing installOperator method
+	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	return h.installOperator(ctx, cluster, kubeconfigPath, profileOp)
+}
+
+// executeCustomScript executes a user-defined script with tracking
+func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customScript types.CustomScriptConfig) error {
+	log.Printf("Executing custom script: %s (user-defined)", customScript.Name)
+
+	// Handle inline content or URL
+	scriptPath := ""
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	if customScript.Content != "" {
+		// Inline script content - write to temp file
+		scriptsDir := filepath.Join(workDir, "custom-scripts")
+		if err := os.MkdirAll(scriptsDir, 0700); err != nil {
+			return fmt.Errorf("create scripts dir: %w", err)
+		}
+
+		scriptPath = filepath.Join(scriptsDir, customScript.Name+".sh")
+		if err := os.WriteFile(scriptPath, []byte(customScript.Content), 0700); err != nil {
+			return fmt.Errorf("write script file: %w", err)
+		}
+	} else if customScript.URL != "" {
+		// Download script from URL
+		// TODO: Add URL validation and download logic in Phase 2
+		return fmt.Errorf("URL-based scripts not yet implemented in Phase 1")
+	} else {
+		return fmt.Errorf("script must have either content or url")
+	}
+
+	// Convert to profile ScriptConfig
+	profileScript := profile.ScriptConfig{
+		Name:        customScript.Name,
+		Path:        scriptPath,
+		Description: customScript.Description,
+		Env:         customScript.Env,
+	}
+
+	// Call existing executeScript method
+	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	return h.executeScript(ctx, cluster, kubeconfigPath, profileScript)
+}
+
+
+// applyCustomManifest applies a user-defined manifest with tracking
+func (h *PostConfigureHandler) applyCustomManifest(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customManifest types.CustomManifestConfig) error {
+	log.Printf("Applying custom manifest: %s (user-defined)", customManifest.Name)
+
+	// Handle inline content or URL
+	manifestPath := ""
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	if customManifest.Content != "" {
+		// Inline manifest content - write to temp file
+		manifestsDir := filepath.Join(workDir, "custom-manifests")
+		if err := os.MkdirAll(manifestsDir, 0700); err != nil {
+			return fmt.Errorf("create manifests dir: %w", err)
+		}
+
+		manifestPath = filepath.Join(manifestsDir, customManifest.Name+".yaml")
+		if err := os.WriteFile(manifestPath, []byte(customManifest.Content), 0600); err != nil {
+			return fmt.Errorf("write manifest file: %w", err)
+		}
+	} else if customManifest.URL != "" {
+		// URL-based manifest - will be handled by applyOpenShiftManifest
+		manifestPath = customManifest.URL
+	} else {
+		return fmt.Errorf("manifest must have either content or url")
+	}
+
+	// Convert to profile ManifestConfig
+	profileManifest := profile.ManifestConfig{
+		Name:        customManifest.Name,
+		Description: customManifest.Description,
+		Namespace:   customManifest.Namespace,
+	}
+
+	// Set path or URL based on which was provided
+	if customManifest.URL != "" {
+		profileManifest.URL = customManifest.URL
+	} else{
+		profileManifest.Path = manifestPath
+	}
+
+	// Call existing applyOpenShiftManifest method
+	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	return h.applyOpenShiftManifest(ctx, cluster, kubeconfigPath, profileManifest)
+}
+
+// installCustomHelmChart installs a user-defined Helm chart with tracking
+func (h *PostConfigureHandler) installCustomHelmChart(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, customChart types.CustomHelmChartConfig) error {
+	log.Printf("Installing custom Helm chart: %s (user-defined)", customChart.Name)
+
+	// Convert to profile HelmChartConfig
+	profileChart := profile.HelmChartConfig{
+		Name:   customChart.Name,
+		Repo:   customChart.Repo,
+		Chart:  customChart.Chart,
+		Values: customChart.Values,
+	}
+
+	// Call existing installHelmChart method
+	// TODO: In Phase 2, enhance tracking to mark as user-defined
+	return h.installHelmChart(ctx, cluster, kubeconfigPath, profileChart)
 }
