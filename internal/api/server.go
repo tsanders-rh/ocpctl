@@ -252,6 +252,19 @@ func (s *Server) setupRoutes() {
 	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
 	postConfigGroup.GET("/addons", addonsHandler.List)
 
+	// Post-config validation and templates
+	postConfigHandler := NewPostConfigHandler()
+	postConfigGroup.POST("/validate", postConfigHandler.Validate)
+
+	// Template routes (require authentication)
+	templateHandler := NewTemplateHandler(s.store)
+	templatesGroup := v1.Group("/templates", auth.RequireAuthDual(s.auth, s.iamAuth))
+	templatesGroup.POST("", templateHandler.Create)
+	templatesGroup.GET("", templateHandler.List)
+	templatesGroup.GET("/:id", templateHandler.Get)
+	templatesGroup.PATCH("/:id", templateHandler.Update)
+	templatesGroup.DELETE("/:id", templateHandler.Delete)
+
 	// Job routes (require authentication)
 	jobHandler := NewJobHandler(s.store)
 	jobsGroup := v1.Group("/jobs", auth.RequireAuthDual(s.auth, s.iamAuth))
