@@ -80,10 +80,12 @@ objects:
         vm.kubevirt.io/template.version: v0.27.0
         vm.kubevirt.io/os: windows10
     spec:
-      running: false
+      runStrategy: Halted
       dataVolumeTemplates:
         - metadata:
             name: ${VM_NAME}-disk
+            annotations:
+              cdi.kubevirt.io/storage.usePopulator: "false"
           spec:
             sourceRef:
               kind: DataSource
@@ -110,7 +112,7 @@ objects:
               disks:
                 - name: rootdisk
                   disk:
-                    bus: virtio
+                    bus: sata
               interfaces:
                 - name: default
                   masquerade: {}
@@ -135,6 +137,15 @@ objects:
                 tlbflush: {}
                 vapic: {}
                 vpindex: {}
+            clock:
+              timer:
+                hyperv: {}
+                pit:
+                  tickPolicy: delay
+                rtc:
+                  tickPolicy: catchup
+                hpet:
+                  present: false
             firmware:
               bootloader:
                 efi:
@@ -164,4 +175,8 @@ parameters:
   - name: VM_NAMESPACE
     description: "Namespace to create the VM in"
     value: "default"
+    required: true
+  - name: STORAGE_CLASS
+    description: "Storage class for the VM disk"
+    value: "gp3-csi-wfc"
     required: true

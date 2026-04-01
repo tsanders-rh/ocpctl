@@ -110,6 +110,7 @@ type Cluster struct {
 	PostDeployStatus    *string        `db:"post_deploy_status" json:"post_deploy_status,omitempty"`
 	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
 	SkipPostDeployment  bool           `db:"skip_post_deployment" json:"skip_post_deployment"`
+	CustomPostConfig    *CustomPostConfig `db:"custom_post_config" json:"custom_post_config,omitempty"`
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 	// Cluster outputs (joined from cluster_outputs table)
 	APIURL              *string        `db:"api_url" json:"api_url,omitempty"`
@@ -172,17 +173,29 @@ const (
 	ConfigStatusFailed     ConfigStatus = "failed"
 )
 
+// ConfigSource represents the source of a configuration task
+type ConfigSource string
+
+const (
+	ConfigSourceProfile ConfigSource = "profile"
+	ConfigSourceAddon   ConfigSource = "addon"
+	ConfigSourceCustom  ConfigSource = "custom"
+)
+
 // ClusterConfiguration represents a post-deployment configuration task
 type ClusterConfiguration struct {
-	ID           string        `db:"id" json:"id"`
-	ClusterID    string        `db:"cluster_id" json:"cluster_id"`
-	ConfigType   ConfigType    `db:"config_type" json:"config_type"`
-	ConfigName   string        `db:"config_name" json:"config_name"`
-	Status       ConfigStatus  `db:"status" json:"status"`
-	ErrorMessage *string       `db:"error_message" json:"error_message,omitempty"`
-	CreatedAt    time.Time     `db:"created_at" json:"created_at"`
-	CompletedAt  *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
-	Metadata     JobMetadata   `db:"metadata" json:"metadata,omitempty"`
+	ID                string        `db:"id" json:"id"`
+	ClusterID         string        `db:"cluster_id" json:"cluster_id"`
+	ConfigType        ConfigType    `db:"config_type" json:"config_type"`
+	ConfigName        string        `db:"config_name" json:"config_name"`
+	Status            ConfigStatus  `db:"status" json:"status"`
+	ErrorMessage      *string       `db:"error_message" json:"error_message,omitempty"`
+	CreatedAt         time.Time     `db:"created_at" json:"created_at"`
+	CompletedAt       *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
+	Metadata          JobMetadata   `db:"metadata" json:"metadata,omitempty"`
+	UserDefined       bool          `db:"user_defined" json:"user_defined"`
+	CreatedByUserID   *string       `db:"created_by_user_id" json:"created_by_user_id,omitempty"`
+	Source            *ConfigSource `db:"source" json:"source,omitempty"`
 }
 
 // DestroyAudit tracks destroy attempts for forensics and reconciliation

@@ -242,9 +242,32 @@ reclaimPolicy: Delete
 volumeBindingMode: Immediate
 EOF
     fi
+
+    # Create gp3-csi-wfc for VM disks (WaitForFirstConsumer prevents AZ mismatch)
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-wfc &>/dev/null; then
+        log_info "Creating gp3-csi-wfc storage class for VM disks..."
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-csi-wfc
+  annotations:
+    storageclass.kubernetes.io/description: "AWS EBS gp3 with WaitForFirstConsumer - prevents AZ mismatch for VM clones"
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+  type: gp3
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+EOF
+        log_info "✓ Created gp3-csi-wfc storage class for VM disks (prevents AZ mismatch)"
+    fi
+
     STORAGE_CLASS="gp3-csi-immediate"
     ACCESS_MODE="ReadWriteOnce"
-    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (immediate binding for CDI)"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS for image import"
+    log_info "✓ VM template will use gp3-csi-wfc for VM disks"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi &>/dev/null; then
     # Create gp2-csi-immediate for CDI imports
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-immediate &>/dev/null; then
@@ -325,23 +348,31 @@ log_info "✓ VM Template created (using storage class: $STORAGE_CLASS)"
 log_info ""
 log_info "Waiting for Windows image download to complete before creating test VM..."
 log_info "(This ensures the snapshot is created during deployment, making future VM creation faster)"
+log_info "Note: Image import can take 2-4 hours depending on download speed and conversion time"
 
-# Wait up to 15 minutes for DataVolume to succeed
+# Wait up to 4 hours for DataVolume to succeed (handles downloads, conversions, and restarts)
 WAIT_TIME=0
-MAX_WAIT=900  # 15 minutes
+MAX_WAIT=14400  # 4 hours (enough for full import + cluster restart scenarios)
+PROGRESS_LOG_INTERVAL=300  # Log progress every 5 minutes
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
     DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    DV_PROGRESS=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
 
     if [ "$DV_PHASE" = "Succeeded" ]; then
         log_info "✓ Windows image download completed"
         break
     elif [ "$DV_PHASE" = "Failed" ]; then
         log_error "DataVolume import failed"
+        # Get more details about failure
+        oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o yaml | grep -A10 "conditions:" || true
         exit 1
     fi
 
-    if [ $((WAIT_TIME % 60)) -eq 0 ]; then
-        log_info "  DataVolume status: $DV_PHASE (${WAIT_TIME}s elapsed)"
+    # Log progress at intervals
+    if [ $((WAIT_TIME % PROGRESS_LOG_INTERVAL)) -eq 0 ]; then
+        ELAPSED_MIN=$((WAIT_TIME / 60))
+        REMAINING_MIN=$(((MAX_WAIT - WAIT_TIME) / 60))
+        log_info "  DataVolume status: $DV_PHASE | Progress: $DV_PROGRESS | Elapsed: ${ELAPSED_MIN}m | Timeout in: ${REMAINING_MIN}m"
     fi
 
     sleep 10
@@ -349,24 +380,69 @@ while [ $WAIT_TIME -lt $MAX_WAIT ]; do
 done
 
 if [ $WAIT_TIME -ge $MAX_WAIT ]; then
-    log_warn "DataVolume still importing after ${MAX_WAIT}s - skipping VM creation"
-    log_warn "You can create VMs manually later with: oc process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm | oc apply -f -"
-else
-    # Create initial test VM (this triggers snapshot creation for faster subsequent clones)
-    log_info ""
-    log_info "Creating initial Windows VM (stopped state)..."
-    log_info "Note: First VM clone takes 20-30 min due to EBS snapshot creation"
-    log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
-
-    oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
-        -p VM_NAME=windows-oadp-test-1 \
-        -p VM_NAMESPACE=default | oc --kubeconfig="$KUBECONFIG" apply -f - || log_warn "Failed to create test VM (non-critical)"
-
-    if [ $? -eq 0 ]; then
-        log_info "✓ Test VM created: windows-oadp-test-1 (namespace: default)"
-        log_info "  VM is stopped by default - start it from the console or CLI when ready"
-    fi
+    log_error "DataVolume import timed out after ${MAX_WAIT}s (4 hours)"
+    log_error "This likely indicates a problem with the S3 presigned URL or network connectivity"
+    log_error "Current DataVolume status:"
+    oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o yaml | grep -A20 "status:" || true
+    exit 1
 fi
+
+# Create initial test VM (this triggers snapshot creation for faster subsequent clones)
+log_info ""
+log_info "Creating initial Windows VM (stopped state)..."
+log_info "Note: First VM clone takes 20-30 min due to EBS snapshot creation"
+log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
+
+oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
+    -p VM_NAME=windows-oadp-test-1 \
+    -p VM_NAMESPACE=default | oc --kubeconfig="$KUBECONFIG" apply -f -
+
+if [ $? -ne 0 ]; then
+    log_error "Failed to create test VM"
+    exit 1
+fi
+
+log_info "✓ Test VM created: windows-oadp-test-1 (namespace: default)"
+
+# Wait for VM DataVolume clone to complete (this creates the EBS snapshot)
+log_info ""
+log_info "Waiting for VM disk clone to complete (creating EBS snapshot for fast future clones)..."
+log_info "This typically takes 20-30 minutes for the first VM..."
+
+VM_DV_WAIT=0
+VM_DV_MAX_WAIT=2400  # 40 minutes (enough for snapshot creation)
+while [ $VM_DV_WAIT -lt $VM_DV_MAX_WAIT ]; do
+    VM_DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows-oadp-test-1-disk -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    VM_DV_PROGRESS=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows-oadp-test-1-disk -n default -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
+
+    if [ "$VM_DV_PHASE" = "Succeeded" ]; then
+        log_info "✓ VM disk clone completed - EBS snapshot created"
+        break
+    elif [ "$VM_DV_PHASE" = "Failed" ]; then
+        log_error "VM DataVolume clone failed"
+        oc --kubeconfig="$KUBECONFIG" get datavolume windows-oadp-test-1-disk -n default -o yaml | grep -A10 "conditions:" || true
+        exit 1
+    fi
+
+    # Log progress every 5 minutes
+    if [ $((VM_DV_WAIT % 300)) -eq 0 ]; then
+        ELAPSED_MIN=$((VM_DV_WAIT / 60))
+        REMAINING_MIN=$(((VM_DV_MAX_WAIT - VM_DV_WAIT) / 60))
+        log_info "  Clone status: $VM_DV_PHASE | Progress: $VM_DV_PROGRESS | Elapsed: ${ELAPSED_MIN}m | Timeout in: ${REMAINING_MIN}m"
+    fi
+
+    sleep 10
+    VM_DV_WAIT=$((VM_DV_WAIT + 10))
+done
+
+if [ $VM_DV_WAIT -ge $VM_DV_MAX_WAIT ]; then
+    log_error "VM disk clone timed out after ${VM_DV_MAX_WAIT}s (40 minutes)"
+    log_error "Current DataVolume status:"
+    oc --kubeconfig="$KUBECONFIG" get datavolume windows-oadp-test-1-disk -n default -o yaml | grep -A20 "status:" || true
+    exit 1
+fi
+
+log_info "✓ Test VM fully provisioned and ready (VM is stopped by default)"
 
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
@@ -378,18 +454,18 @@ log_info "Role ARN: $ROLE_ARN"
 log_info "ServiceAccount: $SERVICE_ACCOUNT_NAMESPACE/$SERVICE_ACCOUNT_NAME"
 log_info ""
 log_info "Windows VM Resources:"
+log_info "  Base Image: windows (70GB Windows 10 QCOW2)"
 log_info "  Template: windows10-oadp-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
-log_info "  Test VM: windows-oadp-test-1 (namespace: default) - STOPPED"
+log_info "  Test VM: windows-oadp-test-1 (namespace: default) - READY (Stopped)"
+log_info "  EBS Snapshot: Created (future VMs will clone in 2-3 minutes)"
 log_info ""
-log_info "The first VM clone is in progress (20-30 min for EBS snapshot creation)"
-log_info "Once complete, you can:"
+log_info "Next Steps:"
 log_info "  1. Start the test VM from OpenShift Console:"
 log_info "     Virtualization → VirtualMachines → windows-oadp-test-1 → Start"
-log_info "  2. Create additional VMs (will be fast - 2-3 min using existing snapshot):"
-log_info "     oc process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm -p VM_NAME=my-vm | oc apply -f -"
 log_info ""
-log_info "Monitor VM clone progress:"
-log_info "  oc get datavolume windows-oadp-test-1-disk -n default -w"
+log_info "  2. Create additional VMs (fast clones from snapshot - 2-3 min):"
+log_info "     oc process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \\"
+log_info "       -p VM_NAME=my-windows-vm -p VM_NAMESPACE=default | oc apply -f -"
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
 

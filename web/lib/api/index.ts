@@ -5,3 +5,4 @@ export { profilesApi } from "./endpoints/profiles";
 export { jobsApi } from "./endpoints/jobs";
 export { usersApi } from "./users";
 export { orphanedResourcesApi } from "./endpoints/orphaned-resources";
+export { postConfigApi } from "./endpoints/postconfig";

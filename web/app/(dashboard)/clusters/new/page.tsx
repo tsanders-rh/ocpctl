@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { TagsInput } from "@/components/ui/tags-input";
+import { CustomPostConfigEditor } from "@/components/postconfig/CustomPostConfigEditor";
 import {
   Select,
   SelectContent,
@@ -63,6 +64,8 @@ export default function NewClusterPage() {
       cost_center: "733",
       offhours_opt_in: false,
       skip_post_deployment: false,
+      postConfigAddOns: [],
+      customPostConfig: undefined,
       enable_efs_storage: false,
       override_work_hours: false,
       work_hours_enabled: user?.work_hours_enabled || false,
@@ -652,7 +655,32 @@ export default function NewClusterPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
 
+                {/* User-Defined Post-Configuration */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    User-Defined Post-Configuration
+                  </h3>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Customize cluster post-deployment with add-ons, templates, or custom configurations.
+                      Configure operators, scripts, manifests, and Helm charts to be installed after cluster creation.
+                    </p>
+                    <CustomPostConfigEditor
+                      platform={watchedValues.platform}
+                      value={watchedValues.customPostConfig}
+                      selectedAddons={watchedValues.postConfigAddOns || []}
+                      onAddonsChange={(addonIds) => setValue("postConfigAddOns", addonIds)}
+                      onConfigChange={(config) => setValue("customPostConfig", config)}
+                    />
+                  </div>
+                </div>
+
+                {/* Work Hours Override */}
+                <div className="space-y-4">
+                  <div className="space-y-3">
                     <div className="flex items-start space-x-2">
                       <Checkbox
                         id="override_work_hours"

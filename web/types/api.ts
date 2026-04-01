@@ -127,6 +127,8 @@ export interface CreateClusterRequest {
   work_hours_enabled?: boolean;
   work_hours?: WorkHoursSchedule;
   skip_post_deployment?: boolean;
+  postConfigAddOns?: string[];
+  customPostConfig?: CustomPostConfig;
   idempotency_key?: string;
 }
 
@@ -424,4 +426,107 @@ export interface APIError {
   message: string;
   status_code: number;
   details?: ValidationError[];
+}
+
+// Custom Post-Config Types
+export interface CustomOperatorConfig {
+  name: string;
+  namespace: string;
+  source: string;
+  channel: string;
+  custom_resource?: CustomResourceConfig;
+  variables?: Record<string, string>;
+  condition?: string;
+  dependsOn?: string[];
+}
+
+export interface CustomScriptConfig {
+  name: string;
+  content?: string;
+  url?: string;
+  description?: string;
+  timeout?: string;
+  env?: Record<string, string>;
+  variables?: Record<string, string>;
+  condition?: string;
+  dependsOn?: string[];
+}
+
+export interface CustomManifestConfig {
+  name: string;
+  content?: string;
+  url?: string;
+  description?: string;
+  variables?: Record<string, string>;
+  condition?: string;
+  dependsOn?: string[];
+}
+
+export interface CustomHelmChartConfig {
+  name: string;
+  repo: string;
+  chart: string;
+  version?: string;
+  namespace: string;
+  values?: Record<string, any>;
+  variables?: Record<string, string>;
+  condition?: string;
+  dependsOn?: string[];
+}
+
+export interface CustomPostConfig {
+  operators?: CustomOperatorConfig[];
+  scripts?: CustomScriptConfig[];
+  manifests?: CustomManifestConfig[];
+  helmCharts?: CustomHelmChartConfig[];
+}
+
+// Post-Config Add-on Types
+export interface PostConfigAddon {
+  id: string;
+  addonId: string;
+  name: string;
+  description: string;
+  category: string;
+  config: CustomPostConfig;
+  supportedPlatforms: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PostConfigAddonsResponse {
+  addons: PostConfigAddon[];
+  categories: Record<string, PostConfigAddon[]>;
+  total: number;
+}
+
+// Post-Config Template Types
+export interface PostConfigTemplate {
+  id: string;
+  name: string;
+  description: string;
+  config: CustomPostConfig;
+  ownerId: string;
+  isPublic: boolean;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PostConfigTemplatesResponse {
+  templates: PostConfigTemplate[];
+}
+
+// Post-Config Validation Types
+export interface DAGInfo {
+  executionOrder: string[];
+  taskCount: number;
+  dependencies: Record<string, string[]>;
+}
+
+export interface ValidatePostConfigResponse {
+  valid: boolean;
+  errors?: string[];
+  dag?: DAGInfo;
 }
