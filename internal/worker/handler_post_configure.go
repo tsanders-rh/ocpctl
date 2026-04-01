@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/postconfig"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -970,38 +971,59 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 
 	// Execute user-defined custom post-deployment configuration
 	if hasCustomConfig {
-		log.Printf("Executing user-defined custom post-deployment configuration")
+		log.Printf("Executing user-defined custom post-deployment configuration with DAG-based execution")
 
-		// Install custom operators
-		for _, op := range cluster.CustomPostConfig.Operators {
-			if err := h.installCustomOperator(ctx, cluster, kubeconfigPath, op); err != nil {
-				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-				return fmt.Errorf("install custom operator %s: %w", op.Name, err)
-			}
+		// Build execution DAG to resolve dependencies
+		dag, err := postconfig.BuildExecutionDAG(cluster.CustomPostConfig)
+		if err != nil {
+			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+			return fmt.Errorf("build execution DAG: %w", err)
 		}
 
-		// Execute custom scripts
-		for _, script := range cluster.CustomPostConfig.Scripts {
-			if err := h.executeCustomScript(ctx, cluster, kubeconfigPath, script); err != nil {
-				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-				return fmt.Errorf("execute custom script %s: %w", script.Name, err)
-			}
+		log.Printf("Execution order: %v", dag.ExecutionOrder)
+
+		// Get infrastructure details for template context
+		infraID, _, err := h.getClusterInfraDetails(ctx, cluster, kubeconfigPath)
+		if err != nil {
+			log.Printf("Warning: failed to get infra details for templating: %v", err)
+			infraID = "" // Continue without infra ID
 		}
 
-		// Apply custom manifests
-		for _, manifest := range cluster.CustomPostConfig.Manifests {
-			if err := h.applyCustomManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
-				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-				return fmt.Errorf("apply custom manifest %s: %w", manifest.Name, err)
-			}
-		}
+		// Execute tasks in dependency order
+		for _, task := range dag.GetTasksByExecutionOrder() {
+			log.Printf("[DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
 
-		// Install custom Helm charts
-		for _, chart := range cluster.CustomPostConfig.HelmCharts {
-			if err := h.installCustomHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
-				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-				return fmt.Errorf("install custom helm chart %s: %w", chart.Name, err)
+			// Execute based on task type
+			switch task.Type {
+			case "operator":
+				op := task.Config.(types.CustomOperatorConfig)
+				if err := h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("install custom operator %s: %w", op.Name, err)
+				}
+			case "script":
+				script := task.Config.(types.CustomScriptConfig)
+				if err := h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("execute custom script %s: %w", script.Name, err)
+				}
+			case "manifest":
+				manifest := task.Config.(types.CustomManifestConfig)
+				if err := h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("apply custom manifest %s: %w", manifest.Name, err)
+				}
+			case "helmChart":
+				chart := task.Config.(types.CustomHelmChartConfig)
+				if err := h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("install custom helm chart %s: %w", chart.Name, err)
+				}
+			default:
+				return fmt.Errorf("unknown task type: %s", task.Type)
 			}
+
+			log.Printf("[DAG] Task %s completed successfully", task.Name)
 		}
 	}
 
@@ -1624,4 +1646,175 @@ func (h *PostConfigureHandler) installCustomHelmChart(ctx context.Context, clust
 	// Call existing installHelmChart method
 	// TODO: In Phase 2, enhance tracking to mark as user-defined
 	return h.installHelmChart(ctx, cluster, kubeconfigPath, profileChart)
+}
+
+// Phase 4: Advanced execution methods with template rendering, conditional execution, and variable support
+
+// executeCustomOperatorWithFeatures installs an operator with conditional execution support
+func (h *PostConfigureHandler) executeCustomOperatorWithFeatures(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, op types.CustomOperatorConfig, infraID string) error {
+	// Build template context
+	templateCtx := postconfig.BuildTemplateContext(cluster, infraID, nil)
+
+	// Evaluate condition
+	if op.Condition != "" {
+		shouldExecute, err := postconfig.EvaluateCondition(op.Condition, templateCtx)
+		if err != nil {
+			return fmt.Errorf("evaluate condition: %w", err)
+		}
+		if !shouldExecute {
+			log.Printf("[CONDITIONAL] Skipping operator %s (condition not met: %s)", op.Name, op.Condition)
+			return nil
+		}
+		log.Printf("[CONDITIONAL] Operator %s condition met: %s", op.Name, op.Condition)
+	}
+
+	// Execute operator installation
+	return h.installCustomOperator(ctx, cluster, kubeconfigPath, op)
+}
+
+// executeCustomScriptWithFeatures executes a script with template rendering, variables, and conditional execution
+func (h *PostConfigureHandler) executeCustomScriptWithFeatures(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, script types.CustomScriptConfig, infraID string) error {
+	// Build template context with custom variables
+	templateCtx := postconfig.BuildTemplateContext(cluster, infraID, script.Variables)
+
+	// Evaluate condition
+	if script.Condition != "" {
+		shouldExecute, err := postconfig.EvaluateCondition(script.Condition, templateCtx)
+		if err != nil {
+			return fmt.Errorf("evaluate condition: %w", err)
+		}
+		if !shouldExecute {
+			log.Printf("[CONDITIONAL] Skipping script %s (condition not met: %s)", script.Name, script.Condition)
+			return nil
+		}
+		log.Printf("[CONDITIONAL] Script %s condition met: %s", script.Name, script.Condition)
+	}
+
+	// Render template for script content
+	renderedContent := script.Content
+	if script.Content != "" {
+		rendered, err := postconfig.RenderTemplate(script.Content, templateCtx)
+		if err != nil {
+			return fmt.Errorf("render script content: %w", err)
+		}
+		renderedContent = rendered
+		log.Printf("[TEMPLATE] Script %s content rendered with variables", script.Name)
+	}
+
+	// Render environment variables
+	renderedEnv, err := postconfig.RenderMapValues(script.Env, templateCtx)
+	if err != nil {
+		return fmt.Errorf("render environment variables: %w", err)
+	}
+
+	// Create modified script config with rendered values
+	renderedScript := script
+	renderedScript.Content = renderedContent
+	renderedScript.Env = renderedEnv
+
+	// Execute script with rendered values
+	return h.executeCustomScript(ctx, cluster, kubeconfigPath, renderedScript)
+}
+
+// executeCustomManifestWithFeatures applies a manifest with template rendering and conditional execution
+func (h *PostConfigureHandler) executeCustomManifestWithFeatures(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, manifest types.CustomManifestConfig, infraID string) error {
+	// Build template context with custom variables
+	templateCtx := postconfig.BuildTemplateContext(cluster, infraID, manifest.Variables)
+
+	// Evaluate condition
+	if manifest.Condition != "" {
+		shouldExecute, err := postconfig.EvaluateCondition(manifest.Condition, templateCtx)
+		if err != nil {
+			return fmt.Errorf("evaluate condition: %w", err)
+		}
+		if !shouldExecute {
+			log.Printf("[CONDITIONAL] Skipping manifest %s (condition not met: %s)", manifest.Name, manifest.Condition)
+			return nil
+		}
+		log.Printf("[CONDITIONAL] Manifest %s condition met: %s", manifest.Name, manifest.Condition)
+	}
+
+	// Render template for manifest content
+	renderedContent := manifest.Content
+	if manifest.Content != "" {
+		rendered, err := postconfig.RenderTemplate(manifest.Content, templateCtx)
+		if err != nil {
+			return fmt.Errorf("render manifest content: %w", err)
+		}
+		renderedContent = rendered
+		log.Printf("[TEMPLATE] Manifest %s content rendered with variables", manifest.Name)
+	}
+
+	// Render namespace
+	renderedNamespace := manifest.Namespace
+	if manifest.Namespace != "" {
+		rendered, err := postconfig.RenderTemplate(manifest.Namespace, templateCtx)
+		if err != nil {
+			return fmt.Errorf("render namespace: %w", err)
+		}
+		renderedNamespace = rendered
+	}
+
+	// Create modified manifest config with rendered values
+	renderedManifest := manifest
+	renderedManifest.Content = renderedContent
+	renderedManifest.Namespace = renderedNamespace
+
+	// Execute manifest with rendered values
+	return h.applyCustomManifest(ctx, cluster, kubeconfigPath, renderedManifest)
+}
+
+// executeCustomHelmChartWithFeatures installs a Helm chart with template rendering and conditional execution
+func (h *PostConfigureHandler) executeCustomHelmChartWithFeatures(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, chart types.CustomHelmChartConfig, infraID string) error {
+	// Build template context with custom variables
+	templateCtx := postconfig.BuildTemplateContext(cluster, infraID, chart.Variables)
+
+	// Evaluate condition
+	if chart.Condition != "" {
+		shouldExecute, err := postconfig.EvaluateCondition(chart.Condition, templateCtx)
+		if err != nil {
+			return fmt.Errorf("evaluate condition: %w", err)
+		}
+		if !shouldExecute {
+			log.Printf("[CONDITIONAL] Skipping Helm chart %s (condition not met: %s)", chart.Name, chart.Condition)
+			return nil
+		}
+		log.Printf("[CONDITIONAL] Helm chart %s condition met: %s", chart.Name, chart.Condition)
+	}
+
+	// Render namespace
+	renderedNamespace := chart.Namespace
+	if chart.Namespace != "" {
+		rendered, err := postconfig.RenderTemplate(chart.Namespace, templateCtx)
+		if err != nil {
+			return fmt.Errorf("render namespace: %w", err)
+		}
+		renderedNamespace = rendered
+	}
+
+	// Render Helm values (string values only)
+	renderedValues := make(map[string]interface{})
+	for k, v := range chart.Values {
+		if strVal, ok := v.(string); ok {
+			rendered, err := postconfig.RenderTemplate(strVal, templateCtx)
+			if err != nil {
+				return fmt.Errorf("render helm value %s: %w", k, err)
+			}
+			renderedValues[k] = rendered
+		} else {
+			renderedValues[k] = v
+		}
+	}
+
+	if len(renderedValues) > 0 {
+		log.Printf("[TEMPLATE] Helm chart %s values rendered with variables", chart.Name)
+	}
+
+	// Create modified chart config with rendered values
+	renderedChart := chart
+	renderedChart.Namespace = renderedNamespace
+	renderedChart.Values = renderedValues
+
+	// Execute Helm chart with rendered values
+	return h.installCustomHelmChart(ctx, cluster, kubeconfigPath, renderedChart)
 }
