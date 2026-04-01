@@ -1,3 +1,4 @@
+-- +goose Up
 -- Create post_config_addons table for add-on library
 CREATE TABLE post_config_addons (
   id VARCHAR(64) PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -25,3 +26,6 @@ COMMENT ON TABLE post_config_addons IS 'Pre-defined add-on configurations for po
 COMMENT ON COLUMN post_config_addons.addon_id IS 'Unique identifier for the add-on (e.g., "oadp", "mtc")';
 COMMENT ON COLUMN post_config_addons.config IS 'CustomPostConfig JSONB containing operators, scripts, manifests, helmCharts';
 COMMENT ON COLUMN post_config_addons.supported_platforms IS 'Array of supported platforms (openshift, eks, iks)';
+
+-- +goose Down
+DROP TABLE IF EXISTS post_config_addons;

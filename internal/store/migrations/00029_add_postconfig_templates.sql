@@ -1,3 +1,4 @@
+-- +goose Up
 -- Create post-config templates table for reusable configurations
 CREATE TABLE postconfig_templates (
   id VARCHAR(64) PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -20,3 +21,6 @@ CREATE INDEX idx_postconfig_templates_tags ON postconfig_templates USING GIN(tag
 COMMENT ON TABLE postconfig_templates IS 'Reusable post-configuration templates created by users';
 COMMENT ON COLUMN postconfig_templates.is_public IS 'If true, template is visible to all users. If false, only visible to owner.';
 COMMENT ON COLUMN postconfig_templates.tags IS 'Tags for categorizing and searching templates (e.g., backup, monitoring, security)';
+
+-- +goose Down
+DROP TABLE IF EXISTS postconfig_templates;

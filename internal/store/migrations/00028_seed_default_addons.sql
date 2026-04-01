@@ -1,3 +1,4 @@
+-- +goose Up
 -- Seed default add-ons for Phase 2
 
 -- OADP (OpenShift API for Data Protection)
@@ -38,3 +39,6 @@ VALUES (
 
 -- Add comments
 COMMENT ON TABLE post_config_addons IS 'Pre-defined add-on configurations seeded with OADP, MTC, and MTA';
+
+-- +goose Down
+DELETE FROM post_config_addons WHERE addon_id IN ('oadp', 'mtc', 'mta');
