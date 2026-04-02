@@ -796,6 +796,15 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 // handlePostDeployment checks if post-deployment is enabled and creates the POST_CONFIGURE job
 // This is called by all cluster create handlers (OpenShift, EKS, IKS)
 func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types.Cluster) {
+	// Reload cluster from database to get latest custom_post_config
+	// (it may have been set by API after job started)
+	freshCluster, err := h.store.Clusters.GetByID(ctx, cluster.ID)
+	if err != nil {
+		log.Printf("Warning: failed to reload cluster for post-deployment check: %v", err)
+		return
+	}
+	cluster = freshCluster
+
 	// Check if profile has post-deployment configuration enabled
 	prof, err := h.registry.Get(cluster.Profile)
 	if err != nil {
@@ -803,10 +812,22 @@ func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types
 		return
 	}
 
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+	// Check if cluster has custom post-config (user-defined or add-ons)
+	hasCustomPostConfig := cluster.CustomPostConfig != nil && (
+		len(cluster.CustomPostConfig.Operators) > 0 ||
+		len(cluster.CustomPostConfig.Scripts) > 0 ||
+		len(cluster.CustomPostConfig.Manifests) > 0 ||
+		len(cluster.CustomPostConfig.HelmCharts) > 0)
+
+	// Determine if post-deployment should run
+	profileHasPostDeploy := prof.PostDeployment != nil && prof.PostDeployment.Enabled
+
+	if !profileHasPostDeploy && !hasCustomPostConfig {
+		log.Printf("Post-deployment not needed for cluster %s (no profile config or custom config)", cluster.Name)
 		return
 	}
+
+	log.Printf("Post-deployment needed for cluster %s (profile=%v, custom=%v)", cluster.Name, profileHasPostDeploy, hasCustomPostConfig)
 
 	// Check if user opted to skip post-deployment
 	if cluster.SkipPostDeployment {
