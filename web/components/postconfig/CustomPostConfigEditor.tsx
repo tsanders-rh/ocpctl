@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddonBrowser } from "./AddonBrowser";
 import { TemplateSelector } from "./TemplateSelector";
 import { ValidationPanel } from "./ValidationPanel";
+import { SaveTemplateDialog } from "./SaveTemplateDialog";
 import {
   Package,
   FileText,
@@ -141,7 +142,7 @@ export function CustomPostConfigEditor({
 
       {/* Summary Bar */}
       {totalItems > 0 && (
-        <div className="rounded-lg border bg-muted/50 p-4">
+        <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-semibold">Post-Configuration Summary</p>
@@ -182,6 +183,13 @@ export function CustomPostConfigEditor({
               )}
             </div>
           </div>
+
+          {/* Save as Template button - only show if there's custom config */}
+          {customTaskCount > 0 && value && (
+            <div className="flex justify-end pt-2 border-t">
+              <SaveTemplateDialog config={value} />
+            </div>
+          )}
         </div>
       )}
     </div>
