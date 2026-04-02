@@ -1,0 +1,56 @@
+# Add-on metadata
+id: oadp
+name: OpenShift API for Data Protection (OADP)
+description: Backup and restore OpenShift clusters and applications using Velero. Provides disaster recovery capabilities and data protection.
+category: backup
+enabled: true
+supportedPlatforms:
+  - openshift
+
+# All available versions
+versions:
+  - channel: stable-1.3
+    displayName: "OADP 1.3"
+    isDefault: false
+    config:
+      operators:
+        - name: oadp-operator
+          namespace: openshift-adp
+          source: redhat-operators
+          channel: stable-1.3
+
+  - channel: stable-1.4
+    displayName: "OADP 1.4 (Stable)"
+    isDefault: true
+    config:
+      operators:
+        - name: oadp-operator
+          namespace: openshift-adp
+          source: redhat-operators
+          channel: stable-1.4
+
+  - channel: stable-1.5
+    displayName: "OADP 1.5 (Latest)"
+    isDefault: false
+    config:
+      operators:
+        - name: oadp-operator
+          namespace: openshift-adp
+          source: redhat-operators
+          channel: stable-1.5
+      # Example: can include custom resource template
+      manifests:
+        - name: oadp-dpa-config
+          description: "DataProtectionApplication configuration"
+          content: |
+            apiVersion: oadp.openshift.io/v1alpha1
+            kind: DataProtectionApplication
+            metadata:
+              name: oadp-dpa
+              namespace: openshift-adp
+            spec:
+              configuration:
+                velero:
+                  defaultPlugins:
+                    - openshift
+                    - aws

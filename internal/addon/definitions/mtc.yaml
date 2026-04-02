@@ -1,0 +1,38 @@
+id: mtc
+name: Migration Toolkit for Containers (MTC)
+description: Migrate applications between OpenShift clusters. Enables cluster-to-cluster migration for workloads, PVs, and configurations.
+category: migration
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  - channel: release-v1.7
+    displayName: "MTC 1.7"
+    isDefault: false
+    config:
+      operators:
+        - name: mtc-operator
+          namespace: openshift-migration
+          source: redhat-operators
+          channel: release-v1.7
+
+  - channel: release-v1.8
+    displayName: "MTC 1.8 (Stable)"
+    isDefault: true
+    config:
+      operators:
+        - name: mtc-operator
+          namespace: openshift-migration
+          source: redhat-operators
+          channel: release-v1.8
+
+  - channel: release-v1.9
+    displayName: "MTC 1.9 (Latest)"
+    isDefault: false
+    config:
+      operators:
+        - name: mtc-operator
+          namespace: openshift-migration
+          source: redhat-operators
+          channel: release-v1.9

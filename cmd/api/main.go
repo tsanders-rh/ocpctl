@@ -32,6 +32,7 @@ import (
 	"time"
 
 	_ "github.com/tsanders-rh/ocpctl/docs" // Import generated docs
+	"github.com/tsanders-rh/ocpctl/internal/addon"
 	"github.com/tsanders-rh/ocpctl/internal/api"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -156,6 +157,20 @@ func main() {
 	profileCount := registry.Count()
 	enabledCount := registry.CountEnabled()
 	log.Printf("Loaded %d profiles (%d enabled)", profileCount, enabledCount)
+
+	// Sync add-ons from YAML to database
+	log.Println("Syncing add-ons from YAML...")
+	addonsDir := os.Getenv("ADDONS_DIR")
+	if addonsDir == "" {
+		addonsDir = "internal/addon/definitions"
+	}
+
+	addonLoader := addon.NewLoader(addonsDir)
+	addonSyncer := addon.NewSyncer(addonLoader, st.PostConfigAddons)
+
+	if err := addonSyncer.Sync(ctx); err != nil {
+		log.Fatalf("Failed to sync add-ons: %v", err)
+	}
 
 	// Initialize policy engine
 	policyEngine := policy.NewEngine(registry)

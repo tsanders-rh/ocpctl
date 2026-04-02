@@ -1,0 +1,38 @@
+id: mta
+name: Migration Toolkit for Applications (MTA)
+description: Modernize and migrate applications to containers. Analyze applications, identify migration issues, and provide transformation guidance.
+category: migration
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  - channel: stable-v6.0
+    displayName: "MTA 6.0"
+    isDefault: false
+    config:
+      operators:
+        - name: mta-operator
+          namespace: openshift-mta
+          source: redhat-operators
+          channel: stable-v6.0
+
+  - channel: stable-v7.0
+    displayName: "MTA 7.0 (Stable)"
+    isDefault: true
+    config:
+      operators:
+        - name: mta-operator
+          namespace: openshift-mta
+          source: redhat-operators
+          channel: stable-v7.0
+
+  - channel: stable-v7.1
+    displayName: "MTA 7.1 (Latest)"
+    isDefault: false
+    config:
+      operators:
+        - name: mta-operator
+          namespace: openshift-mta
+          source: redhat-operators
+          channel: stable-v7.1

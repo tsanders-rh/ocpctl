@@ -95,6 +95,9 @@ echo -e "${GREEN}✓ Synced manifests directory${NC}"
 aws s3 sync internal/profile/definitions/ ${S3_BUCKET}/profiles/ --delete
 echo -e "${GREEN}✓ Synced profiles directory${NC}"
 
+aws s3 sync internal/addon/definitions/ ${S3_BUCKET}/addons/ --delete
+echo -e "${GREEN}✓ Synced add-ons directory${NC}"
+
 echo -e "${GREEN}✓ All bootstrap artifacts uploaded to S3${NC}"
 echo ""
 
@@ -138,6 +141,17 @@ echo -e "${YELLOW}  Deploying profiles directory...${NC}"
 ssh -i "$SSH_KEY" ec2-user@$API_HOST "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
 scp -i "$SSH_KEY" -r internal/profile/definitions/* ec2-user@$API_HOST:/tmp/profiles/
 ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+
+# Deploy add-ons directory
+echo -e "${YELLOW}  Deploying add-ons directory...${NC}"
+ssh -i "$SSH_KEY" ec2-user@$API_HOST "mkdir -p /tmp/addons && sudo mkdir -p ${REMOTE_BASE}/addons"
+scp -i "$SSH_KEY" -r internal/addon/definitions/* ec2-user@$API_HOST:/tmp/addons/
+ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo cp -r /tmp/addons/* ${REMOTE_BASE}/addons/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/addons && rm -rf /tmp/addons"
+
+# Update environment configuration
+echo -e "${YELLOW}  Updating environment configuration...${NC}"
+ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo bash -c 'grep -q \"^ADDONS_DIR=\" /etc/ocpctl/api.env && sed -i \"s|^ADDONS_DIR=.*|ADDONS_DIR=${REMOTE_BASE}/addons|\" /etc/ocpctl/api.env || echo \"ADDONS_DIR=${REMOTE_BASE}/addons\" >> /etc/ocpctl/api.env'"
+echo -e "${GREEN}✓ Set ADDONS_DIR=${REMOTE_BASE}/addons${NC}"
 
 # Stop service
 ssh -i "$SSH_KEY" ec2-user@$API_HOST 'sudo systemctl stop ocpctl-api'

@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -22,7 +24,8 @@ func NewPostConfigAddonStore(pool *pgxpool.Pool) *PostConfigAddonStore {
 // List retrieves all enabled add-ons, optionally filtered by category and platform
 func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platform *string) ([]types.PostConfigAddon, error) {
 	query := `
-		SELECT id, addon_id, name, description, category, config, supported_platforms, enabled, created_at, updated_at
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, created_at, updated_at
 		FROM post_config_addons
 		WHERE enabled = TRUE
 	`
@@ -42,7 +45,7 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 		argCount++
 	}
 
-	query += " ORDER BY category, name"
+	query += " ORDER BY category, name, is_default DESC"
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -64,6 +67,9 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 			&configJSON,
 			&addon.SupportedPlatforms,
 			&addon.Enabled,
+			&addon.Version,
+			&addon.DisplayName,
+			&addon.IsDefault,
 			&addon.CreatedAt,
 			&addon.UpdatedAt,
 		)
@@ -158,19 +164,26 @@ func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string)
 
 // Create creates a new add-on in the database
 func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConfigAddon) error {
-	// Marshal config to JSONB
-	configJSON, err := json.Marshal(addon.Config)
-	if err != nil {
-		return fmt.Errorf("marshal add-on config: %w", err)
+	// Use ConfigJSON if provided, otherwise marshal Config
+	configJSON := addon.ConfigJSON
+	if len(configJSON) == 0 && addon.Config.Operators != nil {
+		var err error
+		configJSON, err = json.Marshal(addon.Config)
+		if err != nil {
+			return fmt.Errorf("marshal add-on config: %w", err)
+		}
 	}
 
 	query := `
-		INSERT INTO post_config_addons (addon_id, name, description, category, config, supported_platforms, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO post_config_addons (
+			addon_id, name, description, category, config, supported_platforms,
+			enabled, version, display_name, is_default
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at
 	`
 
-	err = s.pool.QueryRow(ctx, query,
+	err := s.pool.QueryRow(ctx, query,
 		addon.AddonID,
 		addon.Name,
 		addon.Description,
@@ -178,6 +191,9 @@ func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConf
 		configJSON,
 		addon.SupportedPlatforms,
 		addon.Enabled,
+		addon.Version,
+		addon.DisplayName,
+		addon.IsDefault,
 	).Scan(&addon.ID, &addon.CreatedAt, &addon.UpdatedAt)
 
 	if err != nil {
@@ -198,6 +214,125 @@ func (s *PostConfigAddonStore) Delete(ctx context.Context, id string) error {
 
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("add-on not found")
+	}
+
+	return nil
+}
+
+// GetByAddonIDAndVersion retrieves a specific version of an add-on
+func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addonID string, version string) (*types.PostConfigAddon, error) {
+	query := `
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, created_at, updated_at
+		FROM post_config_addons
+		WHERE addon_id = $1 AND version = $2
+	`
+
+	var addon types.PostConfigAddon
+	var configJSON []byte
+
+	err := s.pool.QueryRow(ctx, query, addonID, version).Scan(
+		&addon.ID,
+		&addon.AddonID,
+		&addon.Name,
+		&addon.Description,
+		&addon.Category,
+		&configJSON,
+		&addon.SupportedPlatforms,
+		&addon.Enabled,
+		&addon.Version,
+		&addon.DisplayName,
+		&addon.IsDefault,
+		&addon.CreatedAt,
+		&addon.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get add-on by addon_id and version: %w", err)
+	}
+
+	if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	return &addon, nil
+}
+
+// ListVersions returns all versions of a specific add-on
+func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string) ([]types.PostConfigAddon, error) {
+	query := `
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, created_at, updated_at
+		FROM post_config_addons
+		WHERE addon_id = $1 AND enabled = TRUE
+		ORDER BY is_default DESC, version DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query, addonID)
+	if err != nil {
+		return nil, fmt.Errorf("query versions: %w", err)
+	}
+	defer rows.Close()
+
+	versions := []types.PostConfigAddon{}
+	for rows.Next() {
+		var addon types.PostConfigAddon
+		var configJSON []byte
+
+		if err := rows.Scan(
+			&addon.ID, &addon.AddonID, &addon.Name, &addon.Description,
+			&addon.Category, &configJSON, &addon.SupportedPlatforms,
+			&addon.Enabled, &addon.Version, &addon.DisplayName,
+			&addon.IsDefault, &addon.CreatedAt, &addon.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan version: %w", err)
+		}
+
+		if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
+			return nil, fmt.Errorf("unmarshal config: %w", err)
+		}
+
+		versions = append(versions, addon)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return versions, nil
+}
+
+// Update modifies an existing add-on
+func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *types.PostConfigAddon) error {
+	query := `
+		UPDATE post_config_addons
+		SET name = $2, description = $3, category = $4, config = $5,
+		    supported_platforms = $6, enabled = $7, version = $8,
+		    display_name = $9, is_default = $10, updated_at = NOW()
+		WHERE id = $1
+	`
+
+	result, err := s.pool.Exec(ctx, query,
+		id,
+		addon.Name,
+		addon.Description,
+		addon.Category,
+		addon.ConfigJSON,
+		addon.SupportedPlatforms,
+		addon.Enabled,
+		addon.Version,
+		addon.DisplayName,
+		addon.IsDefault,
+	)
+
+	if err != nil {
+		return fmt.Errorf("update add-on: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 
 	return nil

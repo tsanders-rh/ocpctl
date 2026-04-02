@@ -18,6 +18,29 @@ func NewAddonsHandler(store *store.Store) *AddonsHandler {
 	return &AddonsHandler{store: store}
 }
 
+// AddonWithVersions represents an add-on with all its versions
+type AddonWithVersions struct {
+	ID                 string       `json:"id"`
+	Name               string       `json:"name"`
+	Description        string       `json:"description"`
+	Category           string       `json:"category"`
+	SupportedPlatforms []string     `json:"supportedPlatforms"`
+	Enabled            bool         `json:"enabled"`
+	Versions           VersionsInfo `json:"versions"`
+}
+
+// VersionsInfo contains version information
+type VersionsInfo struct {
+	Allowed []VersionOption `json:"allowed"`
+	Default string          `json:"default"`
+}
+
+// VersionOption represents a single version option
+type VersionOption struct {
+	Channel     string `json:"channel"`
+	DisplayName string `json:"displayName"`
+}
+
 // List returns all enabled add-ons, optionally filtered by category, platform, and search query
 //
 //	@Summary		List add-ons
@@ -69,16 +92,52 @@ func (h *AddonsHandler) List(c echo.Context) error {
 		addons = filteredAddons
 	}
 
-	// Group by category for UI display
-	categories := make(map[string][]types.PostConfigAddon)
+	// Group by addon_id and collect versions
+	grouped := make(map[string]*AddonWithVersions)
 	for _, addon := range addons {
+		if _, exists := grouped[addon.AddonID]; !exists {
+			grouped[addon.AddonID] = &AddonWithVersions{
+				ID:                 addon.AddonID,
+				Name:               addon.Name,
+				Description:        addon.Description,
+				Category:           addon.Category,
+				SupportedPlatforms: addon.SupportedPlatforms,
+				Enabled:            addon.Enabled,
+				Versions: VersionsInfo{
+					Allowed: []VersionOption{},
+				},
+			}
+		}
+
+		grouped[addon.AddonID].Versions.Allowed = append(
+			grouped[addon.AddonID].Versions.Allowed,
+			VersionOption{
+				Channel:     addon.Version,
+				DisplayName: addon.DisplayName,
+			},
+		)
+
+		if addon.IsDefault {
+			grouped[addon.AddonID].Versions.Default = addon.Version
+		}
+	}
+
+	// Convert to array
+	result := make([]AddonWithVersions, 0, len(grouped))
+	for _, addon := range grouped {
+		result = append(result, *addon)
+	}
+
+	// Group by category for UI display
+	categories := make(map[string][]AddonWithVersions)
+	for _, addon := range result {
 		categories[addon.Category] = append(categories[addon.Category], addon)
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"addons":     addons,
+		"addons":     result,
 		"categories": categories,
-		"total":      len(addons),
+		"total":      len(result),
 	})
 }
 

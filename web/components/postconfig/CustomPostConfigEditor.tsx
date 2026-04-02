@@ -13,13 +13,13 @@ import {
   PlusCircle,
   CheckCircle,
 } from "lucide-react";
-import type { CustomPostConfig } from "@/types/api";
+import type { CustomPostConfig, AddonSelection } from "@/types/api";
 
 interface CustomPostConfigEditorProps {
   platform?: string;
   value?: CustomPostConfig;
-  selectedAddons: string[];
-  onAddonsChange: (addonIds: string[]) => void;
+  selectedAddons: AddonSelection[];
+  onAddonsChange: (selections: AddonSelection[]) => void;
   onConfigChange: (config: CustomPostConfig | undefined) => void;
 }
 

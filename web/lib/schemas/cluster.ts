@@ -86,7 +86,10 @@ export const createClusterSchema = z.object({
   extra_tags: z.record(z.string()).optional(),
   offhours_opt_in: z.boolean().default(false),
   skip_post_deployment: z.boolean().default(false),
-  postConfigAddOns: z.array(z.string()).optional(),
+  postConfigAddOns: z.array(z.object({
+    id: z.string(),
+    version: z.string(),
+  })).optional(),
   customPostConfig: customPostConfigSchema,
   enable_efs_storage: z.boolean().default(false),
   override_work_hours: z.boolean().default(false),

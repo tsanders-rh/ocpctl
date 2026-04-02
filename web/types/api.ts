@@ -127,7 +127,7 @@ export interface CreateClusterRequest {
   work_hours_enabled?: boolean;
   work_hours?: WorkHoursSchedule;
   skip_post_deployment?: boolean;
-  postConfigAddOns?: string[];
+  postConfigAddOns?: AddonSelection[];
   customPostConfig?: CustomPostConfig;
   idempotency_key?: string;
 }
@@ -482,17 +482,27 @@ export interface CustomPostConfig {
 }
 
 // Post-Config Add-on Types
+export interface AddonVersionOption {
+  channel: string;
+  displayName: string;
+}
+
+export interface AddonSelection {
+  id: string;
+  version: string;
+}
+
 export interface PostConfigAddon {
   id: string;
-  addonId: string;
   name: string;
   description: string;
   category: string;
-  config: CustomPostConfig;
   supportedPlatforms: string[];
   enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
+  versions: {
+    allowed: AddonVersionOption[];
+    default: string;
+  };
 }
 
 export interface PostConfigAddonsResponse {

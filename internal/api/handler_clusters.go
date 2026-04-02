@@ -78,7 +78,7 @@ type CreateClusterRequest struct {
 	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
 	SkipPostDeployment bool                       `json:"skip_post_deployment,omitempty"`
 	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
-	PostConfigAddOns   []string                   `json:"postConfigAddOns,omitempty"`
+	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"`
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
@@ -295,11 +295,11 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig = &types.CustomPostConfig{}
 		}
 
-		// Load each add-on and merge into custom post-config
-		for _, addonID := range req.PostConfigAddOns {
-			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+		// Load each add-on with specific version and merge into custom post-config
+		for _, selection := range req.PostConfigAddOns {
+			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
 			if err != nil {
-				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' not found or disabled", addonID))
+				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' version '%s' not found or disabled", selection.ID, selection.Version))
 			}
 
 			// Merge add-on config into custom post-config

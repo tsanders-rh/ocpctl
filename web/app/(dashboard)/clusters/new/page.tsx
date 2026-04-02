@@ -669,7 +669,7 @@ export default function NewClusterPage() {
                       Configure operators, scripts, manifests, and Helm charts to be installed after cluster creation.
                     </p>
                     <CustomPostConfigEditor
-                      platform={watchedValues.platform}
+                      platform={watchedValues.cluster_type}
                       value={watchedValues.customPostConfig}
                       selectedAddons={watchedValues.postConfigAddOns || []}
                       onAddonsChange={(addonIds) => setValue("postConfigAddOns", addonIds)}

@@ -13,12 +13,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Package } from "lucide-react";
-import type { PostConfigAddon } from "@/types/api";
+import type { PostConfigAddon, AddonSelection } from "@/types/api";
 
 interface AddonBrowserProps {
   platform?: string;
-  selectedAddons: string[];
-  onSelectionChange: (addonIds: string[]) => void;
+  selectedAddons: AddonSelection[];
+  onSelectionChange: (selections: AddonSelection[]) => void;
 }
 
 export function AddonBrowser({
@@ -35,12 +35,24 @@ export function AddonBrowser({
     search: search || undefined,
   });
 
-  const handleToggleAddon = (addonId: string) => {
-    if (selectedAddons.includes(addonId)) {
-      onSelectionChange(selectedAddons.filter((id) => id !== addonId));
+  const handleToggleAddon = (addonId: string, defaultVersion: string) => {
+    const isSelected = selectedAddons.some((s) => s.id === addonId);
+
+    if (isSelected) {
+      // Deselect
+      onSelectionChange(selectedAddons.filter((s) => s.id !== addonId));
     } else {
-      onSelectionChange([...selectedAddons, addonId]);
+      // Select with default version
+      onSelectionChange([...selectedAddons, { id: addonId, version: defaultVersion }]);
     }
+  };
+
+  const handleVersionChange = (addonId: string, version: string) => {
+    onSelectionChange(
+      selectedAddons.map((s) =>
+        s.id === addonId ? { ...s, version } : s
+      )
+    );
   };
 
   if (isLoading) {
@@ -90,40 +102,74 @@ export function AddonBrowser({
         </div>
       ) : (
         <div className="space-y-3 max-h-[400px] overflow-y-auto">
-          {addons.map((addon: PostConfigAddon) => (
-            <div
-              key={addon.id}
-              className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-            >
-              <Checkbox
-                id={`addon-${addon.id}`}
-                checked={selectedAddons.includes(addon.addonId)}
-                onCheckedChange={() => handleToggleAddon(addon.addonId)}
-                className="mt-1"
-              />
-              <div className="flex-1 min-w-0">
-                <Label
-                  htmlFor={`addon-${addon.id}`}
-                  className="cursor-pointer font-medium text-base"
-                >
-                  {addon.name}
-                </Label>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {addon.description}
-                </p>
-                <div className="flex gap-2 mt-2">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/20">
-                    {addon.category}
-                  </span>
-                  {addon.supportedPlatforms.length > 0 && (
-                    <span className="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-950 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-700/10">
-                      {addon.supportedPlatforms.join(", ")}
-                    </span>
-                  )}
+          {addons.map((addon: PostConfigAddon) => {
+            const selection = selectedAddons.find((s) => s.id === addon.id);
+            const isSelected = !!selection;
+
+            return (
+              <div
+                key={addon.id}
+                className="border rounded-lg p-4 space-y-3"
+              >
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id={`addon-${addon.id}`}
+                    checked={isSelected}
+                    onCheckedChange={() => handleToggleAddon(addon.id, addon.versions.default)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <Label
+                      htmlFor={`addon-${addon.id}`}
+                      className="cursor-pointer font-medium text-base"
+                    >
+                      {addon.name}
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {addon.description}
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/20">
+                        {addon.category}
+                      </span>
+                      {addon.supportedPlatforms.length > 0 && (
+                        <span className="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-950 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-700/10">
+                          {addon.supportedPlatforms.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Version selector - shown when addon is selected */}
+                {isSelected && selection && (
+                  <div className="ml-9 pl-4 border-l-2 border-muted">
+                    <Label className="text-sm font-medium">Version</Label>
+                    <Select
+                      value={selection.version}
+                      onValueChange={(v) => handleVersionChange(addon.id, v)}
+                    >
+                      <SelectTrigger className="w-full mt-2">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {addon.versions.allowed.map((v) => (
+                          <SelectItem key={v.channel} value={v.channel}>
+                            {v.displayName}
+                            {v.channel === addon.versions.default && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                (recommended)
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
