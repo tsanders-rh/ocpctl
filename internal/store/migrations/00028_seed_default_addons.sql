@@ -9,7 +9,7 @@ VALUES (
   'Backup and restore OpenShift clusters and applications using Velero. Provides disaster recovery capabilities and data protection.',
   'backup',
   '{"operators": [{"name": "oadp-operator", "namespace": "openshift-adp", "source": "redhat-operators", "channel": "stable-1.4"}]}'::jsonb,
-  ARRAY['openshift'],
+  ARRAY['aws', 'ibmcloud'],
   TRUE
 );
 
@@ -21,7 +21,7 @@ VALUES (
   'Migrate applications between OpenShift clusters. Enables cluster-to-cluster migration for workloads, PVs, and configurations.',
   'migration',
   '{"operators": [{"name": "mtc-operator", "namespace": "openshift-migration", "source": "redhat-operators", "channel": "release-v1.8"}]}'::jsonb,
-  ARRAY['openshift'],
+  ARRAY['aws', 'ibmcloud'],
   TRUE
 );
 
@@ -33,7 +33,7 @@ VALUES (
   'Modernize and migrate applications to containers. Analyze applications, identify migration issues, and provide transformation guidance.',
   'migration',
   '{"operators": [{"name": "mta-operator", "namespace": "openshift-mta", "source": "redhat-operators", "channel": "stable-v7.0"}]}'::jsonb,
-  ARRAY['openshift'],
+  ARRAY['aws', 'ibmcloud'],
   TRUE
 );
 

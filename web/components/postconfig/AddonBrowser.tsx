@@ -26,11 +26,11 @@ export function AddonBrowser({
   selectedAddons,
   onSelectionChange,
 }: AddonBrowserProps) {
-  const [category, setCategory] = useState<string>("");
+  const [category, setCategory] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
 
   const { data, isLoading } = usePostConfigAddons({
-    category: category || undefined,
+    category: category === "all" ? undefined : category,
     platform,
     search: search || undefined,
   });
@@ -73,7 +73,7 @@ export function AddonBrowser({
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Categories</SelectItem>
+            <SelectItem value="all">All Categories</SelectItem>
             {categories.map((cat) => (
               <SelectItem key={cat} value={cat}>
                 {cat.charAt(0).toUpperCase() + cat.slice(1)}
