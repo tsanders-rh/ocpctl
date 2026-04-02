@@ -77,7 +77,8 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			skip_post_deployment, custom_post_config, post_deploy_status
 		FROM clusters
 		WHERE id = $1
 	`
@@ -112,6 +113,9 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.WorkHoursEnd,
 		&cluster.WorkDays,
 		&cluster.LastWorkHoursCheck,
+		&cluster.SkipPostDeployment,
+		&cluster.CustomPostConfig,
+		&cluster.PostDeployStatus,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -136,7 +140,8 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			skip_post_deployment, custom_post_config, post_deploy_status
 		FROM clusters
 		WHERE id = ANY($1)
 	`
