@@ -99,8 +99,7 @@ export function CustomPostConfigEditor({
                   Pre-Approved Add-ons
                 </p>
                 <p className="text-blue-800 dark:text-blue-200 mt-1">
-                  Select from our curated library of pre-approved add-ons like
-                  OADP (backup), MTC (migration), and MTA (application analysis).
+                  Select from our curated library of pre-approved add-ons.
                   These are production-ready configurations maintained by the
                   platform team.
                 </p>
