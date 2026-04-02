@@ -329,6 +329,10 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			log.Printf("[ERROR] Custom post-config validation failed after merging add-ons: %v", errs)
 			return ErrorBadRequest(c, fmt.Sprintf("validation failed after merging add-ons: %v", errs[0]))
 		}
+
+		// Update cluster object with merged configuration
+		cluster.CustomPostConfig = req.CustomPostConfig
+		log.Printf("[DEBUG] Updated cluster.CustomPostConfig with merged add-ons")
 	}
 
 	// Check if user provided custom post-config (including from add-ons)
