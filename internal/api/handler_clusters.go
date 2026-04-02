@@ -289,6 +289,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		len(prof.PostDeployment.HelmCharts) > 0)
 
 	// Load add-ons and merge into custom post-config if specified
+	log.Printf("[DEBUG] PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
 	if len(req.PostConfigAddOns) > 0 {
 		// Initialize custom post-config if it doesn't exist
 		if req.CustomPostConfig == nil {
@@ -297,10 +298,19 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 		// Load each add-on with specific version and merge into custom post-config
 		for _, selection := range req.PostConfigAddOns {
+			log.Printf("[DEBUG] Processing add-on: %s version %s", selection.ID, selection.Version)
 			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
 			if err != nil {
+				log.Printf("[ERROR] Failed to load add-on %s version %s: %v", selection.ID, selection.Version, err)
 				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' version '%s' not found or disabled", selection.ID, selection.Version))
 			}
+
+			log.Printf("[DEBUG] Loaded add-on %s: %d operators, %d scripts, %d manifests, %d helm charts",
+				addon.Name,
+				len(addon.Config.Operators),
+				len(addon.Config.Scripts),
+				len(addon.Config.Manifests),
+				len(addon.Config.HelmCharts))
 
 			// Merge add-on config into custom post-config
 			req.CustomPostConfig.Operators = append(req.CustomPostConfig.Operators, addon.Config.Operators...)
@@ -308,6 +318,11 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
 			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
 		}
+		log.Printf("[DEBUG] After merging add-ons: %d total operators, %d scripts, %d manifests, %d helm charts",
+			len(req.CustomPostConfig.Operators),
+			len(req.CustomPostConfig.Scripts),
+			len(req.CustomPostConfig.Manifests),
+			len(req.CustomPostConfig.HelmCharts))
 
 		// Re-validate custom post-config after merging add-ons to ensure limits are respected
 		if errs := validation2.ValidateCustomPostConfig(req.CustomPostConfig); len(errs) > 0 {
