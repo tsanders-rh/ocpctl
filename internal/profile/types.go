@@ -198,7 +198,7 @@ type PostDeploymentConfig struct {
 type OperatorConfig struct {
 	Name           string                 `yaml:"name" json:"name" validate:"required"`
 	Namespace      string                 `yaml:"namespace" json:"namespace" validate:"required"`
-	Source         string                 `yaml:"source" json:"source" validate:"required"` // e.g. "redhat-operators"
+	Source         string                 `yaml:"source,omitempty" json:"source,omitempty"` // e.g. "redhat-operators" (optional - OLM will search all catalogs if omitted)
 	Channel        string                 `yaml:"channel" json:"channel" validate:"required"`
 	CustomResource *CustomResourceConfig  `yaml:"customResource,omitempty" json:"custom_resource,omitempty"`
 }

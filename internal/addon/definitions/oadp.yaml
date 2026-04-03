@@ -9,39 +9,18 @@ supportedPlatforms:
 
 # All available versions
 versions:
-  - channel: stable-1.3
-    displayName: "OADP 1.3"
-    isDefault: false
-    config:
-      operators:
-        - name: oadp-operator
-          namespace: openshift-adp
-          source: redhat-operators
-          channel: stable-1.3
-
-  - channel: stable-1.4
-    displayName: "OADP 1.4 (Stable)"
+  - channel: stable
+    displayName: "OADP 1.5 (Stable)"
     isDefault: true
     config:
       operators:
-        - name: oadp-operator
+        - name: redhat-oadp-operator
           namespace: openshift-adp
           source: redhat-operators
-          channel: stable-1.4
-
-  - channel: stable-1.5
-    displayName: "OADP 1.5 (Latest)"
-    isDefault: false
-    config:
-      operators:
-        - name: oadp-operator
-          namespace: openshift-adp
-          source: redhat-operators
-          channel: stable-1.5
-      # Example: can include custom resource template
+          channel: stable
       manifests:
         - name: oadp-dpa-config
-          description: "DataProtectionApplication configuration"
+          description: "DataProtectionApplication configuration (platform and profile-aware)"
           content: |
             apiVersion: oadp.openshift.io/v1alpha1
             kind: DataProtectionApplication
@@ -53,4 +32,18 @@ versions:
                 velero:
                   defaultPlugins:
                     - openshift
+                    {{- if or (eq .Platform "aws") (eq .Platform "ibmcloud")}}
                     - aws
+                    {{- end}}
+                    {{- if contains .Profile "virt"}}
+                    - kubevirt
+                    - csi
+                    {{- end}}
+                  {{- if contains .Profile "virt"}}
+                  resourceTimeout: 10m
+                  {{- end}}
+                {{- if contains .Profile "virt"}}
+                nodeAgent:
+                  enable: true
+                  uploaderType: kopia
+                {{- end}}

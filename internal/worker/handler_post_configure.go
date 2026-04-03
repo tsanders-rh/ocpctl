@@ -1151,6 +1151,12 @@ spec:
 
 // createSubscription creates an OLM Subscription for the operator
 func (h *PostConfigureHandler) createSubscription(ctx context.Context, kubeconfigPath string, op profile.OperatorConfig) error {
+	// If source is not specified, default to redhat-operators
+	source := op.Source
+	if source == "" {
+		source = "redhat-operators"
+	}
+
 	yamlContent := fmt.Sprintf(`apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -1162,7 +1168,7 @@ spec:
   source: %s
   sourceNamespace: openshift-marketplace
   installPlanApproval: Automatic
-`, op.Name, op.Namespace, op.Channel, op.Name, op.Source)
+`, op.Name, op.Namespace, op.Channel, op.Name, source)
 
 	return h.applyYAML(ctx, kubeconfigPath, yamlContent)
 }

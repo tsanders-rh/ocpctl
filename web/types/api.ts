@@ -160,6 +160,9 @@ export interface Cluster {
   work_hours_end?: string;
   work_days?: number; // Bitmask
   last_work_hours_check?: string;
+  skip_post_deployment?: boolean;
+  custom_post_config?: CustomPostConfig;
+  post_deploy_status?: string;
 }
 
 export interface ExtendClusterRequest {
@@ -197,7 +200,7 @@ export interface PostDeploymentConfig {
 export interface OperatorConfig {
   name: string;
   namespace: string;
-  source: string;
+  source?: string;
   channel: string;
   custom_resource?: CustomResourceConfig;
 }
@@ -432,7 +435,7 @@ export interface APIError {
 export interface CustomOperatorConfig {
   name: string;
   namespace: string;
-  source: string;
+  source?: string;
   channel: string;
   custom_resource?: CustomResourceConfig;
   variables?: Record<string, string>;

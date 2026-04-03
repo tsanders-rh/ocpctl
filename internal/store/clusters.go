@@ -184,6 +184,9 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			&cluster.WorkHoursEnd,
 			&cluster.WorkDays,
 			&cluster.LastWorkHoursCheck,
+			&cluster.SkipPostDeployment,
+			&cluster.CustomPostConfig,
+			&cluster.PostDeployStatus,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)

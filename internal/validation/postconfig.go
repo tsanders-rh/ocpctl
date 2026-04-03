@@ -128,12 +128,7 @@ func validateOperator(op types.CustomOperatorConfig, index int) []error {
 		})
 	}
 
-	if op.Source == "" {
-		errors = append(errors, &PostConfigValidationError{
-			Field:   prefix + ".source",
-			Message: "operator source is required",
-		})
-	}
+	// Source is optional - OLM will search all catalogs if not specified
 
 	if op.Channel == "" {
 		errors = append(errors, &PostConfigValidationError{

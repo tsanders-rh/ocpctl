@@ -13,7 +13,7 @@ const customResourceSchema = z.object({
 const customOperatorSchema = z.object({
   name: z.string(),
   namespace: z.string(),
-  source: z.string(),
+  source: z.string().optional(),
   channel: z.string(),
   custom_resource: customResourceSchema.optional(),
   variables: z.record(z.string()).optional(),
