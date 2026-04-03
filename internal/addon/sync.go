@@ -25,6 +25,7 @@ func NewSyncer(loader *Loader, store *store.PostConfigAddonStore) *Syncer {
 }
 
 // Sync loads all YAML definitions and updates the database
+// It also deletes versions that are no longer in YAML
 func (s *Syncer) Sync(ctx context.Context) error {
 	log.Println("Syncing add-ons from YAML to database...")
 
@@ -34,7 +35,33 @@ func (s *Syncer) Sync(ctx context.Context) error {
 	}
 
 	synced := 0
+	deleted := 0
 	for _, addon := range addons {
+		// Get all existing versions for this addon from database
+		existingVersions, err := s.store.ListVersions(ctx, addon.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("list existing versions for %s: %w", addon.ID, err)
+		}
+
+		// Build set of channels from YAML
+		yamlChannels := make(map[string]bool)
+		for i := range addon.Versions {
+			yamlChannels[addon.Versions[i].Channel] = true
+		}
+
+		// Delete versions not in YAML
+		for _, existingVersion := range existingVersions {
+			if !yamlChannels[existingVersion.Version] {
+				if err := s.store.Delete(ctx, existingVersion.ID); err != nil {
+					log.Printf("Warning: failed to delete old version %s:%s: %v", addon.ID, existingVersion.Version, err)
+				} else {
+					log.Printf("  Deleted old version: %s:%s", addon.ID, existingVersion.Version)
+					deleted++
+				}
+			}
+		}
+
+		// Sync versions from YAML
 		for i := range addon.Versions {
 			if err := s.syncVersion(ctx, addon, &addon.Versions[i]); err != nil {
 				return fmt.Errorf("sync %s:%s: %w", addon.ID, addon.Versions[i].Channel, err)
@@ -43,7 +70,11 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		}
 	}
 
-	log.Printf("✓ Synced %d add-on versions from YAML to database", synced)
+	if deleted > 0 {
+		log.Printf("✓ Synced %d add-on versions from YAML to database (%d deleted)", synced, deleted)
+	} else {
+		log.Printf("✓ Synced %d add-on versions from YAML to database", synced)
+	}
 	return nil
 }
 

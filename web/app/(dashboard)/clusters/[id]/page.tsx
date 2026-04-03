@@ -12,10 +12,11 @@ import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { StorageTab } from "@/components/clusters/StorageTab";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, RefreshCw, Play } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, RefreshCw, Play, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ConfigStatus } from "@/types/api";
+import { ConfigStatus, CustomManifestConfig } from "@/types/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // Helper to get badge variant for configuration status
 function getConfigStatusBadge(status: ConfigStatus): { variant: "default" | "secondary" | "destructive" | "outline"; label: string } {
@@ -235,6 +236,7 @@ export default function ClusterDetailPage() {
   const retryConfiguration = useRetryConfiguration();
 
   const [extendHours, setExtendHours] = useState<number>(24);
+  const [selectedManifest, setSelectedManifest] = useState<CustomManifestConfig | null>(null);
 
   if (isLoading) {
     return <div>Loading cluster...</div>;
@@ -626,11 +628,15 @@ export default function ClusterDetailPage() {
       )}
 
       {/* Post-Deployment Configuration Card */}
-      {configurations && configurations.configurations.length > 0 && (
+      {((configurations && configurations.configurations.length > 0) || cluster.custom_post_config) && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Post-Deployment Configuration</CardTitle>
-            {cluster.status === "READY" && (
+            <CardTitle>
+              {cluster.status === "READY" && configurations && configurations.configurations.length > 0
+                ? "Post-Deployment Configuration"
+                : "Post-Configuration (Pending)"}
+            </CardTitle>
+            {cluster.status === "READY" && configurations && configurations.configurations.length > 0 && (
               <Button
                 size="sm"
                 variant="outline"
@@ -654,61 +660,138 @@ export default function ClusterDetailPage() {
             )}
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {configurations.configurations.map((config) => {
-                const statusBadge = getConfigStatusBadge(config.status);
-                return (
-                  <div
-                    key={config.id}
-                    className="flex items-center justify-between p-3 border rounded-md"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {config.config_type}
-                        </Badge>
-                        <span className="font-medium">{config.config_name}</span>
+            {/* Show pending configuration */}
+            {cluster.custom_post_config && (!configurations || configurations.configurations.length === 0) && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-blue-50 dark:bg-blue-950 p-4">
+                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                    The following add-ons will be installed automatically after the cluster reaches READY status:
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {cluster.custom_post_config.operators && cluster.custom_post_config.operators.length > 0 && (
+                    <div className="border rounded-md p-3">
+                      <div className="text-sm font-medium mb-2">Operators</div>
+                      <div className="space-y-1">
+                        {cluster.custom_post_config.operators.map((op, idx) => (
+                          <div key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {op.channel}
+                            </Badge>
+                            <span>{op.name}</span>
+                          </div>
+                        ))}
                       </div>
-                      {config.error_message && (
-                        <div className="text-sm text-destructive mt-1">
-                          {config.error_message}
+                    </div>
+                  )}
+                  {cluster.custom_post_config.scripts && cluster.custom_post_config.scripts.length > 0 && (
+                    <div className="border rounded-md p-3">
+                      <div className="text-sm font-medium mb-2">Scripts</div>
+                      <div className="space-y-1">
+                        {cluster.custom_post_config.scripts.map((script, idx) => (
+                          <div key={idx} className="text-sm text-muted-foreground">
+                            {script.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {cluster.custom_post_config.manifests && cluster.custom_post_config.manifests.length > 0 && (
+                    <div className="border rounded-md p-3">
+                      <div className="text-sm font-medium mb-2">Manifests</div>
+                      <div className="space-y-1">
+                        {cluster.custom_post_config.manifests.map((manifest, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedManifest(manifest)}
+                            className="w-full text-left text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-md px-2 py-1 transition-colors flex items-center gap-2"
+                          >
+                            <FileText className="h-3 w-3" />
+                            <span>{manifest.name}</span>
+                            {manifest.description && (
+                              <span className="text-xs text-muted-foreground ml-auto">
+                                {manifest.description}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {cluster.custom_post_config.helmCharts && cluster.custom_post_config.helmCharts.length > 0 && (
+                    <div className="border rounded-md p-3">
+                      <div className="text-sm font-medium mb-2">Helm Charts</div>
+                      <div className="space-y-1">
+                        {cluster.custom_post_config.helmCharts.map((chart, idx) => (
+                          <div key={idx} className="text-sm text-muted-foreground">
+                            {chart.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Show execution status */}
+            {configurations && configurations.configurations.length > 0 && (
+              <div className="space-y-3">
+                {configurations.configurations.map((config) => {
+                  const statusBadge = getConfigStatusBadge(config.status);
+                  return (
+                    <div
+                      key={config.id}
+                      className="flex items-center justify-between p-3 border rounded-md"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            {config.config_type}
+                          </Badge>
+                          <span className="font-medium">{config.config_name}</span>
                         </div>
-                      )}
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Created: {formatDate(config.created_at)}
-                        {config.completed_at && ` • Completed: ${formatDate(config.completed_at)}`}
+                        {config.error_message && (
+                          <div className="text-sm text-destructive mt-1">
+                            {config.error_message}
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Created: {formatDate(config.created_at)}
+                          {config.completed_at && ` • Completed: ${formatDate(config.completed_at)}`}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+                        {config.status === ConfigStatus.FAILED && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              try {
+                                await retryConfiguration.mutateAsync({
+                                  clusterId: id,
+                                  configId: config.id,
+                                });
+                                alert("Configuration retry initiated successfully");
+                              } catch (error: any) {
+                                const errorMessage = error?.response?.message || error?.message || "Failed to retry configuration";
+                                alert(`Failed to retry: ${errorMessage}`);
+                                console.error("Retry configuration error:", error);
+                              }
+                            }}
+                            disabled={retryConfiguration.isPending}
+                          >
+                            <RefreshCw className="mr-2 h-3 w-3" />
+                            {retryConfiguration.isPending ? "Retrying..." : "Retry"}
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-                      {config.status === ConfigStatus.FAILED && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              await retryConfiguration.mutateAsync({
-                                clusterId: id,
-                                configId: config.id,
-                              });
-                              alert("Configuration retry initiated successfully");
-                            } catch (error: any) {
-                              const errorMessage = error?.response?.message || error?.message || "Failed to retry configuration";
-                              alert(`Failed to retry: ${errorMessage}`);
-                              console.error("Retry configuration error:", error);
-                            }
-                          }}
-                          disabled={retryConfiguration.isPending}
-                        >
-                          <RefreshCw className="mr-2 h-3 w-3" />
-                          {retryConfiguration.isPending ? "Retrying..." : "Retry"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -966,6 +1049,70 @@ export default function ClusterDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Manifest Viewer Dialog */}
+      <Dialog open={!!selectedManifest} onOpenChange={(open) => !open && setSelectedManifest(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {selectedManifest?.name}
+            </DialogTitle>
+            {selectedManifest?.description && (
+              <DialogDescription>{selectedManifest.description}</DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedManifest?.content && (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Manifest Content</Label>
+                <pre className="bg-muted p-4 rounded-md overflow-x-auto text-xs font-mono border">
+                  <code>{selectedManifest.content}</code>
+                </pre>
+              </div>
+            )}
+            {selectedManifest?.url && (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Manifest URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={selectedManifest.url}
+                    readOnly
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(selectedManifest.url!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(selectedManifest.url, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            {selectedManifest?.variables && Object.keys(selectedManifest.variables).length > 0 && (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Variables</Label>
+                <div className="bg-muted p-4 rounded-md space-y-2">
+                  {Object.entries(selectedManifest.variables).map(([key, value]) => (
+                    <div key={key} className="flex items-center gap-2 text-sm font-mono">
+                      <span className="font-semibold">{key}:</span>
+                      <span className="text-muted-foreground">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
