@@ -63,8 +63,15 @@ func RenderTemplate(templateStr string, ctx *TemplateContext) (string, error) {
 		return "", nil
 	}
 
-	// Create template
-	tmpl, err := template.New("config").Parse(templateStr)
+	// Define helper functions for templates
+	funcMap := template.FuncMap{
+		"contains": strings.Contains,
+		"eq":       func(a, b string) bool { return a == b },
+		"ne":       func(a, b string) bool { return a != b },
+	}
+
+	// Create template with function map
+	tmpl, err := template.New("config").Funcs(funcMap).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("parse template: %w", err)
 	}
