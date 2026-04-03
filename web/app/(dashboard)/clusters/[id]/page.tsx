@@ -631,11 +631,7 @@ export default function ClusterDetailPage() {
       {((configurations && configurations.configurations.length > 0) || cluster.custom_post_config) && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>
-              {cluster.status === "READY"
-                ? "Post-Deployment Configuration"
-                : "Post-Configuration (Pending)"}
-            </CardTitle>
+            <CardTitle>Post-Deployment Configuration</CardTitle>
             {cluster.status === "READY" && configurations && configurations.configurations.length > 0 && (
               <Button
                 size="sm"
