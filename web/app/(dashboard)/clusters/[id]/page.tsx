@@ -632,7 +632,7 @@ export default function ClusterDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle>
-              {cluster.status === "READY" && configurations && configurations.configurations.length > 0
+              {cluster.status === "READY"
                 ? "Post-Deployment Configuration"
                 : "Post-Configuration (Pending)"}
             </CardTitle>
