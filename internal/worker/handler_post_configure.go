@@ -1350,7 +1350,11 @@ func (h *PostConfigureHandler) applyOpenShiftManifest(ctx context.Context, clust
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
 	// Read manifest file
-	manifestPath := filepath.Join("manifests", manifest.Path)
+	// Use absolute path if provided, otherwise join with "manifests/" directory
+	manifestPath := manifest.Path
+	if !filepath.IsAbs(manifestPath) {
+		manifestPath = filepath.Join("manifests", manifest.Path)
+	}
 	content, err := os.ReadFile(manifestPath)
 	if err != nil {
 		errMsg := err.Error()
