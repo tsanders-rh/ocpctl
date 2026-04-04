@@ -633,15 +633,42 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 			managedByOcpctl := tags["ManagedBy"] == "ocpctl"
 			clusterNameFromTag := tags["ClusterName"]
 
-			if managedByOcpctl {
+			// Step 2: Check for OpenShift CCO tags (fallback for old/untagged roles)
+			hasOpenShiftCCOTag := false
+			for tagKey := range tags {
+				if strings.HasPrefix(tagKey, "openshift.io/cloud-credential-operator/") {
+					hasOpenShiftCCOTag = true
+					break
+				}
+			}
+
+			// Check if role name matches OpenShift pattern
+			hasOpenShiftNamePattern := strings.Contains(roleName, "-openshift-") ||
+				strings.HasSuffix(roleName, "-master-role") ||
+				strings.HasSuffix(roleName, "-worker-role")
+
+			// Only check roles that are either managed by ocpctl OR have OpenShift indicators
+			isOpenshiftRole := managedByOcpctl || hasOpenShiftCCOTag || hasOpenShiftNamePattern
+
+			if isOpenshiftRole {
 				openshiftRoles++
-				if clusterNameFromTag == "" {
-					log.Printf("[detectOrphanedIAMRoles] Role %s has ManagedBy=ocpctl but no ClusterName tag", roleName)
+
+				// Determine cluster name
+				var clusterName string
+				if managedByOcpctl && clusterNameFromTag != "" {
+					clusterName = clusterNameFromTag
+				} else {
+					// Fallback: extract cluster name from role name pattern
+					clusterName = extractClusterNameFromIAMRole(roleName)
+				}
+
+				if clusterName == "" {
+					log.Printf("[detectOrphanedIAMRoles] Could not determine cluster name for role %s", roleName)
 					continue
 				}
 
 				// Check if cluster exists in database
-				cluster, exists := clustersByName[clusterNameFromTag]
+				cluster, exists := clustersByName[clusterName]
 				if !exists || cluster.Status == types.ClusterStatusDestroyed {
 					orphans = append(orphans, OrphanedResource{
 						Type:         "IAMRole",
@@ -651,7 +678,6 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 						Tags:         tags,
 					})
 				}
-				// Only rely on ManagedBy=ocpctl tag - no pattern matching fallback to avoid false positives
 			}
 
 		}

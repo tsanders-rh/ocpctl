@@ -192,6 +192,11 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 			log.Printf("Install failed, logs:\n%s", string(logData))
 		}
 
+		// Best-effort: try to tag whatever resources were created before failure
+		// This ensures orphaned resources can be detected even from failed installations
+		log.Printf("Cluster creation failed, attempting to tag partial resources...")
+		inst.TagPartialResources(ctx, workDir, *metadata)
+
 		return fmt.Errorf("openshift-install create cluster: %w\nOutput: %s", err, output)
 	}
 

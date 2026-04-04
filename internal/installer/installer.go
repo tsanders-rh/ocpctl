@@ -349,6 +349,29 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string, metadata *Clu
 		log.Printf("Successfully updated OIDC provider thumbprint")
 	}
 
+	// Tag IAM/OIDC resources immediately after creation
+	// This ensures orphaned resources can be detected even if cluster creation fails later
+	log.Printf("Tagging IAM and OIDC resources for cluster %s...", metadata.ClusterName)
+	tags := buildTagSet(*metadata)
+	if err := i.tagIAMRoles(ctx, infraID, region, tags); err != nil {
+		log.Printf("Warning: failed to tag IAM roles immediately after ccoctl: %v", err)
+		// Don't fail - we'll try again later, but at least attempt early tagging
+	} else {
+		log.Printf("Successfully tagged IAM roles")
+	}
+
+	if err := i.tagOIDCProvider(ctx, infraID, region, tags); err != nil {
+		log.Printf("Warning: failed to tag OIDC provider immediately after ccoctl: %v", err)
+	} else {
+		log.Printf("Successfully tagged OIDC provider")
+	}
+
+	if err := i.tagOIDCBucket(ctx, infraID, region, tags); err != nil {
+		log.Printf("Warning: failed to tag OIDC bucket immediately after ccoctl: %v", err)
+	} else {
+		log.Printf("Successfully tagged OIDC bucket")
+	}
+
 	// Validate OIDC configuration before proceeding
 	log.Printf("Validating OIDC configuration...")
 	if err := i.validateOIDCConfiguration(ctx, infraID, region); err != nil {
@@ -1838,6 +1861,76 @@ func (i *Installer) TagAWSResources(ctx context.Context, workDir string, metadat
 
 	log.Printf("[TagAWSResources] ✓ All AWS resources tagged successfully")
 	return nil
+}
+
+// TagPartialResources attempts to tag whatever AWS resources it can find, even on cluster creation failure
+// This is a best-effort operation to ensure orphaned resources can be detected
+func (i *Installer) TagPartialResources(ctx context.Context, workDir string, metadata ClusterMetadata) {
+	log.Printf("[TagPartialResources] Attempting to tag partial resources for failed cluster %s", metadata.ClusterName)
+
+	// Try to get infraID if we don't have it yet
+	if metadata.InfraID == "" {
+		if infraID, err := i.getInfraID(workDir); err == nil {
+			metadata.InfraID = infraID
+			log.Printf("[TagPartialResources] Found infraID: %s", infraID)
+		} else {
+			log.Printf("[TagPartialResources] Could not determine infraID: %v (skipping resource tagging)", err)
+			return
+		}
+	}
+
+	// Build tag set
+	tags := buildTagSet(metadata)
+
+	// Try to tag IAM roles (created by ccoctl, might exist even on early failure)
+	if err := i.tagIAMRoles(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag IAM roles: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged IAM roles")
+	}
+
+	// Try to tag OIDC provider
+	if err := i.tagOIDCProvider(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag OIDC provider: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged OIDC provider")
+	}
+
+	// Try to tag OIDC bucket
+	if err := i.tagOIDCBucket(ctx, metadata.InfraID, metadata.Region, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag OIDC bucket: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged OIDC bucket")
+	}
+
+	// Try to tag EC2 resources if any exist
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(metadata.Region))
+	if err != nil {
+		log.Printf("[TagPartialResources] Could not load AWS config: %v", err)
+		return
+	}
+
+	if err := i.tagEC2Resources(ctx, cfg, metadata.InfraID, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag EC2 resources: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged EC2 resources")
+	}
+
+	// Try to tag ELBs
+	if err := i.tagELBResources(ctx, cfg, metadata.InfraID, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag ELB resources: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged ELB resources")
+	}
+
+	// Try to tag Route53 zones
+	if err := i.tagRoute53Resources(ctx, cfg, metadata.InfraID, tags); err != nil {
+		log.Printf("[TagPartialResources] Could not tag Route53 resources: %v", err)
+	} else {
+		log.Printf("[TagPartialResources] ✓ Tagged Route53 resources")
+	}
+
+	log.Printf("[TagPartialResources] Best-effort tagging complete for cluster %s", metadata.ClusterName)
 }
 
 //go:embed credreqs/efs-csi-driver.yaml
