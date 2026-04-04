@@ -49,6 +49,7 @@ export default function OrphanedResourcesPage() {
   const [selectedResource, setSelectedResource] = useState<OrphanedResource | null>(null);
   const [actionDialog, setActionDialog] = useState<"resolve" | "ignore" | "delete" | null>(null);
   const [notes, setNotes] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Fetch data
   const { data: stats, isLoading: statsLoading } = useOrphanedResourcesStats();
@@ -95,6 +96,7 @@ export default function OrphanedResourcesPage() {
     if (!selectedResource || !actionDialog) return;
 
     try {
+      setErrorMessage(null); // Clear any previous errors
       if (actionDialog === "resolve") {
         await markResolved.mutateAsync({ id: selectedResource.id, notes });
       } else if (actionDialog === "ignore") {
@@ -107,6 +109,9 @@ export default function OrphanedResourcesPage() {
       setNotes("");
     } catch (error) {
       console.error("Failed to update resource:", error);
+      // Show error message to user
+      const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
+      setErrorMessage(errorMsg);
     }
   };
 
@@ -544,8 +549,18 @@ export default function OrphanedResourcesPage() {
                 </div>
               )}
 
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-4 mt-4">
+                  <p className="text-sm text-red-800 font-medium">Error</p>
+                  <p className="text-sm text-red-600 mt-1">{errorMessage}</p>
+                </div>
+              )}
+
               <div className="flex gap-2 justify-end pt-4">
-                <Button variant="outline" onClick={() => setActionDialog(null)}>
+                <Button variant="outline" onClick={() => {
+                  setActionDialog(null);
+                  setErrorMessage(null);
+                }}>
                   Cancel
                 </Button>
                 <Button
