@@ -71,7 +71,6 @@ tags:
     Environment: test
   defaults:
     Purpose: testing
-    ManagedBy: cluster-control-plane
   allowUserTags: true
 
 features:

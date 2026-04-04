@@ -222,7 +222,7 @@ func (e *Engine) validateTags(req *CreateClusterRequest, prof *profile.Profile, 
 	}
 
 	// Add system tags (always override)
-	result.MergedTags["ManagedBy"] = "cluster-control-plane"
+	result.MergedTags["ManagedBy"] = "ocpctl"
 	result.MergedTags["ClusterName"] = req.Name
 	result.MergedTags["Owner"] = req.Owner
 	result.MergedTags["Team"] = req.Team

@@ -22,16 +22,17 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 
 	t.Run("validates valid request", func(t *testing.T) {
 		req := &policy.CreateClusterRequest{
-			Name:       "test-cluster-01",
-			Platform:   "aws",
-			Version:    "4.20.3",
-			Profile:    "aws-minimal-test",
-			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
-			Owner:      "test-user",
-			Team:       "platform-team",
-			CostCenter: "engineering",
-			TTLHours:   24,
+			Name:        "test-cluster-01",
+			Platform:    "aws",
+			Version:     "4.20.3",
+			Profile:     "aws-minimal-test",
+			Region:      "us-east-1",
+			BaseDomain:  "mg.dog8code.com",
+			Owner:       "test-user",
+			Team:        "platform-team",
+			CostCenter:  "engineering",
+			TTLHours:    24,
+			ClusterType: "openshift",
 			ExtraTags: map[string]string{
 				"Purpose": "testing",
 			},
@@ -52,7 +53,7 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 			Version:    "4.20.3",
 			Profile:    "aws-minimal-test",
 			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
+			BaseDomain: "mg.dog8code.com",
 			Owner:      "test-user",
 			Team:       "platform-team",
 			CostCenter: "engineering",
@@ -76,16 +77,17 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 
 	t.Run("rejects version not in allowlist", func(t *testing.T) {
 		req := &policy.CreateClusterRequest{
-			Name:       "test-cluster-01",
-			Platform:   "aws",
-			Version:    "4.19.0", // Not in allowlist
-			Profile:    "aws-minimal-test",
-			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
-			Owner:      "test-user",
-			Team:       "platform-team",
-			CostCenter: "engineering",
-			TTLHours:   24,
+			Name:        "test-cluster-01",
+			Platform:    "aws",
+			Version:     "4.19.0", // Not in allowlist
+			Profile:     "aws-minimal-test",
+			Region:      "us-east-1",
+			BaseDomain:  "mg.dog8code.com",
+			Owner:       "test-user",
+			Team:        "platform-team",
+			CostCenter:  "engineering",
+			TTLHours:    24,
+			ClusterType: "openshift", // Required for version validation
 		}
 
 		result, err := engine.ValidateCreateRequest(req)
@@ -104,16 +106,17 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 
 	t.Run("rejects region not in allowlist", func(t *testing.T) {
 		req := &policy.CreateClusterRequest{
-			Name:       "test-cluster-01",
-			Platform:   "aws",
-			Version:    "4.20.3",
-			Profile:    "aws-minimal-test",
-			Region:     "ap-south-1", // Not in allowlist
-			BaseDomain: "labs.example.com",
-			Owner:      "test-user",
-			Team:       "platform-team",
-			CostCenter: "engineering",
-			TTLHours:   24,
+			Name:        "test-cluster-01",
+			Platform:    "aws",
+			Version:     "4.20.3",
+			Profile:     "aws-minimal-test",
+			Region:      "us-gov-west-1", // Not in allowlist
+			BaseDomain:  "mg.dog8code.com",
+			Owner:       "test-user",
+			Team:        "platform-team",
+			CostCenter:  "engineering",
+			TTLHours:    24,
+			ClusterType: "openshift",
 		}
 
 		result, err := engine.ValidateCreateRequest(req)
@@ -137,7 +140,7 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 			Version:    "4.20.3",
 			Profile:    "aws-minimal-test",
 			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
+			BaseDomain: "mg.dog8code.com",
 			Owner:      "test-user",
 			Team:       "platform-team",
 			CostCenter: "engineering",
@@ -161,16 +164,17 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 
 	t.Run("prevents reserved tag override", func(t *testing.T) {
 		req := &policy.CreateClusterRequest{
-			Name:       "test-cluster-01",
-			Platform:   "aws",
-			Version:    "4.20.3",
-			Profile:    "aws-minimal-test",
-			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
-			Owner:      "test-user",
-			Team:       "platform-team",
-			CostCenter: "engineering",
-			TTLHours:   24,
+			Name:        "test-cluster-01",
+			Platform:    "aws",
+			Version:     "4.20.3",
+			Profile:     "aws-minimal-test",
+			Region:      "us-east-1",
+			BaseDomain:  "mg.dog8code.com",
+			Owner:       "test-user",
+			Team:        "platform-team",
+			CostCenter:  "engineering",
+			TTLHours:    24,
+			ClusterType: "openshift",
 			ExtraTags: map[string]string{
 				"ManagedBy": "hacker", // Reserved key!
 			},
@@ -198,7 +202,7 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 			Version:    "4.20.3",
 			Profile:    "aws-minimal-test",
 			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
+			BaseDomain: "mg.dog8code.com",
 			Owner:      "alice",
 			Team:       "platform",
 			CostCenter: "eng",
@@ -213,7 +217,7 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 		assert.True(t, result.Valid)
 
 		// Check system tags are present
-		assert.Equal(t, "cluster-control-plane", result.MergedTags["ManagedBy"])
+		assert.Equal(t, "ocpctl", result.MergedTags["ManagedBy"])
 		assert.Equal(t, "test-cluster-01", result.MergedTags["ClusterName"])
 		assert.Equal(t, "alice", result.MergedTags["Owner"])
 		assert.Equal(t, "platform", result.MergedTags["Team"])
