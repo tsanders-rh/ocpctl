@@ -604,7 +604,7 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
 
 	totalScanned := 0
-	openshiftRoles := 0
+	ocpctlRoles := 0
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -629,61 +629,39 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 				}
 			}
 
-			// Step 1: Check for ManagedBy=ocpctl tag (preferred method)
+			// Check for ManagedBy=ocpctl tag (only flag resources we created)
 			managedByOcpctl := tags["ManagedBy"] == "ocpctl"
 			clusterNameFromTag := tags["ClusterName"]
 
-			// Step 2: Check for OpenShift CCO tags (fallback for old/untagged roles)
-			hasOpenShiftCCOTag := false
-			for tagKey := range tags {
-				if strings.HasPrefix(tagKey, "openshift.io/cloud-credential-operator/") {
-					hasOpenShiftCCOTag = true
-					break
-				}
+			// IMPORTANT: Only check resources that are managed by ocpctl
+			// Resources created by standalone openshift-install or other tools should NOT be flagged
+			if !managedByOcpctl {
+				continue
 			}
 
-			// Check if role name matches OpenShift pattern
-			hasOpenShiftNamePattern := strings.Contains(roleName, "-openshift-") ||
-				strings.HasSuffix(roleName, "-master-role") ||
-				strings.HasSuffix(roleName, "-worker-role")
+			ocpctlRoles++
 
-			// Only check roles that are either managed by ocpctl OR have OpenShift indicators
-			isOpenshiftRole := managedByOcpctl || hasOpenShiftCCOTag || hasOpenShiftNamePattern
+			if clusterNameFromTag == "" {
+				log.Printf("[detectOrphanedIAMRoles] Role %s has ManagedBy=ocpctl but no ClusterName tag", roleName)
+				continue
+			}
 
-			if isOpenshiftRole {
-				openshiftRoles++
-
-				// Determine cluster name
-				var clusterName string
-				if managedByOcpctl && clusterNameFromTag != "" {
-					clusterName = clusterNameFromTag
-				} else {
-					// Fallback: extract cluster name from role name pattern
-					clusterName = extractClusterNameFromIAMRole(roleName)
-				}
-
-				if clusterName == "" {
-					log.Printf("[detectOrphanedIAMRoles] Could not determine cluster name for role %s", roleName)
-					continue
-				}
-
-				// Check if cluster exists in database
-				cluster, exists := clustersByName[clusterName]
-				if !exists || cluster.Status == types.ClusterStatusDestroyed {
-					orphans = append(orphans, OrphanedResource{
-						Type:         "IAMRole",
-						ResourceID:   aws.ToString(role.Arn),
-						ResourceName: roleName,
-						Region:       "global", // IAM is global
-						Tags:         tags,
-					})
-				}
+			// Check if cluster exists in database
+			cluster, exists := clustersByName[clusterNameFromTag]
+			if !exists || cluster.Status == types.ClusterStatusDestroyed {
+				orphans = append(orphans, OrphanedResource{
+					Type:         "IAMRole",
+					ResourceID:   aws.ToString(role.Arn),
+					ResourceName: roleName,
+					Region:       "global", // IAM is global
+					Tags:         tags,
+				})
 			}
 
 		}
 	}
 
-	log.Printf("IAM Detection: Scanned %d total roles, %d OpenShift-related, %d orphaned", totalScanned, openshiftRoles, len(orphans))
+	log.Printf("IAM Detection: Scanned %d total roles, %d ocpctl-managed, %d orphaned", totalScanned, ocpctlRoles, len(orphans))
 
 	return orphans, nil
 }
