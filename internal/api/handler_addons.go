@@ -20,37 +20,44 @@ func NewAddonsHandler(store *store.Store) *AddonsHandler {
 
 // AddonWithVersions represents an add-on with all its versions
 type AddonWithVersions struct {
-	ID                 string       `json:"id"`
-	Name               string       `json:"name"`
-	Description        string       `json:"description"`
-	Category           string       `json:"category"`
-	SupportedPlatforms []string     `json:"supportedPlatforms"`
-	Enabled            bool         `json:"enabled"`
+	ID                 string       `json:"id" example:"oadp"`
+	Name               string       `json:"name" example:"OpenShift API for Data Protection (OADP)"`
+	Description        string       `json:"description" example:"Backup and restore OpenShift clusters and applications"`
+	Category           string       `json:"category" example:"backup"`
+	SupportedPlatforms []string     `json:"supportedPlatforms" example:"openshift"`
+	Enabled            bool         `json:"enabled" example:"true"`
 	Versions           VersionsInfo `json:"versions"`
 }
 
 // VersionsInfo contains version information
 type VersionsInfo struct {
 	Allowed []VersionOption `json:"allowed"`
-	Default string          `json:"default"`
+	Default string          `json:"default" example:"stable"`
 }
 
 // VersionOption represents a single version option
 type VersionOption struct {
-	Channel     string `json:"channel"`
-	DisplayName string `json:"displayName"`
+	Channel     string `json:"channel" example:"stable"`
+	DisplayName string `json:"displayName" example:"OADP 1.5 (Stable)"`
+}
+
+// AddonsListResponse represents the response from the list addons endpoint
+type AddonsListResponse struct {
+	Addons     []AddonWithVersions            `json:"addons"`
+	Categories map[string][]AddonWithVersions `json:"categories"`
+	Total      int                            `json:"total" example:"3"`
 }
 
 // List returns all enabled add-ons, optionally filtered by category, platform, and search query
 //
 //	@Summary		List add-ons
-//	@Description	Lists all enabled post-config add-ons with optional filtering by category, platform, and search
+//	@Description	Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, and search query. Each add-on includes multiple versions with one marked as default.
 //	@Tags			post-config
 //	@Produce		json
 //	@Param			category	query		string	false	"Filter by category (backup, migration, cicd, monitoring, security, storage, networking)"
 //	@Param			platform	query		string	false	"Filter by supported platform (openshift, eks, iks)"
 //	@Param			search		query		string	false	"Search in name and description"
-//	@Success		200			{object}	map[string]interface{}
+//	@Success		200			{object}	AddonsListResponse
 //	@Failure		401			{object}	ErrorResponse
 //	@Security		BearerAuth
 //	@Router			/post-config/addons [get]

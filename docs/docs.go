@@ -42,25 +42,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ClusterStatistics"
+                            "$ref": "#/definitions/api.ClusterStatistics"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -120,7 +120,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.OrphanedResourceListResponse"
+                            "$ref": "#/definitions/api.OrphanedResourceListResponse"
                         }
                     },
                     "500": {
@@ -204,7 +204,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                            "$ref": "#/definitions/types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -269,7 +269,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.MarkIgnoredRequest"
+                            "$ref": "#/definitions/api.MarkIgnoredRequest"
                         }
                     }
                 ],
@@ -277,7 +277,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                            "$ref": "#/definitions/types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -333,7 +333,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.MarkResolvedRequest"
+                            "$ref": "#/definitions/api.MarkResolvedRequest"
                         }
                     }
                 ],
@@ -341,7 +341,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                            "$ref": "#/definitions/types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -384,13 +384,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.InfrastructureInfo"
+                            "$ref": "#/definitions/api.InfrastructureInfo"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -416,7 +416,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest"
+                            "$ref": "#/definitions/types.LoginRequest"
                         }
                     }
                 ],
@@ -424,7 +424,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
+                            "$ref": "#/definitions/types.LoginResponse"
                         }
                     },
                     "400": {
@@ -514,7 +514,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                            "$ref": "#/definitions/types.UserResponse"
                         }
                     },
                     "401": {
@@ -570,7 +570,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest"
+                            "$ref": "#/definitions/types.UpdateMeRequest"
                         }
                     }
                 ],
@@ -578,7 +578,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                            "$ref": "#/definitions/types.UserResponse"
                         }
                     },
                     "400": {
@@ -645,7 +645,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest"
+                            "$ref": "#/definitions/types.ChangePasswordRequest"
                         }
                     }
                 ],
@@ -715,7 +715,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
+                            "$ref": "#/definitions/types.LoginResponse"
                         }
                     },
                     "401": {
@@ -821,7 +821,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/internal_api.PaginatedResponse"
+                                    "$ref": "#/definitions/api.PaginatedResponse"
                                 },
                                 {
                                     "type": "object",
@@ -829,7 +829,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
+                                                "$ref": "#/definitions/types.Cluster"
                                             }
                                         }
                                     }
@@ -840,13 +840,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -857,7 +857,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new OpenShift cluster with the specified configuration. Validates against policy engine and initiates async provisioning.",
+                "description": "Creates a new OpenShift cluster with the specified configuration. Validates against policy engine and initiates async provisioning. Supports post-deployment configuration via pre-approved add-ons (with version selection) or custom operators/manifests.",
                 "consumes": [
                     "application/json"
                 ],
@@ -875,7 +875,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.CreateClusterRequest"
+                            "$ref": "#/definitions/api.CreateClusterRequest"
                         }
                     }
                 ],
@@ -883,37 +883,37 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
+                            "$ref": "#/definitions/types.Cluster"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -947,31 +947,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
+                            "$ref": "#/definitions/types.Cluster"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1003,37 +1003,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
+                            "$ref": "#/definitions/types.Cluster"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1264,7 +1264,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ExtendClusterRequest"
+                            "$ref": "#/definitions/api.ExtendClusterRequest"
                         }
                     }
                 ],
@@ -1272,37 +1272,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
+                            "$ref": "#/definitions/types.Cluster"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1540,7 +1540,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns deployment logs for a cluster with cursor-based pagination. Defaults to latest CREATE job if job_id not specified.",
+                "description": "Returns deployment logs for a cluster with cursor-based pagination. Returns logs from all jobs (CREATE, POST_CONFIGURE, etc.) if job_id not specified.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1561,7 +1561,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Job ID to get logs for (defaults to latest CREATE job)",
+                        "description": "Job ID to get logs for (returns logs from all jobs if not specified)",
                         "name": "job_id",
                         "in": "query"
                     },
@@ -1573,7 +1573,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of log lines to return (default 100)",
+                        "description": "Number of log lines to return (default 500)",
                         "name": "limit",
                         "in": "query"
                     }
@@ -1647,7 +1647,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ClusterOutputsResponse"
+                            "$ref": "#/definitions/api.ClusterOutputsResponse"
                         }
                     },
                     "400": {
@@ -1874,7 +1874,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/internal_api.StorageGroupResponse"
+                                "$ref": "#/definitions/api.StorageGroupResponse"
                             }
                         }
                     },
@@ -1940,7 +1940,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.LinkStorageRequest"
+                            "$ref": "#/definitions/api.LinkStorageRequest"
                         }
                     }
                 ],
@@ -1948,7 +1948,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.StorageGroupResponse"
+                            "$ref": "#/definitions/api.StorageGroupResponse"
                         }
                     },
                     "400": {
@@ -2066,7 +2066,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns basic health status of the API server",
+                "description": "Returns basic health status of the API server including auth availability",
                 "produces": [
                     "application/json"
                 ],
@@ -2079,9 +2079,7 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -2188,7 +2186,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Job"
+                            "$ref": "#/definitions/types.Job"
                         }
                     },
                     "404": {
@@ -2207,6 +2205,108 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/post-config/addons": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, and search query. Each add-on includes multiple versions with one marked as default.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "post-config"
+                ],
+                "summary": "List add-ons",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by category (backup, migration, cicd, monitoring, security, storage, networking)",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by supported platform (openshift, eks, iks)",
+                        "name": "platform",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search in name and description",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.AddonsListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/post-config/validate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Validates custom post-deployment configuration without creating a cluster. Checks resource limits, dependencies, conditions, and generates execution DAG.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "post-config"
+                ],
+                "summary": "Validate custom post-config",
+                "parameters": [
+                    {
+                        "description": "Validation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ValidateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ValidateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -2244,7 +2344,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/internal_api.ProfileResponse"
+                                "$ref": "#/definitions/api.ProfileResponse"
                             }
                         }
                     },
@@ -2291,7 +2391,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.ProfileResponse"
+                            "$ref": "#/definitions/api.ProfileResponse"
                         }
                     },
                     "404": {
@@ -2333,6 +2433,268 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists post-configuration templates visible to the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "List templates",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Only show public templates",
+                        "name": "public",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tags (comma-separated)",
+                        "name": "tags",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new post-configuration template for reuse",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Create template",
+                "parameters": [
+                    {
+                        "description": "Template configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.CreateTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/types.PostConfigTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/templates/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves a specific template by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Get template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/types.PostConfigTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a template (only owner or admin can delete)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Delete template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates a template (only owner can update)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Update template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated template",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.UpdateTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/types.PostConfigTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -2422,7 +2784,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest"
+                            "$ref": "#/definitions/types.CreateUserRequest"
                         }
                     }
                 ],
@@ -2430,7 +2792,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                            "$ref": "#/definitions/types.UserResponse"
                         }
                     },
                     "400": {
@@ -2494,7 +2856,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                            "$ref": "#/definitions/types.UserResponse"
                         }
                     },
                     "400": {
@@ -2622,7 +2984,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest"
+                            "$ref": "#/definitions/types.UpdateUserRequest"
                         }
                     }
                 ],
@@ -2630,7 +2992,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                            "$ref": "#/definitions/types.UserResponse"
                         }
                     },
                     "400": {
@@ -2688,7 +3050,794 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig": {
+        "api.ASGInfo": {
+            "type": "object",
+            "properties": {
+                "desired_capacity": {
+                    "type": "integer"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.WorkerInfo"
+                    }
+                },
+                "max_size": {
+                    "type": "integer"
+                },
+                "min_size": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.AddonWithVersions": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "example": "backup"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Backup and restore OpenShift clusters and applications"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "oadp"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "OpenShift API for Data Protection (OADP)"
+                },
+                "supportedPlatforms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "openshift"
+                    ]
+                },
+                "versions": {
+                    "$ref": "#/definitions/api.VersionsInfo"
+                }
+            }
+        },
+        "api.AddonsListResponse": {
+            "type": "object",
+            "properties": {
+                "addons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.AddonWithVersions"
+                    }
+                },
+                "categories": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/api.AddonWithVersions"
+                        }
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "api.ClusterOutputsResponse": {
+            "type": "object",
+            "properties": {
+                "api_url": {
+                    "type": "string"
+                },
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "console_url": {
+                    "type": "string"
+                },
+                "dashboard_token": {
+                    "description": "Kubernetes Dashboard bearer token",
+                    "type": "string"
+                },
+                "kubeadmin": {
+                    "description": "Actual credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/api.KubeadminCredentials"
+                        }
+                    ]
+                },
+                "kubeadmin_secret_ref": {
+                    "description": "Reference to secret location",
+                    "type": "string"
+                },
+                "kubeconfig": {
+                    "description": "Full kubeconfig content",
+                    "type": "string"
+                },
+                "kubeconfig_s3_uri": {
+                    "description": "S3 URI to kubeconfig file",
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ClusterProfileCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ClusterStatistics": {
+            "type": "object",
+            "properties": {
+                "active_clusters": {
+                    "type": "integer"
+                },
+                "clusters_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ClusterProfileCount"
+                    }
+                },
+                "clusters_by_status": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ClusterStatusCount"
+                    }
+                },
+                "cost_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ProfileCostBreakdown"
+                    }
+                },
+                "cost_by_user": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.UserCostBreakdown"
+                    }
+                },
+                "total_clusters": {
+                    "type": "integer"
+                },
+                "total_daily_cost": {
+                    "type": "number"
+                },
+                "total_hourly_cost": {
+                    "type": "number"
+                },
+                "total_monthly_cost": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.ClusterStatusCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ClusterStorageLinkResponse": {
+            "type": "object",
+            "properties": {
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "linked_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/types.ClusterStorageLinkRole"
+                }
+            }
+        },
+        "api.CreateClusterRequest": {
+            "type": "object",
+            "required": [
+                "cluster_type",
+                "cost_center",
+                "name",
+                "owner",
+                "platform",
+                "profile",
+                "region",
+                "team",
+                "version"
+            ],
+            "properties": {
+                "base_domain": {
+                    "description": "Only required for OpenShift",
+                    "type": "string"
+                },
+                "cluster_type": {
+                    "type": "string",
+                    "enum": [
+                        "openshift",
+                        "eks",
+                        "iks"
+                    ]
+                },
+                "cost_center": {
+                    "type": "string"
+                },
+                "customPostConfig": {
+                    "description": "Custom post-deployment operators, scripts, and manifests",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CustomPostConfig"
+                        }
+                    ]
+                },
+                "enable_efs_storage": {
+                    "type": "boolean"
+                },
+                "extra_tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "minLength": 3
+                },
+                "offhours_opt_in": {
+                    "type": "boolean"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "aws",
+                        "ibmcloud"
+                    ]
+                },
+                "postConfigAddOns": {
+                    "description": "Pre-approved add-ons with version selection",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AddonSelection"
+                    }
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "skip_post_deployment": {
+                    "type": "boolean"
+                },
+                "ssh_public_key": {
+                    "type": "string"
+                },
+                "team": {
+                    "type": "string"
+                },
+                "ttl_hours": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "work_hours": {
+                    "$ref": "#/definitions/types.WorkHoursSchedule"
+                },
+                "work_hours_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.CreateTemplateRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/types.CustomPostConfig"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "isPublic": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 3
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.DAGInfo": {
+            "type": "object",
+            "properties": {
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "executionOrder": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "taskCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "error": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ExtendClusterRequest": {
+            "type": "object",
+            "required": [
+                "ttl_hours"
+            ],
+            "properties": {
+                "ttl_hours": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "api.InfrastructureInfo": {
+            "type": "object",
+            "properties": {
+                "api_server": {
+                    "type": "object",
+                    "properties": {
+                        "ip": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        },
+                        "uptime": {
+                            "type": "string"
+                        },
+                        "version": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "autoscale_group": {
+                    "$ref": "#/definitions/api.ASGInfo"
+                },
+                "database": {
+                    "type": "object",
+                    "properties": {
+                        "host": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "static_workers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.WorkerInfo"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.KubeadminCredentials": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.LinkStorageRequest": {
+            "type": "object",
+            "required": [
+                "target_cluster_id"
+            ],
+            "properties": {
+                "target_cluster_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.MarkIgnoredRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.MarkResolvedRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.OrphanedResourceListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.OrphanedResource"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.PaginatedResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "pagination": {
+                    "$ref": "#/definitions/api.PaginationMeta"
+                }
+            }
+        },
+        "api.PaginationMeta": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.ProfileCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ProfileResponse": {
+            "type": "object",
+            "properties": {
+                "base_domains": {
+                    "$ref": "#/definitions/profile.BaseDomainConfig"
+                },
+                "compute": {
+                    "$ref": "#/definitions/profile.ComputeConfig"
+                },
+                "cost_controls": {
+                    "$ref": "#/definitions/profile.CostControlsConfig"
+                },
+                "deployment_metrics": {
+                    "$ref": "#/definitions/types.ProfileDeploymentMetrics"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "features": {
+                    "$ref": "#/definitions/profile.FeaturesConfig"
+                },
+                "kubernetes_versions": {
+                    "$ref": "#/definitions/profile.VersionConfig"
+                },
+                "lifecycle": {
+                    "$ref": "#/definitions/profile.LifecycleConfig"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "networking": {
+                    "$ref": "#/definitions/profile.NetworkingConfig"
+                },
+                "openshift_versions": {
+                    "$ref": "#/definitions/profile.VersionConfig"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "post_deployment": {
+                    "$ref": "#/definitions/profile.PostDeploymentConfig"
+                },
+                "regions": {
+                    "$ref": "#/definitions/profile.RegionConfig"
+                },
+                "tags": {
+                    "$ref": "#/definitions/profile.TagsConfig"
+                }
+            }
+        },
+        "api.StorageGroupResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "efs_id": {
+                    "type": "string"
+                },
+                "efs_security_group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_clusters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ClusterStorageLinkResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "s3_bucket": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.StorageGroupStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.UpdateTemplateRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/types.CustomPostConfig"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "isPublic": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 3
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.UserCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ValidateRequest": {
+            "type": "object",
+            "required": [
+                "config"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/types.CustomPostConfig"
+                }
+            }
+        },
+        "api.ValidateResponse": {
+            "type": "object",
+            "properties": {
+                "dag": {
+                    "$ref": "#/definitions/api.DAGInfo"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.VersionOption": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string",
+                    "example": "stable"
+                },
+                "displayName": {
+                    "type": "string",
+                    "example": "OADP 1.5 (Stable)"
+                }
+            }
+        },
+        "api.VersionsInfo": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.VersionOption"
+                    }
+                },
+                "default": {
+                    "type": "string",
+                    "example": "stable"
+                }
+            }
+        },
+        "api.WorkerInfo": {
+            "type": "object",
+            "properties": {
+                "health_status": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "launch_time": {
+                    "type": "string"
+                },
+                "private_ip": {
+                    "type": "string"
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"static\" or \"autoscale\"",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "profile.BaseDomainConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -2707,7 +3856,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig": {
+        "profile.ClusterNetworkConfig": {
             "type": "object",
             "properties": {
                 "cidr": {
@@ -2718,32 +3867,32 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig": {
+        "profile.ComputeConfig": {
             "type": "object",
             "properties": {
                 "control_plane": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig"
+                    "$ref": "#/definitions/profile.ControlPlaneConfig"
                 },
                 "managed_node_groups": {
                     "description": "For EKS (managed)",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
+                        "$ref": "#/definitions/profile.NodeGroupConfig"
                     }
                 },
                 "node_groups": {
                     "description": "For EKS (unmanaged)",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
+                        "$ref": "#/definitions/profile.NodeGroupConfig"
                     }
                 },
                 "workers": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig"
+                    "$ref": "#/definitions/profile.WorkersConfig"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig": {
+        "profile.ControlPlaneConfig": {
             "type": "object",
             "required": [
                 "instance_type",
@@ -2762,7 +3911,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig": {
+        "profile.CostControlsConfig": {
             "type": "object",
             "properties": {
                 "budget_alert_threshold": {
@@ -2781,7 +3930,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig": {
+        "profile.CustomResourceConfig": {
             "type": "object",
             "required": [
                 "api_version",
@@ -2807,7 +3956,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig": {
+        "profile.FeaturesConfig": {
             "type": "object",
             "properties": {
                 "fips_mode": {
@@ -2832,7 +3981,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig": {
+        "profile.HelmChartConfig": {
             "type": "object",
             "required": [
                 "chart",
@@ -2855,7 +4004,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig": {
+        "profile.LifecycleConfig": {
             "type": "object",
             "required": [
                 "default_ttl_hours",
@@ -2879,7 +4028,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig": {
+        "profile.MachineNetworkConfig": {
             "type": "object",
             "properties": {
                 "cidr": {
@@ -2887,7 +4036,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig": {
+        "profile.ManifestConfig": {
             "type": "object",
             "required": [
                 "name"
@@ -2913,19 +4062,19 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig": {
+        "profile.NetworkingConfig": {
             "type": "object",
             "properties": {
                 "clusterNetworks": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig"
+                        "$ref": "#/definitions/profile.ClusterNetworkConfig"
                     }
                 },
                 "machineNetwork": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig"
+                        "$ref": "#/definitions/profile.MachineNetworkConfig"
                     }
                 },
                 "nat_gateway": {
@@ -2947,7 +4096,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig": {
+        "profile.NodeGroupConfig": {
             "type": "object",
             "required": [
                 "desired_capacity",
@@ -2986,20 +4135,19 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig": {
+        "profile.OperatorConfig": {
             "type": "object",
             "required": [
                 "channel",
                 "name",
-                "namespace",
-                "source"
+                "namespace"
             ],
             "properties": {
                 "channel": {
                     "type": "string"
                 },
                 "custom_resource": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig"
+                    "$ref": "#/definitions/profile.CustomResourceConfig"
                 },
                 "name": {
                     "type": "string"
@@ -3008,12 +4156,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source": {
-                    "description": "e.g. \"redhat-operators\"",
+                    "description": "e.g. \"redhat-operators\" (optional - OLM will search all catalogs if omitted)",
                     "type": "string"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig": {
+        "profile.PostDeploymentConfig": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -3022,25 +4170,25 @@ const docTemplate = `{
                 "helm_charts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig"
+                        "$ref": "#/definitions/profile.HelmChartConfig"
                     }
                 },
                 "manifests": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig"
+                        "$ref": "#/definitions/profile.ManifestConfig"
                     }
                 },
                 "operators": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig"
+                        "$ref": "#/definitions/profile.OperatorConfig"
                     }
                 },
                 "scripts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig"
+                        "$ref": "#/definitions/profile.ScriptConfig"
                     }
                 },
                 "timeout": {
@@ -3049,7 +4197,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig": {
+        "profile.RegionConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -3068,7 +4216,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig": {
+        "profile.ScriptConfig": {
             "type": "object",
             "required": [
                 "name",
@@ -3093,7 +4241,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig": {
+        "profile.TagsConfig": {
             "type": "object",
             "properties": {
                 "allow_user_tags": {
@@ -3113,7 +4261,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig": {
+        "profile.VersionConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -3132,7 +4280,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig": {
+        "profile.WorkersConfig": {
             "type": "object",
             "properties": {
                 "autoscaling": {
@@ -3167,7 +4315,24 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest": {
+        "types.AddonSelection": {
+            "type": "object",
+            "required": [
+                "id",
+                "version"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "oadp"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "stable"
+                }
+            }
+        },
+        "types.ChangePasswordRequest": {
             "type": "object",
             "required": [
                 "current_password",
@@ -3183,7 +4348,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.Cluster": {
+        "types.Cluster": {
             "type": "object",
             "properties": {
                 "api_url": {
@@ -3194,7 +4359,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "cluster_type": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterType"
+                    "$ref": "#/definitions/types.ClusterType"
                 },
                 "console_url": {
                     "type": "string"
@@ -3205,6 +4370,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "custom_post_config": {
+                    "$ref": "#/definitions/types.CustomPostConfig"
+                },
                 "destroy_at": {
                     "type": "string"
                 },
@@ -3212,7 +4380,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "effective_tags": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags"
+                    "$ref": "#/definitions/types.Tags"
                 },
                 "id": {
                     "type": "string"
@@ -3235,7 +4403,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "platform": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform"
+                    "$ref": "#/definitions/types.Platform"
                 },
                 "post_deploy_completed_at": {
                     "type": "string"
@@ -3250,7 +4418,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_tags": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags"
+                    "$ref": "#/definitions/types.Tags"
                 },
                 "requested_by": {
                     "description": "IAM principal ARN",
@@ -3263,10 +4431,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus"
+                    "$ref": "#/definitions/types.ClusterStatus"
                 },
                 "storage_config": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig"
+                    "$ref": "#/definitions/types.StorageConfig"
                 },
                 "team": {
                     "type": "string"
@@ -3295,7 +4463,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus": {
+        "types.ClusterStatus": {
             "type": "string",
             "enum": [
                 "PENDING",
@@ -3341,7 +4509,7 @@ const docTemplate = `{
                 "ClusterStatusFailed"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole": {
+        "types.ClusterStorageLinkRole": {
             "type": "string",
             "enum": [
                 "source",
@@ -3354,7 +4522,7 @@ const docTemplate = `{
                 "ClusterStorageLinkRoleShared"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterType": {
+        "types.ClusterType": {
             "type": "string",
             "enum": [
                 "openshift",
@@ -3377,7 +4545,7 @@ const docTemplate = `{
                 "ClusterTypeIKS"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest": {
+        "types.CreateUserRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -3394,7 +4562,7 @@ const docTemplate = `{
                     "minLength": 8
                 },
                 "role": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                    "$ref": "#/definitions/types.UserRole"
                 },
                 "username": {
                     "type": "string",
@@ -3403,7 +4571,244 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.Job": {
+        "types.CustomHelmChartConfig": {
+            "type": "object",
+            "required": [
+                "chart",
+                "name",
+                "repo"
+            ],
+            "properties": {
+                "chart": {
+                    "type": "string"
+                },
+                "condition": {
+                    "description": "Conditional execution (e.g. \"clusterType == 'openshift'\")",
+                    "type": "string"
+                },
+                "dependsOn": {
+                    "description": "Task dependencies (names of other tasks)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "description": "Target namespace (supports {{.Variable}} templating)",
+                    "type": "string"
+                },
+                "repo": {
+                    "type": "string"
+                },
+                "values": {
+                    "description": "Helm values (supports {{.Variable}} templating in string values)",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "variables": {
+                    "description": "Custom variables for template rendering",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.CustomManifestConfig": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "condition": {
+                    "description": "Conditional execution (e.g. \"clusterType == 'openshift'\")",
+                    "type": "string"
+                },
+                "content": {
+                    "description": "Inline YAML/JSON content (supports {{.Variable}} templating)",
+                    "type": "string"
+                },
+                "dependsOn": {
+                    "description": "Task dependencies (names of other tasks)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "description": "Target namespace (supports {{.Variable}} templating)",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "URL to download manifest from",
+                    "type": "string"
+                },
+                "variables": {
+                    "description": "Custom variables for template rendering",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "types.CustomOperatorConfig": {
+            "type": "object",
+            "required": [
+                "channel",
+                "name",
+                "namespace",
+                "source"
+            ],
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "condition": {
+                    "description": "Conditional execution (e.g. \"clusterType == 'openshift'\")",
+                    "type": "string"
+                },
+                "customResource": {
+                    "$ref": "#/definitions/types.CustomResourceConfig"
+                },
+                "dependsOn": {
+                    "description": "Task dependencies (names of other tasks)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "e.g. \"redhat-operators\", \"community-operators\"",
+                    "type": "string"
+                }
+            }
+        },
+        "types.CustomPostConfig": {
+            "type": "object",
+            "properties": {
+                "helmCharts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CustomHelmChartConfig"
+                    }
+                },
+                "manifests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CustomManifestConfig"
+                    }
+                },
+                "operators": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CustomOperatorConfig"
+                    }
+                },
+                "scripts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CustomScriptConfig"
+                    }
+                }
+            }
+        },
+        "types.CustomResourceConfig": {
+            "type": "object",
+            "required": [
+                "apiVersion",
+                "kind",
+                "name"
+            ],
+            "properties": {
+                "apiVersion": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "spec": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "types.CustomScriptConfig": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "condition": {
+                    "description": "Conditional execution (e.g. \"clusterType == 'openshift'\")",
+                    "type": "string"
+                },
+                "content": {
+                    "description": "Inline script content (supports {{.Variable}} templating)",
+                    "type": "string"
+                },
+                "dependsOn": {
+                    "description": "Task dependencies (names of other tasks)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "env": {
+                    "description": "Environment variables (supports {{.Variable}} templating)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "description": "Duration string, e.g. \"10m\" (max 30m)",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "URL to download script from",
+                    "type": "string"
+                },
+                "variables": {
+                    "description": "Custom variables for template rendering",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "types.Job": {
             "type": "object",
             "properties": {
                 "attempt": {
@@ -3428,30 +4833,30 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "job_type": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobType"
+                    "$ref": "#/definitions/types.JobType"
                 },
                 "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata"
+                    "$ref": "#/definitions/types.JobMetadata"
                 },
                 "started_at": {
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobStatus"
+                    "$ref": "#/definitions/types.JobStatus"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata": {
+        "types.JobMetadata": {
             "type": "object",
             "additionalProperties": true
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.JobStatus": {
+        "types.JobStatus": {
             "type": "string",
             "enum": [
                 "PENDING",
@@ -3468,14 +4873,12 @@ const docTemplate = `{
                 "JobStatusRetrying"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.JobType": {
+        "types.JobType": {
             "type": "string",
             "enum": [
                 "CREATE",
                 "DESTROY",
-                "SCALE_WORKERS",
                 "JANITOR_DESTROY",
-                "ORPHAN_SWEEP",
                 "CONFIGURE_EFS",
                 "PROVISION_SHARED_STORAGE",
                 "UNLINK_SHARED_STORAGE",
@@ -3486,9 +4889,7 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "JobTypeCreate",
                 "JobTypeDestroy",
-                "JobTypeScaleWorkers",
                 "JobTypeJanitorDestroy",
-                "JobTypeOrphanSweep",
                 "JobTypeConfigureEFS",
                 "JobTypeProvisionSharedStorage",
                 "JobTypeUnlinkSharedStorage",
@@ -3497,7 +4898,7 @@ const docTemplate = `{
                 "JobTypePostConfigure"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest": {
+        "types.LoginRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -3512,7 +4913,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse": {
+        "types.LoginResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -3523,11 +4924,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "user": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
+                    "$ref": "#/definitions/types.UserResponse"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource": {
+        "types.OrphanedResource": {
             "type": "object",
             "properties": {
                 "cluster_name": {
@@ -3567,20 +4968,20 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resource_type": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType"
+                    "$ref": "#/definitions/types.OrphanedResourceType"
                 },
                 "status": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus"
+                    "$ref": "#/definitions/types.OrphanedResourceStatus"
                 },
                 "tags": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags"
+                    "$ref": "#/definitions/types.OrphanedResourceTags"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus": {
+        "types.OrphanedResourceStatus": {
             "type": "string",
             "enum": [
                 "ACTIVE",
@@ -3593,13 +4994,13 @@ const docTemplate = `{
                 "OrphanedResourceStatusIgnored"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags": {
+        "types.OrphanedResourceTags": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType": {
+        "types.OrphanedResourceType": {
             "type": "string",
             "enum": [
                 "VPC",
@@ -3626,7 +5027,7 @@ const docTemplate = `{
                 "OrphanedResourceTypeCloudWatchLogGroup"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.Platform": {
+        "types.Platform": {
             "type": "string",
             "enum": [
                 "aws",
@@ -3637,7 +5038,85 @@ const docTemplate = `{
                 "PlatformIBMCloud"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig": {
+        "types.PostConfigTemplate": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/types.CustomPostConfig"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "isPublic": {
+                    "description": "If true, visible to all users",
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "ownerId": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.ProfileDeploymentMetrics": {
+            "type": "object",
+            "properties": {
+                "avg_duration_seconds": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "last_deployment_at": {
+                    "type": "string"
+                },
+                "max_duration_seconds": {
+                    "type": "integer"
+                },
+                "min_duration_seconds": {
+                    "type": "integer"
+                },
+                "p50_duration_seconds": {
+                    "description": "Median (50th percentile)",
+                    "type": "integer"
+                },
+                "p95_duration_seconds": {
+                    "description": "95th percentile",
+                    "type": "integer"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "sample_count": {
+                    "description": "Number of samples used (max 30)",
+                    "type": "integer"
+                },
+                "success_count": {
+                    "description": "Total successful deployments tracked",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.StorageConfig": {
             "type": "object",
             "properties": {
                 "auth_mode": {
@@ -3671,7 +5150,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus": {
+        "types.StorageGroupStatus": {
             "type": "string",
             "enum": [
                 "PROVISIONING",
@@ -3686,13 +5165,13 @@ const docTemplate = `{
                 "StorageGroupStatusDeleting"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.Tags": {
+        "types.Tags": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest": {
+        "types.UpdateMeRequest": {
             "type": "object",
             "properties": {
                 "timezone": {
@@ -3704,14 +5183,14 @@ const docTemplate = `{
                     "minLength": 2
                 },
                 "work_hours": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
+                    "$ref": "#/definitions/types.WorkHoursSchedule"
                 },
                 "work_hours_enabled": {
                     "type": "boolean"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest": {
+        "types.UpdateUserRequest": {
             "type": "object",
             "properties": {
                 "active": {
@@ -3722,7 +5201,7 @@ const docTemplate = `{
                     "minLength": 8
                 },
                 "role": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                    "$ref": "#/definitions/types.UserRole"
                 },
                 "username": {
                     "type": "string",
@@ -3731,7 +5210,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.UserResponse": {
+        "types.UserResponse": {
             "type": "object",
             "properties": {
                 "active": {
@@ -3747,7 +5226,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                    "$ref": "#/definitions/types.UserRole"
                 },
                 "timezone": {
                     "type": "string"
@@ -3759,14 +5238,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "work_hours": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
+                    "$ref": "#/definitions/types.WorkHoursSchedule"
                 },
                 "work_hours_enabled": {
                     "type": "boolean"
                 }
             }
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.UserRole": {
+        "types.UserRole": {
             "type": "string",
             "enum": [
                 "ADMIN",
@@ -3779,7 +5258,7 @@ const docTemplate = `{
                 "RoleViewer"
             ]
         },
-        "github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule": {
+        "types.WorkHoursSchedule": {
             "type": "object",
             "properties": {
                 "end_time": {
@@ -3796,575 +5275,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "internal_api.ASGInfo": {
-            "type": "object",
-            "properties": {
-                "desired_capacity": {
-                    "type": "integer"
-                },
-                "instances": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.WorkerInfo"
-                    }
-                },
-                "max_size": {
-                    "type": "integer"
-                },
-                "min_size": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ClusterOutputsResponse": {
-            "type": "object",
-            "properties": {
-                "api_url": {
-                    "type": "string"
-                },
-                "cluster_id": {
-                    "type": "string"
-                },
-                "cluster_name": {
-                    "type": "string"
-                },
-                "console_url": {
-                    "type": "string"
-                },
-                "dashboard_token": {
-                    "description": "Kubernetes Dashboard bearer token",
-                    "type": "string"
-                },
-                "kubeadmin": {
-                    "description": "Actual credentials",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_api.KubeadminCredentials"
-                        }
-                    ]
-                },
-                "kubeadmin_secret_ref": {
-                    "description": "Reference to secret location",
-                    "type": "string"
-                },
-                "kubeconfig": {
-                    "description": "Full kubeconfig content",
-                    "type": "string"
-                },
-                "kubeconfig_s3_uri": {
-                    "description": "S3 URI to kubeconfig file",
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ClusterProfileCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "profile": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ClusterStatistics": {
-            "type": "object",
-            "properties": {
-                "active_clusters": {
-                    "type": "integer"
-                },
-                "clusters_by_profile": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.ClusterProfileCount"
-                    }
-                },
-                "clusters_by_status": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.ClusterStatusCount"
-                    }
-                },
-                "cost_by_profile": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.ProfileCostBreakdown"
-                    }
-                },
-                "cost_by_user": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.UserCostBreakdown"
-                    }
-                },
-                "total_clusters": {
-                    "type": "integer"
-                },
-                "total_daily_cost": {
-                    "type": "number"
-                },
-                "total_hourly_cost": {
-                    "type": "number"
-                },
-                "total_monthly_cost": {
-                    "type": "number"
-                }
-            }
-        },
-        "internal_api.ClusterStatusCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ClusterStorageLinkResponse": {
-            "type": "object",
-            "properties": {
-                "cluster_id": {
-                    "type": "string"
-                },
-                "cluster_name": {
-                    "type": "string"
-                },
-                "linked_at": {
-                    "type": "string"
-                },
-                "role": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole"
-                }
-            }
-        },
-        "internal_api.CreateClusterRequest": {
-            "type": "object",
-            "required": [
-                "cluster_type",
-                "cost_center",
-                "name",
-                "owner",
-                "platform",
-                "profile",
-                "region",
-                "team",
-                "version"
-            ],
-            "properties": {
-                "base_domain": {
-                    "description": "Only required for OpenShift",
-                    "type": "string"
-                },
-                "cluster_type": {
-                    "type": "string",
-                    "enum": [
-                        "openshift",
-                        "eks",
-                        "iks"
-                    ]
-                },
-                "cost_center": {
-                    "type": "string"
-                },
-                "enable_efs_storage": {
-                    "type": "boolean"
-                },
-                "extra_tags": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "idempotency_key": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 63,
-                    "minLength": 3
-                },
-                "offhours_opt_in": {
-                    "type": "boolean"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "platform": {
-                    "type": "string",
-                    "enum": [
-                        "aws",
-                        "ibmcloud"
-                    ]
-                },
-                "profile": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "skip_post_deployment": {
-                    "type": "boolean"
-                },
-                "ssh_public_key": {
-                    "type": "string"
-                },
-                "team": {
-                    "type": "string"
-                },
-                "ttl_hours": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "string"
-                },
-                "work_hours": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
-                },
-                "work_hours_enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "details": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "error": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ExtendClusterRequest": {
-            "type": "object",
-            "required": [
-                "ttl_hours"
-            ],
-            "properties": {
-                "ttl_hours": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
-        "internal_api.InfrastructureInfo": {
-            "type": "object",
-            "properties": {
-                "api_server": {
-                    "type": "object",
-                    "properties": {
-                        "ip": {
-                            "type": "string"
-                        },
-                        "status": {
-                            "type": "string"
-                        },
-                        "uptime": {
-                            "type": "string"
-                        },
-                        "version": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "autoscale_group": {
-                    "$ref": "#/definitions/internal_api.ASGInfo"
-                },
-                "database": {
-                    "type": "object",
-                    "properties": {
-                        "host": {
-                            "type": "string"
-                        },
-                        "status": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "static_workers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.WorkerInfo"
-                    }
-                },
-                "timestamp": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.KubeadminCredentials": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.LinkStorageRequest": {
-            "type": "object",
-            "required": [
-                "target_cluster_id"
-            ],
-            "properties": {
-                "target_cluster_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.MarkIgnoredRequest": {
-            "type": "object",
-            "properties": {
-                "notes": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.MarkResolvedRequest": {
-            "type": "object",
-            "properties": {
-                "notes": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.OrphanedResourceListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "resources": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.PaginatedResponse": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "filters": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "pagination": {
-                    "$ref": "#/definitions/internal_api.PaginationMeta"
-                }
-            }
-        },
-        "internal_api.PaginationMeta": {
-            "type": "object",
-            "properties": {
-                "page": {
-                    "type": "integer"
-                },
-                "per_page": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.ProfileCostBreakdown": {
-            "type": "object",
-            "properties": {
-                "cluster_count": {
-                    "type": "integer"
-                },
-                "daily_cost": {
-                    "type": "number"
-                },
-                "hourly_cost": {
-                    "type": "number"
-                },
-                "monthly_cost": {
-                    "type": "number"
-                },
-                "profile": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.ProfileResponse": {
-            "type": "object",
-            "properties": {
-                "base_domains": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig"
-                },
-                "compute": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig"
-                },
-                "cost_controls": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "features": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig"
-                },
-                "kubernetes_versions": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
-                },
-                "lifecycle": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "networking": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig"
-                },
-                "openshift_versions": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
-                },
-                "platform": {
-                    "type": "string"
-                },
-                "post_deployment": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig"
-                },
-                "regions": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig"
-                },
-                "tags": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig"
-                }
-            }
-        },
-        "internal_api.StorageGroupResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "efs_id": {
-                    "type": "string"
-                },
-                "efs_security_group_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "linked_clusters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.ClusterStorageLinkResponse"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "s3_bucket": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.UserCostBreakdown": {
-            "type": "object",
-            "properties": {
-                "cluster_count": {
-                    "type": "integer"
-                },
-                "daily_cost": {
-                    "type": "number"
-                },
-                "hourly_cost": {
-                    "type": "number"
-                },
-                "monthly_cost": {
-                    "type": "number"
-                },
-                "user_id": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.WorkerInfo": {
-            "type": "object",
-            "properties": {
-                "health_status": {
-                    "type": "string"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "launch_time": {
-                    "type": "string"
-                },
-                "private_ip": {
-                    "type": "string"
-                },
-                "public_ip": {
-                    "type": "string"
-                },
-                "state": {
-                    "type": "string"
-                },
-                "type": {
-                    "description": "\"static\" or \"autoscale\"",
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
                 }
             }
         }

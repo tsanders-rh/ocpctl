@@ -22,8 +22,8 @@ type PostConfigAddon struct {
 
 // AddonSelection represents a user's selection of an add-on with a specific version
 type AddonSelection struct {
-	ID      string `json:"id" validate:"required"`
-	Version string `json:"version" validate:"required"`
+	ID      string `json:"id" validate:"required" example:"oadp"`
+	Version string `json:"version" validate:"required" example:"stable"`
 }
 
 // AddonCategory represents the category of an add-on

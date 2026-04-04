@@ -1,6 +1,531 @@
 basePath: /api/v1
 definitions:
-  github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig:
+  api.ASGInfo:
+    properties:
+      desired_capacity:
+        type: integer
+      instances:
+        items:
+          $ref: '#/definitions/api.WorkerInfo'
+        type: array
+      max_size:
+        type: integer
+      min_size:
+        type: integer
+      name:
+        type: string
+    type: object
+  api.AddonWithVersions:
+    properties:
+      category:
+        example: backup
+        type: string
+      description:
+        example: Backup and restore OpenShift clusters and applications
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      id:
+        example: oadp
+        type: string
+      name:
+        example: OpenShift API for Data Protection (OADP)
+        type: string
+      supportedPlatforms:
+        example:
+        - openshift
+        items:
+          type: string
+        type: array
+      versions:
+        $ref: '#/definitions/api.VersionsInfo'
+    type: object
+  api.AddonsListResponse:
+    properties:
+      addons:
+        items:
+          $ref: '#/definitions/api.AddonWithVersions'
+        type: array
+      categories:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/api.AddonWithVersions'
+          type: array
+        type: object
+      total:
+        example: 3
+        type: integer
+    type: object
+  api.ClusterOutputsResponse:
+    properties:
+      api_url:
+        type: string
+      cluster_id:
+        type: string
+      cluster_name:
+        type: string
+      console_url:
+        type: string
+      dashboard_token:
+        description: Kubernetes Dashboard bearer token
+        type: string
+      kubeadmin:
+        allOf:
+        - $ref: '#/definitions/api.KubeadminCredentials'
+        description: Actual credentials
+      kubeadmin_secret_ref:
+        description: Reference to secret location
+        type: string
+      kubeconfig:
+        description: Full kubeconfig content
+        type: string
+      kubeconfig_s3_uri:
+        description: S3 URI to kubeconfig file
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+    type: object
+  api.ClusterProfileCount:
+    properties:
+      count:
+        type: integer
+      profile:
+        type: string
+    type: object
+  api.ClusterStatistics:
+    properties:
+      active_clusters:
+        type: integer
+      clusters_by_profile:
+        items:
+          $ref: '#/definitions/api.ClusterProfileCount'
+        type: array
+      clusters_by_status:
+        items:
+          $ref: '#/definitions/api.ClusterStatusCount'
+        type: array
+      cost_by_profile:
+        items:
+          $ref: '#/definitions/api.ProfileCostBreakdown'
+        type: array
+      cost_by_user:
+        items:
+          $ref: '#/definitions/api.UserCostBreakdown'
+        type: array
+      total_clusters:
+        type: integer
+      total_daily_cost:
+        type: number
+      total_hourly_cost:
+        type: number
+      total_monthly_cost:
+        type: number
+    type: object
+  api.ClusterStatusCount:
+    properties:
+      count:
+        type: integer
+      status:
+        type: string
+    type: object
+  api.ClusterStorageLinkResponse:
+    properties:
+      cluster_id:
+        type: string
+      cluster_name:
+        type: string
+      linked_at:
+        type: string
+      role:
+        $ref: '#/definitions/types.ClusterStorageLinkRole'
+    type: object
+  api.CreateClusterRequest:
+    properties:
+      base_domain:
+        description: Only required for OpenShift
+        type: string
+      cluster_type:
+        enum:
+        - openshift
+        - eks
+        - iks
+        type: string
+      cost_center:
+        type: string
+      customPostConfig:
+        allOf:
+        - $ref: '#/definitions/types.CustomPostConfig'
+        description: Custom post-deployment operators, scripts, and manifests
+      enable_efs_storage:
+        type: boolean
+      extra_tags:
+        additionalProperties:
+          type: string
+        type: object
+      idempotency_key:
+        type: string
+      name:
+        maxLength: 63
+        minLength: 3
+        type: string
+      offhours_opt_in:
+        type: boolean
+      owner:
+        type: string
+      platform:
+        enum:
+        - aws
+        - ibmcloud
+        type: string
+      postConfigAddOns:
+        description: Pre-approved add-ons with version selection
+        items:
+          $ref: '#/definitions/types.AddonSelection'
+        type: array
+      profile:
+        type: string
+      region:
+        type: string
+      skip_post_deployment:
+        type: boolean
+      ssh_public_key:
+        type: string
+      team:
+        type: string
+      ttl_hours:
+        type: integer
+      version:
+        type: string
+      work_hours:
+        $ref: '#/definitions/types.WorkHoursSchedule'
+      work_hours_enabled:
+        type: boolean
+    required:
+    - cluster_type
+    - cost_center
+    - name
+    - owner
+    - platform
+    - profile
+    - region
+    - team
+    - version
+    type: object
+  api.CreateTemplateRequest:
+    properties:
+      config:
+        $ref: '#/definitions/types.CustomPostConfig'
+      description:
+        maxLength: 500
+        type: string
+      isPublic:
+        type: boolean
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - config
+    - name
+    type: object
+  api.DAGInfo:
+    properties:
+      dependencies:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      executionOrder:
+        items:
+          type: string
+        type: array
+      taskCount:
+        type: integer
+    type: object
+  api.ErrorResponse:
+    properties:
+      details:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  api.ExtendClusterRequest:
+    properties:
+      ttl_hours:
+        minimum: 1
+        type: integer
+    required:
+    - ttl_hours
+    type: object
+  api.InfrastructureInfo:
+    properties:
+      api_server:
+        properties:
+          ip:
+            type: string
+          status:
+            type: string
+          uptime:
+            type: string
+          version:
+            type: string
+        type: object
+      autoscale_group:
+        $ref: '#/definitions/api.ASGInfo'
+      database:
+        properties:
+          host:
+            type: string
+          status:
+            type: string
+        type: object
+      static_workers:
+        items:
+          $ref: '#/definitions/api.WorkerInfo'
+        type: array
+      timestamp:
+        type: string
+    type: object
+  api.KubeadminCredentials:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  api.LinkStorageRequest:
+    properties:
+      target_cluster_id:
+        type: string
+    required:
+    - target_cluster_id
+    type: object
+  api.MarkIgnoredRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  api.MarkResolvedRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  api.OrphanedResourceListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      resources:
+        items:
+          $ref: '#/definitions/types.OrphanedResource'
+        type: array
+      total:
+        type: integer
+    type: object
+  api.PaginatedResponse:
+    properties:
+      data: {}
+      filters:
+        additionalProperties: true
+        type: object
+      pagination:
+        $ref: '#/definitions/api.PaginationMeta'
+    type: object
+  api.PaginationMeta:
+    properties:
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  api.ProfileCostBreakdown:
+    properties:
+      cluster_count:
+        type: integer
+      daily_cost:
+        type: number
+      hourly_cost:
+        type: number
+      monthly_cost:
+        type: number
+      profile:
+        type: string
+    type: object
+  api.ProfileResponse:
+    properties:
+      base_domains:
+        $ref: '#/definitions/profile.BaseDomainConfig'
+      compute:
+        $ref: '#/definitions/profile.ComputeConfig'
+      cost_controls:
+        $ref: '#/definitions/profile.CostControlsConfig'
+      deployment_metrics:
+        $ref: '#/definitions/types.ProfileDeploymentMetrics'
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      features:
+        $ref: '#/definitions/profile.FeaturesConfig'
+      kubernetes_versions:
+        $ref: '#/definitions/profile.VersionConfig'
+      lifecycle:
+        $ref: '#/definitions/profile.LifecycleConfig'
+      name:
+        type: string
+      networking:
+        $ref: '#/definitions/profile.NetworkingConfig'
+      openshift_versions:
+        $ref: '#/definitions/profile.VersionConfig'
+      platform:
+        type: string
+      post_deployment:
+        $ref: '#/definitions/profile.PostDeploymentConfig'
+      regions:
+        $ref: '#/definitions/profile.RegionConfig'
+      tags:
+        $ref: '#/definitions/profile.TagsConfig'
+    type: object
+  api.StorageGroupResponse:
+    properties:
+      created_at:
+        type: string
+      efs_id:
+        type: string
+      efs_security_group_id:
+        type: string
+      id:
+        type: string
+      linked_clusters:
+        items:
+          $ref: '#/definitions/api.ClusterStorageLinkResponse'
+        type: array
+      name:
+        type: string
+      region:
+        type: string
+      s3_bucket:
+        type: string
+      status:
+        $ref: '#/definitions/types.StorageGroupStatus'
+      updated_at:
+        type: string
+    type: object
+  api.UpdateTemplateRequest:
+    properties:
+      config:
+        $ref: '#/definitions/types.CustomPostConfig'
+      description:
+        maxLength: 500
+        type: string
+      isPublic:
+        type: boolean
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - config
+    - name
+    type: object
+  api.UserCostBreakdown:
+    properties:
+      cluster_count:
+        type: integer
+      daily_cost:
+        type: number
+      hourly_cost:
+        type: number
+      monthly_cost:
+        type: number
+      user_id:
+        type: string
+      username:
+        type: string
+    type: object
+  api.ValidateRequest:
+    properties:
+      config:
+        $ref: '#/definitions/types.CustomPostConfig'
+    required:
+    - config
+    type: object
+  api.ValidateResponse:
+    properties:
+      dag:
+        $ref: '#/definitions/api.DAGInfo'
+      errors:
+        items:
+          type: string
+        type: array
+      valid:
+        type: boolean
+    type: object
+  api.VersionOption:
+    properties:
+      channel:
+        example: stable
+        type: string
+      displayName:
+        example: OADP 1.5 (Stable)
+        type: string
+    type: object
+  api.VersionsInfo:
+    properties:
+      allowed:
+        items:
+          $ref: '#/definitions/api.VersionOption'
+        type: array
+      default:
+        example: stable
+        type: string
+    type: object
+  api.WorkerInfo:
+    properties:
+      health_status:
+        type: string
+      instance_id:
+        type: string
+      launch_time:
+        type: string
+      private_ip:
+        type: string
+      public_ip:
+        type: string
+      state:
+        type: string
+      type:
+        description: '"static" or "autoscale"'
+        type: string
+      version:
+        type: string
+    type: object
+  profile.BaseDomainConfig:
     properties:
       allowed:
         items:
@@ -13,31 +538,31 @@ definitions:
     - allowed
     - default
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig:
+  profile.ClusterNetworkConfig:
     properties:
       cidr:
         type: string
       hostPrefix:
         type: integer
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig:
+  profile.ComputeConfig:
     properties:
       control_plane:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig'
+        $ref: '#/definitions/profile.ControlPlaneConfig'
       managed_node_groups:
         description: For EKS (managed)
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig'
+          $ref: '#/definitions/profile.NodeGroupConfig'
         type: array
       node_groups:
         description: For EKS (unmanaged)
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig'
+          $ref: '#/definitions/profile.NodeGroupConfig'
         type: array
       workers:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig'
+        $ref: '#/definitions/profile.WorkersConfig'
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig:
+  profile.ControlPlaneConfig:
     properties:
       instance_type:
         type: string
@@ -50,7 +575,7 @@ definitions:
     - instance_type
     - replicas
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig:
+  profile.CostControlsConfig:
     properties:
       budget_alert_threshold:
         maximum: 1
@@ -63,7 +588,7 @@ definitions:
       warning_message:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig:
+  profile.CustomResourceConfig:
     properties:
       api_version:
         type: string
@@ -81,7 +606,7 @@ definitions:
     - kind
     - name
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig:
+  profile.FeaturesConfig:
     properties:
       fips_mode:
         type: boolean
@@ -98,7 +623,7 @@ definitions:
         description: IKS-specific
         type: boolean
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig:
+  profile.HelmChartConfig:
     properties:
       chart:
         type: string
@@ -114,7 +639,7 @@ definitions:
     - name
     - repo
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig:
+  profile.LifecycleConfig:
     properties:
       allow_custom_ttl:
         type: boolean
@@ -131,12 +656,12 @@ definitions:
     - default_ttl_hours
     - max_ttl_hours
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig:
+  profile.MachineNetworkConfig:
     properties:
       cidr:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig:
+  profile.ManifestConfig:
     properties:
       description:
         type: string
@@ -154,15 +679,15 @@ definitions:
     required:
     - name
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig:
+  profile.NetworkingConfig:
     properties:
       clusterNetworks:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig'
+          $ref: '#/definitions/profile.ClusterNetworkConfig'
         type: array
       machineNetwork:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig'
+          $ref: '#/definitions/profile.MachineNetworkConfig'
         type: array
       nat_gateway:
         description: '"Single" or "HighlyAvailable"'
@@ -177,7 +702,7 @@ definitions:
         description: EKS-specific fields
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig:
+  profile.NodeGroupConfig:
     properties:
       ami_family:
         description: For managed node groups (AmazonLinux2023, AmazonLinux2, etc.)
@@ -205,50 +730,50 @@ definitions:
     - min_size
     - name
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig:
+  profile.OperatorConfig:
     properties:
       channel:
         type: string
       custom_resource:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig'
+        $ref: '#/definitions/profile.CustomResourceConfig'
       name:
         type: string
       namespace:
         type: string
       source:
-        description: e.g. "redhat-operators"
+        description: e.g. "redhat-operators" (optional - OLM will search all catalogs
+          if omitted)
         type: string
     required:
     - channel
     - name
     - namespace
-    - source
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig:
+  profile.PostDeploymentConfig:
     properties:
       enabled:
         type: boolean
       helm_charts:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig'
+          $ref: '#/definitions/profile.HelmChartConfig'
         type: array
       manifests:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig'
+          $ref: '#/definitions/profile.ManifestConfig'
         type: array
       operators:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig'
+          $ref: '#/definitions/profile.OperatorConfig'
         type: array
       scripts:
         items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig'
+          $ref: '#/definitions/profile.ScriptConfig'
         type: array
       timeout:
         description: Duration string, e.g. "30m"
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig:
+  profile.RegionConfig:
     properties:
       allowed:
         items:
@@ -261,7 +786,7 @@ definitions:
     - allowed
     - default
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig:
+  profile.ScriptConfig:
     properties:
       description:
         type: string
@@ -278,7 +803,7 @@ definitions:
     - name
     - path
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig:
+  profile.TagsConfig:
     properties:
       allow_user_tags:
         type: boolean
@@ -291,7 +816,7 @@ definitions:
           type: string
         type: object
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig:
+  profile.VersionConfig:
     properties:
       allowed:
         items:
@@ -304,7 +829,7 @@ definitions:
     - allowed
     - default
     type: object
-  github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig:
+  profile.WorkersConfig:
     properties:
       autoscaling:
         type: boolean
@@ -328,7 +853,19 @@ definitions:
         minimum: 0
         type: integer
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest:
+  types.AddonSelection:
+    properties:
+      id:
+        example: oadp
+        type: string
+      version:
+        example: stable
+        type: string
+    required:
+    - id
+    - version
+    type: object
+  types.ChangePasswordRequest:
     properties:
       current_password:
         type: string
@@ -339,7 +876,7 @@ definitions:
     - current_password
     - new_password
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.Cluster:
+  types.Cluster:
     properties:
       api_url:
         description: Cluster outputs (joined from cluster_outputs table)
@@ -347,19 +884,21 @@ definitions:
       base_domain:
         type: string
       cluster_type:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterType'
+        $ref: '#/definitions/types.ClusterType'
       console_url:
         type: string
       cost_center:
         type: string
       created_at:
         type: string
+      custom_post_config:
+        $ref: '#/definitions/types.CustomPostConfig'
       destroy_at:
         type: string
       destroyed_at:
         type: string
       effective_tags:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags'
+        $ref: '#/definitions/types.Tags'
       id:
         type: string
       last_work_hours_check:
@@ -375,7 +914,7 @@ definitions:
         description: Foreign key to users table
         type: string
       platform:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform'
+        $ref: '#/definitions/types.Platform'
       post_deploy_completed_at:
         type: string
       post_deploy_status:
@@ -385,7 +924,7 @@ definitions:
       region:
         type: string
       request_tags:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags'
+        $ref: '#/definitions/types.Tags'
       requested_by:
         description: IAM principal ARN
         type: string
@@ -394,9 +933,9 @@ definitions:
       ssh_public_key:
         type: string
       status:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus'
+        $ref: '#/definitions/types.ClusterStatus'
       storage_config:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig'
+        $ref: '#/definitions/types.StorageConfig'
       team:
         type: string
       ttl_hours:
@@ -415,7 +954,7 @@ definitions:
       work_hours_start:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus:
+  types.ClusterStatus:
     enum:
     - PENDING
     - CREATING
@@ -456,7 +995,7 @@ definitions:
     - ClusterStatusDestroyFailed
     - ClusterStatusDestroyed
     - ClusterStatusFailed
-  github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole:
+  types.ClusterStorageLinkRole:
     enum:
     - source
     - target
@@ -466,7 +1005,7 @@ definitions:
     - ClusterStorageLinkRoleSource
     - ClusterStorageLinkRoleTarget
     - ClusterStorageLinkRoleShared
-  github_com_tsanders-rh_ocpctl_pkg_types.ClusterType:
+  types.ClusterType:
     enum:
     - openshift
     - eks
@@ -484,7 +1023,7 @@ definitions:
     - ClusterTypeOpenShift
     - ClusterTypeEKS
     - ClusterTypeIKS
-  github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest:
+  types.CreateUserRequest:
     properties:
       email:
         type: string
@@ -492,7 +1031,7 @@ definitions:
         minLength: 8
         type: string
       role:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+        $ref: '#/definitions/types.UserRole'
       username:
         maxLength: 100
         minLength: 2
@@ -503,7 +1042,173 @@ definitions:
     - role
     - username
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.Job:
+  types.CustomHelmChartConfig:
+    properties:
+      chart:
+        type: string
+      condition:
+        description: Conditional execution (e.g. "clusterType == 'openshift'")
+        type: string
+      dependsOn:
+        description: Task dependencies (names of other tasks)
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      namespace:
+        description: Target namespace (supports {{.Variable}} templating)
+        type: string
+      repo:
+        type: string
+      values:
+        additionalProperties: true
+        description: Helm values (supports {{.Variable}} templating in string values)
+        type: object
+      variables:
+        additionalProperties:
+          type: string
+        description: Custom variables for template rendering
+        type: object
+      version:
+        type: string
+    required:
+    - chart
+    - name
+    - repo
+    type: object
+  types.CustomManifestConfig:
+    properties:
+      condition:
+        description: Conditional execution (e.g. "clusterType == 'openshift'")
+        type: string
+      content:
+        description: Inline YAML/JSON content (supports {{.Variable}} templating)
+        type: string
+      dependsOn:
+        description: Task dependencies (names of other tasks)
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      name:
+        type: string
+      namespace:
+        description: Target namespace (supports {{.Variable}} templating)
+        type: string
+      url:
+        description: URL to download manifest from
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        description: Custom variables for template rendering
+        type: object
+    required:
+    - name
+    type: object
+  types.CustomOperatorConfig:
+    properties:
+      channel:
+        type: string
+      condition:
+        description: Conditional execution (e.g. "clusterType == 'openshift'")
+        type: string
+      customResource:
+        $ref: '#/definitions/types.CustomResourceConfig'
+      dependsOn:
+        description: Task dependencies (names of other tasks)
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      namespace:
+        type: string
+      source:
+        description: e.g. "redhat-operators", "community-operators"
+        type: string
+    required:
+    - channel
+    - name
+    - namespace
+    - source
+    type: object
+  types.CustomPostConfig:
+    properties:
+      helmCharts:
+        items:
+          $ref: '#/definitions/types.CustomHelmChartConfig'
+        type: array
+      manifests:
+        items:
+          $ref: '#/definitions/types.CustomManifestConfig'
+        type: array
+      operators:
+        items:
+          $ref: '#/definitions/types.CustomOperatorConfig'
+        type: array
+      scripts:
+        items:
+          $ref: '#/definitions/types.CustomScriptConfig'
+        type: array
+    type: object
+  types.CustomResourceConfig:
+    properties:
+      apiVersion:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      spec:
+        additionalProperties: true
+        type: object
+    required:
+    - apiVersion
+    - kind
+    - name
+    type: object
+  types.CustomScriptConfig:
+    properties:
+      condition:
+        description: Conditional execution (e.g. "clusterType == 'openshift'")
+        type: string
+      content:
+        description: Inline script content (supports {{.Variable}} templating)
+        type: string
+      dependsOn:
+        description: Task dependencies (names of other tasks)
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      env:
+        additionalProperties:
+          type: string
+        description: Environment variables (supports {{.Variable}} templating)
+        type: object
+      name:
+        type: string
+      timeout:
+        description: Duration string, e.g. "10m" (max 30m)
+        type: string
+      url:
+        description: URL to download script from
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        description: Custom variables for template rendering
+        type: object
+    required:
+    - name
+    type: object
+  types.Job:
     properties:
       attempt:
         type: integer
@@ -520,22 +1225,22 @@ definitions:
       id:
         type: string
       job_type:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobType'
+        $ref: '#/definitions/types.JobType'
       max_attempts:
         type: integer
       metadata:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata'
+        $ref: '#/definitions/types.JobMetadata'
       started_at:
         type: string
       status:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobStatus'
+        $ref: '#/definitions/types.JobStatus'
       updated_at:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata:
+  types.JobMetadata:
     additionalProperties: true
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.JobStatus:
+  types.JobStatus:
     enum:
     - PENDING
     - RUNNING
@@ -549,13 +1254,11 @@ definitions:
     - JobStatusSucceeded
     - JobStatusFailed
     - JobStatusRetrying
-  github_com_tsanders-rh_ocpctl_pkg_types.JobType:
+  types.JobType:
     enum:
     - CREATE
     - DESTROY
-    - SCALE_WORKERS
     - JANITOR_DESTROY
-    - ORPHAN_SWEEP
     - CONFIGURE_EFS
     - PROVISION_SHARED_STORAGE
     - UNLINK_SHARED_STORAGE
@@ -566,16 +1269,14 @@ definitions:
     x-enum-varnames:
     - JobTypeCreate
     - JobTypeDestroy
-    - JobTypeScaleWorkers
     - JobTypeJanitorDestroy
-    - JobTypeOrphanSweep
     - JobTypeConfigureEFS
     - JobTypeProvisionSharedStorage
     - JobTypeUnlinkSharedStorage
     - JobTypeHibernate
     - JobTypeResume
     - JobTypePostConfigure
-  github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest:
+  types.LoginRequest:
     properties:
       email:
         type: string
@@ -585,7 +1286,7 @@ definitions:
     - email
     - password
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse:
+  types.LoginResponse:
     properties:
       access_token:
         type: string
@@ -593,9 +1294,9 @@ definitions:
         description: seconds
         type: integer
       user:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+        $ref: '#/definitions/types.UserResponse'
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource:
+  types.OrphanedResource:
     properties:
       cluster_name:
         type: string
@@ -622,15 +1323,15 @@ definitions:
       resource_name:
         type: string
       resource_type:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType'
+        $ref: '#/definitions/types.OrphanedResourceType'
       status:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus'
+        $ref: '#/definitions/types.OrphanedResourceStatus'
       tags:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags'
+        $ref: '#/definitions/types.OrphanedResourceTags'
       updated_at:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus:
+  types.OrphanedResourceStatus:
     enum:
     - ACTIVE
     - RESOLVED
@@ -640,11 +1341,11 @@ definitions:
     - OrphanedResourceStatusActive
     - OrphanedResourceStatusResolved
     - OrphanedResourceStatusIgnored
-  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags:
+  types.OrphanedResourceTags:
     additionalProperties:
       type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType:
+  types.OrphanedResourceType:
     enum:
     - VPC
     - LoadBalancer
@@ -668,7 +1369,7 @@ definitions:
     - OrphanedResourceTypeEBSVolume
     - OrphanedResourceTypeElasticIP
     - OrphanedResourceTypeCloudWatchLogGroup
-  github_com_tsanders-rh_ocpctl_pkg_types.Platform:
+  types.Platform:
     enum:
     - aws
     - ibmcloud
@@ -676,7 +1377,60 @@ definitions:
     x-enum-varnames:
     - PlatformAWS
     - PlatformIBMCloud
-  github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig:
+  types.PostConfigTemplate:
+    properties:
+      config:
+        $ref: '#/definitions/types.CustomPostConfig'
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      isPublic:
+        description: If true, visible to all users
+        type: boolean
+      name:
+        type: string
+      ownerId:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      updatedAt:
+        type: string
+    type: object
+  types.ProfileDeploymentMetrics:
+    properties:
+      avg_duration_seconds:
+        type: integer
+      created_at:
+        type: string
+      last_deployment_at:
+        type: string
+      max_duration_seconds:
+        type: integer
+      min_duration_seconds:
+        type: integer
+      p50_duration_seconds:
+        description: Median (50th percentile)
+        type: integer
+      p95_duration_seconds:
+        description: 95th percentile
+        type: integer
+      profile:
+        type: string
+      sample_count:
+        description: Number of samples used (max 30)
+        type: integer
+      success_count:
+        description: Total successful deployments tracked
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  types.StorageConfig:
     properties:
       auth_mode:
         description: '"sts" or "static"'
@@ -699,7 +1453,7 @@ definitions:
       storage_group_id:
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus:
+  types.StorageGroupStatus:
     enum:
     - PROVISIONING
     - READY
@@ -711,11 +1465,11 @@ definitions:
     - StorageGroupStatusReady
     - StorageGroupStatusFailed
     - StorageGroupStatusDeleting
-  github_com_tsanders-rh_ocpctl_pkg_types.Tags:
+  types.Tags:
     additionalProperties:
       type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest:
+  types.UpdateMeRequest:
     properties:
       timezone:
         type: string
@@ -724,11 +1478,11 @@ definitions:
         minLength: 2
         type: string
       work_hours:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
+        $ref: '#/definitions/types.WorkHoursSchedule'
       work_hours_enabled:
         type: boolean
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest:
+  types.UpdateUserRequest:
     properties:
       active:
         type: boolean
@@ -736,13 +1490,13 @@ definitions:
         minLength: 8
         type: string
       role:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+        $ref: '#/definitions/types.UserRole'
       username:
         maxLength: 100
         minLength: 2
         type: string
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.UserResponse:
+  types.UserResponse:
     properties:
       active:
         type: boolean
@@ -753,7 +1507,7 @@ definitions:
       id:
         type: string
       role:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole'
+        $ref: '#/definitions/types.UserRole'
       timezone:
         type: string
       updated_at:
@@ -761,11 +1515,11 @@ definitions:
       username:
         type: string
       work_hours:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
+        $ref: '#/definitions/types.WorkHoursSchedule'
       work_hours_enabled:
         type: boolean
     type: object
-  github_com_tsanders-rh_ocpctl_pkg_types.UserRole:
+  types.UserRole:
     enum:
     - ADMIN
     - USER
@@ -775,7 +1529,7 @@ definitions:
     - RoleAdmin
     - RoleUser
     - RoleViewer
-  github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule:
+  types.WorkHoursSchedule:
     properties:
       end_time:
         description: '"17:00" format'
@@ -788,384 +1542,6 @@ definitions:
         items:
           type: string
         type: array
-    type: object
-  internal_api.ASGInfo:
-    properties:
-      desired_capacity:
-        type: integer
-      instances:
-        items:
-          $ref: '#/definitions/internal_api.WorkerInfo'
-        type: array
-      max_size:
-        type: integer
-      min_size:
-        type: integer
-      name:
-        type: string
-    type: object
-  internal_api.ClusterOutputsResponse:
-    properties:
-      api_url:
-        type: string
-      cluster_id:
-        type: string
-      cluster_name:
-        type: string
-      console_url:
-        type: string
-      dashboard_token:
-        description: Kubernetes Dashboard bearer token
-        type: string
-      kubeadmin:
-        allOf:
-        - $ref: '#/definitions/internal_api.KubeadminCredentials'
-        description: Actual credentials
-      kubeadmin_secret_ref:
-        description: Reference to secret location
-        type: string
-      kubeconfig:
-        description: Full kubeconfig content
-        type: string
-      kubeconfig_s3_uri:
-        description: S3 URI to kubeconfig file
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
-      status:
-        type: string
-    type: object
-  internal_api.ClusterProfileCount:
-    properties:
-      count:
-        type: integer
-      profile:
-        type: string
-    type: object
-  internal_api.ClusterStatistics:
-    properties:
-      active_clusters:
-        type: integer
-      clusters_by_profile:
-        items:
-          $ref: '#/definitions/internal_api.ClusterProfileCount'
-        type: array
-      clusters_by_status:
-        items:
-          $ref: '#/definitions/internal_api.ClusterStatusCount'
-        type: array
-      cost_by_profile:
-        items:
-          $ref: '#/definitions/internal_api.ProfileCostBreakdown'
-        type: array
-      cost_by_user:
-        items:
-          $ref: '#/definitions/internal_api.UserCostBreakdown'
-        type: array
-      total_clusters:
-        type: integer
-      total_daily_cost:
-        type: number
-      total_hourly_cost:
-        type: number
-      total_monthly_cost:
-        type: number
-    type: object
-  internal_api.ClusterStatusCount:
-    properties:
-      count:
-        type: integer
-      status:
-        type: string
-    type: object
-  internal_api.ClusterStorageLinkResponse:
-    properties:
-      cluster_id:
-        type: string
-      cluster_name:
-        type: string
-      linked_at:
-        type: string
-      role:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole'
-    type: object
-  internal_api.CreateClusterRequest:
-    properties:
-      base_domain:
-        description: Only required for OpenShift
-        type: string
-      cluster_type:
-        enum:
-        - openshift
-        - eks
-        - iks
-        type: string
-      cost_center:
-        type: string
-      enable_efs_storage:
-        type: boolean
-      extra_tags:
-        additionalProperties:
-          type: string
-        type: object
-      idempotency_key:
-        type: string
-      name:
-        maxLength: 63
-        minLength: 3
-        type: string
-      offhours_opt_in:
-        type: boolean
-      owner:
-        type: string
-      platform:
-        enum:
-        - aws
-        - ibmcloud
-        type: string
-      profile:
-        type: string
-      region:
-        type: string
-      skip_post_deployment:
-        type: boolean
-      ssh_public_key:
-        type: string
-      team:
-        type: string
-      ttl_hours:
-        type: integer
-      version:
-        type: string
-      work_hours:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule'
-      work_hours_enabled:
-        type: boolean
-    required:
-    - cluster_type
-    - cost_center
-    - name
-    - owner
-    - platform
-    - profile
-    - region
-    - team
-    - version
-    type: object
-  internal_api.ErrorResponse:
-    properties:
-      details:
-        items:
-          additionalProperties: true
-          type: object
-        type: array
-      error:
-        type: string
-      message:
-        type: string
-    type: object
-  internal_api.ExtendClusterRequest:
-    properties:
-      ttl_hours:
-        minimum: 1
-        type: integer
-    required:
-    - ttl_hours
-    type: object
-  internal_api.InfrastructureInfo:
-    properties:
-      api_server:
-        properties:
-          ip:
-            type: string
-          status:
-            type: string
-          uptime:
-            type: string
-          version:
-            type: string
-        type: object
-      autoscale_group:
-        $ref: '#/definitions/internal_api.ASGInfo'
-      database:
-        properties:
-          host:
-            type: string
-          status:
-            type: string
-        type: object
-      static_workers:
-        items:
-          $ref: '#/definitions/internal_api.WorkerInfo'
-        type: array
-      timestamp:
-        type: string
-    type: object
-  internal_api.KubeadminCredentials:
-    properties:
-      password:
-        type: string
-      username:
-        type: string
-    type: object
-  internal_api.LinkStorageRequest:
-    properties:
-      target_cluster_id:
-        type: string
-    required:
-    - target_cluster_id
-    type: object
-  internal_api.MarkIgnoredRequest:
-    properties:
-      notes:
-        type: string
-    type: object
-  internal_api.MarkResolvedRequest:
-    properties:
-      notes:
-        type: string
-    type: object
-  internal_api.OrphanedResourceListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      resources:
-        items:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
-        type: array
-      total:
-        type: integer
-    type: object
-  internal_api.PaginatedResponse:
-    properties:
-      data: {}
-      filters:
-        additionalProperties: true
-        type: object
-      pagination:
-        $ref: '#/definitions/internal_api.PaginationMeta'
-    type: object
-  internal_api.PaginationMeta:
-    properties:
-      page:
-        type: integer
-      per_page:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_api.ProfileCostBreakdown:
-    properties:
-      cluster_count:
-        type: integer
-      daily_cost:
-        type: number
-      hourly_cost:
-        type: number
-      monthly_cost:
-        type: number
-      profile:
-        type: string
-    type: object
-  internal_api.ProfileResponse:
-    properties:
-      base_domains:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig'
-      compute:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig'
-      cost_controls:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig'
-      description:
-        type: string
-      display_name:
-        type: string
-      enabled:
-        type: boolean
-      features:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig'
-      kubernetes_versions:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig'
-      lifecycle:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig'
-      name:
-        type: string
-      networking:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig'
-      openshift_versions:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig'
-      platform:
-        type: string
-      post_deployment:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig'
-      regions:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig'
-      tags:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig'
-    type: object
-  internal_api.StorageGroupResponse:
-    properties:
-      created_at:
-        type: string
-      efs_id:
-        type: string
-      efs_security_group_id:
-        type: string
-      id:
-        type: string
-      linked_clusters:
-        items:
-          $ref: '#/definitions/internal_api.ClusterStorageLinkResponse'
-        type: array
-      name:
-        type: string
-      region:
-        type: string
-      s3_bucket:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus'
-      updated_at:
-        type: string
-    type: object
-  internal_api.UserCostBreakdown:
-    properties:
-      cluster_count:
-        type: integer
-      daily_cost:
-        type: number
-      hourly_cost:
-        type: number
-      monthly_cost:
-        type: number
-      user_id:
-        type: string
-      username:
-        type: string
-    type: object
-  internal_api.WorkerInfo:
-    properties:
-      health_status:
-        type: string
-      instance_id:
-        type: string
-      launch_time:
-        type: string
-      private_ip:
-        type: string
-      public_ip:
-        type: string
-      state:
-        type: string
-      type:
-        description: '"static" or "autoscale"'
-        type: string
-      version:
-        type: string
     type: object
 host: localhost:8080
 info:
@@ -1192,19 +1568,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.ClusterStatistics'
+            $ref: '#/definitions/api.ClusterStatistics'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get cluster statistics
@@ -1244,7 +1620,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.OrphanedResourceListResponse'
+            $ref: '#/definitions/api.OrphanedResourceListResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1275,7 +1651,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+            $ref: '#/definitions/types.OrphanedResource'
         "400":
           description: Resource type not supported for automated deletion
           schema:
@@ -1316,14 +1692,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api.MarkIgnoredRequest'
+          $ref: '#/definitions/api.MarkIgnoredRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+            $ref: '#/definitions/types.OrphanedResource'
         "400":
           description: Bad Request
           schema:
@@ -1358,14 +1734,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api.MarkResolvedRequest'
+          $ref: '#/definitions/api.MarkResolvedRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource'
+            $ref: '#/definitions/types.OrphanedResource'
         "400":
           description: Bad Request
           schema:
@@ -1418,11 +1794,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.InfrastructureInfo'
+            $ref: '#/definitions/api.InfrastructureInfo'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get infrastructure status
@@ -1440,14 +1816,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest'
+          $ref: '#/definitions/types.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse'
+            $ref: '#/definitions/types.LoginResponse'
         "400":
           description: Invalid request body
           schema:
@@ -1503,7 +1879,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+            $ref: '#/definitions/types.UserResponse'
         "401":
           description: Unauthorized
           schema:
@@ -1538,14 +1914,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest'
+          $ref: '#/definitions/types.UpdateMeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+            $ref: '#/definitions/types.UserResponse'
         "400":
           description: Invalid request or validation error
           schema:
@@ -1587,7 +1963,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest'
+          $ref: '#/definitions/types.ChangePasswordRequest'
       produces:
       - application/json
       responses:
@@ -1638,7 +2014,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse'
+            $ref: '#/definitions/types.LoginResponse'
         "401":
           description: Invalid or expired refresh token
           schema:
@@ -1706,21 +2082,21 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/internal_api.PaginatedResponse'
+            - $ref: '#/definitions/api.PaginatedResponse'
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+                    $ref: '#/definitions/types.Cluster'
                   type: array
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List clusters
@@ -1730,41 +2106,43 @@ paths:
       consumes:
       - application/json
       description: Creates a new OpenShift cluster with the specified configuration.
-        Validates against policy engine and initiates async provisioning.
+        Validates against policy engine and initiates async provisioning. Supports
+        post-deployment configuration via pre-approved add-ons (with version selection)
+        or custom operators/manifests.
       parameters:
       - description: Cluster configuration
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_api.CreateClusterRequest'
+          $ref: '#/definitions/api.CreateClusterRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+            $ref: '#/definitions/types.Cluster'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create cluster
@@ -1786,27 +2164,27 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+            $ref: '#/definitions/types.Cluster'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete cluster
@@ -1826,23 +2204,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+            $ref: '#/definitions/types.Cluster'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get cluster
@@ -1992,34 +2370,34 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_api.ExtendClusterRequest'
+          $ref: '#/definitions/api.ExtendClusterRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster'
+            $ref: '#/definitions/types.Cluster'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Extend cluster TTL
@@ -2177,14 +2555,14 @@ paths:
       consumes:
       - application/json
       description: Returns deployment logs for a cluster with cursor-based pagination.
-        Defaults to latest CREATE job if job_id not specified.
+        Returns logs from all jobs (CREATE, POST_CONFIGURE, etc.) if job_id not specified.
       parameters:
       - description: Cluster ID
         in: path
         name: id
         required: true
         type: string
-      - description: Job ID to get logs for (defaults to latest CREATE job)
+      - description: Job ID to get logs for (returns logs from all jobs if not specified)
         in: query
         name: job_id
         type: string
@@ -2192,7 +2570,7 @@ paths:
         in: query
         name: cursor
         type: string
-      - description: Number of log lines to return (default 100)
+      - description: Number of log lines to return (default 500)
         in: query
         name: limit
         type: integer
@@ -2245,7 +2623,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.ClusterOutputsResponse'
+            $ref: '#/definitions/api.ClusterOutputsResponse'
         "400":
           description: Cluster not ready or outputs not available
           schema:
@@ -2392,7 +2770,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/internal_api.StorageGroupResponse'
+              $ref: '#/definitions/api.StorageGroupResponse'
             type: array
         "403":
           description: Forbidden - not cluster owner
@@ -2433,14 +2811,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api.LinkStorageRequest'
+          $ref: '#/definitions/api.LinkStorageRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.StorageGroupResponse'
+            $ref: '#/definitions/api.StorageGroupResponse'
         "400":
           description: Invalid request or validation error
           schema:
@@ -2520,15 +2898,14 @@ paths:
       - Storage
   /health:
     get:
-      description: Returns basic health status of the API server
+      description: Returns basic health status of the API server including auth availability
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
+            additionalProperties: true
             type: object
       summary: Health check
       tags:
@@ -2596,7 +2973,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Job'
+            $ref: '#/definitions/types.Job'
         "404":
           description: Job not found
           schema:
@@ -2614,6 +2991,75 @@ paths:
       summary: Get job
       tags:
       - Jobs
+  /post-config/addons:
+    get:
+      description: Lists all enabled post-config add-ons with version information.
+        Supports filtering by category, platform, and search query. Each add-on includes
+        multiple versions with one marked as default.
+      parameters:
+      - description: Filter by category (backup, migration, cicd, monitoring, security,
+          storage, networking)
+        in: query
+        name: category
+        type: string
+      - description: Filter by supported platform (openshift, eks, iks)
+        in: query
+        name: platform
+        type: string
+      - description: Search in name and description
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.AddonsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List add-ons
+      tags:
+      - post-config
+  /post-config/validate:
+    post:
+      consumes:
+      - application/json
+      description: Validates custom post-deployment configuration without creating
+        a cluster. Checks resource limits, dependencies, conditions, and generates
+        execution DAG.
+      parameters:
+      - description: Validation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.ValidateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ValidateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Validate custom post-config
+      tags:
+      - post-config
   /profiles:
     get:
       consumes:
@@ -2632,7 +3078,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/internal_api.ProfileResponse'
+              $ref: '#/definitions/api.ProfileResponse'
             type: array
         "400":
           description: Invalid platform parameter
@@ -2662,7 +3108,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.ProfileResponse'
+            $ref: '#/definitions/api.ProfileResponse'
         "404":
           description: Profile not found
           schema:
@@ -2696,6 +3142,174 @@ paths:
       summary: Readiness check
       tags:
       - system
+  /templates:
+    get:
+      description: Lists post-configuration templates visible to the authenticated
+        user
+      parameters:
+      - description: Only show public templates
+        in: query
+        name: public
+        type: boolean
+      - description: Filter by tags (comma-separated)
+        in: query
+        name: tags
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List templates
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      description: Creates a new post-configuration template for reuse
+      parameters:
+      - description: Template configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.CreateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/types.PostConfigTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create template
+      tags:
+      - templates
+  /templates/{id}:
+    delete:
+      description: Deletes a template (only owner or admin can delete)
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete template
+      tags:
+      - templates
+    get:
+      description: Retrieves a specific template by ID
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.PostConfigTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get template
+      tags:
+      - templates
+    patch:
+      consumes:
+      - application/json
+      description: Updates a template (only owner can update)
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated template
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.UpdateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.PostConfigTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update template
+      tags:
+      - templates
   /users:
     get:
       consumes:
@@ -2747,14 +3361,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest'
+          $ref: '#/definitions/types.CreateUserRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+            $ref: '#/definitions/types.UserResponse'
         "400":
           description: Invalid request or validation error
           schema:
@@ -2838,7 +3452,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+            $ref: '#/definitions/types.UserResponse'
         "400":
           description: User ID required
           schema:
@@ -2878,14 +3492,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest'
+          $ref: '#/definitions/types.UpdateUserRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse'
+            $ref: '#/definitions/types.UserResponse'
         "400":
           description: Invalid request or validation error
           schema:

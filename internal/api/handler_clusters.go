@@ -78,8 +78,8 @@ type CreateClusterRequest struct {
 	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
 	SkipPostDeployment bool                       `json:"skip_post_deployment,omitempty"`
 	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
-	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"`
-	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`
+	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
+	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 
@@ -101,7 +101,7 @@ type ListClustersFilters struct {
 // Create handles POST /api/v1/clusters
 //
 //	@Summary		Create cluster
-//	@Description	Creates a new OpenShift cluster with the specified configuration. Validates against policy engine and initiates async provisioning.
+//	@Description	Creates a new OpenShift cluster with the specified configuration. Validates against policy engine and initiates async provisioning. Supports post-deployment configuration via pre-approved add-ons (with version selection) or custom operators/manifests.
 //	@Tags			clusters
 //	@Accept			json
 //	@Produce		json
