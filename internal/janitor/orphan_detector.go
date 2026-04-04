@@ -229,8 +229,10 @@ func (j *Janitor) detectOrphanedVPCs(ctx context.Context, cfg aws.Config, cluste
 
 	orphans := []OrphanedResource{}
 	for _, vpc := range result.Vpcs {
-		// Step 1: Check for ManagedBy=ocpctl tag (preferred method)
-		managedByOcpctl := getTagValue(vpc.Tags, "ManagedBy") == "ocpctl"
+		// Step 1: Check for ManagedBy tag (preferred method)
+		// TEMPORARY: Accept both "ocpctl" and legacy "cluster-control-plane" during transition
+		managedByTag := getTagValue(vpc.Tags, "ManagedBy")
+		managedByOcpctl := managedByTag == "ocpctl" || managedByTag == "cluster-control-plane"
 		clusterNameFromTag := getTagValue(vpc.Tags, "ClusterName")
 
 		// If ManagedBy tag is present, use it
@@ -629,8 +631,10 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 				}
 			}
 
-			// Check for ManagedBy=ocpctl tag (only flag resources we created)
-			managedByOcpctl := tags["ManagedBy"] == "ocpctl"
+			// Check for ManagedBy tag (only flag resources we created)
+			// TEMPORARY: Accept both "ocpctl" and legacy "cluster-control-plane" during transition
+			managedByTag := tags["ManagedBy"]
+			managedByOcpctl := managedByTag == "ocpctl" || managedByTag == "cluster-control-plane"
 			clusterNameFromTag := tags["ClusterName"]
 
 			// IMPORTANT: Only check resources that are managed by ocpctl
@@ -862,8 +866,10 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 	for _, volume := range result.Volumes {
 		volumeID := aws.ToString(volume.VolumeId)
 
-		// Check for ManagedBy=ocpctl tag
-		managedByOcpctl := getTagValue(volume.Tags, "ManagedBy") == "ocpctl"
+		// Check for ManagedBy tag
+		// TEMPORARY: Accept both "ocpctl" and legacy "cluster-control-plane" during transition
+		managedByTag := getTagValue(volume.Tags, "ManagedBy")
+		managedByOcpctl := managedByTag == "ocpctl" || managedByTag == "cluster-control-plane"
 		clusterNameFromTag := getTagValue(volume.Tags, "ClusterName")
 
 		// IMPORTANT: Only check resources that are managed by ocpctl
@@ -956,8 +962,10 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 			continue
 		}
 
-		// Check for ManagedBy=ocpctl tag
-		managedByOcpctl := getTagValue(address.Tags, "ManagedBy") == "ocpctl"
+		// Check for ManagedBy tag
+		// TEMPORARY: Accept both "ocpctl" and legacy "cluster-control-plane" during transition
+		managedByTag := getTagValue(address.Tags, "ManagedBy")
+		managedByOcpctl := managedByTag == "ocpctl" || managedByTag == "cluster-control-plane"
 		clusterNameFromTag := getTagValue(address.Tags, "ClusterName")
 
 		// IMPORTANT: Only check resources that are managed by ocpctl
