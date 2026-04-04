@@ -39,18 +39,6 @@ export function CustomPostConfigEditor({
           onSelectionChange={onAddonsChange}
         />
       </div>
-
-      {/* Summary */}
-      {selectedAddons.length > 0 && (
-        <div className="rounded-lg border bg-muted/50 p-4">
-          <p className="text-sm text-muted-foreground">
-            {selectedAddons.length} add-on{selectedAddons.length !== 1 ? "s" : ""} selected
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Selected add-ons will be installed after cluster creation
-          </p>
-        </div>
-      )}
     </div>
   );
 }
