@@ -42,6 +42,7 @@ type InstallConfigData struct {
 	ClusterPrefix   int
 	ServiceCIDR     string
 	MachineCIDR     string
+	PublishStrategy string // "External" or "Internal"
 
 	// Tags
 	UserTags map[string]string
@@ -65,6 +66,12 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		return nil, fmt.Errorf("get profile: %w", err)
 	}
 
+	// Determine publish strategy based on privateCluster setting
+	publishStrategy := "External" // Default to External (public API)
+	if prof.Features.PrivateCluster {
+		publishStrategy = "Internal" // Private clusters use internal-only API
+	}
+
 	// Build template data
 	data := InstallConfigData{
 		ClusterName:          req.Name,
@@ -77,6 +84,7 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		ControlPlaneType:     prof.Compute.ControlPlane.InstanceType,
 		WorkerReplicas:       prof.Compute.Workers.Replicas,
 		WorkerType:           prof.Compute.Workers.InstanceType,
+		PublishStrategy:      publishStrategy,
 		UserTags:             mergedTags,
 	}
 
@@ -163,6 +171,7 @@ baseDomain: {{.BaseDomain}}
 credentialsMode: Manual
 metadata:
   name: {{.ClusterName}}
+publish: {{.PublishStrategy}}
 platform:
   aws:
     region: {{.Region}}

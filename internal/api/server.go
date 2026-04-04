@@ -167,7 +167,7 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/version", s.versionCheck)
 
 	// Swagger API documentation (no auth required)
-	s.echo.GET("/swagger/*", echoSwagger.WrapHandler)
+	s.echo.GET("/swagger/*", echoSwagger.EchoWrapHandler(echoSwagger.InstanceName("swagger")))
 
 	// API v1 routes
 	v1 := s.echo.Group("/api/v1")
