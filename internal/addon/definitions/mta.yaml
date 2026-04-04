@@ -16,6 +16,18 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v6.0
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
 
   - channel: stable-v7.0
     displayName: "MTA 7.0"
@@ -26,6 +38,18 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v7.0
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
 
   - channel: stable-v7.1
     displayName: "MTA 7.1"
@@ -36,6 +60,18 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v7.1
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
 
   - channel: stable-v7.2
     displayName: "MTA 7.2"
@@ -46,6 +82,18 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v7.2
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
 
   - channel: stable-v8.0
     displayName: "MTA 8.0 (Stable)"
@@ -56,6 +104,18 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v8.0
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
 
   - channel: stable-v8.1
     displayName: "MTA 8.1 (Latest)"
@@ -66,3 +126,15 @@ versions:
           namespace: openshift-mta
           source: redhat-operators
           channel: stable-v8.1
+      manifests:
+        - name: mta-tackle-instance
+          description: "Tackle instance for Migration Toolkit for Applications"
+          content: |
+            apiVersion: tackle.konveyor.io/v1alpha1
+            kind: Tackle
+            metadata:
+              name: tackle
+              namespace: openshift-mta
+            spec:
+              feature_auth_required: "false"
+              rwx_supported: "false"
