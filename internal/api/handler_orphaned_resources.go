@@ -712,6 +712,25 @@ func (h *OrphanedResourceHandler) deleteIAMRole(ctx context.Context, roleName st
 		}
 	}
 
+	// List and remove role from instance profiles
+	listInstanceProfilesResult, err := iamClient.ListInstanceProfilesForRole(ctx, &iam.ListInstanceProfilesForRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list instance profiles for role: %w", err)
+	}
+
+	for _, instanceProfile := range listInstanceProfilesResult.InstanceProfiles {
+		log.Printf("Removing role %s from instance profile %s", roleName, aws.ToString(instanceProfile.InstanceProfileName))
+		_, err = iamClient.RemoveRoleFromInstanceProfile(ctx, &iam.RemoveRoleFromInstanceProfileInput{
+			RoleName:            aws.String(roleName),
+			InstanceProfileName: instanceProfile.InstanceProfileName,
+		})
+		if err != nil {
+			return fmt.Errorf("remove role from instance profile %s: %w", aws.ToString(instanceProfile.InstanceProfileName), err)
+		}
+	}
+
 	// Delete the role
 	_, err = iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
 		RoleName: aws.String(roleName),
