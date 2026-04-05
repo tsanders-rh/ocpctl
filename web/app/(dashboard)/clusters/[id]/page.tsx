@@ -290,6 +290,27 @@ export default function ClusterDetailPage() {
             <CardTitle>Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Cluster ID with copy button */}
+            <div className="space-y-2">
+              <Label>Cluster ID</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={cluster.id}
+                  readOnly
+                  className="flex-1 font-mono text-sm"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(cluster.id);
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-sm font-medium text-muted-foreground">
@@ -383,6 +404,37 @@ export default function ClusterDetailPage() {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {/* AWS Console Link */}
+            {cluster.platform === "aws" && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  let consoleURL = '';
+                  const region = cluster.region;
+
+                  // Get infraID from outputs if available
+                  const infraID = outputs?.infra_id;
+
+                  if (infraID) {
+                    // OpenShift on AWS - link to EC2 instances filtered by infraID
+                    consoleURL = `https://console.aws.amazon.com/ec2/home?region=${region}#Instances:tag:kubernetes.io/cluster/${infraID}=owned;sort=desc:launchTime`;
+                  } else if (cluster.profile.toLowerCase().includes('eks')) {
+                    // EKS - link to EKS console
+                    consoleURL = `https://console.aws.amazon.com/eks/home?region=${region}#/clusters/${cluster.name}`;
+                  } else {
+                    // Fallback to EC2 dashboard
+                    consoleURL = `https://console.aws.amazon.com/ec2/home?region=${region}`;
+                  }
+
+                  window.open(consoleURL, '_blank');
+                }}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View in AWS Console
+              </Button>
             )}
 
             {!["DESTROYING", "DESTROYED"].includes(cluster.status) && (
