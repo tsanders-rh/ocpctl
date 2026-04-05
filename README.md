@@ -557,14 +557,15 @@ See [Development](#development) section above.
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Latest Version:** v0.20260324.a8f1e09 (March 24, 2026)
+**Latest Version:** v0.20260405.2d69e13 (April 5, 2026)
+- ✅ Comprehensive worker robustness improvements (auto-recovery, state persistence, error handling)
+- ✅ Enhanced deployment verification and error handling
+- ✅ Publish strategy validation to prevent DNS issues
+- ✅ Early resource tagging to prevent IAM role leaks
+- ✅ FAILED cluster destroy support (no artifacts required)
+- ✅ MTA addon updates (versions 6.0-8.1, Tackle instance manifests)
 - ✅ EKS destroy reconciler with VPC dependency cleanup
-- ✅ Automated deletion of orphaned AWS resources (Load Balancers, Security Groups, Network Interfaces, EBS Volumes, Elastic IPs)
-- ✅ Classic Load Balancer support in orphan cleanup
-- ✅ Intelligent instance termination for attached EBS volumes
-- ✅ NAT Gateway detection and cleanup
-- ✅ CloudWatch Log Group cleanup
-- ✅ Proper dependency ordering (LBs before subnets, SGs after ENIs)
+- ✅ Automated deletion of orphaned AWS resources
 - ✅ Multi-platform support: OpenShift, EKS, and IKS
 - ✅ Phase 2: AWS Resource Tagging complete
 

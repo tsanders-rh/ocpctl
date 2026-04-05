@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-region support
 - Cost reporting and analytics
 
+## [0.21.0] - 2026-04-05
+
+### Added - Worker Robustness & Deployment Improvements
+
+**Worker Robustness:**
+- Comprehensive worker robustness improvements for production stability
+- Enhanced state persistence and recovery mechanisms
+- Improved error handling and retry logic
+- Auto-recovery from transient failures
+
+**Deployment Verification:**
+- Enhanced deployment verification and error handling
+- Comprehensive publish field validation tests
+- Improved health check reporting during deployments
+- Version verification for API and Worker services
+
+**Resource Tagging:**
+- Early resource tagging to prevent IAM role leaks during cluster creation
+- Tags applied immediately after infrastructure provisioning
+- Prevents orphaned IAM resources if cluster creation fails mid-process
+
+**Addon Improvements:**
+- Migration Toolkit for Applications (MTA) versions 6.0-8.1 support
+- Tackle instance manifests added to MTA addon
+- Migration Toolkit for Containers (MTC) restricted to version 1.8
+- Default MTA version set to 8.0
+
+**UI/UX Improvements:**
+- Auto-refresh cluster status during post-deployment configuration
+- Improved error messaging for orphan resource deletion dialog
+- Removed redundant "(Pending)" text from post-config UI
+
+### Changed
+- Standardized `ManagedBy` tag value to `ocpctl` across all AWS resources
+- Orphan detector now accepts legacy `ManagedBy=cluster-control-plane` tag for backward compatibility
+
+### Fixed
+- Publish strategy now correctly configured in AWS install-config to prevent DNS pointing to wrong load balancer
+- IAM roles properly removed from instance profiles before deletion (prevents deletion failures)
+- FAILED clusters can now be destroyed without requiring S3 artifacts
+- Orphan detector accepts both current and legacy ManagedBy tag formats
+- Duplicate addon selection summary text removed from UI
+
+### Deployment
+- Version: `v0.20260405.2d69e13`
+- Deployed to production API (52.90.135.148)
+- Deployed to autoscale workers (via S3 and ASG refresh)
+- All bootstrap artifacts synced to S3
+
 ## [0.20.0] - 2024-03-17
 
 ### Added - Phase 2: AWS Resource Tagging (Issue #15)
@@ -245,14 +294,16 @@ Example: `v0.20260317.bca1feb`
 
 | Version | Status | Support Until |
 |---------|--------|---------------|
-| 0.20.x | ✅ Active | Ongoing |
-| 0.19.x | ⚠️ Deprecated | 2024-04-17 (30 days) |
+| 0.21.x | ✅ Active | Ongoing |
+| 0.20.x | ✅ Supported | 2026-05-05 (30 days) |
+| 0.19.x | ❌ End of Life | 2024-04-17 |
 | 0.18.x | ❌ End of Life | 2024-03-17 |
 
 ### Upgrade Paths
 
-- **0.19.x → 0.20.x**: Safe upgrade, automatic database migrations
-- **0.18.x → 0.20.x**: Safe upgrade via 0.19.x recommended
+- **0.20.x → 0.21.x**: Safe upgrade, automatic database migrations
+- **0.19.x → 0.21.x**: Safe upgrade via 0.20.x recommended
+- **0.18.x → 0.21.x**: Safe upgrade via 0.19.x → 0.20.x recommended
 - **Downgrade**: ❌ Not supported
 
 **Always backup database before upgrading.**
@@ -291,4 +342,4 @@ Changes should be documented in this changelog using the following categories:
 
 ---
 
-**Last Updated:** March 17, 2024
+**Last Updated:** April 5, 2026
