@@ -185,8 +185,11 @@ fi
 echo ""
 
 # Deploy workers
+FAILED_WORKERS=()
 for host in "${WORKER_HOSTS[@]}"; do
     echo -e "${YELLOW}Deploying worker to $host...${NC}"
+
+    WORKER_FAILED=false
 
     # Create versioned directory
     ssh -i "$SSH_KEY" ec2-user@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
@@ -237,23 +240,46 @@ for host in "${WORKER_HOSTS[@]}"; do
             echo -e "${GREEN}✓ Worker version verified: $DEPLOYED_VERSION${NC}"
         else
             echo -e "${RED}✗ Worker version mismatch! Expected: $VERSION, Got: $DEPLOYED_VERSION${NC}"
+            WORKER_FAILED=true
+            FAILED_WORKERS+=("$host (version mismatch)")
         fi
     else
         echo -e "${RED}✗ Worker on $host failed to start${NC}"
+        WORKER_FAILED=true
+        FAILED_WORKERS+=("$host (failed to start)")
     fi
 
     echo ""
 done
 
-echo -e "${GREEN}=== Deployment Complete ===${NC}"
-echo ""
-echo -e "${BLUE}Deployed Version: ${VERSION}${NC}"
-echo -e "${BLUE}Commit: ${COMMIT}${NC}"
-echo ""
-echo "Verify deployment:"
-echo "  API:    curl http://ocpctl.mg.dog8code.com/version"
-echo "  Worker: ssh -i $SSH_KEY ec2-user@52.90.135.148 'curl -s http://localhost:8081/version'"
-echo ""
-echo "Rollback to previous version:"
-echo "  ssh -i $SSH_KEY ec2-user@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
-echo "  ./deploy.sh <previous-version>"
+# Deployment summary
+if [ ${#FAILED_WORKERS[@]} -eq 0 ]; then
+    echo -e "${GREEN}=== Deployment Complete ===${NC}"
+    echo ""
+    echo -e "${BLUE}Deployed Version: ${VERSION}${NC}"
+    echo -e "${BLUE}Commit: ${COMMIT}${NC}"
+    echo ""
+    echo "Verify deployment:"
+    echo "  API:    curl http://ocpctl.mg.dog8code.com/version"
+    echo "  Worker: ssh -i $SSH_KEY ec2-user@52.90.135.148 'curl -s http://localhost:8081/version'"
+    echo ""
+    echo "Rollback to previous version:"
+    echo "  ssh -i $SSH_KEY ec2-user@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
+    echo "  ./deploy.sh <previous-version>"
+
+    exit 0
+else
+    echo -e "${RED}=== Deployment FAILED ===${NC}"
+    echo ""
+    echo -e "${RED}Failed workers (${#FAILED_WORKERS[@]}):${NC}"
+    for worker in "${FAILED_WORKERS[@]}"; do
+        echo -e "${RED}  ✗ $worker${NC}"
+    done
+    echo ""
+    echo -e "${YELLOW}Rollback instructions:${NC}"
+    echo "  ssh -i $SSH_KEY ec2-user@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
+    echo "  ./deploy.sh <previous-version>"
+    echo ""
+
+    exit 1
+fi
