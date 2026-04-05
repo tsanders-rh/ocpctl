@@ -415,8 +415,8 @@ export default function ClusterDetailPage() {
                   let consoleURL = '';
                   const region = cluster.region;
 
-                  // Get infraID from outputs if available
-                  const infraID = outputs?.infra_id;
+                  // Get infraID from outputs if available (may be in metadata or as a property)
+                  const infraID = (outputs as any)?.infra_id || (outputs as any)?.metadata?.infraID;
 
                   if (infraID) {
                     // OpenShift on AWS - link to EC2 instances filtered by infraID

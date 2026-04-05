@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import { useClusters } from "@/lib/hooks/useClusters";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -18,12 +19,14 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { formatDate, formatTTL, getTTLWarningLevel } from "@/lib/utils/formatters";
-import { Plus, Filter, X, Search, RefreshCw, Star, AlertCircle, Clock } from "lucide-react";
+import { Plus, Filter, X, Search, RefreshCw, Star, AlertCircle, Clock, Layers } from "lucide-react";
 import { Platform, ClusterStatus, UserRole } from "@/types/api";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function ClustersPage() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const isAdmin = user?.role === UserRole.ADMIN;
 
@@ -402,13 +405,24 @@ export default function ClustersPage() {
             <tbody>
               {sortedClusters.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={isAdmin ? 11 : 10}
-                    className="p-8 text-center text-muted-foreground"
-                  >
-                    {hasActiveFilters
-                      ? "No clusters match the selected filters or search."
-                      : "No clusters found. Create your first cluster to get started."}
+                  <td colSpan={isAdmin ? 11 : 10} className="p-0">
+                    <EmptyState
+                      icon={Layers}
+                      title={hasActiveFilters ? "No clusters found" : "No clusters yet"}
+                      description={
+                        hasActiveFilters
+                          ? "No clusters match your current filters or search query. Try adjusting your filters or clearing your search."
+                          : "Get started by creating your first Kubernetes cluster. Choose from OpenShift, EKS, or IKS platforms."
+                      }
+                      action={
+                        !hasActiveFilters
+                          ? {
+                              label: "Create your first cluster",
+                              onClick: () => router.push("/clusters/new")
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
