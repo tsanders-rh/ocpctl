@@ -593,7 +593,8 @@ Internal use only - All rights reserved.
 - **[AWS Resource Management](docs/user-guide/aws-resource-management.md)** - **NEW!** Resource tagging, orphan detection, cost attribution
 
 ### 🔧 Operations
-- **[Resource Tagging Operations](docs/operations/resource-tagging-operations.md)** - **NEW!** Operational procedures for AWS resource tagging
+- **[Disk Space Management](docs/operations/DISK_SPACE_MANAGEMENT.md)** - **NEW!** Automated cleanup, monitoring, and troubleshooting
+- **[Resource Tagging Operations](docs/operations/resource-tagging-operations.md)** - Operational procedures for AWS resource tagging
 
 ### 📚 Reference Documentation
 - **[Architecture Overview](docs/architecture/architecture.md)** - System architecture and design
