@@ -346,6 +346,35 @@ func (s *JobStore) IncrementAttempt(ctx context.Context, id string) error {
 	return nil
 }
 
+// MarkFailedForRetry marks a job as failed but resets it to RETRYING status for automatic retry.
+// This increments the attempt counter, records the error details, and resets timing fields.
+// Used when a job fails due to transient errors (worker crashes, timeouts) that are worth retrying.
+// Returns ErrNotFound if the job does not exist.
+func (s *JobStore) MarkFailedForRetry(ctx context.Context, id string, errorCode, errorMessage string) error {
+	query := `
+		UPDATE jobs
+		SET attempt = attempt + 1,
+			status = $1,
+			error_code = $2,
+			error_message = $3,
+			started_at = NULL,
+			ended_at = NULL,
+			updated_at = NOW()
+		WHERE id = $4
+	`
+
+	result, err := s.pool.Exec(ctx, query, types.JobStatusRetrying, errorCode, errorMessage, id)
+	if err != nil {
+		return fmt.Errorf("mark job failed for retry: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // GetStuckJobs returns jobs in RUNNING status for longer than the specified threshold duration.
 // These jobs may have failed without updating their status, typically due to worker crashes.
 // Jobs are ordered by started_at in ascending order (oldest stuck jobs first).

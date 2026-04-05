@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -18,52 +21,70 @@ import (
 // HandleAWSDestroy handles AWS-specific cluster cleanup including CCO IAM roles, OIDC provider, and Route53 hosted zone.
 // This should be called AFTER openshift-install destroy cluster completes to clean up resources created by ccoctl.
 // Uses the infrastructure ID from metadata.json to identify and delete AWS resources.
+// If metadata.json is missing, falls back to direct AWS SDK cleanup using ClusterName tags.
 func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cluster, inst *installer.Installer, workDir string) error {
 	log.Printf("AWS cluster cleanup: cleaning up CCO IAM roles and OIDC provider for %s", cluster.Name)
 
 	// Extract infraID from metadata.json
 	// ccoctl uses the infraID (not cluster name) to identify resources
 	infraID, err := h.getInfraID(workDir)
+	usedFallback := false
+
 	if err != nil {
 		log.Printf("Warning: could not extract infraID from metadata.json: %v", err)
-		log.Printf("Attempting cleanup with cluster name as fallback (may not find resources)")
-		infraID = cluster.Name
+		log.Printf("Will use direct AWS SDK cleanup as fallback")
+		usedFallback = true
 	} else {
 		log.Printf("Using infraID from metadata.json: %s", infraID)
 	}
 
-	// Run ccoctl aws delete to clean up IAM roles and OIDC provider
-	// ccoctl aws delete --name <infra-id> --region <region>
-	cmdCtx, cancel := context.WithTimeout(ctx, DNSCleanupTimeout)
-	defer cancel()
+	// Try ccoctl cleanup if we have infraID
+	ccoctlSuccess := false
+	if !usedFallback {
+		// Run ccoctl aws delete to clean up IAM roles and OIDC provider
+		// ccoctl aws delete --name <infra-id> --region <region>
+		cmdCtx, cancel := context.WithTimeout(ctx, DNSCleanupTimeout)
+		defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "ccoctl", "aws", "delete",
-		"--name", infraID,
-		"--region", cluster.Region,
-	)
+		cmd := exec.CommandContext(cmdCtx, "ccoctl", "aws", "delete",
+			"--name", infraID,
+			"--region", cluster.Region,
+		)
 
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+		output, err := cmd.CombinedOutput()
+		outputStr := string(output)
 
-	if err != nil {
-		// Check if resources were already deleted (not an error)
-		if strings.Contains(outputStr, "NoSuchEntity") ||
-			strings.Contains(outputStr, "not found") ||
-			strings.Contains(outputStr, "does not exist") {
-			log.Printf("CCO resources for %s already deleted or not found", cluster.Name)
-			return nil
+		if err != nil {
+			// Check if resources were already deleted (not an error)
+			if strings.Contains(outputStr, "NoSuchEntity") ||
+				strings.Contains(outputStr, "not found") ||
+				strings.Contains(outputStr, "does not exist") {
+				log.Printf("CCO resources for %s already deleted or not found", cluster.Name)
+				ccoctlSuccess = true
+			} else {
+				// ccoctl failed - will try fallback cleanup
+				log.Printf("Warning: ccoctl aws delete failed for %s: %v", cluster.Name, err)
+				log.Printf("ccoctl output:\n%s", outputStr)
+				log.Printf("Will attempt fallback IAM cleanup using ClusterName tags")
+				usedFallback = true
+			}
+		} else {
+			log.Printf("Successfully cleaned up AWS CCO resources for %s using ccoctl", cluster.Name)
+			log.Printf("ccoctl output:\n%s", outputStr)
+			ccoctlSuccess = true
 		}
-
-		// Log the error but don't fail - resources might be partially deleted
-		log.Printf("Warning: ccoctl aws delete encountered errors for %s: %v", cluster.Name, err)
-		log.Printf("ccoctl output:\n%s", outputStr)
-
-		// Return error for visibility but don't fail the destroy job
-		return fmt.Errorf("ccoctl aws delete: %w\nOutput: %s", err, outputStr)
 	}
 
-	log.Printf("Successfully cleaned up AWS CCO resources for %s", cluster.Name)
-	log.Printf("ccoctl output:\n%s", outputStr)
+	// If ccoctl failed or metadata.json was missing, use fallback cleanup
+	if usedFallback && !ccoctlSuccess {
+		log.Printf("Attempting direct AWS SDK cleanup for cluster %s", cluster.Name)
+		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster); err != nil {
+			log.Printf("Warning: fallback IAM cleanup encountered errors: %v", err)
+			// Don't fail the destroy job - some resources might have been cleaned up
+		} else {
+			log.Printf("Successfully cleaned up IAM resources using fallback method")
+		}
+	}
 
 	// Clean up Route53 hosted zone
 	if err := h.deleteRoute53HostedZone(ctx, cluster); err != nil {
@@ -245,4 +266,180 @@ func getRecordSetJSON(jsonOutput []byte, name, recordType string) string {
 	}
 
 	return "{}"
+}
+
+// cleanupIAMResourcesByClusterName finds and deletes IAM roles and OIDC providers by ClusterName tag.
+// This is a fallback method used when metadata.json is missing or ccoctl cleanup fails.
+// Only deletes resources tagged with ManagedBy=ocpctl to avoid deleting user-created resources.
+func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster) error {
+	// Load AWS SDK config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Track cleanup results
+	deletedRoles := 0
+	deletedProviders := 0
+	errors := []string{}
+
+	// Find and delete IAM roles
+	log.Printf("Searching for IAM roles with ClusterName=%s and ManagedBy=ocpctl", cluster.Name)
+
+	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("list roles: %v", err))
+			break
+		}
+
+		for _, role := range page.Roles {
+			roleName := aws.ToString(role.RoleName)
+
+			// Get role tags
+			tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+				RoleName: role.RoleName,
+			})
+			if err != nil {
+				log.Printf("Warning: failed to get tags for role %s: %v", roleName, err)
+				continue
+			}
+
+			// Check if this role belongs to our cluster
+			var matchesCluster bool
+			var managedByOcpctl bool
+
+			for _, tag := range tagsResult.Tags {
+				key := aws.ToString(tag.Key)
+				value := aws.ToString(tag.Value)
+
+				if key == "ClusterName" && value == cluster.Name {
+					matchesCluster = true
+				}
+				if key == "ManagedBy" && (value == "ocpctl" || value == "cluster-control-plane") {
+					managedByOcpctl = true
+				}
+			}
+
+			// Only delete roles that match our cluster and are managed by ocpctl
+			if matchesCluster && managedByOcpctl {
+				log.Printf("Deleting IAM role: %s", roleName)
+
+				// Detach all policies before deleting role
+				if err := h.detachRolePolicies(ctx, iamClient, roleName); err != nil {
+					errors = append(errors, fmt.Sprintf("detach policies from %s: %v", roleName, err))
+					continue
+				}
+
+				// Delete the role
+				_, err := iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+					RoleName: role.RoleName,
+				})
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("delete role %s: %v", roleName, err))
+				} else {
+					deletedRoles++
+					log.Printf("Deleted IAM role: %s", roleName)
+				}
+			}
+		}
+	}
+
+	// Find and delete OIDC providers
+	log.Printf("Searching for OIDC providers with ClusterName=%s", cluster.Name)
+
+	providersResult, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("list OIDC providers: %v", err))
+	} else {
+		for _, provider := range providersResult.OpenIDConnectProviderList {
+			providerArn := aws.ToString(provider.Arn)
+
+			// Get provider details and tags
+			detailsResult, err := iamClient.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+				OpenIDConnectProviderArn: provider.Arn,
+			})
+			if err != nil {
+				log.Printf("Warning: failed to get OIDC provider details for %s: %v", providerArn, err)
+				continue
+			}
+
+			// Check if this provider belongs to our cluster
+			var matchesCluster bool
+			for _, tag := range detailsResult.Tags {
+				if aws.ToString(tag.Key) == "ClusterName" && aws.ToString(tag.Value) == cluster.Name {
+					matchesCluster = true
+					break
+				}
+			}
+
+			if matchesCluster {
+				log.Printf("Deleting OIDC provider: %s", providerArn)
+
+				_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+					OpenIDConnectProviderArn: provider.Arn,
+				})
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("delete OIDC provider %s: %v", providerArn, err))
+				} else {
+					deletedProviders++
+					log.Printf("Deleted OIDC provider: %s", providerArn)
+				}
+			}
+		}
+	}
+
+	log.Printf("IAM cleanup summary: deleted %d roles, %d OIDC providers", deletedRoles, deletedProviders)
+
+	if len(errors) > 0 {
+		return fmt.Errorf("encountered %d errors during cleanup: %v", len(errors), strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// detachRolePolicies detaches all managed and inline policies from an IAM role
+func (h *DestroyHandler) detachRolePolicies(ctx context.Context, iamClient *iam.Client, roleName string) error {
+	// Detach managed policies
+	attachedPolicies, err := iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list attached policies: %w", err)
+	}
+
+	for _, policy := range attachedPolicies.AttachedPolicies {
+		_, err := iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: policy.PolicyArn,
+		})
+		if err != nil {
+			return fmt.Errorf("detach policy %s: %w", aws.ToString(policy.PolicyArn), err)
+		}
+		log.Printf("Detached policy %s from role %s", aws.ToString(policy.PolicyName), roleName)
+	}
+
+	// Delete inline policies
+	inlinePolicies, err := iamClient.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list inline policies: %w", err)
+	}
+
+	for _, policyName := range inlinePolicies.PolicyNames {
+		_, err := iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if err != nil {
+			return fmt.Errorf("delete inline policy %s: %w", policyName, err)
+		}
+		log.Printf("Deleted inline policy %s from role %s", policyName, roleName)
+	}
+
+	return nil
 }

@@ -19,6 +19,14 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ocpctl-worker
 
+# Graceful shutdown configuration
+# Give jobs up to 1 hour to complete on shutdown
+TimeoutStopSec=3600
+# Send SIGTERM to main process first, only SIGKILL children if timeout exceeded
+KillMode=mixed
+# Use SIGTERM for graceful shutdown (default, but explicit for clarity)
+KillSignal=SIGTERM
+
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096

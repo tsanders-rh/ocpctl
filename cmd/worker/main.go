@@ -89,12 +89,45 @@ func (h *HealthCheckServer) versionHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// statusHandler returns detailed worker status including active jobs
+func (h *HealthCheckServer) statusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get active jobs from worker
+	activeJobs := h.worker.GetActiveJobs()
+
+	// Format active jobs for response
+	jobs := make([]map[string]interface{}, 0, len(activeJobs))
+	for _, job := range activeJobs {
+		duration := time.Since(job.StartedAt)
+		jobs = append(jobs, map[string]interface{}{
+			"jobId":       job.JobID,
+			"jobType":     job.JobType,
+			"clusterId":   job.ClusterID,
+			"clusterName": job.ClusterName,
+			"startedAt":   job.StartedAt.UTC().Format(time.RFC3339),
+			"duration":    duration.String(),
+			"durationSec": int(duration.Seconds()),
+		})
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "running",
+		"ready":      h.ready,
+		"activeJobs": len(jobs),
+		"jobs":       jobs,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 // startHealthCheckServer starts the health check HTTP server
 func startHealthCheckServer(hcs *HealthCheckServer, port string) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", hcs.healthHandler)
 	mux.HandleFunc("/ready", hcs.readyHandler)
 	mux.HandleFunc("/version", hcs.versionHandler)
+	mux.HandleFunc("/status", hcs.statusHandler)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -330,7 +363,10 @@ func main() {
 	// Mark as not ready during shutdown
 	healthCheck.ready = false
 
-	// Stop worker and janitor
+	// Stop worker gracefully (waits for running jobs to complete)
+	w.Stop()
+
+	// Cancel contexts
 	workerCancel()
 	janitorCancel()
 

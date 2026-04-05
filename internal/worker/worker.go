@@ -173,17 +173,28 @@ func getEC2ASGName() string {
 	return string(asgNameBytes)
 }
 
+// ActiveJobInfo tracks information about a currently running job
+type ActiveJobInfo struct {
+	JobID       string
+	JobType     string
+	ClusterID   string
+	ClusterName string
+	StartedAt   time.Time
+}
+
 // Worker processes background jobs
 type Worker struct {
-	config    *Config
-	store     *store.Store
-	processor *JobProcessor
-	metrics   *metrics.Publisher
-	asgName   string
-	running   bool
-	ctx       context.Context
-	cancel    context.CancelFunc
-	jobWg     sync.WaitGroup // Tracks running job goroutines for graceful shutdown
+	config     *Config
+	store      *store.Store
+	processor  *JobProcessor
+	metrics    *metrics.Publisher
+	asgName    string
+	running    bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	jobWg      sync.WaitGroup               // Tracks running job goroutines for graceful shutdown
+	activeJobs map[string]*ActiveJobInfo    // Tracks currently running jobs
+	jobsMu     sync.RWMutex                 // Protects activeJobs map
 }
 
 // NewWorker creates a new worker instance
@@ -205,12 +216,13 @@ func NewWorker(config *Config, st *store.Store, profileRegistry *profile.Registr
 	}
 
 	return &Worker{
-		config:    config,
-		store:     st,
-		processor: NewJobProcessor(config, st, profileRegistry),
-		metrics:   metricsPublisher,
-		asgName:   asgName,
-		running:   false,
+		config:     config,
+		store:      st,
+		processor:  NewJobProcessor(config, st, profileRegistry),
+		metrics:    metricsPublisher,
+		asgName:    asgName,
+		running:    false,
+		activeJobs: make(map[string]*ActiveJobInfo),
 	}
 }
 
@@ -291,6 +303,40 @@ func (w *Worker) Stop() {
 	case <-time.After(WorkerShutdownTimeout):
 		log.Printf("WARNING: Timeout waiting for jobs to complete, some jobs may still be running")
 	}
+}
+
+// registerJob adds a job to the active jobs list
+func (w *Worker) registerJob(jobID, jobType, clusterID, clusterName string) {
+	w.jobsMu.Lock()
+	defer w.jobsMu.Unlock()
+
+	w.activeJobs[jobID] = &ActiveJobInfo{
+		JobID:       jobID,
+		JobType:     jobType,
+		ClusterID:   clusterID,
+		ClusterName: clusterName,
+		StartedAt:   time.Now(),
+	}
+}
+
+// unregisterJob removes a job from the active jobs list
+func (w *Worker) unregisterJob(jobID string) {
+	w.jobsMu.Lock()
+	defer w.jobsMu.Unlock()
+
+	delete(w.activeJobs, jobID)
+}
+
+// GetActiveJobs returns a snapshot of currently running jobs
+func (w *Worker) GetActiveJobs() []*ActiveJobInfo {
+	w.jobsMu.RLock()
+	defer w.jobsMu.RUnlock()
+
+	jobs := make([]*ActiveJobInfo, 0, len(w.activeJobs))
+	for _, job := range w.activeJobs {
+		jobs = append(jobs, job)
+	}
+	return jobs
 }
 
 // poll fetches and processes pending jobs
@@ -388,6 +434,9 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	// Signal WaitGroup when job completes (for graceful shutdown)
 	defer w.jobWg.Done()
 
+	// Unregister job when it completes (success or failure)
+	defer w.unregisterJob(job.ID)
+
 	// Check if context is already cancelled (worker shutting down)
 	select {
 	case <-ctx.Done():
@@ -431,6 +480,9 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 		log.Printf("Failed to mark job %s as started: %v", job.ID, err)
 		return
 	}
+
+	// Register job as active (for health endpoint and monitoring)
+	w.registerJob(job.ID, string(job.JobType), job.ClusterID, cluster.Name)
 
 	// Delete old deployment logs from previous attempts
 	// This ensures each retry starts with a clean slate and sequence numbers start from 0

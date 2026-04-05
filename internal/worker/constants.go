@@ -8,7 +8,7 @@ const (
 	OcpctlBaseDir = "/opt/ocpctl" // Base directory for ocpctl installation
 
 	// Worker lifecycle timeouts
-	WorkerShutdownTimeout = 30 * time.Second // Maximum time to wait for jobs to complete during shutdown
+	WorkerShutdownTimeout = 55 * time.Minute // Maximum time to wait for jobs to complete during shutdown (aligns with systemd TimeoutStopSec=3600)
 	IMDSRequestTimeout    = 2 * time.Second  // Timeout for EC2 instance metadata requests
 
 	// Job processing timeouts

@@ -260,40 +260,58 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 	log.Printf("Found %d stuck jobs", len(stuck))
 
 	for _, job := range stuck {
-		log.Printf("Detected stuck job %s (type=%s, cluster=%s, started=%s)",
-			job.ID, job.JobType, job.ClusterID, job.StartedAt)
+		log.Printf("Detected stuck job %s (type=%s, cluster=%s, started=%s, attempt=%d/%d)",
+			job.ID, job.JobType, job.ClusterID, job.StartedAt, job.Attempt, job.MaxAttempts)
 
-		// Mark job as failed
-		errorCode := "STUCK_JOB_TIMEOUT"
-		errorMessage := "Job exceeded maximum runtime and was terminated by janitor"
-
-		if err := j.store.Jobs.MarkFailed(ctx, job.ID, errorCode, errorMessage); err != nil {
-			log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
-			continue
-		}
-
-		// Release any locks held by this job
+		// Release any locks held by this job first
 		if err := j.store.JobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
 			log.Printf("Failed to release lock for cluster %s: %v", job.ClusterID, err)
 		}
 
-		// Handle cluster status based on job type
-		if job.JobType == types.JobTypeDestroy || job.JobType == types.JobTypeJanitorDestroy {
-			// For destroy jobs, mark cluster as DESTROY_FAILED since we cannot verify completion
-			// The destroy job timed out or got stuck, so we don't know if AWS resources were deleted
-			// An admin can manually verify and mark as DESTROYED, or reconciliation can detect drift
-			log.Printf("Marking cluster %s as DESTROY_FAILED (stuck destroy job - verification required)", job.ClusterID)
-			if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusDestroyFailed); err != nil {
-				log.Printf("Failed to mark cluster %s as destroy failed: %v", job.ClusterID, err)
-			}
-		} else {
-			// For other job types, mark cluster as FAILED
-			if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
-				log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
-			}
-		}
+		// Determine if job can be retried
+		canRetry := job.Attempt < job.MaxAttempts
 
-		log.Printf("Marked stuck job %s as failed and released locks", job.ID)
+		if canRetry {
+			// Reset job to PENDING for retry
+			log.Printf("Resetting stuck job %s to PENDING for retry (attempt %d/%d)", job.ID, job.Attempt+1, job.MaxAttempts)
+			errorCode := "WORKER_CRASHED"
+			errorMessage := "Job exceeded maximum runtime (likely worker crash), resetting for retry"
+
+			if err := j.store.Jobs.MarkFailedForRetry(ctx, job.ID, errorCode, errorMessage); err != nil {
+				log.Printf("Failed to reset job %s for retry: %v", job.ID, err)
+				continue
+			}
+
+			log.Printf("Reset stuck job %s to PENDING for retry", job.ID)
+		} else {
+			// No more retries available, mark as permanently failed
+			log.Printf("Stuck job %s has exhausted retries (%d/%d), marking as FAILED", job.ID, job.Attempt, job.MaxAttempts)
+			errorCode := "STUCK_JOB_TIMEOUT"
+			errorMessage := "Job exceeded maximum runtime and exhausted all retry attempts"
+
+			if err := j.store.Jobs.MarkFailed(ctx, job.ID, errorCode, errorMessage); err != nil {
+				log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
+				continue
+			}
+
+			// Handle cluster status based on job type (only when permanently failing)
+			if job.JobType == types.JobTypeDestroy || job.JobType == types.JobTypeJanitorDestroy {
+				// For destroy jobs, mark cluster as DESTROY_FAILED since we cannot verify completion
+				// The destroy job timed out or got stuck, so we don't know if AWS resources were deleted
+				// An admin can manually verify and mark as DESTROYED, or reconciliation can detect drift
+				log.Printf("Marking cluster %s as DESTROY_FAILED (stuck destroy job - verification required)", job.ClusterID)
+				if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusDestroyFailed); err != nil {
+					log.Printf("Failed to mark cluster %s as destroy failed: %v", job.ClusterID, err)
+				}
+			} else {
+				// For other job types, mark cluster as FAILED
+				if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+					log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+				}
+			}
+
+			log.Printf("Marked stuck job %s as permanently failed", job.ID)
+		}
 	}
 
 	return nil
