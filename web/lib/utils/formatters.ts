@@ -40,6 +40,22 @@ export function formatTTL(destroyAt: string | null): string {
   }
 }
 
+export function getTTLWarningLevel(destroyAt: string | null): 'critical' | 'warning' | 'normal' {
+  if (!destroyAt) return 'normal';
+
+  try {
+    const now = new Date();
+    const destroy = parseISO(destroyAt);
+    const hoursRemaining = (destroy.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    if (hoursRemaining < 1) return 'critical';
+    if (hoursRemaining < 6) return 'warning';
+    return 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

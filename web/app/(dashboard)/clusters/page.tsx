@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import { useClusters } from "@/lib/hooks/useClusters";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -17,16 +18,28 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
-import { formatDate, formatTTL } from "@/lib/utils/formatters";
-import { Plus, Filter, X } from "lucide-react";
+import { formatDate, formatTTL, getTTLWarningLevel } from "@/lib/utils/formatters";
+import { Plus, Filter, X, Search, RefreshCw, Star, AlertCircle, Clock, Layers } from "lucide-react";
 import { Platform, ClusterStatus, UserRole } from "@/types/api";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function ClustersPage() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const isAdmin = user?.role === UserRole.ADMIN;
 
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('favorite-clusters');
+      return new Set(stored ? JSON.parse(stored) : []);
+    }
+    return new Set();
+  });
   const [filters, setFilters] = useState<{
     platform?: Platform;
     status?: ClusterStatus;
@@ -36,7 +49,7 @@ export default function ClustersPage() {
     version?: string;
   }>({});
 
-  const { data, isLoading, error } = useClusters({
+  const { data, isLoading, error, refetch } = useClusters({
     page,
     per_page: 20,
     ...filters,
@@ -69,12 +82,26 @@ export default function ClustersPage() {
 
   const clearFilters = () => {
     setFilters({});
+    setSearchQuery("");
     setPage(1);
+  };
+
+  const toggleFavorite = (clusterId: string) => {
+    const newFavorites = new Set(favorites);
+    if (newFavorites.has(clusterId)) {
+      newFavorites.delete(clusterId);
+    } else {
+      newFavorites.add(clusterId);
+    }
+    setFavorites(newFavorites);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('favorite-clusters', JSON.stringify(Array.from(newFavorites)));
+    }
   };
 
   const hasActiveFilters = Object.keys(filters).some(
     (key) => filters[key as keyof typeof filters]
-  );
+  ) || searchQuery.length > 0;
 
   if (isLoading) {
     return (
@@ -105,12 +132,42 @@ export default function ClustersPage() {
 
   const clusters = data.data || [];
 
+  // Filter clusters by search query
+  const filteredClusters = useMemo(() => {
+    if (!searchQuery) return clusters;
+    const query = searchQuery.toLowerCase();
+    return clusters.filter(c =>
+      c.name.toLowerCase().includes(query) ||
+      c.team.toLowerCase().includes(query) ||
+      c.region.toLowerCase().includes(query) ||
+      (c.owner && c.owner.toLowerCase().includes(query)) ||
+      c.profile.toLowerCase().includes(query)
+    );
+  }, [clusters, searchQuery]);
+
+  // Sort clusters: favorites first, then by created date
+  const sortedClusters = useMemo(() => {
+    return [...filteredClusters].sort((a, b) => {
+      const aFav = favorites.has(a.id);
+      const bFav = favorites.has(b.id);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+      // If both are favorites or both are not, sort by created date (newest first)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [filteredClusters, favorites]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
             {isAdmin ? "All Clusters" : "My Clusters"}
+            {data.pagination && (
+              <Badge variant="secondary" className="text-base font-normal">
+                {data.pagination.total}
+              </Badge>
+            )}
           </h1>
           <p className="text-muted-foreground">
             {isAdmin
@@ -118,16 +175,44 @@ export default function ClustersPage() {
               : "Manage your OpenShift clusters"}
           </p>
         </div>
-        <Link href="/clusters/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Cluster
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
-        </Link>
+          <Link href="/clusters/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Cluster
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      {/* Filters */}
+      {/* Search and Filters */}
       <div className="space-y-4">
+        {/* Search Bar */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search clusters by name, team, region, owner, or profile..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* Filter Controls */}
         <div className="flex items-center gap-2">
           <Button
             variant={showFilters ? "default" : "outline"}
@@ -302,6 +387,7 @@ export default function ClustersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
+                <th className="p-4 text-left text-sm font-medium w-12"></th>
                 <th className="p-4 text-left text-sm font-medium">Name</th>
                 <th className="p-4 text-left text-sm font-medium">Status</th>
                 <th className="p-4 text-left text-sm font-medium">Platform</th>
@@ -317,23 +403,49 @@ export default function ClustersPage() {
               </tr>
             </thead>
             <tbody>
-              {clusters.length === 0 ? (
+              {sortedClusters.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={isAdmin ? 10 : 9}
-                    className="p-8 text-center text-muted-foreground"
-                  >
-                    {hasActiveFilters
-                      ? "No clusters match the selected filters."
-                      : "No clusters found. Create your first cluster to get started."}
+                  <td colSpan={isAdmin ? 11 : 10} className="p-0">
+                    <EmptyState
+                      icon={Layers}
+                      title={hasActiveFilters ? "No clusters found" : "No clusters yet"}
+                      description={
+                        hasActiveFilters
+                          ? "No clusters match your current filters or search query. Try adjusting your filters or clearing your search."
+                          : "Get started by creating your first Kubernetes cluster. Choose from OpenShift, EKS, or IKS platforms."
+                      }
+                      action={
+                        !hasActiveFilters
+                          ? {
+                              label: "Create your first cluster",
+                              onClick: () => router.push("/clusters/new")
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
-                clusters.map((cluster) => (
+                sortedClusters.map((cluster) => (
                   <tr
                     key={cluster.id}
                     className="border-b last:border-0 hover:bg-muted/50"
                   >
+                    <td className="p-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(cluster.id);
+                        }}
+                      >
+                        <Star
+                          className={`h-4 w-4 ${favorites.has(cluster.id) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`}
+                        />
+                      </Button>
+                    </td>
                     <td className="p-4">
                       <Link
                         href={`/clusters/${cluster.id}`}
@@ -355,7 +467,21 @@ export default function ClustersPage() {
                       {cluster.profile}
                     </td>
                     <td className="p-4 text-sm">
-                      {formatTTL(cluster.destroy_at)}
+                      <div className="flex items-center gap-2">
+                        {getTTLWarningLevel(cluster.destroy_at) === 'critical' && (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        )}
+                        {getTTLWarningLevel(cluster.destroy_at) === 'warning' && (
+                          <Clock className="h-4 w-4 text-yellow-500" />
+                        )}
+                        <span className={
+                          getTTLWarningLevel(cluster.destroy_at) === 'critical' ? 'text-red-600 font-semibold' :
+                          getTTLWarningLevel(cluster.destroy_at) === 'warning' ? 'text-yellow-600 font-medium' :
+                          ''
+                        }>
+                          {formatTTL(cluster.destroy_at)}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
                       {formatDate(cluster.created_at)}
