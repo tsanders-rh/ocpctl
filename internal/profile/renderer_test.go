@@ -236,7 +236,7 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 			Name:       "test-shared-vpc",
 			Platform:   "aws",
 			Version:    "4.20.3",
-			Profile:    "aws-sno-shared-vpc",
+			Profile:    "aws-sno-shared",
 			Region:     "us-east-1",
 			BaseDomain: "mg.dog8code.com",
 			Owner:      "test-user",
@@ -254,8 +254,8 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 		configStr := string(config)
 		// Should contain subnets array
 		assert.Contains(t, configStr, "subnets:")
-		assert.Contains(t, configStr, "subnet-071b5b7ad916b433c")
-		assert.Contains(t, configStr, "subnet-0f522e488c8d000a8")
+		assert.Contains(t, configStr, "subnet-0656a5d299c74b0eb")
+		assert.Contains(t, configStr, "subnet-04b32b2bd4012eb32")
 
 		// Verify YAML structure
 		var installConfig map[string]interface{}
@@ -265,7 +265,7 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 		platform := installConfig["platform"].(map[string]interface{})
 		aws := platform["aws"].(map[string]interface{})
 		subnets := aws["subnets"].([]interface{})
-		assert.Len(t, subnets, 5, "should have 5 subnets configured")
+		assert.Len(t, subnets, 6, "should have 6 subnets configured")
 	})
 
 	t.Run("omits subnets when not specified in profile", func(t *testing.T) {
@@ -301,5 +301,106 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 		aws := platform["aws"].(map[string]interface{})
 		_, hasSubnets := aws["subnets"]
 		assert.False(t, hasSubnets, "should not have subnets field")
+	})
+
+	t.Run("includes publish field set to External for public clusters", func(t *testing.T) {
+		req := &policy.CreateClusterRequest{
+			Name:       "test-public-cluster",
+			Platform:   "aws",
+			Version:    "4.20.3",
+			Profile:    "aws-sno-test", // Non-private cluster
+			Region:     "us-east-1",
+			BaseDomain: "mg.dog8code.com",
+			Owner:      "test-user",
+			Team:       "platform-team",
+			CostCenter: "engineering",
+			TTLHours:   24,
+		}
+
+		pullSecret := `{"auths":{}}`
+		tags := map[string]string{}
+
+		config, err := renderer.RenderInstallConfig(req, pullSecret, tags)
+		require.NoError(t, err)
+
+		// Verify YAML structure
+		var installConfig map[string]interface{}
+		err = yaml.Unmarshal(config, &installConfig)
+		require.NoError(t, err)
+
+		// Verify publish field is set to External
+		publish, ok := installConfig["publish"]
+		assert.True(t, ok, "install-config must have publish field")
+		assert.Equal(t, "External", publish, "public clusters should have publish: External")
+	})
+
+
+	// Test all AWS profiles to ensure they all have publish field
+	t.Run("all AWS profiles include publish field", func(t *testing.T) {
+		// Get all profiles
+		profiles := registry.List()
+
+		pullSecret := `{"auths":{}}`
+		tags := map[string]string{}
+
+		for _, prof := range profiles {
+			// Only test AWS OpenShift profiles (not EKS/IKS)
+			if prof.Platform != "aws" {
+				continue
+			}
+			// Skip EKS profiles - they use a different template
+			if prof.ClusterType == "eks" {
+				continue
+			}
+
+			t.Run(prof.Name, func(t *testing.T) {
+				// Get default version - should be OpenShift versions
+				if prof.OpenshiftVersions == nil {
+					t.Skip("Profile has no OpenShift version configuration")
+					return
+				}
+				defaultVersion := prof.OpenshiftVersions.Default
+
+				req := &policy.CreateClusterRequest{
+					Name:       "test-" + prof.Name,
+					Platform:   string(prof.Platform),
+					Version:    defaultVersion,
+					Profile:    prof.Name,
+					Region:     prof.Regions.Default,
+					BaseDomain: "test.example.com",
+					Owner:      "test-user",
+					Team:       "test-team",
+					CostCenter: "test-cost-center",
+					TTLHours:   24,
+				}
+
+				config, err := renderer.RenderInstallConfig(req, pullSecret, tags)
+				require.NoError(t, err, "profile %s should render successfully", prof.Name)
+
+				// Parse and verify
+				var installConfig map[string]interface{}
+				err = yaml.Unmarshal(config, &installConfig)
+				require.NoError(t, err, "profile %s should produce valid YAML", prof.Name)
+
+				// Verify publish field exists
+				publish, ok := installConfig["publish"]
+				assert.True(t, ok, "profile %s install-config must have publish field", prof.Name)
+
+				// Verify publish value is valid
+				publishStr, ok := publish.(string)
+				assert.True(t, ok, "publish field should be a string")
+				assert.Contains(t, []string{"External", "Internal"}, publishStr,
+					"profile %s publish field must be External or Internal, got: %v", prof.Name, publish)
+
+				// Verify it matches the privateCluster setting
+				expectedPublish := "External"
+				if prof.Features.PrivateCluster {
+					expectedPublish = "Internal"
+				}
+				assert.Equal(t, expectedPublish, publishStr,
+					"profile %s with privateCluster=%v should have publish=%s",
+					prof.Name, prof.Features.PrivateCluster, expectedPublish)
+			})
+		}
 	})
 }

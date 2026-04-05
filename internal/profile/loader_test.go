@@ -72,18 +72,18 @@ func TestLoader_Validate(t *testing.T) {
 			Name:     "test-invalid",
 			Platform: "aws",
 			Compute: profile.ComputeConfig{
-				ControlPlane: profile.ControlPlaneConfig{
+				ControlPlane: &profile.ControlPlaneConfig{
 					Replicas:     2, // Even number - invalid!
 					InstanceType: "m6i.xlarge",
 				},
-				Workers: profile.WorkersConfig{
+				Workers: &profile.WorkersConfig{
 					Replicas:     0,
 					MinReplicas:  0,
 					MaxReplicas:  3,
 					InstanceType: "m6i.2xlarge",
 				},
 			},
-			OpenshiftVersions: profile.VersionConfig{
+			OpenshiftVersions: &profile.VersionConfig{
 				Allowlist: []string{"4.20.3"},
 				Default:   "4.20.3",
 			},
@@ -91,7 +91,7 @@ func TestLoader_Validate(t *testing.T) {
 				Allowlist: []string{"us-east-1"},
 				Default:   "us-east-1",
 			},
-			BaseDomains: profile.BaseDomainConfig{
+			BaseDomains: &profile.BaseDomainConfig{
 				Allowlist: []string{"labs.example.com"},
 				Default:   "labs.example.com",
 			},
@@ -118,18 +118,18 @@ func TestLoader_Validate(t *testing.T) {
 			Platform:    "aws",
 			Enabled:     true,
 			Compute: profile.ComputeConfig{
-				ControlPlane: profile.ControlPlaneConfig{
+				ControlPlane: &profile.ControlPlaneConfig{
 					Replicas:     3,
 					InstanceType: "m6i.xlarge",
 				},
-				Workers: profile.WorkersConfig{
+				Workers: &profile.WorkersConfig{
 					Replicas:     0,
 					MinReplicas:  0,
 					MaxReplicas:  3,
 					InstanceType: "m6i.2xlarge",
 				},
 			},
-			OpenshiftVersions: profile.VersionConfig{
+			OpenshiftVersions: &profile.VersionConfig{
 				Allowlist: []string{"4.20.3"},
 				Default:   "4.20.4", // Not in allowlist!
 			},
@@ -137,7 +137,7 @@ func TestLoader_Validate(t *testing.T) {
 				Allowlist: []string{"us-east-1"},
 				Default:   "us-east-1",
 			},
-			BaseDomains: profile.BaseDomainConfig{
+			BaseDomains: &profile.BaseDomainConfig{
 				Allowlist: []string{"labs.example.com"},
 				Default:   "labs.example.com",
 			},
