@@ -20,6 +20,11 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
+// Context key for job ID
+type contextKey string
+
+const jobIDContextKey contextKey = "jobID"
+
 // PostConfigureHandler handles post-configuration tasks (e.g., installing dashboards)
 type PostConfigureHandler struct {
 	config   *Config
@@ -41,6 +46,9 @@ func NewPostConfigureHandler(config *Config, st *store.Store, profileRegistry *p
 // For EKS clusters, installs Kubernetes Dashboard and generates token-based kubeconfig.
 // For OpenShift clusters, executes profile-driven configuration (operators, scripts, manifests, helm charts).
 func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error {
+	// Add job ID to context for log streaming
+	ctx = context.WithValue(ctx, jobIDContextKey, job.ID)
+
 	// Get cluster details
 	cluster, err := h.store.Clusters.GetByID(ctx, job.ClusterID)
 	if err != nil {
@@ -60,6 +68,14 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 	default:
 		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}
+}
+
+// getJobIDFromContext retrieves the job ID from context
+func getJobIDFromContext(ctx context.Context) string {
+	if jobID, ok := ctx.Value(jobIDContextKey).(string); ok {
+		return jobID
+	}
+	return ""
 }
 
 // handleEKSPostConfigure applies post-deployment manifests for EKS clusters
@@ -1294,19 +1310,69 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Execute script
+	// Execute script with real-time log streaming
 	cmd := exec.CommandContext(ctx, scriptPath)
 	cmd.Env = env
 	cmd.Dir = filepath.Dir(scriptPath) // Set working directory to script's directory
 
-	output, err := cmd.CombinedOutput()
+	// Create temporary log file for script output
+	logFile, err := os.CreateTemp("", fmt.Sprintf("script-%s-*.log", script.Name))
 	if err != nil {
-		errMsg := fmt.Sprintf("script failed: %v\nOutput: %s", err, string(output))
+		errMsg := fmt.Sprintf("create log file: %v", err)
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+	defer os.Remove(logFile.Name())
+	defer logFile.Close()
+
+	// Redirect both stdout and stderr to log file
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+
+	// Get job ID from context for log streaming
+	jobID := getJobIDFromContext(ctx)
+	if jobID == "" {
+		log.Printf("Warning: no job ID in context for script %s, logs may not be streamed", script.Name)
+	}
+
+	// Start log streamer to stream output to deployment logs in real-time
+	var streamer *LogStreamer
+	if jobID != "" {
+		streamer = NewLogStreamer(h.store, cluster.ID, jobID, logFile.Name())
+		if err := streamer.Start(ctx); err != nil {
+			log.Printf("Warning: failed to start log streamer for script %s: %v", script.Name, err)
+		}
+		defer func() {
+			if streamer != nil {
+				streamer.Stop()
+			}
+		}()
+	}
+
+	// Start the script
+	if err := cmd.Start(); err != nil {
+		errMsg := fmt.Sprintf("start script: %v", err)
 		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	log.Printf("Script %s completed successfully:\n%s", script.Name, string(output))
+	// Wait for script to complete
+	err = cmd.Wait()
+
+	// Give log streamer a moment to catch up
+	time.Sleep(1 * time.Second)
+
+	if err != nil {
+		// Read last 1000 bytes of log for error message
+		logFile.Seek(-1000, 2) // Seek to 1000 bytes before end
+		lastOutput, _ := os.ReadFile(logFile.Name())
+
+		errMsg := fmt.Sprintf("script failed: %v\nOutput: %s", err, string(lastOutput))
+		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	log.Printf("Script %s completed successfully", script.Name)
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusCompleted, nil)
 	return nil
 }

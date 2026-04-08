@@ -179,7 +179,8 @@ func IsAdmin(c echo.Context) bool {
 	return role == types.RoleAdmin
 }
 
-// RequireAuthDual is middleware that supports both JWT and IAM authentication
+// RequireAuthDual is middleware that supports JWT, IAM, and API key authentication
+// The storeGetter is a function that returns the store from the context
 func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -209,13 +210,33 @@ func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc 
 				return next(c)
 			}
 
-			// JWT authentication (existing flow)
+			// JWT or API key authentication
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || parts[0] != "Bearer" {
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid authorization header format")
 			}
 
 			tokenString := parts[1]
+
+			// Check if it's an API key
+			if IsAPIKey(tokenString) {
+				// API key authentication - store must be set in context by server middleware
+				storeVal := c.Get("store")
+				if storeVal == nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "store not configured in context")
+				}
+
+				user, err := ValidateAPIKeyFromContext(c.Request().Context(), storeVal, tokenString)
+				if err != nil {
+					return echo.NewHTTPError(http.StatusUnauthorized, "invalid API key: "+err.Error())
+				}
+
+				// Store user in context
+				c.Set(string(UserContextKey), user)
+				return next(c)
+			}
+
+			// JWT authentication (existing flow)
 			claims, err := auth.ValidateAccessToken(tokenString)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid or expired token")

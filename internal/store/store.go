@@ -33,6 +33,7 @@ type Store struct {
 	Usage                *UsageStore
 	Users                *UserStore
 	RefreshTokens        *RefreshTokenStore
+	APIKeys              *APIKeyStore
 	IAMMappings          *IAMMappingStore
 	DeploymentLogs       *DeploymentLogStore
 	StorageGroups             *StorageGroupStore
@@ -64,6 +65,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Usage = &UsageStore{pool: pool}
 	s.Users = &UserStore{pool: pool}
 	s.RefreshTokens = &RefreshTokenStore{pool: pool}
+	s.APIKeys = &APIKeyStore{pool: pool}
 	s.IAMMappings = &IAMMappingStore{
 		pool:  pool,
 		cache: make(map[string]*types.IAMPrincipalMapping),

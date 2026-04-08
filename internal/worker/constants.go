@@ -12,7 +12,7 @@ const (
 	IMDSRequestTimeout    = 2 * time.Second  // Timeout for EC2 instance metadata requests
 
 	// Job processing timeouts
-	DestroyOperationTimeout      = 45 * time.Minute // Timeout for cluster destroy operations
+	DestroyOperationTimeout      = 90 * time.Minute // Timeout for cluster destroy operations (increased for complex clusters)
 	DNSCleanupTimeout            = 5 * time.Minute  // Timeout for DNS record cleanup
 	ClusterStatusCheckTimeout    = 10 * time.Minute // Timeout for waiting on cluster status changes
 	AWSCommandTimeout            = 30 * time.Second // Timeout for individual AWS CLI commands

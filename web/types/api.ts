@@ -21,6 +21,7 @@ export enum ClusterStatus {
   DESTROYING = "DESTROYING",
   DESTROYED = "DESTROYED",
   FAILED = "FAILED",
+  DESTROY_FAILED = "DESTROY_FAILED",
 }
 
 export enum UserRole {
@@ -106,6 +107,40 @@ export interface UpdateUserRequest {
   role?: UserRole;
   active?: boolean;
   new_password?: string;
+}
+
+// API Key Types
+export enum APIKeyScope {
+  READ_ONLY = "read_only",
+  FULL_ACCESS = "full_access",
+}
+
+export interface APIKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scope: APIKeyScope;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  is_active: boolean;
+  is_expired: boolean;
+}
+
+export interface CreateAPIKeyRequest {
+  name: string;
+  scope: APIKeyScope;
+  expires_at?: string | null;
+}
+
+export interface CreateAPIKeyResponse {
+  api_key: APIKey;
+  plain_key: string;
+}
+
+export interface UpdateAPIKeyRequest {
+  name?: string;
 }
 
 // Cluster Types

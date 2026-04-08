@@ -17,6 +17,7 @@ const statusDescriptions: Record<ClusterStatus, string> = {
   [ClusterStatus.DESTROYING]: "Cluster resources being deleted from cloud provider",
   [ClusterStatus.DESTROYED]: "Cluster has been permanently destroyed",
   [ClusterStatus.FAILED]: "Cluster creation or operation failed - check logs for details",
+  [ClusterStatus.DESTROY_FAILED]: "Cluster destruction failed - may require manual cleanup",
 };
 
 export function ClusterStatusBadge({ status }: ClusterStatusBadgeProps) {
@@ -33,6 +34,7 @@ export function ClusterStatusBadge({ status }: ClusterStatusBadgeProps) {
     [ClusterStatus.DESTROYING]: "warning",
     [ClusterStatus.DESTROYED]: "secondary",
     [ClusterStatus.FAILED]: "destructive",
+    [ClusterStatus.DESTROY_FAILED]: "destructive",
   };
 
   // Add icons for hibernation states

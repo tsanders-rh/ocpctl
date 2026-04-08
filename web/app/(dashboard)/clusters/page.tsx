@@ -103,6 +103,34 @@ export default function ClustersPage() {
     (key) => filters[key as keyof typeof filters]
   ) || searchQuery.length > 0;
 
+  const clusters = data?.data || [];
+
+  // Filter clusters by search query - must be called before any early returns
+  const filteredClusters = useMemo(() => {
+    if (!searchQuery || clusters.length === 0) return clusters;
+    const query = searchQuery.toLowerCase();
+    return clusters.filter(c =>
+      c.name.toLowerCase().includes(query) ||
+      c.team.toLowerCase().includes(query) ||
+      c.region.toLowerCase().includes(query) ||
+      (c.owner && c.owner.toLowerCase().includes(query)) ||
+      c.profile.toLowerCase().includes(query)
+    );
+  }, [clusters, searchQuery]);
+
+  // Sort clusters: favorites first, then by created date - must be called before any early returns
+  const sortedClusters = useMemo(() => {
+    if (filteredClusters.length === 0) return [];
+    return [...filteredClusters].sort((a, b) => {
+      const aFav = favorites.has(a.id);
+      const bFav = favorites.has(b.id);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+      // If both are favorites or both are not, sort by created date (newest first)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [filteredClusters, favorites]);
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -129,33 +157,6 @@ export default function ClustersPage() {
       </div>
     );
   }
-
-  const clusters = data.data || [];
-
-  // Filter clusters by search query
-  const filteredClusters = useMemo(() => {
-    if (!searchQuery) return clusters;
-    const query = searchQuery.toLowerCase();
-    return clusters.filter(c =>
-      c.name.toLowerCase().includes(query) ||
-      c.team.toLowerCase().includes(query) ||
-      c.region.toLowerCase().includes(query) ||
-      (c.owner && c.owner.toLowerCase().includes(query)) ||
-      c.profile.toLowerCase().includes(query)
-    );
-  }, [clusters, searchQuery]);
-
-  // Sort clusters: favorites first, then by created date
-  const sortedClusters = useMemo(() => {
-    return [...filteredClusters].sort((a, b) => {
-      const aFav = favorites.has(a.id);
-      const bFav = favorites.has(b.id);
-      if (aFav && !bFav) return -1;
-      if (!aFav && bFav) return 1;
-      // If both are favorites or both are not, sort by created date (newest first)
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [filteredClusters, favorites]);
 
   return (
     <div className="space-y-6">

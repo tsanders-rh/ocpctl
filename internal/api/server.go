@@ -133,6 +133,14 @@ func (s *Server) setupMiddleware() {
 	// Request ID for tracing
 	s.echo.Use(middleware.RequestID())
 
+	// Store in context middleware (for API key authentication)
+	s.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set("store", s.store)
+			return next(c)
+		}
+	})
+
 	// Logging middleware
 	s.echo.Use(apimiddleware.Logger())
 
@@ -186,6 +194,15 @@ func (s *Server) setupRoutes() {
 	authProtected.GET("/me", authHandler.GetMe)
 	authProtected.PATCH("/me", authHandler.UpdateMe)
 	authProtected.POST("/password", authHandler.ChangePassword)
+
+	// API key management routes (require authentication)
+	apiKeyHandler := NewAPIKeyHandler(s.store)
+	apiKeysGroup := v1.Group("/api-keys", auth.RequireAuthDual(s.auth, s.iamAuth))
+	apiKeysGroup.GET("", apiKeyHandler.List)
+	apiKeysGroup.POST("", apiKeyHandler.Create)
+	apiKeysGroup.PATCH("/:id", apiKeyHandler.Update)
+	apiKeysGroup.POST("/:id/revoke", apiKeyHandler.Revoke)
+	apiKeysGroup.DELETE("/:id", apiKeyHandler.Delete)
 
 	// User management routes (admin only)
 	userHandler := NewUserHandler(s.store)

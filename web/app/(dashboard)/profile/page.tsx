@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { User, Save, AlertCircle, CheckCircle, Clock } from "lucide-react";
 import type { UpdateMeRequest } from "@/types/api";
+import { APIKeyManager } from "@/components/profile/APIKeyManager";
 
 // Common timezones list
 const TIMEZONES = [
@@ -408,6 +409,13 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* API Keys Section */}
+      <Card>
+        <CardContent className="pt-6">
+          <APIKeyManager />
+        </CardContent>
+      </Card>
     </div>
   );
 }

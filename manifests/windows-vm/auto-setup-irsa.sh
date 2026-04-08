@@ -304,11 +304,25 @@ fi
 
 # Create DataVolume
 # Note: CDI importer doesn't properly support IRSA for S3, so we use HTTP with presigned URL
-log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
-PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region ${REGION})
 
-log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
-cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+# Check if DataVolume already exists
+EXISTING_DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+
+if [ "$EXISTING_DV_PHASE" = "Succeeded" ]; then
+    log_info "DataVolume 'windows' already exists and has succeeded - skipping creation"
+elif [ "$EXISTING_DV_PHASE" != "NotFound" ]; then
+    log_warn "DataVolume 'windows' exists with phase: $EXISTING_DV_PHASE"
+    log_warn "DataVolume specs are immutable - deleting and recreating with fresh presigned URL..."
+    oc --kubeconfig="$KUBECONFIG" delete datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true
+    log_info "✓ Old DataVolume deleted"
+fi
+
+if [ "$EXISTING_DV_PHASE" != "Succeeded" ]; then
+    log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
+    PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region ${REGION})
+
+    log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
+    cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
@@ -329,7 +343,8 @@ spec:
         storage: 70Gi
     storageClassName: ${STORAGE_CLASS}
 EOF
-log_info "✓ DataVolume created (import starting - this will take 5-10 minutes)"
+    log_info "✓ DataVolume created (import starting - this will take 5-10 minutes)"
+fi
 
 # Apply DataSource
 log_info "Creating DataSource (windows10-datasource)"

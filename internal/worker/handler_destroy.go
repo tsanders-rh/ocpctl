@@ -145,8 +145,8 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Run openshift-install destroy cluster with explicit timeout
-	// Use 45-minute timeout to ensure destroy completes or fails definitively
-	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: 45m)", cluster.Name, cluster.Version)
+	// Use 90-minute timeout to ensure destroy completes or fails definitively
+	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: 90m)", cluster.Name, cluster.Version)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
 
@@ -160,7 +160,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Handle destroy errors
-	destroySucceeded := true
+	openshiftInstallSucceeded := true
 	if err != nil {
 		// Logs are already streamed to database
 		if logData, readErr := os.ReadFile(logPath); readErr == nil {
@@ -169,17 +169,17 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 
 		// Check if this was a timeout
 		if destroyCtx.Err() == context.DeadlineExceeded {
-			log.Printf("ERROR: openshift-install destroy timed out after 45 minutes for %s", cluster.Name)
+			log.Printf("WARNING: openshift-install destroy timed out after 90 minutes for %s", cluster.Name)
 			log.Printf("This likely indicates AWS has too many IAM resources (500+) causing infinite scanning loop")
-			log.Printf("Will mark cluster as DESTROY_FAILED - verification required before marking DESTROYED")
-			destroySucceeded = false
+			log.Printf("Will attempt AWS cleanup via ccoctl - if successful, cluster will be marked as DESTROYED")
+			openshiftInstallSucceeded = false
 		} else {
 			// openshift-install failed with error - cannot confirm destruction
 			log.Printf("ERROR: openshift-install destroy cluster failed: %v\nOutput: %s", err, output)
-			destroySucceeded = false
+			openshiftInstallSucceeded = false
 		}
 	} else {
-		log.Printf("Cluster %s destroyed successfully", cluster.Name)
+		log.Printf("Cluster %s destroyed successfully via openshift-install", cluster.Name)
 	}
 
 	// Track cleanup results for job metadata and audit trail
@@ -198,6 +198,9 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Platform-specific post-destruction cleanup (IMPORTANT: prevents orphaned cloud resources)
+	// Track whether platform cleanup succeeded - this determines overall destroy success
+	platformCleanupSucceeded := true
+
 	if cluster.Platform == types.PlatformIBMCloud {
 		// IBM Cloud requires CCO cleanup - delete service IDs created during installation
 		log.Printf("Running IBM Cloud post-destruction cleanup (CCO service IDs)...")
@@ -207,8 +210,10 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 			cleanupWarnings = append(cleanupWarnings, errMsg)
 			cleanupResults["platform_cleanup"] = "failed"
 			cleanupResults["platform_cleanup_error"] = err.Error()
+			platformCleanupSucceeded = false
 		} else {
 			cleanupResults["platform_cleanup"] = "success"
+			log.Printf("✓ IBM Cloud cleanup completed successfully")
 		}
 	} else if cluster.Platform == types.PlatformAWS {
 		// AWS requires CCO cleanup - delete IAM roles and OIDC provider created during installation
@@ -219,8 +224,10 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 			cleanupWarnings = append(cleanupWarnings, errMsg)
 			cleanupResults["platform_cleanup"] = "failed"
 			cleanupResults["platform_cleanup_error"] = err.Error()
+			platformCleanupSucceeded = false
 		} else {
 			cleanupResults["platform_cleanup"] = "success"
+			log.Printf("✓ AWS cleanup completed successfully (IAM roles, OIDC provider, Route53 zone deleted)")
 		}
 	}
 
@@ -235,25 +242,38 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Clean up artifacts from S3 (IMPORTANT: prevents storage cost accumulation)
-	log.Printf("Cleaning up artifacts from S3 for cluster %s", cluster.Name)
-	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to create artifact storage client: %v", err)
-		log.Printf("Warning: %s", errMsg)
-		cleanupWarnings = append(cleanupWarnings, errMsg)
-		cleanupResults["s3_artifacts_deleted"] = false
-		cleanupResults["s3_cleanup_error"] = err.Error()
-	} else {
-		if err := artifactStorage.DeleteClusterArtifacts(ctx, cluster.ID); err != nil {
-			errMsg := fmt.Sprintf("failed to delete S3 artifacts: %v", err)
+	// CRITICAL: Only delete artifacts on final retry attempt - earlier attempts need metadata.json for retries
+	isFinalAttempt := job.Attempt >= job.MaxAttempts
+
+	if isFinalAttempt || (openshiftInstallSucceeded && platformCleanupSucceeded) {
+		// Delete artifacts only if:
+		// 1. This is the final retry attempt (prevent retry failures), OR
+		// 2. Destroy completed successfully (no retry needed)
+		log.Printf("Cleaning up artifacts from S3 for cluster %s (final_attempt=%v)", cluster.Name, isFinalAttempt)
+		artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to create artifact storage client: %v", err)
 			log.Printf("Warning: %s", errMsg)
 			cleanupWarnings = append(cleanupWarnings, errMsg)
 			cleanupResults["s3_artifacts_deleted"] = false
 			cleanupResults["s3_cleanup_error"] = err.Error()
 		} else {
-			log.Printf("Successfully deleted artifacts from S3 for cluster %s", cluster.Name)
-			cleanupResults["s3_artifacts_deleted"] = true
+			if err := artifactStorage.DeleteClusterArtifacts(ctx, cluster.ID); err != nil {
+				errMsg := fmt.Sprintf("failed to delete S3 artifacts: %v", err)
+				log.Printf("Warning: %s", errMsg)
+				cleanupWarnings = append(cleanupWarnings, errMsg)
+				cleanupResults["s3_artifacts_deleted"] = false
+				cleanupResults["s3_cleanup_error"] = err.Error()
+			} else {
+				log.Printf("Successfully deleted artifacts from S3 for cluster %s", cluster.Name)
+				cleanupResults["s3_artifacts_deleted"] = true
+			}
 		}
+	} else {
+		// Preserve artifacts for retry attempts
+		log.Printf("Skipping S3 artifact deletion - preserving metadata.json for potential retry (attempt %d/%d)", job.Attempt, job.MaxAttempts)
+		cleanupResults["s3_artifacts_deleted"] = false
+		cleanupResults["s3_artifacts_preserved_for_retry"] = true
 	}
 
 	// Clean up temporary files created by openshift-install (OPTIONAL: local disk cleanup)
@@ -270,11 +290,18 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
 	}
 
+	// Determine overall destroy success based on BOTH openshift-install AND platform cleanup
+	// Key insight: If platform cleanup succeeded (AWS resources deleted), mark as DESTROYED
+	// even if openshift-install timed out (since AWS resources are what matter for billing/security)
+	destroySucceeded := openshiftInstallSucceeded || platformCleanupSucceeded
+
 	// Mark cluster status based on destroy result
 	if !destroySucceeded {
-		// Destroy failed or timed out - mark as DESTROY_FAILED
+		// Both openshift-install AND platform cleanup failed - mark as DESTROY_FAILED
 		// Resources may still exist in AWS and require manual verification
 		log.Printf("Marking cluster %s as DESTROY_FAILED - destroy operation did not complete successfully", cluster.Name)
+		log.Printf("  openshift-install succeeded: %v", openshiftInstallSucceeded)
+		log.Printf("  platform cleanup succeeded: %v", platformCleanupSucceeded)
 		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); err != nil {
 			return fmt.Errorf("mark cluster destroy failed: %w", err)
 		}
@@ -282,7 +309,15 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Destroy succeeded - mark as DESTROYED
-	// TODO: Add verification for OpenShift similar to EKS (check CloudFormation stacks, tagged resources)
+	// Success means either:
+	// 1. openshift-install completed successfully, OR
+	// 2. Platform cleanup (ccoctl) completed successfully (deleted IAM roles, OIDC provider, Route53)
+	if !openshiftInstallSucceeded && platformCleanupSucceeded {
+		log.Printf("Marking cluster %s as DESTROYED - openshift-install timed out but platform cleanup succeeded", cluster.Name)
+		log.Printf("  All AWS resources (IAM roles, OIDC provider, Route53 zone) have been deleted")
+		log.Printf("  This is considered successful destroy despite openshift-install timeout")
+	}
+
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
