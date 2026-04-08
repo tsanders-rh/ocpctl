@@ -78,7 +78,7 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 	// If ccoctl failed or metadata.json was missing, use fallback cleanup
 	if usedFallback && !ccoctlSuccess {
 		log.Printf("Attempting direct AWS SDK cleanup for cluster %s", cluster.Name)
-		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster); err != nil {
+		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
 			log.Printf("Warning: fallback IAM cleanup encountered errors: %v", err)
 			// Don't fail the destroy job - some resources might have been cleaned up
 		} else {
@@ -268,10 +268,11 @@ func getRecordSetJSON(jsonOutput []byte, name, recordType string) string {
 	return "{}"
 }
 
-// cleanupIAMResourcesByClusterName finds and deletes IAM roles and OIDC providers by ClusterName tag.
+// cleanupIAMResourcesByClusterName finds and deletes IAM roles and OIDC providers by ClusterName tag or infraID pattern.
 // This is a fallback method used when metadata.json is missing or ccoctl cleanup fails.
-// Only deletes resources tagged with ManagedBy=ocpctl to avoid deleting user-created resources.
-func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster) error {
+// First tries tag-based cleanup, then falls back to name pattern matching if no tagged resources found.
+// Only deletes resources tagged with ManagedBy=ocpctl OR matching infraID/cluster name patterns to avoid deleting user resources.
+func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster, infraID string) error {
 	// Load AWS SDK config
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
 	if err != nil {
@@ -287,6 +288,9 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 
 	// Find and delete IAM roles
 	log.Printf("Searching for IAM roles with ClusterName=%s and ManagedBy=ocpctl", cluster.Name)
+	if infraID != "" {
+		log.Printf("Will also search by name pattern: %s-*", infraID)
+	}
 
 	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
 	for paginator.HasMorePages() {
@@ -308,7 +312,7 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 				continue
 			}
 
-			// Check if this role belongs to our cluster
+			// Check if this role belongs to our cluster via tags
 			var matchesCluster bool
 			var managedByOcpctl bool
 
@@ -324,9 +328,45 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 				}
 			}
 
-			// Only delete roles that match our cluster and are managed by ocpctl
+			// If tags match, delete the role
 			if matchesCluster && managedByOcpctl {
-				log.Printf("Deleting IAM role: %s", roleName)
+				log.Printf("Deleting IAM role (matched by tag): %s", roleName)
+
+				// Detach all policies before deleting role
+				if err := h.detachRolePolicies(ctx, iamClient, roleName); err != nil {
+					errors = append(errors, fmt.Sprintf("detach policies from %s: %v", roleName, err))
+					continue
+				}
+
+				// Delete the role
+				_, err := iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+					RoleName: role.RoleName,
+				})
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("delete role %s: %v", roleName, err))
+				} else {
+					deletedRoles++
+					log.Printf("Deleted IAM role: %s", roleName)
+				}
+				continue
+			}
+
+			// Fallback: If no tags matched, try name pattern matching
+			// This handles cases where tagging failed during cluster creation
+			matchesByName := false
+			if infraID != "" && strings.HasPrefix(roleName, infraID+"-") {
+				// Match by infraID prefix (most reliable)
+				matchesByName = true
+				log.Printf("Role %s matches by infraID pattern", roleName)
+			} else if strings.Contains(roleName, cluster.Name) &&
+				      (strings.Contains(roleName, "openshift-") || strings.Contains(roleName, "ocpctl-")) {
+				// Match by cluster name + openshift pattern (less reliable, more cautious)
+				matchesByName = true
+				log.Printf("Role %s matches by cluster name pattern", roleName)
+			}
+
+			if matchesByName {
+				log.Printf("Deleting IAM role (matched by name): %s", roleName)
 
 				// Detach all policies before deleting role
 				if err := h.detachRolePolicies(ctx, iamClient, roleName); err != nil {
@@ -350,6 +390,9 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 
 	// Find and delete OIDC providers
 	log.Printf("Searching for OIDC providers with ClusterName=%s", cluster.Name)
+	if infraID != "" {
+		log.Printf("Will also search OIDC providers by name pattern: %s-oidc", infraID)
+	}
 
 	providersResult, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
@@ -367,7 +410,7 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 				continue
 			}
 
-			// Check if this provider belongs to our cluster
+			// Check if this provider belongs to our cluster via tags
 			var matchesCluster bool
 			for _, tag := range detailsResult.Tags {
 				if aws.ToString(tag.Key) == "ClusterName" && aws.ToString(tag.Value) == cluster.Name {
@@ -377,7 +420,35 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 			}
 
 			if matchesCluster {
-				log.Printf("Deleting OIDC provider: %s", providerArn)
+				log.Printf("Deleting OIDC provider (matched by tag): %s", providerArn)
+
+				_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+					OpenIDConnectProviderArn: provider.Arn,
+				})
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("delete OIDC provider %s: %v", providerArn, err))
+				} else {
+					deletedProviders++
+					log.Printf("Deleted OIDC provider: %s", providerArn)
+				}
+				continue
+			}
+
+			// Fallback: If no tags matched, try name pattern matching
+			// OIDC providers for OpenShift have format: arn:aws:iam::ACCOUNT:oidc-provider/INFRAID-oidc.s3.REGION.amazonaws.com
+			matchesByName := false
+			if infraID != "" && strings.Contains(providerArn, infraID+"-oidc") {
+				// Match by infraID-oidc pattern
+				matchesByName = true
+				log.Printf("OIDC provider %s matches by infraID pattern", providerArn)
+			} else if strings.Contains(providerArn, cluster.Name) && strings.Contains(providerArn, "-oidc") {
+				// Match by cluster name + oidc pattern
+				matchesByName = true
+				log.Printf("OIDC provider %s matches by cluster name pattern", providerArn)
+			}
+
+			if matchesByName {
+				log.Printf("Deleting OIDC provider (matched by name): %s", providerArn)
 
 				_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
 					OpenIDConnectProviderArn: provider.Arn,
@@ -390,6 +461,37 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 				}
 			}
 		}
+	}
+
+	// Clean up Windows IRSA role if it exists (created during Windows VM post-config)
+	// Pattern: ocpctl-win-s3-{cluster-id}
+	windowsRoleName := fmt.Sprintf("ocpctl-win-s3-%s", cluster.ID)
+	log.Printf("Checking for Windows IRSA role: %s", windowsRoleName)
+
+	_, err = iamClient.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: aws.String(windowsRoleName),
+	})
+	if err == nil {
+		// Role exists, delete it
+		log.Printf("Deleting Windows IRSA role: %s", windowsRoleName)
+
+		// Detach all policies before deleting role
+		if err := h.detachRolePolicies(ctx, iamClient, windowsRoleName); err != nil {
+			errors = append(errors, fmt.Sprintf("detach policies from Windows role %s: %v", windowsRoleName, err))
+		} else {
+			_, err := iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+				RoleName: aws.String(windowsRoleName),
+			})
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("delete Windows role %s: %v", windowsRoleName, err))
+			} else {
+				deletedRoles++
+				log.Printf("Deleted Windows IRSA role: %s", windowsRoleName)
+			}
+		}
+	} else {
+		// Role doesn't exist or error checking - this is OK
+		log.Printf("Windows IRSA role not found (cluster may not have used Windows VMs)")
 	}
 
 	log.Printf("IAM cleanup summary: deleted %d roles, %d OIDC providers", deletedRoles, deletedProviders)
