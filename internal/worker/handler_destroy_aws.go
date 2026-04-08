@@ -76,20 +76,38 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 	}
 
 	// If ccoctl failed or metadata.json was missing, use fallback cleanup
+	fallbackCleanupSuccess := false
 	if usedFallback && !ccoctlSuccess {
 		log.Printf("Attempting direct AWS SDK cleanup for cluster %s", cluster.Name)
 		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
 			log.Printf("Warning: fallback IAM cleanup encountered errors: %v", err)
-			// Don't fail the destroy job - some resources might have been cleaned up
+			// Track failure but continue with Route53 cleanup
+			fallbackCleanupSuccess = false
 		} else {
 			log.Printf("Successfully cleaned up IAM resources using fallback method")
+			fallbackCleanupSuccess = true
 		}
 	}
 
 	// Clean up Route53 hosted zone
+	route53Success := false
 	if err := h.deleteRoute53HostedZone(ctx, cluster); err != nil {
 		log.Printf("Warning: failed to delete Route53 hosted zone: %v", err)
-		// Don't fail the destroy job - log and continue
+		route53Success = false
+	} else {
+		route53Success = true
+	}
+
+	// Determine overall success: ccoctl succeeded OR fallback cleanup succeeded
+	// Route53 cleanup is optional (zone might not exist)
+	overallSuccess := ccoctlSuccess || fallbackCleanupSuccess
+
+	if !overallSuccess {
+		return fmt.Errorf("AWS cleanup failed: ccoctl failed and fallback cleanup failed")
+	}
+
+	if !route53Success {
+		log.Printf("Warning: Route53 cleanup failed, but IAM cleanup succeeded - marking as success")
 	}
 
 	return nil
