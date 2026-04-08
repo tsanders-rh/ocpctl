@@ -410,7 +410,8 @@ log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
 
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-oadp-test-1 \
-    -p VM_NAMESPACE=default | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p VM_NAMESPACE=default \
+    -p STORAGE_CLASS=gp3-csi-immediate | oc --kubeconfig="$KUBECONFIG" apply -f -
 
 if [ $? -ne 0 ]; then
     log_error "Failed to create test VM"
