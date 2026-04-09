@@ -220,8 +220,8 @@ for host in "${WORKER_HOSTS[@]}"; do
 
     # Requeue any RUNNING jobs before stopping worker (prevents orphaned jobs)
     echo -e "${YELLOW}  Requeuing any in-progress jobs...${NC}"
-    REQUEUED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" | grep -c "-"' 2>/dev/null || echo "0")
-    if [ "$REQUEUED" -gt 0 ]; then
+    REQUEUED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    if [ "$REQUEUED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Requeued $REQUEUED job(s) to PENDING status${NC}"
     else
         echo -e "${YELLOW}  No jobs to requeue${NC}"
@@ -230,8 +230,8 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Clear any stale job locks from this worker (prevents blocked jobs after restart)
     echo -e "${YELLOW}  Clearing stale job locks...${NC}"
     INSTANCE_ID=$(ssh -i "$SSH_KEY" ec2-user@$host 'ec2-metadata --instance-id 2>/dev/null | cut -d " " -f 2' || echo "unknown")
-    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" | grep -c "-"' 2>/dev/null || echo "0")
-    if [ "$LOCKS_CLEARED" -gt 0 ]; then
+    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    if [ "$LOCKS_CLEARED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Cleared $LOCKS_CLEARED stale lock(s)${NC}"
     else
         echo -e "${YELLOW}  No locks to clear${NC}"
