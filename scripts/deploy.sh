@@ -227,6 +227,16 @@ for host in "${WORKER_HOSTS[@]}"; do
         echo -e "${YELLOW}  No jobs to requeue${NC}"
     fi
 
+    # Clear any stale job locks from this worker (prevents blocked jobs after restart)
+    echo -e "${YELLOW}  Clearing stale job locks...${NC}"
+    INSTANCE_ID=$(ssh -i "$SSH_KEY" ec2-user@$host 'ec2-metadata --instance-id 2>/dev/null | cut -d " " -f 2' || echo "unknown")
+    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" | grep -c "-"' 2>/dev/null || echo "0")
+    if [ "$LOCKS_CLEARED" -gt 0 ]; then
+        echo -e "${GREEN}✓ Cleared $LOCKS_CLEARED stale lock(s)${NC}"
+    else
+        echo -e "${YELLOW}  No locks to clear${NC}"
+    fi
+
     # Stop service
     ssh -i "$SSH_KEY" ec2-user@$host 'sudo systemctl stop ocpctl-worker'
 
