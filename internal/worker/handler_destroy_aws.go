@@ -3,114 +3,119 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
+const (
+	iamDeleteWorkers         = 6
+	route53ChangeBatchSize   = 100
+	awsRetryAttempts         = 4
+	awsRetryInitialBackoff   = 500 * time.Millisecond
+	route53ChangePollDelay   = 2 * time.Second
+	route53ChangePollTimeout = 2 * time.Minute
+)
+
 // HandleAWSDestroy handles AWS-specific cluster cleanup including CCO IAM roles, OIDC provider, and Route53 hosted zone.
 // This should be called AFTER openshift-install destroy cluster completes to clean up resources created by ccoctl.
 // Uses the infrastructure ID from metadata.json to identify and delete AWS resources.
-// If metadata.json is missing, falls back to direct AWS SDK cleanup using ClusterName tags.
+// If metadata.json is missing, falls back to direct AWS SDK cleanup using infraID (if available) plus Windows IRSA cleanup.
 func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cluster, inst *installer.Installer, workDir string) error {
-	log.Printf("AWS cluster cleanup: cleaning up CCO IAM roles and OIDC provider for %s", cluster.Name)
+	log.Printf("AWS cluster cleanup: cleaning up CCO IAM roles, OIDC provider, and Route53 for %s", cluster.Name)
 
-	// Extract infraID from metadata.json
-	// ccoctl uses the infraID (not cluster name) to identify resources
-	infraID, err := h.getInfraID(workDir)
+	infraID, infraErr := h.getInfraID(workDir)
 	usedFallback := false
 
-	if err != nil {
-		log.Printf("Warning: could not extract infraID from metadata.json: %v", err)
-		log.Printf("Will use direct AWS SDK cleanup as fallback")
+	if infraErr != nil {
+		log.Printf("Warning: could not extract infraID from metadata.json: %v", infraErr)
+		log.Printf("Will use fallback AWS SDK cleanup where possible")
 		usedFallback = true
 	} else {
 		log.Printf("Using infraID from metadata.json: %s", infraID)
 	}
 
-	// Try ccoctl cleanup if we have infraID
 	ccoctlSuccess := false
 	if !usedFallback {
-		// Run ccoctl aws delete to clean up IAM roles and OIDC provider
-		// ccoctl aws delete --name <infra-id> --region <region>
-		cmdCtx, cancel := context.WithTimeout(ctx, DNSCleanupTimeout)
-		defer cancel()
-
-		cmd := exec.CommandContext(cmdCtx, "ccoctl", "aws", "delete",
-			"--name", infraID,
-			"--region", cluster.Region,
-		)
-
-		output, err := cmd.CombinedOutput()
-		outputStr := string(output)
-
-		if err != nil {
-			// Check if resources were already deleted (not an error)
-			if strings.Contains(outputStr, "NoSuchEntity") ||
-				strings.Contains(outputStr, "not found") ||
-				strings.Contains(outputStr, "does not exist") {
-				log.Printf("CCO resources for %s already deleted or not found", cluster.Name)
-				ccoctlSuccess = true
-			} else {
-				// ccoctl failed - will try fallback cleanup
-				log.Printf("Warning: ccoctl aws delete failed for %s: %v", cluster.Name, err)
-				log.Printf("ccoctl output:\n%s", outputStr)
-				log.Printf("Will attempt fallback IAM cleanup using ClusterName tags")
-				usedFallback = true
-			}
+		if err := h.runCCOCTLAWSDelete(ctx, infraID, cluster.Region); err != nil {
+			log.Printf("Warning: ccoctl aws delete failed for %s: %v", cluster.Name, err)
+			log.Printf("Will attempt fallback IAM cleanup")
+			usedFallback = true
 		} else {
 			log.Printf("Successfully cleaned up AWS CCO resources for %s using ccoctl", cluster.Name)
-			log.Printf("ccoctl output:\n%s", outputStr)
 			ccoctlSuccess = true
 		}
 	}
 
-	// If ccoctl failed or metadata.json was missing, use fallback cleanup
 	fallbackCleanupSuccess := false
 	if usedFallback && !ccoctlSuccess {
 		log.Printf("Attempting direct AWS SDK cleanup for cluster %s", cluster.Name)
 		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
 			log.Printf("Warning: fallback IAM cleanup encountered errors: %v", err)
-			// Track failure but continue with Route53 cleanup
-			fallbackCleanupSuccess = false
 		} else {
 			log.Printf("Successfully cleaned up IAM resources using fallback method")
 			fallbackCleanupSuccess = true
 		}
 	}
 
-	// Clean up Route53 hosted zone
 	route53Success := false
 	if err := h.deleteRoute53HostedZone(ctx, cluster); err != nil {
 		log.Printf("Warning: failed to delete Route53 hosted zone: %v", err)
-		route53Success = false
 	} else {
 		route53Success = true
 	}
 
-	// Determine overall success: ccoctl succeeded OR fallback cleanup succeeded
-	// Route53 cleanup is optional (zone might not exist)
 	overallSuccess := ccoctlSuccess || fallbackCleanupSuccess
-
 	if !overallSuccess {
 		return fmt.Errorf("AWS cleanup failed: ccoctl failed and fallback cleanup failed")
 	}
 
 	if !route53Success {
-		log.Printf("Warning: Route53 cleanup failed, but IAM cleanup succeeded - marking as success")
+		log.Printf("Warning: Route53 cleanup failed, but IAM cleanup succeeded - marking overall cleanup as success")
 	}
 
+	return nil
+}
+
+func (h *DestroyHandler) runCCOCTLAWSDelete(ctx context.Context, infraID, region string) error {
+	cmdCtx, cancel := context.WithTimeout(ctx, DNSCleanupTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "ccoctl", "aws", "delete",
+		"--name", infraID,
+		"--region", region,
+	)
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if err != nil {
+		if strings.Contains(outputStr, "NoSuchEntity") ||
+			strings.Contains(outputStr, "not found") ||
+			strings.Contains(outputStr, "does not exist") {
+			log.Printf("CCO resources already deleted or not found")
+			return nil
+		}
+		return fmt.Errorf("ccoctl aws delete failed: %w\noutput:\n%s", err, outputStr)
+	}
+
+	log.Printf("ccoctl output:\n%s", outputStr)
 	return nil
 }
 
@@ -138,239 +143,255 @@ func (h *DestroyHandler) getInfraID(workDir string) (string, error) {
 	return metadata.InfraID, nil
 }
 
-// deleteRoute53HostedZone deletes the Route53 hosted zone for the cluster
+// deleteRoute53HostedZone deletes the Route53 hosted zone for the cluster using the AWS SDK.
+// It batches record deletions instead of issuing one CLI call per record.
 func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *types.Cluster) error {
-	// Skip Route53 cleanup for clusters without base domain (EKS/IKS)
 	if cluster.BaseDomain == nil || *cluster.BaseDomain == "" {
 		log.Printf("Skipping Route53 cleanup - no base domain for cluster %s", cluster.Name)
 		return nil
 	}
 
-	// Construct the domain name for the cluster
-	// Format: <cluster-name>.<base-domain>
-	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
-
-	log.Printf("Looking for Route53 hosted zone: %s", zoneName)
-
-	// Find the hosted zone ID
-	cmdCtx, cancel := context.WithTimeout(ctx, AWSCommandTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(cmdCtx, "aws", "route53", "list-hosted-zones",
-		"--query", fmt.Sprintf("HostedZones[?Name=='%s'].Id", zoneName),
-		"--output", "text",
-	)
-
-	output, err := cmd.CombinedOutput()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
 	if err != nil {
-		return fmt.Errorf("list hosted zones: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("load AWS config: %w", err)
 	}
 
-	zoneID := strings.TrimSpace(string(output))
+	r53 := route53.NewFromConfig(cfg)
+	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
+	log.Printf("Looking for Route53 hosted zone: %s", zoneName)
+
+	zoneID, err := h.findHostedZoneIDByName(ctx, r53, zoneName)
+	if err != nil {
+		return err
+	}
 	if zoneID == "" {
 		log.Printf("No Route53 hosted zone found for %s (already deleted or never created)", zoneName)
 		return nil
 	}
 
-	// Route53 returns zone IDs with /hostedzone/ prefix, extract just the ID
-	zoneID = strings.TrimPrefix(zoneID, "/hostedzone/")
 	log.Printf("Found hosted zone ID: %s", zoneID)
 
-	// List all resource record sets
-	cmdCtx, cancel = context.WithTimeout(ctx, AWSCommandTimeout)
-	defer cancel()
-
-	cmd = exec.CommandContext(cmdCtx, "aws", "route53", "list-resource-record-sets",
-		"--hosted-zone-id", zoneID,
-		"--output", "json",
-	)
-
-	output, err = cmd.CombinedOutput()
+	recordSets, err := h.listAllRecordSets(ctx, r53, zoneID)
 	if err != nil {
-		return fmt.Errorf("list resource record sets: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("list resource record sets: %w", err)
 	}
 
-	// Parse the resource record sets
-	var recordSets struct {
-		ResourceRecordSets []struct {
-			Name string `json:"Name"`
-			Type string `json:"Type"`
-		} `json:"ResourceRecordSets"`
-	}
-
-	if err := json.Unmarshal(output, &recordSets); err != nil {
-		return fmt.Errorf("parse record sets: %w", err)
-	}
-
-	// Delete all records except NS and SOA (required records for the zone)
-	deletedCount := 0
-	for _, record := range recordSets.ResourceRecordSets {
-		if record.Type == "NS" || record.Type == "SOA" {
-			// Skip NS and SOA records - these are managed by Route53
+	changes := make([]route53types.Change, 0, len(recordSets))
+	for _, rrset := range recordSets {
+		recordType := string(rrset.Type)
+		if recordType == "NS" || recordType == "SOA" {
 			continue
 		}
 
-		log.Printf("Deleting DNS record: %s (%s)", record.Name, record.Type)
+		log.Printf("Queueing DNS record deletion: %s (%s)", aws.ToString(rrset.Name), recordType)
+		rrsetCopy := rrset
+		changes = append(changes, route53types.Change{
+			Action:            route53types.ChangeActionDelete,
+			ResourceRecordSet: &rrsetCopy,
+		})
+	}
 
-		// Delete the record using change-resource-record-sets
-		changeBatch := fmt.Sprintf(`{
-			"Changes": [{
-				"Action": "DELETE",
-				"ResourceRecordSet": %s
-			}]
-		}`, getRecordSetJSON(output, record.Name, record.Type))
-
-		cmdCtx, cancel := context.WithTimeout(ctx, AWSCommandTimeout)
-		defer cancel()
-
-		cmd := exec.CommandContext(cmdCtx, "aws", "route53", "change-resource-record-sets",
-			"--hosted-zone-id", zoneID,
-			"--change-batch", changeBatch,
-		)
-
-		if deleteOutput, deleteErr := cmd.CombinedOutput(); deleteErr != nil {
-			log.Printf("Warning: failed to delete record %s: %v\nOutput: %s", record.Name, deleteErr, string(deleteOutput))
-		} else {
-			deletedCount++
+	if len(changes) > 0 {
+		log.Printf("Deleting %d DNS records from zone %s in batches", len(changes), zoneName)
+		if err := h.deleteRoute53RecordBatches(ctx, r53, zoneID, changes); err != nil {
+			return fmt.Errorf("delete DNS records: %w", err)
 		}
+		log.Printf("Deleted %d DNS records from zone %s", len(changes), zoneName)
 	}
 
-	if deletedCount > 0 {
-		log.Printf("Deleted %d DNS records from zone %s", deletedCount, zoneName)
-		// Wait a moment for DNS propagation
-		time.Sleep(CleanupRetryDelay)
-	}
-
-	// Delete the hosted zone
-	log.Printf("Deleting hosted zone: %s (ID: %s)", zoneName, zoneID)
-	cmdCtx, cancel = context.WithTimeout(ctx, AWSCommandTimeout)
-	defer cancel()
-
-	cmd = exec.CommandContext(cmdCtx, "aws", "route53", "delete-hosted-zone",
-		"--id", zoneID,
-	)
-
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("delete hosted zone: %w\nOutput: %s", err, string(output))
+	if err := retryAWS(ctx, "delete hosted zone", func(callCtx context.Context) error {
+		_, err := r53.DeleteHostedZone(callCtx, &route53.DeleteHostedZoneInput{
+			Id: aws.String(zoneID),
+		})
+		return err
+	}); err != nil {
+		return fmt.Errorf("delete hosted zone %s: %w", zoneName, err)
 	}
 
 	log.Printf("Successfully deleted Route53 hosted zone %s", zoneName)
 	return nil
 }
 
-// getRecordSetJSON extracts a single record set from the JSON output
-func getRecordSetJSON(jsonOutput []byte, name, recordType string) string {
-	var data struct {
-		ResourceRecordSets []json.RawMessage `json:"ResourceRecordSets"`
+func (h *DestroyHandler) findHostedZoneIDByName(ctx context.Context, client *route53.Client, zoneName string) (string, error) {
+	var out *route53.ListHostedZonesByNameOutput
+
+	err := retryAWS(ctx, "list hosted zones by name", func(callCtx context.Context) error {
+		var err error
+		out, err = client.ListHostedZonesByName(callCtx, &route53.ListHostedZonesByNameInput{
+			DNSName: aws.String(zoneName),
+		})
+		return err
+	})
+	if err != nil {
+		return "", fmt.Errorf("list hosted zones by name: %w", err)
 	}
 
-	if err := json.Unmarshal(jsonOutput, &data); err != nil {
-		return "{}"
+	for _, zone := range out.HostedZones {
+		if aws.ToString(zone.Name) == zoneName {
+			return strings.TrimPrefix(aws.ToString(zone.Id), "/hostedzone/"), nil
+		}
 	}
 
-	for _, rawRecord := range data.ResourceRecordSets {
-		var record struct {
-			Name string `json:"Name"`
-			Type string `json:"Type"`
+	return "", nil
+}
+
+func (h *DestroyHandler) listAllRecordSets(ctx context.Context, client *route53.Client, zoneID string) ([]route53types.ResourceRecordSet, error) {
+	paginator := route53.NewListResourceRecordSetsPaginator(client, &route53.ListResourceRecordSetsInput{
+		HostedZoneId: aws.String(zoneID),
+	})
+
+	var out []route53types.ResourceRecordSet
+	for paginator.HasMorePages() {
+		var page *route53.ListResourceRecordSetsOutput
+		err := retryAWS(ctx, "list resource record sets", func(callCtx context.Context) error {
+			var err error
+			page, err = paginator.NextPage(callCtx)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.ResourceRecordSets...)
+	}
+
+	return out, nil
+}
+
+func (h *DestroyHandler) deleteRoute53RecordBatches(ctx context.Context, client *route53.Client, zoneID string, changes []route53types.Change) error {
+	for start := 0; start < len(changes); start += route53ChangeBatchSize {
+		end := start + route53ChangeBatchSize
+		if end > len(changes) {
+			end = len(changes)
 		}
 
-		if err := json.Unmarshal(rawRecord, &record); err != nil {
+		batch := changes[start:end]
+		log.Printf("Submitting Route53 change batch %d-%d", start+1, end)
+
+		var changeOut *route53.ChangeResourceRecordSetsOutput
+		err := retryAWS(ctx, "change resource record sets", func(callCtx context.Context) error {
+			var err error
+			changeOut, err = client.ChangeResourceRecordSets(callCtx, &route53.ChangeResourceRecordSetsInput{
+				HostedZoneId: aws.String(zoneID),
+				ChangeBatch: &route53types.ChangeBatch{
+					Changes: batch,
+				},
+			})
+			return err
+		})
+		if err != nil {
+			return err
+		}
+
+		changeID := aws.ToString(changeOut.ChangeInfo.Id)
+		if changeID == "" {
 			continue
 		}
 
-		if record.Name == name && record.Type == recordType {
-			return string(rawRecord)
+		if err := h.waitForRoute53ChangeInsync(ctx, client, changeID); err != nil {
+			return fmt.Errorf("wait for Route53 change %s: %w", changeID, err)
 		}
 	}
 
-	return "{}"
+	return nil
 }
+
+func (h *DestroyHandler) waitForRoute53ChangeInsync(ctx context.Context, client *route53.Client, changeID string) error {
+	deadline := time.Now().Add(route53ChangePollTimeout)
+	changeID = strings.TrimPrefix(changeID, "/change/")
+
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for Route53 change %s to become INSYNC", changeID)
+		}
+
+		var out *route53.GetChangeOutput
+		err := retryAWS(ctx, "get route53 change", func(callCtx context.Context) error {
+			var err error
+			out, err = client.GetChange(callCtx, &route53.GetChangeInput{
+				Id: aws.String(changeID),
+			})
+			return err
+		})
+		if err != nil {
+			return err
+		}
+
+		if out.ChangeInfo.Status == route53types.ChangeStatusInsync {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(route53ChangePollDelay):
+		}
+	}
+}
+
 // cleanupIAMResourcesByClusterName deletes IAM roles and OIDC providers using targeted lookups.
-// Uses infraID-based exact names instead of account-wide scanning for performance and reliability.
+// Uses infraID-based exact prefix matching instead of tag inspection on every role.
 func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster, infraID string) error {
-	// Load AWS SDK config
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
 	}
 
 	iamClient := iam.NewFromConfig(cfg)
+	stsClient := sts.NewFromConfig(cfg)
 
-	// Track cleanup results
 	deletedRoles := 0
 	deletedProviders := 0
-	errors := []string{}
+	var errMu sync.Mutex
+	var countMu sync.Mutex
+	var errorsFound []string
 
-	// If we don't have infraID, we cannot do targeted cleanup safely
+	addErr := func(format string, args ...any) {
+		errMu.Lock()
+		defer errMu.Unlock()
+		errorsFound = append(errorsFound, fmt.Sprintf(format, args...))
+	}
+
+	incDeletedRoles := func() {
+		countMu.Lock()
+		deletedRoles++
+		countMu.Unlock()
+	}
+
 	if infraID == "" {
-		log.Printf("Warning: infraID not available - will attempt limited cleanup for Windows IRSA role only")
+		log.Printf("Warning: infraID not available - skipping infraID-based IAM role and OIDC cleanup")
 	} else {
 		log.Printf("Performing targeted cleanup using infraID: %s", infraID)
 
-		// Strategy: Instead of scanning ALL roles, only check roles matching infraID prefix
-		// This reduces API calls from O(all_roles) to O(cluster_roles)
-		paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
-		for paginator.HasMorePages() {
-			page, err := paginator.NextPage(ctx)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("list roles: %v", err))
-				break
-			}
-
-			for _, role := range page.Roles {
-				roleName := aws.ToString(role.RoleName)
-
-				// PRE-FILTER: Only check roles that start with infraID
-				// This avoids calling ListRoleTags on 500+ unrelated roles
-				if !strings.HasPrefix(roleName, infraID+"-") {
-					continue
-				}
-
-				log.Printf("Found role with infraID prefix: %s", roleName)
-
-				// Detach all policies before deleting role
-				if err := h.detachRolePolicies(ctx, iamClient, roleName); err != nil {
-					errors = append(errors, fmt.Sprintf("detach policies from %s: %v", roleName, err))
-					continue
-				}
-
-				// Delete the role
-				_, err := iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
-					RoleName: role.RoleName,
-				})
-				if err != nil {
-					errors = append(errors, fmt.Sprintf("delete role %s: %v", roleName, err))
-				} else {
-					deletedRoles++
-					log.Printf("Deleted IAM role: %s", roleName)
-				}
-			}
+		roleNames, err := h.findInfraRoles(ctx, iamClient, infraID)
+		if err != nil {
+			addErr("list roles for infraID %s: %v", infraID, err)
+		} else if len(roleNames) > 0 {
+			log.Printf("Found %d IAM roles matching infraID prefix %s-", len(roleNames), infraID)
+			h.deleteIAMRolesConcurrently(ctx, iamClient, roleNames, incDeletedRoles, addErr)
 		}
 
-		// Delete OIDC provider using exact ARN construction
-		// Format: arn:aws:iam::{account}:oidc-provider/{infraID}-oidc.s3.{region}.amazonaws.com
-		// First, get account ID
-		stsClient := sts.NewFromConfig(cfg)
 		identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
-			log.Printf("Warning: could not get AWS account ID: %v", err)
+			addErr("get AWS account ID: %v", err)
 		} else {
 			accountID := aws.ToString(identity.Account)
-			oidcProviderArn := fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s-oidc.s3.%s.amazonaws.com",
-				accountID, infraID, cluster.Region)
+			oidcProviderArn := fmt.Sprintf(
+				"arn:aws:iam::%s:oidc-provider/%s-oidc.s3.%s.amazonaws.com",
+				accountID, infraID, cluster.Region,
+			)
 
 			log.Printf("Attempting to delete OIDC provider: %s", oidcProviderArn)
-
-			// Try to delete the exact OIDC provider - if it doesn't exist, that's fine
-			_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
-				OpenIDConnectProviderArn: aws.String(oidcProviderArn),
+			err := retryAWS(ctx, "delete OIDC provider", func(callCtx context.Context) error {
+				_, err := iamClient.DeleteOpenIDConnectProvider(callCtx, &iam.DeleteOpenIDConnectProviderInput{
+					OpenIDConnectProviderArn: aws.String(oidcProviderArn),
+				})
+				return err
 			})
 			if err != nil {
-				if strings.Contains(err.Error(), "NoSuchEntity") || strings.Contains(err.Error(), "not found") {
+				if isNoSuchEntityError(err) {
 					log.Printf("OIDC provider does not exist (already deleted): %s", oidcProviderArn)
 				} else {
-					errors = append(errors, fmt.Sprintf("delete OIDC provider %s: %v", oidcProviderArn, err))
+					addErr("delete OIDC provider %s: %v", oidcProviderArn, err)
 				}
 			} else {
 				deletedProviders++
@@ -379,8 +400,7 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 		}
 	}
 
-	// Clean up Windows IRSA role if it exists (created during Windows VM post-config)
-	// Pattern: ocpctl-win-s3-{cluster-id}
+	// Clean up Windows IRSA role if it exists
 	windowsRoleName := fmt.Sprintf("ocpctl-win-s3-%s", cluster.ID)
 	log.Printf("Checking for Windows IRSA role: %s", windowsRoleName)
 
@@ -388,80 +408,316 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 		RoleName: aws.String(windowsRoleName),
 	})
 	if err == nil {
-		// Role exists, detach policies and delete
 		log.Printf("Windows IRSA role exists, deleting: %s", windowsRoleName)
-
-		if err := h.detachRolePolicies(ctx, iamClient, windowsRoleName); err != nil {
-			errors = append(errors, fmt.Sprintf("detach policies from Windows IRSA role %s: %v", windowsRoleName, err))
+		if err := h.deleteSingleIAMRole(ctx, iamClient, windowsRoleName); err != nil {
+			addErr("delete Windows IRSA role %s: %v", windowsRoleName, err)
 		} else {
-			_, err := iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
-				RoleName: aws.String(windowsRoleName),
-			})
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("delete Windows IRSA role %s: %v", windowsRoleName, err))
-			} else {
-				deletedRoles++
-				log.Printf("Deleted Windows IRSA role: %s", windowsRoleName)
-			}
+			deletedRoles++
+			log.Printf("Deleted Windows IRSA role: %s", windowsRoleName)
 		}
-	} else if !strings.Contains(err.Error(), "NoSuchEntity") {
-		// Error other than "doesn't exist"
-		errors = append(errors, fmt.Sprintf("check Windows IRSA role %s: %v", windowsRoleName, err))
+	} else if !isNoSuchEntityError(err) {
+		addErr("check Windows IRSA role %s: %v", windowsRoleName, err)
 	}
 
-	// Log summary
 	log.Printf("Cleanup summary: deleted %d IAM roles, %d OIDC providers", deletedRoles, deletedProviders)
-	if len(errors) > 0 {
-		log.Printf("Encountered %d errors during cleanup:", len(errors))
-		for _, e := range errors {
+	if len(errorsFound) > 0 {
+		log.Printf("Encountered %d errors during cleanup:", len(errorsFound))
+		for _, e := range errorsFound {
 			log.Printf("  - %s", e)
 		}
-		return fmt.Errorf("cleanup completed with %d errors: %s", len(errors), strings.Join(errors, "; "))
+		return fmt.Errorf("cleanup completed with %d errors: %s", len(errorsFound), strings.Join(errorsFound, "; "))
 	}
 
 	return nil
 }
+
+func (h *DestroyHandler) findInfraRoles(ctx context.Context, iamClient *iam.Client, infraID string) ([]string, error) {
+	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+
+	var roleNames []string
+	prefix := infraID + "-"
+
+	for paginator.HasMorePages() {
+		var page *iam.ListRolesOutput
+		err := retryAWS(ctx, "list IAM roles", func(callCtx context.Context) error {
+			var err error
+			page, err = paginator.NextPage(callCtx)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, role := range page.Roles {
+			roleName := aws.ToString(role.RoleName)
+			if strings.HasPrefix(roleName, prefix) {
+				roleNames = append(roleNames, roleName)
+			}
+		}
+	}
+
+	return roleNames, nil
 }
 
-// detachRolePolicies detaches all managed and inline policies from an IAM role
+func (h *DestroyHandler) deleteIAMRolesConcurrently(
+	ctx context.Context,
+	iamClient *iam.Client,
+	roleNames []string,
+	onDeleted func(),
+	onError func(format string, args ...any),
+) {
+	roleCh := make(chan string)
+	var wg sync.WaitGroup
+
+	workerCount := iamDeleteWorkers
+	if len(roleNames) < workerCount {
+		workerCount = len(roleNames)
+	}
+	if workerCount < 1 {
+		return
+	}
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for roleName := range roleCh {
+				if err := h.deleteSingleIAMRole(ctx, iamClient, roleName); err != nil {
+					onError("delete role %s: %v", roleName, err)
+					continue
+				}
+				onDeleted()
+				log.Printf("Deleted IAM role: %s", roleName)
+			}
+		}()
+	}
+
+	for _, roleName := range roleNames {
+		roleCh <- roleName
+	}
+	close(roleCh)
+	wg.Wait()
+}
+
+func (h *DestroyHandler) deleteSingleIAMRole(ctx context.Context, iamClient *iam.Client, roleName string) error {
+	if err := h.detachRolePolicies(ctx, iamClient, roleName); err != nil {
+		return fmt.Errorf("detach policies from %s: %w", roleName, err)
+	}
+
+	return retryAWS(ctx, "delete IAM role", func(callCtx context.Context) error {
+		_, err := iamClient.DeleteRole(callCtx, &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+		return err
+	})
+}
+
+// detachRolePolicies detaches all managed and inline policies from an IAM role.
+// Uses paginators so it works reliably for roles with many attached policies.
 func (h *DestroyHandler) detachRolePolicies(ctx context.Context, iamClient *iam.Client, roleName string) error {
-	// Detach managed policies
-	attachedPolicies, err := iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+	attachedPaginator := iam.NewListAttachedRolePoliciesPaginator(iamClient, &iam.ListAttachedRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
-	if err != nil {
-		return fmt.Errorf("list attached policies: %w", err)
-	}
 
-	for _, policy := range attachedPolicies.AttachedPolicies {
-		_, err := iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
-			RoleName:  aws.String(roleName),
-			PolicyArn: policy.PolicyArn,
+	for attachedPaginator.HasMorePages() {
+		var page *iam.ListAttachedRolePoliciesOutput
+		err := retryAWS(ctx, "list attached role policies", func(callCtx context.Context) error {
+			var err error
+			page, err = attachedPaginator.NextPage(callCtx)
+			return err
 		})
 		if err != nil {
-			return fmt.Errorf("detach policy %s: %w", aws.ToString(policy.PolicyArn), err)
+			return fmt.Errorf("list attached policies: %w", err)
 		}
-		log.Printf("Detached policy %s from role %s", aws.ToString(policy.PolicyName), roleName)
+
+		for _, policy := range page.AttachedPolicies {
+			policyArn := aws.ToString(policy.PolicyArn)
+			policyName := aws.ToString(policy.PolicyName)
+
+			err := retryAWS(ctx, "detach role policy", func(callCtx context.Context) error {
+				_, err := iamClient.DetachRolePolicy(callCtx, &iam.DetachRolePolicyInput{
+					RoleName:  aws.String(roleName),
+					PolicyArn: policy.PolicyArn,
+				})
+				return err
+			})
+			if err != nil {
+				return fmt.Errorf("detach policy %s: %w", policyArn, err)
+			}
+
+			log.Printf("Detached policy %s from role %s", policyName, roleName)
+		}
 	}
 
-	// Delete inline policies
-	inlinePolicies, err := iamClient.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+	inlinePaginator := iam.NewListRolePoliciesPaginator(iamClient, &iam.ListRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
-	if err != nil {
-		return fmt.Errorf("list inline policies: %w", err)
-	}
 
-	for _, policyName := range inlinePolicies.PolicyNames {
-		_, err := iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
-			RoleName:   aws.String(roleName),
-			PolicyName: aws.String(policyName),
+	for inlinePaginator.HasMorePages() {
+		var page *iam.ListRolePoliciesOutput
+		err := retryAWS(ctx, "list inline role policies", func(callCtx context.Context) error {
+			var err error
+			page, err = inlinePaginator.NextPage(callCtx)
+			return err
 		})
 		if err != nil {
-			return fmt.Errorf("delete inline policy %s: %w", policyName, err)
+			return fmt.Errorf("list inline policies: %w", err)
 		}
-		log.Printf("Deleted inline policy %s from role %s", policyName, roleName)
+
+		for _, policyName := range page.PolicyNames {
+			name := policyName
+			err := retryAWS(ctx, "delete inline role policy", func(callCtx context.Context) error {
+				_, err := iamClient.DeleteRolePolicy(callCtx, &iam.DeleteRolePolicyInput{
+					RoleName:   aws.String(roleName),
+					PolicyName: aws.String(name),
+				})
+				return err
+			})
+			if err != nil {
+				return fmt.Errorf("delete inline policy %s: %w", name, err)
+			}
+
+			log.Printf("Deleted inline policy %s from role %s", name, roleName)
+		}
+	}
+
+	// Defensive cleanup for instance profiles that can block role deletion in some environments.
+	if err := h.removeRoleFromInstanceProfiles(ctx, iamClient, roleName); err != nil {
+		return err
 	}
 
 	return nil
 }
+
+func (h *DestroyHandler) removeRoleFromInstanceProfiles(ctx context.Context, iamClient *iam.Client, roleName string) error {
+	paginator := iam.NewListInstanceProfilesForRolePaginator(iamClient, &iam.ListInstanceProfilesForRoleInput{
+		RoleName: aws.String(roleName),
+	})
+
+	for paginator.HasMorePages() {
+		var page *iam.ListInstanceProfilesForRoleOutput
+		err := retryAWS(ctx, "list instance profiles for role", func(callCtx context.Context) error {
+			var err error
+			page, err = paginator.NextPage(callCtx)
+			return err
+		})
+		if err != nil {
+			// Some roles will never have instance profiles; treat not found as fine.
+			if isNoSuchEntityError(err) {
+				return nil
+			}
+			return fmt.Errorf("list instance profiles for role %s: %w", roleName, err)
+		}
+
+		for _, profile := range page.InstanceProfiles {
+			profileName := aws.ToString(profile.InstanceProfileName)
+			err := retryAWS(ctx, "remove role from instance profile", func(callCtx context.Context) error {
+				_, err := iamClient.RemoveRoleFromInstanceProfile(callCtx, &iam.RemoveRoleFromInstanceProfileInput{
+					InstanceProfileName: aws.String(profileName),
+					RoleName:            aws.String(roleName),
+				})
+				return err
+			})
+			if err != nil && !isNoSuchEntityError(err) {
+				return fmt.Errorf("remove role %s from instance profile %s: %w", roleName, profileName, err)
+			}
+			log.Printf("Removed role %s from instance profile %s", roleName, profileName)
+
+			// Optional: delete empty instance profile if it matches the role name.
+			if profileName == roleName {
+				err := retryAWS(ctx, "delete instance profile", func(callCtx context.Context) error {
+					_, err := iamClient.DeleteInstanceProfile(callCtx, &iam.DeleteInstanceProfileInput{
+						InstanceProfileName: aws.String(profileName),
+					})
+					return err
+				})
+				if err == nil {
+					log.Printf("Deleted instance profile %s", profileName)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func retryAWS(ctx context.Context, opName string, fn func(context.Context) error) error {
+	backoff := awsRetryInitialBackoff
+	var lastErr error
+
+	for attempt := 1; attempt <= awsRetryAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		callErr := fn(ctx)
+		if callErr == nil {
+			return nil
+		}
+
+		lastErr = callErr
+		if !isRetryableAWSError(callErr) || attempt == awsRetryAttempts {
+			break
+		}
+
+		log.Printf("Retrying AWS operation %q after error (attempt %d/%d): %v", opName, attempt, awsRetryAttempts, callErr)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+	}
+
+	return lastErr
+}
+
+func isRetryableAWSError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	retryableFragments := []string{
+		"throttl",
+		"rate exceeded",
+		"too many requests",
+		"request limit exceeded",
+		"timeout",
+		"temporarily unavailable",
+		"connection reset",
+		"internalerror",
+		"service unavailable",
+	}
+
+	for _, frag := range retryableFragments {
+		if strings.Contains(msg, frag) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isNoSuchEntityError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+	if strings.Contains(msg, "NoSuchEntity") || strings.Contains(strings.ToLower(msg), "not found") {
+		return true
+	}
+
+	var apiErr interface{ ErrorCode() string }
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "NoSuchEntity"
+	}
+
+	return false
+}
+
+// Avoid unused import errors if iamtypes ends up needed by future edits in this file.
+var _ iamtypes.Role
