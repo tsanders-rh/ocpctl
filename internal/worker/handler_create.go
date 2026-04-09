@@ -2,12 +2,19 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -202,6 +209,17 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 
 	log.Printf("Cluster %s created successfully", cluster.Name)
 
+	// Record AWS resources in cleanup manifest for fast destroy (AWS only)
+	if cluster.Platform == types.PlatformAWS {
+		log.Printf("Recording AWS resources in cleanup manifest for cluster %s...", cluster.Name)
+		if err := h.recordAWSCleanupManifest(ctx, workDir, cluster); err != nil {
+			log.Printf("Warning: failed to record AWS cleanup manifest: %v", err)
+			// Don't fail cluster creation - manifest is an optimization, not required
+		} else {
+			log.Printf("Successfully recorded AWS cleanup manifest")
+		}
+	}
+
 	// Tag all AWS resources now that cluster creation is complete
 	// By now (30-45 min later), IAM eventual consistency has resolved
 	log.Printf("Tagging all AWS resources for cluster %s...", cluster.Name)
@@ -331,6 +349,20 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeMetadata,
 			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/metadata.json", h.config.S3BucketName, clusterID),
+			SizeBytes:    &size,
+			CreatedAt:    time.Now(),
+		})
+	}
+
+	// AWS Cleanup Manifest (for fast destroy)
+	manifestPath := filepath.Join(workDir, "aws-cleanup-manifest.json")
+	if stat, err := os.Stat(manifestPath); err == nil {
+		size := stat.Size()
+		artifacts = append(artifacts, types.ClusterArtifact{
+			ID:           uuid.New().String(),
+			ClusterID:    clusterID,
+			ArtifactType: types.ArtifactTypeMetadata,
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/aws-cleanup-manifest.json", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})
@@ -864,4 +896,165 @@ func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types
 	} else {
 		log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
 	}
+}
+
+// recordAWSCleanupManifest discovers and records AWS resources created during cluster installation
+// for fast manifest-driven cleanup during destroy. This eliminates the need for account-wide
+// resource discovery, reducing destroy time from 60-90s to <5s.
+func (h *CreateHandler) recordAWSCleanupManifest(ctx context.Context, workDir string, cluster *types.Cluster) error {
+	// Get infraID from metadata.json
+	metadataPath := filepath.Join(workDir, "metadata.json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return fmt.Errorf("read metadata.json: %w", err)
+	}
+
+	var metadata struct {
+		InfraID string `json:"infraID"`
+	}
+
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	if metadata.InfraID == "" {
+		return fmt.Errorf("infraID not found in metadata.json")
+	}
+
+	infraID := metadata.InfraID
+	log.Printf("Recording AWS cleanup manifest for infraID: %s", infraID)
+
+	// Initialize manifest with cluster metadata
+	if err := RecordAWSInfraID(workDir, cluster.Name, infraID, cluster.Region); err != nil {
+		return fmt.Errorf("record infraID: %w", err)
+	}
+
+	// Discover and record IAM roles created by CCO
+	// These follow the pattern: <infraID>-<component>-cloud-credentials
+	if err := h.discoverAndRecordIAMRoles(ctx, workDir, infraID, cluster.Region); err != nil {
+		log.Printf("Warning: failed to discover IAM roles: %v", err)
+		// Don't fail - partial manifest is better than no manifest
+	}
+
+	// Record OIDC provider ARN (deterministic, can construct from infraID)
+	if err := h.recordOIDCProvider(ctx, workDir, infraID, cluster.Region); err != nil {
+		log.Printf("Warning: failed to record OIDC provider: %v", err)
+	}
+
+	// Discover and record Route53 hosted zone
+	if cluster.BaseDomain != nil && *cluster.BaseDomain != "" {
+		if err := h.discoverAndRecordRoute53Zone(ctx, workDir, cluster.Name, *cluster.BaseDomain, cluster.Region); err != nil {
+			log.Printf("Warning: failed to discover Route53 zone: %v", err)
+		}
+	}
+
+	log.Printf("AWS cleanup manifest recording complete")
+	return nil
+}
+
+// discoverAndRecordIAMRoles discovers IAM roles created by CCO and records them in the manifest
+func (h *CreateHandler) discoverAndRecordIAMRoles(ctx context.Context, workDir, infraID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// List roles matching infraID prefix
+	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+
+	prefix := infraID + "-"
+	roleCount := 0
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list IAM roles: %w", err)
+		}
+
+		for _, role := range page.Roles {
+			roleName := aws.ToString(role.RoleName)
+			if strings.HasPrefix(roleName, prefix) {
+				if err := RecordAWSIAMRole(workDir, roleName); err != nil {
+					log.Printf("Warning: failed to record IAM role %s: %v", roleName, err)
+					continue
+				}
+				roleCount++
+				log.Printf("Recorded IAM role: %s", roleName)
+			}
+		}
+	}
+
+	log.Printf("Discovered and recorded %d IAM roles", roleCount)
+	return nil
+}
+
+// recordOIDCProvider constructs and records the OIDC provider ARN
+func (h *CreateHandler) recordOIDCProvider(ctx context.Context, workDir, infraID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	stsClient := sts.NewFromConfig(cfg)
+
+	// Get AWS account ID
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return fmt.Errorf("get AWS account ID: %w", err)
+	}
+
+	accountID := aws.ToString(identity.Account)
+
+	// Construct OIDC provider ARN
+	// Format: arn:aws:iam::{account}:oidc-provider/{infraID}-oidc.s3.{region}.amazonaws.com
+	oidcProviderArn := fmt.Sprintf(
+		"arn:aws:iam::%s:oidc-provider/%s-oidc.s3.%s.amazonaws.com",
+		accountID, infraID, region,
+	)
+
+	if err := RecordAWSOIDCProvider(workDir, oidcProviderArn); err != nil {
+		return fmt.Errorf("record OIDC provider: %w", err)
+	}
+
+	log.Printf("Recorded OIDC provider: %s", oidcProviderArn)
+	return nil
+}
+
+// discoverAndRecordRoute53Zone discovers the Route53 hosted zone and records its ID
+func (h *CreateHandler) discoverAndRecordRoute53Zone(ctx context.Context, workDir, clusterName, baseDomain, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	r53 := route53.NewFromConfig(cfg)
+
+	// Construct zone name
+	zoneName := fmt.Sprintf("%s.%s.", clusterName, baseDomain)
+
+	// List hosted zones by name
+	out, err := r53.ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{
+		DNSName: aws.String(zoneName),
+	})
+	if err != nil {
+		return fmt.Errorf("list hosted zones: %w", err)
+	}
+
+	// Find matching zone
+	for _, zone := range out.HostedZones {
+		if aws.ToString(zone.Name) == zoneName {
+			zoneID := strings.TrimPrefix(aws.ToString(zone.Id), "/hostedzone/")
+
+			if err := RecordAWSRoute53HostedZone(workDir, zoneID); err != nil {
+				return fmt.Errorf("record Route53 zone: %w", err)
+			}
+
+			log.Printf("Recorded Route53 hosted zone: %s (ID: %s)", zoneName, zoneID)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("Route53 hosted zone not found for %s", zoneName)
 }

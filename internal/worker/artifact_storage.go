@@ -62,6 +62,13 @@ func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, c
 			Required:  true,
 		},
 
+		// AWS cleanup manifest (for fast destroy)
+		{
+			LocalPath: filepath.Join(workDir, "aws-cleanup-manifest.json"),
+			S3Key:     fmt.Sprintf("clusters/%s/artifacts/aws-cleanup-manifest.json", clusterID),
+			Required:  false, // Only exists for AWS OpenShift clusters
+		},
+
 		// OpenShift install state (needed for destroy/resume)
 		{
 			LocalPath: filepath.Join(workDir, ".openshift_install_state.json"),

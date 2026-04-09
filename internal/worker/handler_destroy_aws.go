@@ -35,8 +35,10 @@ const (
 
 // HandleAWSDestroy handles AWS-specific cluster cleanup including CCO IAM roles, OIDC provider, and Route53 hosted zone.
 // This should be called AFTER openshift-install destroy cluster completes to clean up resources created by ccoctl.
-// Uses the infrastructure ID from metadata.json to identify and delete AWS resources.
-// If metadata.json is missing, falls back to direct AWS SDK cleanup using infraID (if available) plus Windows IRSA cleanup.
+// Cleanup strategy (in order of preference):
+// 1. ccoctl aws delete (fastest, uses infraID)
+// 2. Manifest-driven cleanup (uses exact resource names/ARNs recorded during create)
+// 3. Discovery-based fallback (scans AWS account for matching resources - slowest)
 func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cluster, inst *installer.Installer, workDir string) error {
 	log.Printf("AWS cluster cleanup: cleaning up CCO IAM roles, OIDC provider, and Route53 for %s", cluster.Name)
 
@@ -51,11 +53,12 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 		log.Printf("Using infraID from metadata.json: %s", infraID)
 	}
 
+	// Try ccoctl cleanup first (fastest path)
 	ccoctlSuccess := false
 	if !usedFallback {
 		if err := h.runCCOCTLAWSDelete(ctx, infraID, cluster.Region); err != nil {
 			log.Printf("Warning: ccoctl aws delete failed for %s: %v", cluster.Name, err)
-			log.Printf("Will attempt fallback IAM cleanup")
+			log.Printf("Will attempt manifest-driven or discovery-based cleanup")
 			usedFallback = true
 		} else {
 			log.Printf("Successfully cleaned up AWS CCO resources for %s using ccoctl", cluster.Name)
@@ -63,31 +66,139 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 		}
 	}
 
-	fallbackCleanupSuccess := false
+	// If ccoctl failed, try manifest-driven cleanup (much faster than discovery)
+	manifestCleanupSuccess := false
 	if usedFallback && !ccoctlSuccess {
-		log.Printf("Attempting direct AWS SDK cleanup for cluster %s", cluster.Name)
-		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
-			log.Printf("Warning: fallback IAM cleanup encountered errors: %v", err)
+		log.Printf("Attempting manifest-driven cleanup for cluster %s", cluster.Name)
+		if err := h.cleanupFromManifest(ctx, cluster, workDir); err != nil {
+			log.Printf("Warning: manifest-driven cleanup failed or incomplete: %v", err)
+			log.Printf("Will attempt discovery-based fallback")
 		} else {
-			log.Printf("Successfully cleaned up IAM resources using fallback method")
-			fallbackCleanupSuccess = true
+			log.Printf("Successfully cleaned up AWS resources using manifest")
+			manifestCleanupSuccess = true
 		}
 	}
 
+	// If both ccoctl and manifest failed, fall back to discovery-based cleanup (slowest)
+	discoveryCleanupSuccess := false
+	if usedFallback && !ccoctlSuccess && !manifestCleanupSuccess {
+		log.Printf("Attempting discovery-based AWS SDK cleanup for cluster %s", cluster.Name)
+		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
+			log.Printf("Warning: discovery-based IAM cleanup encountered errors: %v", err)
+		} else {
+			log.Printf("Successfully cleaned up IAM resources using discovery-based method")
+			discoveryCleanupSuccess = true
+		}
+	}
+
+	// Route53 cleanup (uses manifest if available, otherwise discovery)
 	route53Success := false
-	if err := h.deleteRoute53HostedZone(ctx, cluster); err != nil {
+	if err := h.deleteRoute53HostedZone(ctx, cluster, workDir); err != nil {
 		log.Printf("Warning: failed to delete Route53 hosted zone: %v", err)
 	} else {
 		route53Success = true
 	}
 
-	overallSuccess := ccoctlSuccess || fallbackCleanupSuccess
+	overallSuccess := ccoctlSuccess || manifestCleanupSuccess || discoveryCleanupSuccess
 	if !overallSuccess {
-		return fmt.Errorf("AWS cleanup failed: ccoctl failed and fallback cleanup failed")
+		return fmt.Errorf("AWS cleanup failed: all cleanup methods failed")
 	}
 
 	if !route53Success {
 		log.Printf("Warning: Route53 cleanup failed, but IAM cleanup succeeded - marking overall cleanup as success")
+	}
+
+	return nil
+}
+
+// cleanupFromManifest deletes AWS resources using exact names/ARNs from the cleanup manifest.
+// This is much faster than discovery because it deletes resources directly without scanning.
+func (h *DestroyHandler) cleanupFromManifest(ctx context.Context, cluster *types.Cluster, workDir string) error {
+	manifest, err := LoadAWSCleanupManifest(workDir)
+	if err != nil {
+		return fmt.Errorf("load cleanup manifest: %w", err)
+	}
+
+	if manifest.IsManifestEmpty() {
+		return fmt.Errorf("cleanup manifest is empty - falling back to discovery")
+	}
+
+	log.Printf("Found cleanup manifest with %d IAM roles, OIDC provider: %v, Windows IRSA: %v, Route53 zone: %v",
+		len(manifest.IAMRoles),
+		manifest.OIDCProviderArn != "",
+		manifest.WindowsIRSARole != "",
+		manifest.Route53HostedZoneID != "")
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	var errs []string
+	deletedCount := 0
+
+	// Delete instance profiles first (prevents role deletion failures)
+	for _, profileName := range manifest.InstanceProfiles {
+		log.Printf("Deleting instance profile from manifest: %s", profileName)
+		err := retryAWS(ctx, "delete instance profile", func(callCtx context.Context) error {
+			_, err := iamClient.DeleteInstanceProfile(callCtx, &iam.DeleteInstanceProfileInput{
+				InstanceProfileName: aws.String(profileName),
+			})
+			return err
+		})
+		if err != nil && !isNoSuchEntityError(err) {
+			errs = append(errs, fmt.Sprintf("delete instance profile %s: %v", profileName, err))
+		} else if err == nil {
+			deletedCount++
+			log.Printf("Deleted instance profile: %s", profileName)
+		}
+	}
+
+	// Delete IAM roles recorded in manifest
+	for _, roleName := range manifest.IAMRoles {
+		log.Printf("Deleting IAM role from manifest: %s", roleName)
+		if err := h.deleteSingleIAMRole(ctx, iamClient, roleName); err != nil && !isNoSuchEntityError(err) {
+			errs = append(errs, fmt.Sprintf("delete role %s: %v", roleName, err))
+		} else if err == nil {
+			deletedCount++
+			log.Printf("Deleted IAM role: %s", roleName)
+		}
+	}
+
+	// Delete Windows IRSA role if recorded
+	if manifest.WindowsIRSARole != "" {
+		log.Printf("Deleting Windows IRSA role from manifest: %s", manifest.WindowsIRSARole)
+		if err := h.deleteSingleIAMRole(ctx, iamClient, manifest.WindowsIRSARole); err != nil && !isNoSuchEntityError(err) {
+			errs = append(errs, fmt.Sprintf("delete Windows IRSA role %s: %v", manifest.WindowsIRSARole, err))
+		} else if err == nil {
+			deletedCount++
+			log.Printf("Deleted Windows IRSA role: %s", manifest.WindowsIRSARole)
+		}
+	}
+
+	// Delete OIDC provider if recorded
+	if manifest.OIDCProviderArn != "" {
+		log.Printf("Deleting OIDC provider from manifest: %s", manifest.OIDCProviderArn)
+		err := retryAWS(ctx, "delete OIDC provider", func(callCtx context.Context) error {
+			_, err := iamClient.DeleteOpenIDConnectProvider(callCtx, &iam.DeleteOpenIDConnectProviderInput{
+				OpenIDConnectProviderArn: aws.String(manifest.OIDCProviderArn),
+			})
+			return err
+		})
+		if err != nil && !isNoSuchEntityError(err) {
+			errs = append(errs, fmt.Sprintf("delete OIDC provider %s: %v", manifest.OIDCProviderArn, err))
+		} else if err == nil {
+			deletedCount++
+			log.Printf("Deleted OIDC provider: %s", manifest.OIDCProviderArn)
+		}
+	}
+
+	log.Printf("Manifest-driven cleanup: deleted %d resources, encountered %d errors", deletedCount, len(errs))
+
+	if len(errs) > 0 {
+		return fmt.Errorf("cleanup completed with %d errors: %s", len(errs), strings.Join(errs, "; "))
 	}
 
 	return nil
@@ -145,7 +256,8 @@ func (h *DestroyHandler) getInfraID(workDir string) (string, error) {
 
 // deleteRoute53HostedZone deletes the Route53 hosted zone for the cluster using the AWS SDK.
 // It batches record deletions instead of issuing one CLI call per record.
-func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *types.Cluster) error {
+// Uses manifest zone ID if available, otherwise discovers by zone name.
+func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *types.Cluster, workDir string) error {
 	if cluster.BaseDomain == nil || *cluster.BaseDomain == "" {
 		log.Printf("Skipping Route53 cleanup - no base domain for cluster %s", cluster.Name)
 		return nil
@@ -157,19 +269,29 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 	}
 
 	r53 := route53.NewFromConfig(cfg)
-	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
-	log.Printf("Looking for Route53 hosted zone: %s", zoneName)
 
-	zoneID, err := h.findHostedZoneIDByName(ctx, r53, zoneName)
-	if err != nil {
-		return err
-	}
-	if zoneID == "" {
-		log.Printf("No Route53 hosted zone found for %s (already deleted or never created)", zoneName)
-		return nil
-	}
+	// Try to get zone ID from manifest first (fastest - no discovery needed)
+	var zoneID string
+	manifest, err := LoadAWSCleanupManifest(workDir)
+	if err == nil && manifest.Route53HostedZoneID != "" {
+		zoneID = manifest.Route53HostedZoneID
+		log.Printf("Using Route53 hosted zone ID from manifest: %s", zoneID)
+	} else {
+		// Fall back to discovery by zone name
+		zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
+		log.Printf("Manifest zone ID not available, looking for Route53 hosted zone by name: %s", zoneName)
 
-	log.Printf("Found hosted zone ID: %s", zoneID)
+		zoneID, err = h.findHostedZoneIDByName(ctx, r53, zoneName)
+		if err != nil {
+			return err
+		}
+		if zoneID == "" {
+			log.Printf("No Route53 hosted zone found for %s (already deleted or never created)", zoneName)
+			return nil
+		}
+
+		log.Printf("Found hosted zone ID: %s", zoneID)
+	}
 
 	recordSets, err := h.listAllRecordSets(ctx, r53, zoneID)
 	if err != nil {
