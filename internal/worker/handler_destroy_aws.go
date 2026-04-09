@@ -270,15 +270,17 @@ func (h *DestroyHandler) deleteRoute53HostedZone(ctx context.Context, cluster *t
 
 	r53 := route53.NewFromConfig(cfg)
 
+	// Construct zone name for logging
+	zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
+
 	// Try to get zone ID from manifest first (fastest - no discovery needed)
 	var zoneID string
 	manifest, err := LoadAWSCleanupManifest(workDir)
 	if err == nil && manifest.Route53HostedZoneID != "" {
 		zoneID = manifest.Route53HostedZoneID
-		log.Printf("Using Route53 hosted zone ID from manifest: %s", zoneID)
+		log.Printf("Using Route53 hosted zone ID from manifest: %s (zone: %s)", zoneID, zoneName)
 	} else {
 		// Fall back to discovery by zone name
-		zoneName := fmt.Sprintf("%s.%s.", cluster.Name, *cluster.BaseDomain)
 		log.Printf("Manifest zone ID not available, looking for Route53 hosted zone by name: %s", zoneName)
 
 		zoneID, err = h.findHostedZoneIDByName(ctx, r53, zoneName)
