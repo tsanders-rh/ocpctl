@@ -145,8 +145,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	}
 
 	// Run openshift-install destroy cluster with explicit timeout
-	// Use 90-minute timeout to ensure destroy completes or fails definitively
-	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: 90m)", cluster.Name, cluster.Version)
+	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: %v)", cluster.Name, cluster.Version, DestroyOperationTimeout)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
 

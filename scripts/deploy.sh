@@ -218,6 +218,15 @@ for host in "${WORKER_HOSTS[@]}"; do
     scp -i "$SSH_KEY" bin/ocpctl-worker-${VERSION} ec2-user@$host:/tmp/ocpctl-worker-${VERSION}
     ssh -i "$SSH_KEY" ec2-user@$host "sudo install -m 755 /tmp/ocpctl-worker-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-worker && rm /tmp/ocpctl-worker-${VERSION}"
 
+    # Requeue any RUNNING jobs before stopping worker (prevents orphaned jobs)
+    echo -e "${YELLOW}  Requeuing any in-progress jobs...${NC}"
+    REQUEUED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" | grep -c "-"' 2>/dev/null || echo "0")
+    if [ "$REQUEUED" -gt 0 ]; then
+        echo -e "${GREEN}✓ Requeued $REQUEUED job(s) to PENDING status${NC}"
+    else
+        echo -e "${YELLOW}  No jobs to requeue${NC}"
+    fi
+
     # Stop service
     ssh -i "$SSH_KEY" ec2-user@$host 'sudo systemctl stop ocpctl-worker'
 
