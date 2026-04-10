@@ -223,36 +223,16 @@ if oc --kubeconfig="$KUBECONFIG" get storageclass ocs-storagecluster-ceph-rbd-vi
     ACCESS_MODE="ReadWriteMany"
     log_info "✓ Using ODF storage: $STORAGE_CLASS (supports live migration)"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi &>/dev/null; then
-    # Create gp3-csi-immediate for CDI imports (WaitForFirstConsumer causes issues)
-    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-immediate &>/dev/null; then
-        log_info "Creating gp3-csi-immediate storage class for CDI imports..."
-        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3-csi-immediate
-  annotations:
-    storageclass.kubernetes.io/description: "AWS EBS gp3 with immediate binding for CDI imports"
-allowVolumeExpansion: true
-parameters:
-  encrypted: "true"
-  type: gp3
-provisioner: ebs.csi.aws.com
-reclaimPolicy: Delete
-volumeBindingMode: Immediate
-EOF
-    fi
-
-    # Create gp3-csi-wfc for VM disks (WaitForFirstConsumer prevents AZ mismatch)
+    # Create gp3-csi-wfc for CDI imports and VM disks (WaitForFirstConsumer prevents AZ mismatch)
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-wfc &>/dev/null; then
-        log_info "Creating gp3-csi-wfc storage class for VM disks..."
+        log_info "Creating gp3-csi-wfc storage class for CDI imports and VM disks..."
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: gp3-csi-wfc
   annotations:
-    storageclass.kubernetes.io/description: "AWS EBS gp3 with WaitForFirstConsumer - prevents AZ mismatch for VM clones"
+    storageclass.kubernetes.io/description: "AWS EBS gp3 with WaitForFirstConsumer - prevents AZ mismatch in multi-AZ clusters"
 allowVolumeExpansion: true
 parameters:
   encrypted: "true"
@@ -261,36 +241,35 @@ provisioner: ebs.csi.aws.com
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 EOF
-        log_info "✓ Created gp3-csi-wfc storage class for VM disks (prevents AZ mismatch)"
+        log_info "✓ Created gp3-csi-wfc storage class (prevents AZ mismatch)"
     fi
 
-    STORAGE_CLASS="gp3-csi-immediate"
+    STORAGE_CLASS="gp3-csi-wfc"
     ACCESS_MODE="ReadWriteOnce"
-    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS for image import"
-    log_info "✓ VM template will use gp3-csi-wfc for VM disks"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (WaitForFirstConsumer prevents AZ mismatch)"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi &>/dev/null; then
-    # Create gp2-csi-immediate for CDI imports
-    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-immediate &>/dev/null; then
-        log_info "Creating gp2-csi-immediate storage class for CDI imports..."
+    # Create gp2-csi-wfc for CDI imports (WaitForFirstConsumer prevents AZ mismatch)
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-wfc &>/dev/null; then
+        log_info "Creating gp2-csi-wfc storage class for CDI imports..."
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: gp2-csi-immediate
+  name: gp2-csi-wfc
   annotations:
-    storageclass.kubernetes.io/description: "AWS EBS gp2 with immediate binding for CDI imports"
+    storageclass.kubernetes.io/description: "AWS EBS gp2 with WaitForFirstConsumer - prevents AZ mismatch in multi-AZ clusters"
 allowVolumeExpansion: true
 parameters:
   encrypted: "true"
   type: gp2
 provisioner: ebs.csi.aws.com
 reclaimPolicy: Delete
-volumeBindingMode: Immediate
+volumeBindingMode: WaitForFirstConsumer
 EOF
     fi
-    STORAGE_CLASS="gp2-csi-immediate"
+    STORAGE_CLASS="gp2-csi-wfc"
     ACCESS_MODE="ReadWriteOnce"
-    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (immediate binding for CDI)"
+    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS (WaitForFirstConsumer prevents AZ mismatch)"
 else
     # Fallback to default storage class
     STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get storageclass -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}')
@@ -411,7 +390,7 @@ log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-oadp-test-1 \
     -p VM_NAMESPACE=default \
-    -p STORAGE_CLASS=gp3-csi-immediate | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p STORAGE_CLASS=${STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
 
 if [ $? -ne 0 ]; then
     log_error "Failed to create test VM"
