@@ -649,7 +649,13 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 				AssociationId: address.AssociationId,
 			})
 			if err != nil {
-				return fmt.Errorf("disassociate Elastic IP: %w", err)
+				// Handle AuthFailure which can occur if NAT Gateway was recently deleted
+				if strings.Contains(err.Error(), "AuthFailure") {
+					log.Printf("AuthFailure when disassociating EIP %s - NAT Gateway may have been recently deleted, proceeding to release", allocationID)
+					// Continue to try releasing the EIP
+				} else {
+					return fmt.Errorf("disassociate Elastic IP: %w", err)
+				}
 			}
 		} else {
 			log.Printf("Skipping disassociation for EIP %s (NAT Gateway deletion handles it)", allocationID)
@@ -668,8 +674,8 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 		}
 		// If we deleted a NAT Gateway and release fails, it's likely still deleting
 		// Treat as success - the EIP will be released once NAT Gateway deletion completes
-		if deletedNatGateway && (strings.Contains(err.Error(), "InUse") || strings.Contains(err.Error(), "associated")) {
-			log.Printf("EIP %s still associated (NAT Gateway likely still deleting) - will be auto-released when NAT Gateway deletion completes", allocationID)
+		if deletedNatGateway && (strings.Contains(err.Error(), "InUse") || strings.Contains(err.Error(), "associated") || strings.Contains(err.Error(), "AuthFailure")) {
+			log.Printf("EIP %s still in transitional state after NAT Gateway deletion (error: %v) - will be auto-released when NAT Gateway deletion completes", allocationID, err)
 			return nil
 		}
 		return fmt.Errorf("release Elastic IP: %w", err)
