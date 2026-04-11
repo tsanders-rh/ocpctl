@@ -615,6 +615,23 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		return ErrorConflict(c, "Cluster is already being deleted")
 	}
 
+	// Check for in-progress CREATE jobs and cancel them
+	// This prevents race conditions when deleting a cluster that's still being created
+	createJobs, err := h.store.Jobs.GetByClusterID(ctx, cluster.ID)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to check for existing jobs: %w", err))
+	}
+
+	for _, job := range createJobs {
+		// Cancel any PENDING or RUNNING CREATE jobs
+		if job.JobType == types.JobTypeCreate && (job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning || job.Status == types.JobStatusRetrying) {
+			log.Printf("Cancelling in-progress CREATE job %s for cluster %s (user initiated delete)", job.ID, cluster.ID)
+			if err := h.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusFailed); err != nil {
+				log.Printf("Warning: failed to cancel CREATE job %s: %v", job.ID, err)
+			}
+		}
+	}
+
 	// Update cluster status to destroying (using nil for tx means no transaction)
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroying); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
