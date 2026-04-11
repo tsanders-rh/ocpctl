@@ -11,7 +11,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/tsanders-rh/ocpctl/docs"
+	_ "github.com/tsanders-rh/ocpctl/docs" // Swagger docs
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
