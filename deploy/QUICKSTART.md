@@ -182,22 +182,18 @@ git clone https://github.com/tsanders-rh/ocpctl.git
 cd ocpctl
 sudo bash deploy/setup.sh
 
-# Install OpenShift installer
-# Browse available versions: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/
-# Choose version based on your needs (4.14, 4.15, 4.16, etc.)
-VERSION="4.16.0"
-wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${VERSION}/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-sudo mv openshift-install /usr/local/bin/
-sudo chmod +x /usr/local/bin/openshift-install
-rm openshift-install-linux.tar.gz
+# Install OpenShift installers for multiple versions
+# ocpctl supports deploying clusters with different OpenShift versions
+# This installs openshift-install and ccoctl for versions 4.18, 4.19, and 4.20
+sudo bash scripts/install-multiversion-binaries.sh
 
 # Verify installation
-openshift-install version
+ls -lh /usr/local/bin/openshift-install-* /usr/local/bin/ccoctl-*
 
-# Output should show:
-# openshift-install 4.16.0
-# built from commit ...
+# Test each version
+/usr/local/bin/openshift-install-4.18 version
+/usr/local/bin/openshift-install-4.19 version
+/usr/local/bin/openshift-install-4.20 version
 ```
 
 ## 5. Deploy Application
