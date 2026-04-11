@@ -408,10 +408,89 @@ log_info "Creating initial Windows VM (stopped state)..."
 log_info "Note: First VM clone takes 20-30 min due to EBS snapshot creation"
 log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
 
+# Detect the availability zone of the source Windows image PVC to ensure clone works
+log_info "Detecting source PVC availability zone for proper VM placement..."
+SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+if [ -z "$SOURCE_PV" ]; then
+    log_error "Could not find source PVC 'windows' in namespace $SERVICE_ACCOUNT_NAMESPACE"
+    exit 1
+fi
+
+SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
+if [ -z "$SOURCE_ZONE" ]; then
+    log_error "Could not determine availability zone for source PV $SOURCE_PV"
+    exit 1
+fi
+
+log_info "Source Windows image is in availability zone: $SOURCE_ZONE"
+log_info "Creating zone-aware storage class for VM cloning..."
+
+# Create a storage class with WaitForFirstConsumer and allowed topology for the source zone
+# This ensures the PVC waits for pod scheduling before provisioning, allowing proper zone placement
+cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-csi-zone-aware
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+- matchLabelExpressions:
+  - key: topology.kubernetes.io/zone
+    values:
+    - $SOURCE_ZONE
+reclaimPolicy: Delete
+EOF_SC
+
+log_info "VM will be constrained to nodes in $SOURCE_ZONE to enable volume clone"
+
+# Process template using the zone-aware storage class and add node affinity
+VM_YAML=$(mktemp)
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-oadp-test-1 \
     -p VM_NAMESPACE=default \
-    -p STORAGE_CLASS=gp3-csi-immediate | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p STORAGE_CLASS=gp3-csi-zone-aware > "$VM_YAML"
+
+# Add node affinity to ensure VM pod lands in correct zone
+export VM_YAML SOURCE_ZONE
+python3 <<'EOF_PYTHON'
+import yaml
+import sys
+import os
+
+vm_yaml_file = os.environ['VM_YAML']
+source_zone = os.environ['SOURCE_ZONE']
+
+with open(vm_yaml_file, 'r') as f:
+    doc = yaml.safe_load(f)
+
+# Add node affinity to VM template spec
+if 'spec' in doc and 'template' in doc['spec'] and 'spec' in doc['spec']['template']:
+    vm_spec = doc['spec']['template']['spec']
+    if 'affinity' not in vm_spec:
+        vm_spec['affinity'] = {}
+    vm_spec['affinity']['nodeAffinity'] = {
+        'requiredDuringSchedulingIgnoredDuringExecution': {
+            'nodeSelectorTerms': [{
+                'matchExpressions': [{
+                    'key': 'topology.kubernetes.io/zone',
+                    'operator': 'In',
+                    'values': [source_zone]
+                }]
+            }]
+        }
+    }
+
+with open(vm_yaml_file, 'w') as f:
+    yaml.dump(doc, f, default_flow_style=False)
+EOF_PYTHON
+
+# Apply the modified VM YAML
+oc --kubeconfig="$KUBECONFIG" apply -f "$VM_YAML"
+rm -f "$VM_YAML"
 
 if [ $? -ne 0 ]; then
     log_error "Failed to create test VM"
