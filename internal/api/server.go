@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,9 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 )
+
+//go:embed ../../docs/swagger.json
+var swaggerJSON []byte
 
 // ServerConfig holds configuration for the API server
 type ServerConfig struct {
@@ -182,8 +186,10 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/version", s.versionCheck)
 
 	// Swagger API documentation (no auth required)
-	// Serve the static swagger.json file directly (bypasses broken template rendering)
-	s.echo.File("/swagger/doc.json", "docs/swagger.json")
+	// Serve the embedded swagger.json file directly (bypasses broken template rendering)
+	s.echo.GET("/swagger/doc.json", func(c echo.Context) error {
+		return c.JSONBlob(http.StatusOK, swaggerJSON)
+	})
 	s.echo.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	// API v1 routes
