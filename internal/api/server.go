@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/tsanders-rh/ocpctl/docs"
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
@@ -128,9 +129,11 @@ func NewServer(
 
 // setupSwagger configures Swagger documentation
 func (s *Server) setupSwagger() {
-	// This would normally configure docs.SwaggerInfo programmatically
-	// but since swag generates the docs at compile time, we'll configure
-	// it via annotations in main.go instead
+	// Update SwaggerInfo with production values
+	// This ensures the Swagger UI displays the correct host
+	docs.SwaggerInfo.Host = "ocpctl.mg.dog8code.com"
+	docs.SwaggerInfo.BasePath = "/api/v1"
+	docs.SwaggerInfo.Schemes = []string{"https", "http"}
 }
 
 // setupMiddleware configures middleware stack
