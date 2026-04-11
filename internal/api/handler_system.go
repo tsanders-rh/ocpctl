@@ -105,7 +105,7 @@ func (h *SystemHandler) GetInfrastructure(c echo.Context) error {
 	return c.JSON(http.StatusOK, info)
 }
 
-// getAPIServerIP returns the API server IP (hardcoded for now, could be from env)
+// getAPIServerIP returns the API server IP (from EC2 metadata or fallback to hostname)
 func getAPIServerIP() string {
 	// Try to get from EC2 metadata
 	cmd := exec.Command("ec2-metadata", "--local-ipv4")
@@ -116,10 +116,21 @@ func getAPIServerIP() string {
 			return strings.TrimSpace(parts[1])
 		}
 	}
-	return "172.31.93.45" // Fallback
+
+	// Fallback: try hostname -I
+	cmd = exec.Command("hostname", "-I")
+	output, err = cmd.Output()
+	if err == nil {
+		ips := strings.Fields(string(output))
+		if len(ips) > 0 {
+			return ips[0] // Return first IP
+		}
+	}
+
+	return "unknown" // Could not determine IP
 }
 
-// getDatabaseInfo checks database connectivity
+// getDatabaseInfo checks database connectivity and returns host from DATABASE_URL
 func (h *SystemHandler) getDatabaseInfo(ctx context.Context) (string, string) {
 	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -128,9 +139,13 @@ func (h *SystemHandler) getDatabaseInfo(ctx context.Context) (string, string) {
 		return "unknown", "unhealthy"
 	}
 
-	// Try to parse host from connection string (basic approach)
-	// In production, this should come from config
-	return "172.31.93.45:5432", "healthy"
+	// Parse host from DATABASE_URL environment variable
+	dbHost := h.store.GetDatabaseHost()
+	if dbHost == "" {
+		dbHost = "unknown"
+	}
+
+	return dbHost, "healthy"
 }
 
 // getStaticWorkers returns info about static workers (running on API server)

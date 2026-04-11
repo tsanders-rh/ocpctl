@@ -5752,9 +5752,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "ocpctl.mg.dog8code.com",
 	BasePath:         "/api/v1",
-	Schemes:          []string{"http", "https"},
+	Schemes:          []string{"https", "http"},
 	Title:            "OCPCTL API",
 	Description:      "OCPCTL is a self-service OpenShift cluster provisioning and management platform. This API provides endpoints for creating, managing, and destroying OpenShift clusters with automated lifecycle management, policy enforcement, and resource tracking.",
 	InfoInstanceName: "swagger",

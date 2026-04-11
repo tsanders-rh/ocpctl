@@ -5,8 +5,8 @@
 set -e
 
 # Configuration
-SSH_KEY="$HOME/.ssh/ocpctl-test-key.pem"
-SSH_HOST="ec2-user@52.90.135.148"
+SSH_KEY="$HOME/.ssh/ocpctl-production-key"
+SSH_HOST="ubuntu@44.201.165.78"
 PROD_PATH="/opt/ocpctl/web"
 PROD_USER="ocpctl"
 

@@ -5,9 +5,10 @@
 set -e
 
 # Configuration
-WORKER_HOSTS=("52.90.135.148")  # API server also runs a worker (hybrid approach)
-API_HOST="52.90.135.148"
-SSH_KEY="$HOME/.ssh/ocpctl-test-key.pem"
+WORKER_HOSTS=("44.201.165.78")  # API server also runs a worker (hybrid approach)
+API_HOST="44.201.165.78"
+SSH_USER="ubuntu"  # Ubuntu on new production server
+SSH_KEY="$HOME/.ssh/ocpctl-production-key"
 REMOTE_BASE="/opt/ocpctl"
 
 # Colors
@@ -130,47 +131,47 @@ echo ""
 echo -e "${YELLOW}Deploying API server to $API_HOST...${NC}"
 
 # Create versioned directory
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
 # Copy binary
-scp -i "$SSH_KEY" bin/ocpctl-api-${VERSION} ec2-user@$API_HOST:/tmp/ocpctl-api-${VERSION}
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo install -m 755 /tmp/ocpctl-api-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-api && rm /tmp/ocpctl-api-${VERSION}"
+scp -i "$SSH_KEY" bin/ocpctl-api-${VERSION} $SSH_USER@$API_HOST:/tmp/ocpctl-api-${VERSION}
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo install -m 755 /tmp/ocpctl-api-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-api && rm /tmp/ocpctl-api-${VERSION}"
 
 # Deploy profiles directory
 echo -e "${YELLOW}  Deploying profiles directory...${NC}"
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
-scp -i "$SSH_KEY" -r internal/profile/definitions/* ec2-user@$API_HOST:/tmp/profiles/
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
+scp -i "$SSH_KEY" -r internal/profile/definitions/* $SSH_USER@$API_HOST:/tmp/profiles/
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
 
 # Deploy add-ons directory
 echo -e "${YELLOW}  Deploying add-ons directory...${NC}"
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "mkdir -p /tmp/addons && sudo mkdir -p ${REMOTE_BASE}/addons"
-scp -i "$SSH_KEY" -r internal/addon/definitions/* ec2-user@$API_HOST:/tmp/addons/
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo cp -r /tmp/addons/* ${REMOTE_BASE}/addons/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/addons && rm -rf /tmp/addons"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "mkdir -p /tmp/addons && sudo mkdir -p ${REMOTE_BASE}/addons"
+scp -i "$SSH_KEY" -r internal/addon/definitions/* $SSH_USER@$API_HOST:/tmp/addons/
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo cp -r /tmp/addons/* ${REMOTE_BASE}/addons/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/addons && rm -rf /tmp/addons"
 
 # Update environment configuration
 echo -e "${YELLOW}  Updating environment configuration...${NC}"
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo bash -c 'grep -q \"^ADDONS_DIR=\" /etc/ocpctl/api.env && sed -i \"s|^ADDONS_DIR=.*|ADDONS_DIR=${REMOTE_BASE}/addons|\" /etc/ocpctl/api.env || echo \"ADDONS_DIR=${REMOTE_BASE}/addons\" >> /etc/ocpctl/api.env'"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo bash -c 'grep -q \"^ADDONS_DIR=\" /etc/ocpctl/api.env && sed -i \"s|^ADDONS_DIR=.*|ADDONS_DIR=${REMOTE_BASE}/addons|\" /etc/ocpctl/api.env || echo \"ADDONS_DIR=${REMOTE_BASE}/addons\" >> /etc/ocpctl/api.env'"
 echo -e "${GREEN}✓ Set ADDONS_DIR=${REMOTE_BASE}/addons${NC}"
 
 # Stop service
-ssh -i "$SSH_KEY" ec2-user@$API_HOST 'sudo systemctl stop ocpctl-api'
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'sudo systemctl stop ocpctl-api'
 
 # Update symlink atomically
-ssh -i "$SSH_KEY" ec2-user@$API_HOST "sudo ln -snf ${REMOTE_BASE}/releases/${VERSION} ${REMOTE_BASE}/current"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo ln -snf ${REMOTE_BASE}/releases/${VERSION} ${REMOTE_BASE}/current"
 
 # Start service
-ssh -i "$SSH_KEY" ec2-user@$API_HOST 'sudo systemctl start ocpctl-api'
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'sudo systemctl start ocpctl-api'
 
 # Wait for service to start
 sleep 3
 
 # Verify service is running
-if ssh -i "$SSH_KEY" ec2-user@$API_HOST 'sudo systemctl is-active ocpctl-api' > /dev/null; then
+if ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'sudo systemctl is-active ocpctl-api' > /dev/null; then
     echo -e "${GREEN}✓ API server is running${NC}"
 
     # Verify version endpoint
-    DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" ec2-user@$API_HOST 'curl -s http://localhost:8080/version' | jq -r '.version')
+    DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'curl -s http://localhost:8080/version' | jq -r '.version')
     if [ "$DEPLOYED_VERSION" = "$VERSION" ]; then
         echo -e "${GREEN}✓ API version verified: $DEPLOYED_VERSION${NC}"
     else
@@ -192,35 +193,36 @@ for host in "${WORKER_HOSTS[@]}"; do
     WORKER_FAILED=false
 
     # Create versioned directory
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
     # Deploy ensure-installers script
-    scp -i "$SSH_KEY" scripts/ensure-installers.sh ec2-user@$host:/tmp/ensure-installers.sh
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && rm /tmp/ensure-installers.sh"
+    scp -i "$SSH_KEY" scripts/ensure-installers.sh $SSH_USER@$host:/tmp/ensure-installers.sh
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && rm /tmp/ensure-installers.sh"
 
     # Deploy manifests directory (for post-deployment scripts)
     echo -e "${YELLOW}  Deploying manifests directory...${NC}"
-    ssh -i "$SSH_KEY" ec2-user@$host "mkdir -p /tmp/manifests && sudo mkdir -p ${REMOTE_BASE}/manifests"
-    scp -i "$SSH_KEY" -r manifests/* ec2-user@$host:/tmp/manifests/
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo cp -r /tmp/manifests/* ${REMOTE_BASE}/manifests/ && sudo chmod -R 755 ${REMOTE_BASE}/manifests && rm -rf /tmp/manifests"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/manifests && sudo mkdir -p ${REMOTE_BASE}/manifests"
+    scp -i "$SSH_KEY" -r manifests/* $SSH_USER@$host:/tmp/manifests/
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp -r /tmp/manifests/* ${REMOTE_BASE}/manifests/ && sudo chmod -R 755 ${REMOTE_BASE}/manifests && rm -rf /tmp/manifests"
 
     # Deploy profiles directory
     echo -e "${YELLOW}  Deploying profiles directory...${NC}"
-    ssh -i "$SSH_KEY" ec2-user@$host "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
-    scp -i "$SSH_KEY" -r internal/profile/definitions/* ec2-user@$host:/tmp/profiles/
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
+    scp -i "$SSH_KEY" -r internal/profile/definitions/* $SSH_USER@$host:/tmp/profiles/
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
 
     # Deploy systemd service file
-    scp -i "$SSH_KEY" deploy/systemd/ocpctl-worker.service ec2-user@$host:/tmp/ocpctl-worker.service
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo install -m 644 /tmp/ocpctl-worker.service /etc/systemd/system/ocpctl-worker.service && rm /tmp/ocpctl-worker.service && sudo systemctl daemon-reload"
+    scp -i "$SSH_KEY" deploy/systemd/ocpctl-worker.service $SSH_USER@$host:/tmp/ocpctl-worker.service
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo install -m 644 /tmp/ocpctl-worker.service /etc/systemd/system/ocpctl-worker.service && rm /tmp/ocpctl-worker.service && sudo systemctl daemon-reload"
 
     # Copy binary
-    scp -i "$SSH_KEY" bin/ocpctl-worker-${VERSION} ec2-user@$host:/tmp/ocpctl-worker-${VERSION}
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo install -m 755 /tmp/ocpctl-worker-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-worker && rm /tmp/ocpctl-worker-${VERSION}"
+    scp -i "$SSH_KEY" bin/ocpctl-worker-${VERSION} $SSH_USER@$host:/tmp/ocpctl-worker-${VERSION}
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo install -m 755 /tmp/ocpctl-worker-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-worker && rm /tmp/ocpctl-worker-${VERSION}"
 
     # Requeue any RUNNING jobs before stopping worker (prevents orphaned jobs)
     echo -e "${YELLOW}  Requeuing any in-progress jobs...${NC}"
-    REQUEUED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    # Extract DATABASE_URL from worker.env and use it for RDS connection
+    REQUEUED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2-); psql "$DATABASE_URL" -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
     if [ "$REQUEUED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Requeued $REQUEUED job(s) to PENDING status${NC}"
     else
@@ -229,8 +231,8 @@ for host in "${WORKER_HOSTS[@]}"; do
 
     # Clear any stale job locks from this worker (prevents blocked jobs after restart)
     echo -e "${YELLOW}  Clearing stale job locks...${NC}"
-    INSTANCE_ID=$(ssh -i "$SSH_KEY" ec2-user@$host 'ec2-metadata --instance-id 2>/dev/null | cut -d " " -f 2' || echo "unknown")
-    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" ec2-user@$host 'sudo -u postgres psql -d ocpctl -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    INSTANCE_ID=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'ec2-metadata --instance-id 2>/dev/null | cut -d " " -f 2' || echo "unknown")
+    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2-); psql "$DATABASE_URL" -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
     if [ "$LOCKS_CLEARED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Cleared $LOCKS_CLEARED stale lock(s)${NC}"
     else
@@ -238,23 +240,23 @@ for host in "${WORKER_HOSTS[@]}"; do
     fi
 
     # Stop service
-    ssh -i "$SSH_KEY" ec2-user@$host 'sudo systemctl stop ocpctl-worker'
+    ssh -i "$SSH_KEY" $SSH_USER@$host 'sudo systemctl stop ocpctl-worker'
 
     # Update symlink atomically
-    ssh -i "$SSH_KEY" ec2-user@$host "sudo ln -snf ${REMOTE_BASE}/releases/${VERSION} ${REMOTE_BASE}/current"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo ln -snf ${REMOTE_BASE}/releases/${VERSION} ${REMOTE_BASE}/current"
 
     # Start service
-    ssh -i "$SSH_KEY" ec2-user@$host 'sudo systemctl start ocpctl-worker'
+    ssh -i "$SSH_KEY" $SSH_USER@$host 'sudo systemctl start ocpctl-worker'
 
     # Wait for service to start
     sleep 3
 
     # Verify service is running
-    if ssh -i "$SSH_KEY" ec2-user@$host 'sudo systemctl is-active ocpctl-worker' > /dev/null; then
+    if ssh -i "$SSH_KEY" $SSH_USER@$host 'sudo systemctl is-active ocpctl-worker' > /dev/null; then
         echo -e "${GREEN}✓ Worker on $host is running${NC}"
 
         # Verify version endpoint (assuming worker health check is on port 8081)
-        DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" ec2-user@$host 'curl -s http://localhost:8081/version' | jq -r '.version')
+        DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'curl -s http://localhost:8081/version' | jq -r '.version')
         if [ "$DEPLOYED_VERSION" = "$VERSION" ]; then
             echo -e "${GREEN}✓ Worker version verified: $DEPLOYED_VERSION${NC}"
         else
@@ -279,11 +281,11 @@ if [ ${#FAILED_WORKERS[@]} -eq 0 ]; then
     echo -e "${BLUE}Commit: ${COMMIT}${NC}"
     echo ""
     echo "Verify deployment:"
-    echo "  API:    curl http://ocpctl.mg.dog8code.com/version"
-    echo "  Worker: ssh -i $SSH_KEY ec2-user@52.90.135.148 'curl -s http://localhost:8081/version'"
+    echo "  API:    curl https://ocpctl.mg.dog8code.com/version"
+    echo "  Worker: ssh -i $SSH_KEY $SSH_USER@$API_HOST 'curl -s http://localhost:8081/version'"
     echo ""
     echo "Rollback to previous version:"
-    echo "  ssh -i $SSH_KEY ec2-user@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
+    echo "  ssh -i $SSH_KEY $SSH_USER@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
     echo "  ./deploy.sh <previous-version>"
 
     exit 0
@@ -296,7 +298,7 @@ else
     done
     echo ""
     echo -e "${YELLOW}Rollback instructions:${NC}"
-    echo "  ssh -i $SSH_KEY ec2-user@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
+    echo "  ssh -i $SSH_KEY $SSH_USER@$API_HOST 'sudo ls -d ${REMOTE_BASE}/releases/*'"
     echo "  ./deploy.sh <previous-version>"
     echo ""
 

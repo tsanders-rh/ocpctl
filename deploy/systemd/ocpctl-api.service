@@ -11,8 +11,8 @@ Group=ocpctl
 WorkingDirectory=/opt/ocpctl
 EnvironmentFile=/etc/ocpctl/api.env
 
-# Binary location
-ExecStart=/opt/ocpctl/bin/ocpctl-api
+# Binary location (uses versioned releases via symlink)
+ExecStart=/opt/ocpctl/current/ocpctl-api
 
 # Restart policy
 Restart=always

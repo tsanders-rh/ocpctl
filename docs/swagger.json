@@ -1,7 +1,7 @@
 {
     "schemes": [
-        "http",
-        "https"
+        "https",
+        "http"
     ],
     "swagger": "2.0",
     "info": {
@@ -18,7 +18,7 @@
         },
         "version": "1.0"
     },
-    "host": "localhost:8080",
+    "host": "ocpctl.mg.dog8code.com",
     "basePath": "/api/v1",
     "paths": {
         "/admin/clusters/statistics": {

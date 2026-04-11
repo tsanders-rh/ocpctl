@@ -1603,7 +1603,7 @@ definitions:
       version:
         type: string
     type: object
-host: localhost:8080
+host: ocpctl.mg.dog8code.com
 info:
   contact:
     name: OCPCTL Support
@@ -3842,8 +3842,8 @@ paths:
       tags:
       - system
 schemes:
-- http
 - https
+- http
 securityDefinitions:
   BearerAuth:
     description: 'JWT access token. Format: "Bearer {token}". Obtain from /api/v1/auth/login

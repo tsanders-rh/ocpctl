@@ -126,6 +126,15 @@ func (s *Store) Stats() *pgxpool.Stat {
 	return s.pool.Stat()
 }
 
+// GetDatabaseHost returns the database host:port from the connection config
+func (s *Store) GetDatabaseHost() string {
+	config := s.pool.Config()
+	if config == nil || config.ConnConfig == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", config.ConnConfig.Host, config.ConnConfig.Port)
+}
+
 // NewStore creates a new Store from a database URL
 func NewStore(databaseURL string) (*Store, error) {
 	// Parse the database URL to get pool config

@@ -120,9 +120,17 @@ func NewServer(
 	}
 
 	s.setupMiddleware()
+	s.setupSwagger()
 	s.setupRoutes()
 
 	return s, nil
+}
+
+// setupSwagger configures Swagger documentation
+func (s *Server) setupSwagger() {
+	// This would normally configure docs.SwaggerInfo programmatically
+	// but since swag generates the docs at compile time, we'll configure
+	// it via annotations in main.go instead
 }
 
 // setupMiddleware configures middleware stack
