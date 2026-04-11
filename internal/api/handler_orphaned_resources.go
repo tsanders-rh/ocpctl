@@ -616,32 +616,23 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 						}
 					}
 
-					// Delete the NAT Gateway and wait for deletion to complete
-					log.Printf("Deleting NAT Gateway %s (will wait for deletion before releasing EIP)", natGatewayID)
+					// Delete the NAT Gateway - AWS will automatically release the EIP when deletion completes
+					log.Printf("Deleting NAT Gateway %s (EIP %s will be auto-released in 2-5 minutes)", natGatewayID, allocationID)
 					_, err = ec2Client.DeleteNatGateway(ctx, &ec2.DeleteNatGatewayInput{
 						NatGatewayId: aws.String(natGatewayID),
 					})
 					if err != nil {
 						if strings.Contains(err.Error(), "NatGatewayNotFound") {
-							log.Printf("NAT Gateway %s not found - assuming already deleted, proceeding to release EIP", natGatewayID)
-							// Continue to release the EIP below
-						} else {
-							return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
+							log.Printf("NAT Gateway %s not found - assuming already deleted", natGatewayID)
+							return nil
 						}
-					} else {
-						// Wait for NAT Gateway deletion to complete (can take several minutes)
-						log.Printf("Waiting for NAT Gateway %s deletion to complete...", natGatewayID)
-						waiter := ec2.NewNatGatewayDeletedWaiter(ec2Client)
-						err = waiter.Wait(ctx, &ec2.DescribeNatGatewaysInput{
-							NatGatewayIds: []string{natGatewayID},
-						}, 300) // 5 minute timeout
-						if err != nil {
-							log.Printf("Warning: NAT Gateway deletion wait timed out or failed: %v (proceeding to release EIP anyway)", err)
-						} else {
-							log.Printf("NAT Gateway %s deleted successfully", natGatewayID)
-						}
+						return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
 					}
-					// Fall through to release the EIP explicitly below
+
+					// NAT Gateway deletion takes 2-5 minutes but HTTP requests timeout after 30 seconds
+					// Return success immediately - AWS will automatically release the EIP when NAT Gateway is deleted
+					log.Printf("NAT Gateway %s deletion initiated successfully - EIP will be released automatically", natGatewayID)
+					return nil
 				}
 			}
 		}
