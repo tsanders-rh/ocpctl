@@ -8,29 +8,56 @@ This is a condensed deployment guide. See [DEPLOYMENT.md](DEPLOYMENT.md) for det
 - SSH key pair for EC2 access
 - OpenShift pull secret from Red Hat
 
+## ⚠️ AWS Account Automated Cleanup
+
+**CRITICAL**: This AWS account has Lambda functions that automatically purge resources:
+
+- **aws_purge_instance_schedule**: Terminates EC2 instances every **Friday 8 PM EDT**
+  - **Targets**: Instances with "test" in Name tag
+  - **Prevention**: Tag production instances as `Name=ocpctl-production`
+
+**What happened**: On 2026-04-11, the production API server was terminated because it was tagged as `Name=ocpctl-test`. The automated cleanup Lambda (`aws-reporting`) terminated it at exactly 8:00 PM EDT, causing complete service outage and loss of all cluster metadata.
+
+To check current cleanup schedule:
+```bash
+aws events describe-rule --name aws_purge_instance_schedule
+```
+
+To disable cleanup (if needed):
+```bash
+aws events disable-rule --name aws_purge_instance_schedule
+```
+
+**NEVER tag production infrastructure with "test" in the name.**
+
 ## 1. Launch EC2 Instance
 
+**Instance Sizing:**
+- **Recommended**: t3.large (2 vCPU, 8 GB RAM) - $60/month
+  - Sufficient for API + PostgreSQL + backup worker
+  - Autoscaling workers handle most cluster deployments
+  - Good balance of cost and performance
+
 **Disk Sizing Guide:**
-- **Small deployments (1-10 clusters):** 30GB root volume
-- **Medium deployments (10-25 clusters):** 50GB root volume
+- **Small deployments (1-10 clusters):** 50GB root volume
+- **Medium deployments (10-25 clusters):** 75GB root volume
 - **Large deployments (25-50 clusters):** 100GB root volume
 
 Each cluster work directory uses ~50-250MB depending on install time and failures.
 The janitor automatically cleans up DESTROYED clusters after 30 days and FAILED directories after 7 days.
 
 ```bash
-# Launch t3.medium with Ubuntu 22.04
-# Adjust VolumeSize based on expected cluster count (50GB shown for 10-25 clusters)
+# Launch t3.large with Ubuntu 22.04
+# CRITICAL: Tag as "ocpctl-production" NOT "ocpctl-test" to avoid automated Friday purge
+# DeleteOnTermination=false preserves data if instance is accidentally terminated
 aws ec2 run-instances \
   --image-id ami-0c55b159cbfafe1f0 \
-  --instance-type t3.medium \
+  --instance-type t3.large \
   --key-name your-key \
   --security-group-ids sg-xxxxx \
   --iam-instance-profile Name=ocpctl-role \
-  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=50}'
-
-# For 50 active clusters, use VolumeSize=100
-# For 100+ clusters, consider dedicated EBS volume for /var/lib/ocpctl
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ocpctl-production},{Key=Environment,Value=production},{Key=Purpose,Value=ocpctl-api-server}]' \
+  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=100,DeleteOnTermination=false}'
 
 # Note the instance ID and public IP
 ```
@@ -132,9 +159,82 @@ EOF
 sudo chmod 600 /etc/ocpctl/*.env
 sudo chown ocpctl:ocpctl /etc/ocpctl/*.env
 rm ~/pull-secret.json
+
+# Upload worker config to S3 (for autoscaling workers)
+# This allows ASG workers to bootstrap with correct database connection
+aws s3 cp /etc/ocpctl/worker.env s3://ocpctl-binaries/config/worker.env
 ```
 
-## 6. Start Services
+**Important**: The `worker.env` file must be uploaded to S3 because autoscaling workers (`ocpctl-worker-asg`) download it during bootstrap. If you redeploy the API server with a new database, update this file in S3 and terminate existing workers so they re-bootstrap with the new configuration.
+
+## 6. Setup SSL/HTTPS (Production)
+
+**Install Nginx:**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+```
+
+**Deploy Nginx configuration:**
+
+```bash
+# From your local machine
+scp -i key.pem deploy/nginx/ocpctl.conf ubuntu@<ec2-ip>:~/
+
+# On EC2 instance
+sudo mv ~/ocpctl.conf /etc/nginx/sites-available/ocpctl
+sudo ln -s /etc/nginx/sites-available/ocpctl /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default  # Remove default site
+```
+
+**Option A: Let's Encrypt (Recommended for Production)**
+
+```bash
+# Request SSL certificate (requires DNS pointing to this server)
+sudo certbot --nginx -d ocpctl.mg.dog8code.com
+
+# Certbot will automatically:
+# 1. Request certificate from Let's Encrypt
+# 2. Update nginx configuration with SSL cert paths
+# 3. Setup automatic renewal
+
+# Test renewal
+sudo certbot renew --dry-run
+```
+
+**Option B: Self-Signed Certificate (Development/Testing)**
+
+```bash
+# Generate self-signed certificate
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/ocpctl.key \
+  -out /etc/ssl/certs/ocpctl.crt \
+  -subj "/CN=ocpctl.mg.dog8code.com"
+
+# Nginx is already configured to use these paths
+```
+
+**Start Nginx:**
+
+```bash
+# Test configuration
+sudo nginx -t
+
+# Start nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# Verify HTTPS works
+curl https://ocpctl.mg.dog8code.com/health
+```
+
+**Update DNS:**
+
+Ensure `ocpctl.mg.dog8code.com` points to your EC2 instance public IP:
+- Route53 A record: `ocpctl.mg.dog8code.com` → `<ec2-public-ip>`
+
+## 7. Start Services
 
 ```bash
 # Install systemd services
@@ -149,11 +249,101 @@ sudo systemctl start ocpctl-api ocpctl-worker
 sudo systemctl status ocpctl-api ocpctl-worker
 ```
 
-## 7. Verify
+## 7a. Autoscaling Workers (Production Setup)
+
+Your AWS account already has an **Autoscaling Group** (`ocpctl-worker-asg`) that handles worker instances automatically.
+
+**How it works:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Autoscaling Group: ocpctl-worker-asg              │
+│  - Min: 1, Max: 10, Desired: 1                     │
+│  - Instance Type: t3.small                         │
+│  - Self-healing: Auto-replaces failed instances    │
+└─────────────────────────────────────────────────────┘
+                     │
+                     ▼
+         ┌───────────────────────┐
+         │  New Worker Instance  │
+         │  (on first boot)      │
+         └───────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+   Download from S3          Install & Start
+   ────────────────          ───────────────
+   • worker binary           • systemd service
+   • worker.env (DB config)  • Health check
+   • bootstrap script        • Ready for jobs
+   • systemd service file
+```
+
+**Worker Bootstrap (automatic on instance launch):**
+
+1. Downloads `bootstrap-worker.sh` from `s3://ocpctl-binaries/scripts/`
+2. Downloads `worker.env` from `s3://ocpctl-binaries/config/` (contains DATABASE_URL)
+3. Downloads latest worker binary from `s3://ocpctl-binaries/releases/LATEST/`
+4. Installs systemd service and starts worker
+5. Worker connects to API server database and starts polling for jobs
+
+**After API Server Redeployment:**
+
+When you redeploy the API server (new IP/database), workers automatically refresh:
 
 ```bash
-# Health check
+# The deploy.sh script (scripts/deploy.sh) automatically:
+# 1. Uploads new worker.env to S3 (line 86)
+# 2. Uploads latest worker binary to S3 (line 66)
+# 3. Terminates all ASG workers (lines 105-125)
+# 4. ASG launches fresh workers that download new config
+
+# Manual worker refresh (if needed):
+aws ec2 terminate-instances --instance-ids $(aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names ocpctl-worker-asg \
+  --query 'AutoScalingGroups[0].Instances[].InstanceId' --output text)
+
+# ASG automatically launches replacement within 60 seconds
+```
+
+**Check worker status:**
+
+```bash
+# List ASG workers
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names ocpctl-worker-asg \
+  --query 'AutoScalingGroups[0].{Min:MinSize,Max:MaxSize,Desired:DesiredCapacity,Current:Instances[].InstanceId}'
+
+# SSH to worker (if needed)
+WORKER_IP=$(aws ec2 describe-instances \
+  --instance-ids $(aws autoscaling describe-auto-scaling-groups \
+    --auto-scaling-group-names ocpctl-worker-asg \
+    --query 'AutoScalingGroups[0].Instances[0].InstanceId' --output text) \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+
+ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@$WORKER_IP
+
+# On worker, check service
+sudo systemctl status ocpctl-worker
+sudo journalctl -u ocpctl-worker -f
+```
+
+**Important Notes:**
+
+- ✅ **API server runs a backup worker** (hybrid approach) - handles jobs if ASG is at 0
+- ✅ **Workers auto-scale** - ASG can launch up to 10 workers during high load
+- ✅ **Workers are ephemeral** - safe to terminate anytime (no persistent state)
+- ✅ **S3 is source of truth** - all worker config stored in `s3://ocpctl-binaries/`
+- ⚠️ **After new API deployment** - Run `scripts/deploy.sh` to refresh workers with new DB connection
+
+## 8. Verify
+
+```bash
+# Health check (local)
 curl http://localhost:8080/health
+
+# Health check (HTTPS - production)
+curl https://ocpctl.mg.dog8code.com/health
 
 # Create test cluster
 curl -X POST http://localhost:8080/api/v1/clusters \
@@ -193,6 +383,18 @@ curl http://localhost:8080/api/v1/clusters | jq
 
 # Check database
 psql ocpctl -c "SELECT name, status, created_at FROM clusters ORDER BY created_at DESC LIMIT 5;"
+
+# Check autoscaling workers
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names ocpctl-worker-asg \
+  --query 'AutoScalingGroups[0].{Desired:DesiredCapacity,Current:length(Instances),Healthy:length(Instances[?HealthStatus==`Healthy`])}'
+
+# List all worker instances (API server + ASG)
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=ocpctl-production,ocpctl-worker" \
+            "Name=instance-state-name,Values=running" \
+  --query 'Reservations[].Instances[].{Name:Tags[?Key==`Name`].Value|[0],ID:InstanceId,IP:PublicIpAddress,Type:InstanceType}' \
+  --output table
 
 # Check for clusters in DB but not in AWS (manually destroyed)
 psql ocpctl -c "SELECT id, name, status, created_at FROM clusters WHERE status IN ('READY', 'CREATING') ORDER BY created_at DESC;"
