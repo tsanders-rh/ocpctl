@@ -62,32 +62,116 @@ aws ec2 run-instances \
 # Note the instance ID and public IP
 ```
 
-## 2. Setup PostgreSQL
+## 2. Generate Secure Database Password
 
-**Option A: RDS**
+**Use AWS Systems Manager Parameter Store** (free, secure, auditable):
+
 ```bash
+# Generate and store a secure 32-character password
+aws ssm put-parameter \
+  --name "/ocpctl/database/password" \
+  --description "PostgreSQL password for ocpctl production database" \
+  --value "$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)" \
+  --type "SecureString" \
+  --tier "Standard" \
+  --tags "Key=Environment,Value=production" "Key=Application,Value=ocpctl"
+
+# Verify it was created
+aws ssm get-parameter \
+  --name "/ocpctl/database/password" \
+  --with-decryption \
+  --query 'Parameter.{Name:Name,Type:Type,LastModified:LastModifiedDate}' \
+  --output table
+```
+
+**Why Parameter Store?**
+- ✅ **FREE** (no cost for standard parameters)
+- ✅ **Encrypted at rest** (AWS KMS)
+- ✅ **Audit trail** (CloudTrail logs every access)
+- ✅ **IAM access control** (only authorized instances can retrieve)
+- ✅ **Version history** (can rollback if needed)
+
+**IAM Role Requirements:**
+
+Ensure your EC2 instance role (`ocpctl-role`) has this permission:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter"
+      ],
+      "Resource": "arn:aws:ssm:us-east-1:*:parameter/ocpctl/database/password"
+    }
+  ]
+}
+```
+
+## 3. Setup PostgreSQL
+
+**Option A: RDS** (recommended for production)
+
+```bash
+# Retrieve password from Parameter Store
+DB_PASSWORD=$(aws ssm get-parameter \
+  --name "/ocpctl/database/password" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)
+
+# Create RDS instance with secure password
 aws rds create-db-instance \
   --db-instance-identifier ocpctl-db \
   --db-instance-class db.t3.micro \
   --engine postgres \
-  --master-username ocpctl \
-  --master-user-password 'CHANGE_ME' \
+  --master-username ocpctl_user \
+  --master-user-password "$DB_PASSWORD" \
   --allocated-storage 20 \
-  --db-name ocpctl
+  --db-name ocpctl \
+  --backup-retention-period 7 \
+  --storage-encrypted \
+  --tags "Key=Environment,Value=production" "Key=Application,Value=ocpctl"
+
+# Note the endpoint for later use
+aws rds describe-db-instances \
+  --db-instance-identifier ocpctl-db \
+  --query 'DBInstances[0].Endpoint.Address' \
+  --output text
 ```
 
-**Option B: On EC2**
+**Option B: On EC2** (simpler, co-located with API server)
+
 ```bash
+# SSH to EC2
 ssh -i key.pem ubuntu@<ip>
+
+# Install PostgreSQL
 sudo apt-get update && sudo apt-get install -y postgresql
-sudo -u postgres psql << 'EOF'
+
+# Retrieve password from Parameter Store
+DB_PASSWORD=$(aws ssm get-parameter \
+  --name "/ocpctl/database/password" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)
+
+# Create database and user with secure password
+sudo -u postgres psql << EOF
 CREATE DATABASE ocpctl;
-CREATE USER ocpctl WITH PASSWORD 'CHANGE_ME';
-GRANT ALL PRIVILEGES ON DATABASE ocpctl TO ocpctl;
+CREATE USER ocpctl_user WITH PASSWORD '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON DATABASE ocpctl TO ocpctl_user;
+\c ocpctl
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 EOF
+
+# Verify connection
+psql "postgresql://ocpctl_user:$DB_PASSWORD@localhost:5432/ocpctl" -c '\dt'
 ```
 
-## 3. Setup Server
+## 4. Setup Server
 
 ```bash
 # SSH to EC2
@@ -116,7 +200,7 @@ openshift-install version
 # built from commit ...
 ```
 
-## 4. Deploy Application
+## 5. Deploy Application
 
 **From your local machine:**
 
@@ -129,16 +213,24 @@ make build-linux
 make deploy
 ```
 
-## 5. Configure
+## 6. Configure
 
 **On EC2 instance:**
 
 ```bash
+# Retrieve database password from Parameter Store
+DB_PASSWORD=$(aws ssm get-parameter \
+  --name "/ocpctl/database/password" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)
+
 # Create API config
-sudo bash -c 'cat > /etc/ocpctl/api.env' << 'EOF'
-DATABASE_URL=postgres://ocpctl:PASSWORD@localhost:5432/ocpctl?sslmode=disable
+sudo bash -c "cat > /etc/ocpctl/api.env" << EOF
+DATABASE_URL=postgresql://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl
 PORT=8080
 PROFILES_DIR=/opt/ocpctl/profiles
+ADDONS_DIR=/opt/ocpctl/addons
 ENVIRONMENT=production
 EOF
 
@@ -146,12 +238,14 @@ EOF
 # scp pull-secret.json ubuntu@<ec2-ip>:~/
 
 # Create worker config
-sudo bash -c 'cat > /etc/ocpctl/worker.env' << EOF
-DATABASE_URL=postgres://ocpctl:PASSWORD@localhost:5432/ocpctl?sslmode=disable
+PULL_SECRET=\$(cat ~/pull-secret.json)
+sudo bash -c "cat > /etc/ocpctl/worker.env" << EOF
+DATABASE_URL=postgresql://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl
 WORKER_WORK_DIR=/var/lib/ocpctl/clusters
-OPENSHIFT_PULL_SECRET=$(cat ~/pull-secret.json)
-OPENSHIFT_INSTALL_BINARY=/usr/local/bin/openshift-install
+OPENSHIFT_PULL_SECRET=\${PULL_SECRET}
 AWS_REGION=us-east-1
+S3_BUCKET_NAME=ocpctl-binaries
+PROFILES_DIR=/opt/ocpctl/profiles
 ENVIRONMENT=production
 EOF
 
@@ -165,9 +259,12 @@ rm ~/pull-secret.json
 aws s3 cp /etc/ocpctl/worker.env s3://ocpctl-binaries/config/worker.env
 ```
 
-**Important**: The `worker.env` file must be uploaded to S3 because autoscaling workers (`ocpctl-worker-asg`) download it during bootstrap. If you redeploy the API server with a new database, update this file in S3 and terminate existing workers so they re-bootstrap with the new configuration.
+**Important**:
+- Password is retrieved from Parameter Store (not hardcoded)
+- The `worker.env` file must be uploaded to S3 for autoscaling workers (`ocpctl-worker-asg`)
+- If you redeploy with a new database, update this file in S3 and terminate existing workers
 
-## 6. Setup SSL/HTTPS (Production)
+## 7. Setup SSL/HTTPS (Production)
 
 **Install Nginx:**
 
@@ -234,7 +331,7 @@ curl https://ocpctl.mg.dog8code.com/health
 Ensure `ocpctl.mg.dog8code.com` points to your EC2 instance public IP:
 - Route53 A record: `ocpctl.mg.dog8code.com` → `<ec2-public-ip>`
 
-## 7. Start Services
+## 8. Start Services
 
 ```bash
 # Install systemd services
@@ -249,7 +346,7 @@ sudo systemctl start ocpctl-api ocpctl-worker
 sudo systemctl status ocpctl-api ocpctl-worker
 ```
 
-## 7a. Autoscaling Workers (Production Setup)
+## 8a. Autoscaling Workers (Production Setup)
 
 Your AWS account already has an **Autoscaling Group** (`ocpctl-worker-asg`) that handles worker instances automatically.
 
@@ -336,7 +433,7 @@ sudo journalctl -u ocpctl-worker -f
 - ✅ **S3 is source of truth** - all worker config stored in `s3://ocpctl-binaries/`
 - ⚠️ **After new API deployment** - Run `scripts/deploy.sh` to refresh workers with new DB connection
 
-## 8. Verify
+## 9. Verify
 
 ```bash
 # Health check (local)
@@ -470,15 +567,92 @@ psql ocpctl -c "SELECT name, status, destroyed_at FROM clusters WHERE id = '<clu
 
 **Prevention:** Use ocpctl's destroy functionality to ensure proper cleanup and database synchronization.
 
+### Database Password Rotation
+
+Rotate the database password every 90 days for production security:
+
+```bash
+# 1. Generate new password and update Parameter Store
+NEW_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
+
+aws ssm put-parameter \
+  --name "/ocpctl/database/password" \
+  --value "$NEW_PASSWORD" \
+  --type "SecureString" \
+  --overwrite
+
+# 2. Update PostgreSQL password
+sudo -u postgres psql -c "ALTER USER ocpctl_user WITH PASSWORD '$NEW_PASSWORD';"
+
+# 3. Update API server config
+DB_PASSWORD=$(aws ssm get-parameter \
+  --name "/ocpctl/database/password" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)
+
+sudo bash -c "cat > /etc/ocpctl/api.env" << EOF
+DATABASE_URL=postgresql://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl
+PORT=8080
+PROFILES_DIR=/opt/ocpctl/profiles
+ADDONS_DIR=/opt/ocpctl/addons
+ENVIRONMENT=production
+EOF
+
+# 4. Update worker config (API server)
+PULL_SECRET=\$(sudo cat /etc/ocpctl/worker.env | grep OPENSHIFT_PULL_SECRET | cut -d= -f2-)
+sudo bash -c "cat > /etc/ocpctl/worker.env" << EOF
+DATABASE_URL=postgresql://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl
+WORKER_WORK_DIR=/var/lib/ocpctl/clusters
+OPENSHIFT_PULL_SECRET=\${PULL_SECRET}
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=ocpctl-binaries
+PROFILES_DIR=/opt/ocpctl/profiles
+ENVIRONMENT=production
+EOF
+
+# 5. Upload updated worker config to S3 (for ASG workers)
+aws s3 cp /etc/ocpctl/worker.env s3://ocpctl-binaries/config/worker.env
+
+# 6. Restart API and worker services
+sudo systemctl restart ocpctl-api ocpctl-worker
+
+# 7. Terminate ASG workers to refresh with new password
+aws ec2 terminate-instances --instance-ids $(aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names ocpctl-worker-asg \
+  --query 'AutoScalingGroups[0].Instances[].InstanceId' --output text)
+
+# 8. Verify new password works
+psql "postgresql://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl" -c '\dt'
+```
+
+**Rotation Schedule:**
+- Production: Every 90 days
+- Development: Every 180 days or on suspected compromise
+
+**Audit Trail:**
+```bash
+# View password access history in CloudTrail
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=ResourceName,AttributeValue=/ocpctl/database/password \
+  --max-results 50 \
+  --query 'Events[].{Time:EventTime,User:Username,Action:EventName}' \
+  --output table
+```
+
 ## Security Checklist
 
 - [ ] Security Group restricts API access
 - [ ] Environment files are mode 600
-- [ ] Database password is strong
+- [ ] Database password stored in Parameter Store (not hardcoded)
+- [ ] Database password is 32+ characters (auto-generated)
 - [ ] IAM instance role has minimum required permissions
+- [ ] IAM role has ssm:GetParameter permission for `/ocpctl/database/password`
 - [ ] Pull secret file removed from home directory
 - [ ] System packages are updated
-- [ ] Backups configured
+- [ ] Backups configured (database + S3 artifacts)
+- [ ] Password rotation scheduled (every 90 days)
+- [ ] CloudTrail logging enabled (audit trail for secret access)
 
 ## Architecture
 
