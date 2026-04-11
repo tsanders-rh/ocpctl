@@ -51,11 +51,11 @@ The janitor automatically cleans up DESTROYED clusters after 30 days and FAILED 
 # CRITICAL: Tag as "ocpctl-production" NOT "ocpctl-test" to avoid automated Friday purge
 # DeleteOnTermination=false preserves data if instance is accidentally terminated
 aws ec2 run-instances \
-  --image-id ami-0c55b159cbfafe1f0 \
+  --image-id ami-05e86b3611c60b0b4 \
   --instance-type t3.large \
-  --key-name your-key \
-  --security-group-ids sg-xxxxx \
-  --iam-instance-profile Name=ocpctl-role \
+  --key-name ocpctl-test-key \
+  --security-group-ids sg-0b95b88e8835675a6 \
+  --iam-instance-profile Name=ocpctl-ec2-role \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ocpctl-production},{Key=Environment,Value=production},{Key=Purpose,Value=ocpctl-api-server}]' \
   --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=100,DeleteOnTermination=false}'
 
