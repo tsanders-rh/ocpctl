@@ -5757,7 +5757,7 @@ var SwaggerInfo = &swag.Spec{
 	Schemes:          []string{"https", "http"},
 	Title:            "OCPCTL API",
 	Description:      "OCPCTL is a self-service OpenShift cluster provisioning and management platform. This API provides endpoints for creating, managing, and destroying OpenShift clusters with automated lifecycle management, policy enforcement, and resource tracking.",
-	InfoInstanceName: "",
+	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
 	RightDelim:       "}}",
