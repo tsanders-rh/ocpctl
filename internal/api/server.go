@@ -182,7 +182,8 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/version", s.versionCheck)
 
 	// Swagger API documentation (no auth required)
-	// Serves Swagger UI at /swagger/index.html and spec at /swagger/doc.json
+	// Serve the static swagger.json file directly (bypasses broken template rendering)
+	s.echo.File("/swagger/doc.json", "docs/swagger.json")
 	s.echo.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	// API v1 routes
