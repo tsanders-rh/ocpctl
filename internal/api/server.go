@@ -19,7 +19,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/store"
 )
 
-//go:embed ../../docs/swagger.json
+//go:embed swagger.json
 var swaggerJSON []byte
 
 // ServerConfig holds configuration for the API server
