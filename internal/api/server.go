@@ -11,7 +11,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	_ "github.com/tsanders-rh/ocpctl/docs" // Swagger docs
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
@@ -183,7 +182,8 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/version", s.versionCheck)
 
 	// Swagger API documentation (no auth required)
-	s.echo.GET("/swagger/*", echoSwagger.EchoWrapHandler(echoSwagger.InstanceName("swagger")))
+	// Serves Swagger UI at /swagger/index.html and spec at /swagger/doc.json
+	s.echo.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	// API v1 routes
 	v1 := s.echo.Group("/api/v1")
