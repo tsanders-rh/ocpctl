@@ -617,7 +617,7 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 
 	// Check for in-progress CREATE jobs and cancel them
 	// This prevents race conditions when deleting a cluster that's still being created
-	createJobs, err := h.store.Jobs.GetByClusterID(ctx, cluster.ID)
+	createJobs, err := h.store.Jobs.ListByClusterID(ctx, cluster.ID)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to check for existing jobs: %w", err))
 	}
