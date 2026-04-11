@@ -184,7 +184,7 @@ sudo bash deploy/setup.sh
 
 # Install OpenShift installers for multiple versions
 # ocpctl supports deploying clusters with different OpenShift versions
-# This installs openshift-install and ccoctl for versions 4.18, 4.19, and 4.20
+# This installs openshift-install and ccoctl for versions 4.18, 4.19, 4.20, and 4.21
 sudo bash scripts/install-multiversion-binaries.sh
 
 # Verify installation
@@ -194,6 +194,7 @@ ls -lh /usr/local/bin/openshift-install-* /usr/local/bin/ccoctl-*
 /usr/local/bin/openshift-install-4.18 version
 /usr/local/bin/openshift-install-4.19 version
 /usr/local/bin/openshift-install-4.20 version
+/usr/local/bin/openshift-install-4.21 version
 ```
 
 ## 5. Deploy Application

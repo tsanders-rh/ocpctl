@@ -1,10 +1,10 @@
 #!/bin/bash
 # Install openshift-install and ccoctl binaries for multiple OpenShift versions
-# Supports: 4.18, 4.19, 4.20
+# Supports: 4.18, 4.19, 4.20, 4.21
 
 set -e
 
-VERSIONS=("4.18" "4.19" "4.20")
+VERSIONS=("4.18" "4.19" "4.20" "4.21")
 INSTALL_DIR="/usr/local/bin"
 
 echo "OpenShift Multi-Version Binary Installer"
@@ -14,9 +14,10 @@ echo "This script will install openshift-install and ccoctl binaries for:"
 echo "  - OpenShift 4.18 (Kubernetes 1.31)"
 echo "  - OpenShift 4.19 (Kubernetes 1.32)"
 echo "  - OpenShift 4.20 (Kubernetes 1.33)"
+echo "  - OpenShift 4.21 (Kubernetes 1.34)"
 echo ""
 echo "Installation directory: $INSTALL_DIR"
-echo "Total download size: ~4GB"
+echo "Total download size: ~5GB"
 echo ""
 
 # Check if running as root
