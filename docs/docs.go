@@ -42,25 +42,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.ClusterStatistics"
+                            "$ref": "#/definitions/internal_api.ClusterStatistics"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -120,7 +120,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.OrphanedResourceListResponse"
+                            "$ref": "#/definitions/internal_api.OrphanedResourceListResponse"
                         }
                     },
                     "500": {
@@ -204,7 +204,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.OrphanedResource"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -269,7 +269,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.MarkIgnoredRequest"
+                            "$ref": "#/definitions/internal_api.MarkIgnoredRequest"
                         }
                     }
                 ],
@@ -277,7 +277,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.OrphanedResource"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -333,7 +333,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.MarkResolvedRequest"
+                            "$ref": "#/definitions/internal_api.MarkResolvedRequest"
                         }
                     }
                 ],
@@ -341,7 +341,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.OrphanedResource"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
                         }
                     },
                     "400": {
@@ -384,13 +384,385 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.InfrastructureInfo"
+                            "$ref": "#/definitions/internal_api.InfrastructureInfo"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all API keys for the authenticated user. Plaintext keys are never returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "List API keys",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.APIKeyResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list API keys",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generates a new API key for the authenticated user. The plaintext key is only returned once on creation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Create API key",
+                "parameters": [
+                    {
+                        "description": "API key creation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateAPIKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateAPIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to create API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently deletes an API key. Only the key owner can delete it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Delete API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "API key ID required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Not your API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "API key not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to delete API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the name of an API key. Only the key owner can update it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Update API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "API key update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateAPIKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Not your API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "API key not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{id}/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revokes an API key, preventing further use. Only the key owner can revoke it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Revoke API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "API key ID required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Not your API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "API key not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to revoke API key",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -416,7 +788,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.LoginRequest"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest"
                         }
                     }
                 ],
@@ -424,7 +796,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.LoginResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
                         }
                     },
                     "400": {
@@ -514,7 +886,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.UserResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                         }
                     },
                     "401": {
@@ -570,7 +942,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.UpdateMeRequest"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest"
                         }
                     }
                 ],
@@ -578,7 +950,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.UserResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                         }
                     },
                     "400": {
@@ -645,7 +1017,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.ChangePasswordRequest"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest"
                         }
                     }
                 ],
@@ -715,7 +1087,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.LoginResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse"
                         }
                     },
                     "401": {
@@ -821,7 +1193,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/api.PaginatedResponse"
+                                    "$ref": "#/definitions/internal_api.PaginatedResponse"
                                 },
                                 {
                                     "type": "object",
@@ -829,7 +1201,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/types.Cluster"
+                                                "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
                                             }
                                         }
                                     }
@@ -840,13 +1212,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -875,7 +1247,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.CreateClusterRequest"
+                            "$ref": "#/definitions/internal_api.CreateClusterRequest"
                         }
                     }
                 ],
@@ -883,37 +1255,37 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/types.Cluster"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -947,31 +1319,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.Cluster"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -1003,37 +1375,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.Cluster"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -1264,7 +1636,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.ExtendClusterRequest"
+                            "$ref": "#/definitions/internal_api.ExtendClusterRequest"
                         }
                     }
                 ],
@@ -1272,37 +1644,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.Cluster"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Cluster"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -1647,7 +2019,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.ClusterOutputsResponse"
+                            "$ref": "#/definitions/internal_api.ClusterOutputsResponse"
                         }
                     },
                     "400": {
@@ -1874,7 +2246,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/api.StorageGroupResponse"
+                                "$ref": "#/definitions/internal_api.StorageGroupResponse"
                             }
                         }
                     },
@@ -1940,7 +2312,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.LinkStorageRequest"
+                            "$ref": "#/definitions/internal_api.LinkStorageRequest"
                         }
                     }
                 ],
@@ -1948,7 +2320,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.StorageGroupResponse"
+                            "$ref": "#/definitions/internal_api.StorageGroupResponse"
                         }
                     },
                     "400": {
@@ -2186,7 +2558,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.Job"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Job"
                         }
                     },
                     "404": {
@@ -2249,13 +2621,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.AddonsListResponse"
+                            "$ref": "#/definitions/internal_api.AddonsListResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2286,7 +2658,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.ValidateRequest"
+                            "$ref": "#/definitions/internal_api.ValidateRequest"
                         }
                     }
                 ],
@@ -2294,19 +2666,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.ValidateResponse"
+                            "$ref": "#/definitions/internal_api.ValidateResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2344,7 +2716,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/api.ProfileResponse"
+                                "$ref": "#/definitions/internal_api.ProfileResponse"
                             }
                         }
                     },
@@ -2391,7 +2763,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.ProfileResponse"
+                            "$ref": "#/definitions/internal_api.ProfileResponse"
                         }
                     },
                     "404": {
@@ -2478,7 +2850,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2507,7 +2879,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.CreateTemplateRequest"
+                            "$ref": "#/definitions/internal_api.CreateTemplateRequest"
                         }
                     }
                 ],
@@ -2515,19 +2887,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/types.PostConfigTemplate"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2561,19 +2933,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.PostConfigTemplate"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2614,19 +2986,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2662,7 +3034,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.UpdateTemplateRequest"
+                            "$ref": "#/definitions/internal_api.UpdateTemplateRequest"
                         }
                     }
                 ],
@@ -2670,31 +3042,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.PostConfigTemplate"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2784,7 +3156,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.CreateUserRequest"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest"
                         }
                     }
                 ],
@@ -2792,7 +3164,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/types.UserResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                         }
                     },
                     "400": {
@@ -2856,7 +3228,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.UserResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                         }
                     },
                     "400": {
@@ -2984,7 +3356,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.UpdateUserRequest"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest"
                         }
                     }
                 ],
@@ -2992,7 +3364,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.UserResponse"
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                         }
                     },
                     "400": {
@@ -3050,794 +3422,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "api.ASGInfo": {
-            "type": "object",
-            "properties": {
-                "desired_capacity": {
-                    "type": "integer"
-                },
-                "instances": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.WorkerInfo"
-                    }
-                },
-                "max_size": {
-                    "type": "integer"
-                },
-                "min_size": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.AddonWithVersions": {
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string",
-                    "example": "backup"
-                },
-                "description": {
-                    "type": "string",
-                    "example": "Backup and restore OpenShift clusters and applications"
-                },
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "id": {
-                    "type": "string",
-                    "example": "oadp"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "OpenShift API for Data Protection (OADP)"
-                },
-                "supportedPlatforms": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "openshift"
-                    ]
-                },
-                "versions": {
-                    "$ref": "#/definitions/api.VersionsInfo"
-                }
-            }
-        },
-        "api.AddonsListResponse": {
-            "type": "object",
-            "properties": {
-                "addons": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.AddonWithVersions"
-                    }
-                },
-                "categories": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/definitions/api.AddonWithVersions"
-                        }
-                    }
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
-        "api.ClusterOutputsResponse": {
-            "type": "object",
-            "properties": {
-                "api_url": {
-                    "type": "string"
-                },
-                "cluster_id": {
-                    "type": "string"
-                },
-                "cluster_name": {
-                    "type": "string"
-                },
-                "console_url": {
-                    "type": "string"
-                },
-                "dashboard_token": {
-                    "description": "Kubernetes Dashboard bearer token",
-                    "type": "string"
-                },
-                "kubeadmin": {
-                    "description": "Actual credentials",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/api.KubeadminCredentials"
-                        }
-                    ]
-                },
-                "kubeadmin_secret_ref": {
-                    "description": "Reference to secret location",
-                    "type": "string"
-                },
-                "kubeconfig": {
-                    "description": "Full kubeconfig content",
-                    "type": "string"
-                },
-                "kubeconfig_s3_uri": {
-                    "description": "S3 URI to kubeconfig file",
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ClusterProfileCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "profile": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ClusterStatistics": {
-            "type": "object",
-            "properties": {
-                "active_clusters": {
-                    "type": "integer"
-                },
-                "clusters_by_profile": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.ClusterProfileCount"
-                    }
-                },
-                "clusters_by_status": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.ClusterStatusCount"
-                    }
-                },
-                "cost_by_profile": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.ProfileCostBreakdown"
-                    }
-                },
-                "cost_by_user": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.UserCostBreakdown"
-                    }
-                },
-                "total_clusters": {
-                    "type": "integer"
-                },
-                "total_daily_cost": {
-                    "type": "number"
-                },
-                "total_hourly_cost": {
-                    "type": "number"
-                },
-                "total_monthly_cost": {
-                    "type": "number"
-                }
-            }
-        },
-        "api.ClusterStatusCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ClusterStorageLinkResponse": {
-            "type": "object",
-            "properties": {
-                "cluster_id": {
-                    "type": "string"
-                },
-                "cluster_name": {
-                    "type": "string"
-                },
-                "linked_at": {
-                    "type": "string"
-                },
-                "role": {
-                    "$ref": "#/definitions/types.ClusterStorageLinkRole"
-                }
-            }
-        },
-        "api.CreateClusterRequest": {
-            "type": "object",
-            "required": [
-                "cluster_type",
-                "cost_center",
-                "name",
-                "owner",
-                "platform",
-                "profile",
-                "region",
-                "team",
-                "version"
-            ],
-            "properties": {
-                "base_domain": {
-                    "description": "Only required for OpenShift",
-                    "type": "string"
-                },
-                "cluster_type": {
-                    "type": "string",
-                    "enum": [
-                        "openshift",
-                        "eks",
-                        "iks"
-                    ]
-                },
-                "cost_center": {
-                    "type": "string"
-                },
-                "customPostConfig": {
-                    "description": "Custom post-deployment operators, scripts, and manifests",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.CustomPostConfig"
-                        }
-                    ]
-                },
-                "enable_efs_storage": {
-                    "type": "boolean"
-                },
-                "extra_tags": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "idempotency_key": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 63,
-                    "minLength": 3
-                },
-                "offhours_opt_in": {
-                    "type": "boolean"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "platform": {
-                    "type": "string",
-                    "enum": [
-                        "aws",
-                        "ibmcloud"
-                    ]
-                },
-                "postConfigAddOns": {
-                    "description": "Pre-approved add-ons with version selection",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.AddonSelection"
-                    }
-                },
-                "profile": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "skip_post_deployment": {
-                    "type": "boolean"
-                },
-                "ssh_public_key": {
-                    "type": "string"
-                },
-                "team": {
-                    "type": "string"
-                },
-                "ttl_hours": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "string"
-                },
-                "work_hours": {
-                    "$ref": "#/definitions/types.WorkHoursSchedule"
-                },
-                "work_hours_enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "api.CreateTemplateRequest": {
-            "type": "object",
-            "required": [
-                "config",
-                "name"
-            ],
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/types.CustomPostConfig"
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "isPublic": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "minLength": 3
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "api.DAGInfo": {
-            "type": "object",
-            "properties": {
-                "dependencies": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "executionOrder": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "taskCount": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "details": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "error": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ExtendClusterRequest": {
-            "type": "object",
-            "required": [
-                "ttl_hours"
-            ],
-            "properties": {
-                "ttl_hours": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
-        "api.InfrastructureInfo": {
-            "type": "object",
-            "properties": {
-                "api_server": {
-                    "type": "object",
-                    "properties": {
-                        "ip": {
-                            "type": "string"
-                        },
-                        "status": {
-                            "type": "string"
-                        },
-                        "uptime": {
-                            "type": "string"
-                        },
-                        "version": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "autoscale_group": {
-                    "$ref": "#/definitions/api.ASGInfo"
-                },
-                "database": {
-                    "type": "object",
-                    "properties": {
-                        "host": {
-                            "type": "string"
-                        },
-                        "status": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "static_workers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.WorkerInfo"
-                    }
-                },
-                "timestamp": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.KubeadminCredentials": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.LinkStorageRequest": {
-            "type": "object",
-            "required": [
-                "target_cluster_id"
-            ],
-            "properties": {
-                "target_cluster_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.MarkIgnoredRequest": {
-            "type": "object",
-            "properties": {
-                "notes": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.MarkResolvedRequest": {
-            "type": "object",
-            "properties": {
-                "notes": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.OrphanedResourceListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "resources": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.OrphanedResource"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.PaginatedResponse": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "filters": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "pagination": {
-                    "$ref": "#/definitions/api.PaginationMeta"
-                }
-            }
-        },
-        "api.PaginationMeta": {
-            "type": "object",
-            "properties": {
-                "page": {
-                    "type": "integer"
-                },
-                "per_page": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.ProfileCostBreakdown": {
-            "type": "object",
-            "properties": {
-                "cluster_count": {
-                    "type": "integer"
-                },
-                "daily_cost": {
-                    "type": "number"
-                },
-                "hourly_cost": {
-                    "type": "number"
-                },
-                "monthly_cost": {
-                    "type": "number"
-                },
-                "profile": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ProfileResponse": {
-            "type": "object",
-            "properties": {
-                "base_domains": {
-                    "$ref": "#/definitions/profile.BaseDomainConfig"
-                },
-                "compute": {
-                    "$ref": "#/definitions/profile.ComputeConfig"
-                },
-                "cost_controls": {
-                    "$ref": "#/definitions/profile.CostControlsConfig"
-                },
-                "deployment_metrics": {
-                    "$ref": "#/definitions/types.ProfileDeploymentMetrics"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "features": {
-                    "$ref": "#/definitions/profile.FeaturesConfig"
-                },
-                "kubernetes_versions": {
-                    "$ref": "#/definitions/profile.VersionConfig"
-                },
-                "lifecycle": {
-                    "$ref": "#/definitions/profile.LifecycleConfig"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "networking": {
-                    "$ref": "#/definitions/profile.NetworkingConfig"
-                },
-                "openshift_versions": {
-                    "$ref": "#/definitions/profile.VersionConfig"
-                },
-                "platform": {
-                    "type": "string"
-                },
-                "post_deployment": {
-                    "$ref": "#/definitions/profile.PostDeploymentConfig"
-                },
-                "regions": {
-                    "$ref": "#/definitions/profile.RegionConfig"
-                },
-                "tags": {
-                    "$ref": "#/definitions/profile.TagsConfig"
-                }
-            }
-        },
-        "api.StorageGroupResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "efs_id": {
-                    "type": "string"
-                },
-                "efs_security_group_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "linked_clusters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.ClusterStorageLinkResponse"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "region": {
-                    "type": "string"
-                },
-                "s3_bucket": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.StorageGroupStatus"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.UpdateTemplateRequest": {
-            "type": "object",
-            "required": [
-                "config",
-                "name"
-            ],
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/types.CustomPostConfig"
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "isPublic": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "minLength": 3
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "api.UserCostBreakdown": {
-            "type": "object",
-            "properties": {
-                "cluster_count": {
-                    "type": "integer"
-                },
-                "daily_cost": {
-                    "type": "number"
-                },
-                "hourly_cost": {
-                    "type": "number"
-                },
-                "monthly_cost": {
-                    "type": "number"
-                },
-                "user_id": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.ValidateRequest": {
-            "type": "object",
-            "required": [
-                "config"
-            ],
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/types.CustomPostConfig"
-                }
-            }
-        },
-        "api.ValidateResponse": {
-            "type": "object",
-            "properties": {
-                "dag": {
-                    "$ref": "#/definitions/api.DAGInfo"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "api.VersionOption": {
-            "type": "object",
-            "properties": {
-                "channel": {
-                    "type": "string",
-                    "example": "stable"
-                },
-                "displayName": {
-                    "type": "string",
-                    "example": "OADP 1.5 (Stable)"
-                }
-            }
-        },
-        "api.VersionsInfo": {
-            "type": "object",
-            "properties": {
-                "allowed": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.VersionOption"
-                    }
-                },
-                "default": {
-                    "type": "string",
-                    "example": "stable"
-                }
-            }
-        },
-        "api.WorkerInfo": {
-            "type": "object",
-            "properties": {
-                "health_status": {
-                    "type": "string"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "launch_time": {
-                    "type": "string"
-                },
-                "private_ip": {
-                    "type": "string"
-                },
-                "public_ip": {
-                    "type": "string"
-                },
-                "state": {
-                    "type": "string"
-                },
-                "type": {
-                    "description": "\"static\" or \"autoscale\"",
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "profile.BaseDomainConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -3856,7 +3441,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.ClusterNetworkConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig": {
             "type": "object",
             "properties": {
                 "cidr": {
@@ -3867,32 +3452,32 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.ComputeConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig": {
             "type": "object",
             "properties": {
                 "control_plane": {
-                    "$ref": "#/definitions/profile.ControlPlaneConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig"
                 },
                 "managed_node_groups": {
                     "description": "For EKS (managed)",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.NodeGroupConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
                     }
                 },
                 "node_groups": {
                     "description": "For EKS (unmanaged)",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.NodeGroupConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig"
                     }
                 },
                 "workers": {
-                    "$ref": "#/definitions/profile.WorkersConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig"
                 }
             }
         },
-        "profile.ControlPlaneConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.ControlPlaneConfig": {
             "type": "object",
             "required": [
                 "instance_type",
@@ -3911,7 +3496,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.CostControlsConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig": {
             "type": "object",
             "properties": {
                 "budget_alert_threshold": {
@@ -3930,7 +3515,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.CustomResourceConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig": {
             "type": "object",
             "required": [
                 "api_version",
@@ -3956,7 +3541,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.FeaturesConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig": {
             "type": "object",
             "properties": {
                 "fips_mode": {
@@ -3981,7 +3566,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.HelmChartConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig": {
             "type": "object",
             "required": [
                 "chart",
@@ -4004,7 +3589,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.LifecycleConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig": {
             "type": "object",
             "required": [
                 "default_ttl_hours",
@@ -4028,7 +3613,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.MachineNetworkConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig": {
             "type": "object",
             "properties": {
                 "cidr": {
@@ -4036,7 +3621,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.ManifestConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig": {
             "type": "object",
             "required": [
                 "name"
@@ -4062,19 +3647,19 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.NetworkingConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig": {
             "type": "object",
             "properties": {
                 "clusterNetworks": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.ClusterNetworkConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ClusterNetworkConfig"
                     }
                 },
                 "machineNetwork": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.MachineNetworkConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MachineNetworkConfig"
                     }
                 },
                 "nat_gateway": {
@@ -4096,7 +3681,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.NodeGroupConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.NodeGroupConfig": {
             "type": "object",
             "required": [
                 "desired_capacity",
@@ -4135,7 +3720,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.OperatorConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig": {
             "type": "object",
             "required": [
                 "channel",
@@ -4147,7 +3732,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "custom_resource": {
-                    "$ref": "#/definitions/profile.CustomResourceConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CustomResourceConfig"
                 },
                 "name": {
                     "type": "string"
@@ -4161,7 +3746,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.PostDeploymentConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -4170,25 +3755,25 @@ const docTemplate = `{
                 "helm_charts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.HelmChartConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig"
                     }
                 },
                 "manifests": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.ManifestConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ManifestConfig"
                     }
                 },
                 "operators": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.OperatorConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.OperatorConfig"
                     }
                 },
                 "scripts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/profile.ScriptConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig"
                     }
                 },
                 "timeout": {
@@ -4197,7 +3782,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.RegionConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -4216,7 +3801,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.ScriptConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.ScriptConfig": {
             "type": "object",
             "required": [
                 "name",
@@ -4241,7 +3826,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.TagsConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig": {
             "type": "object",
             "properties": {
                 "allow_user_tags": {
@@ -4261,7 +3846,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.VersionConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig": {
             "type": "object",
             "required": [
                 "allowed",
@@ -4280,7 +3865,7 @@ const docTemplate = `{
                 }
             }
         },
-        "profile.WorkersConfig": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.WorkersConfig": {
             "type": "object",
             "properties": {
                 "autoscaling": {
@@ -4315,7 +3900,53 @@ const docTemplate = `{
                 }
             }
         },
-        "types.AddonSelection": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.APIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_expired": {
+                    "type": "boolean"
+                },
+                "key_prefix": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.APIKeyScope"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.APIKeyScope": {
+            "type": "string",
+            "enum": [
+                "read_only",
+                "full_access"
+            ],
+            "x-enum-varnames": [
+                "APIKeyScopeReadOnly",
+                "APIKeyScopeFullAccess"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.AddonSelection": {
             "type": "object",
             "required": [
                 "id",
@@ -4332,7 +3963,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.ChangePasswordRequest": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.ChangePasswordRequest": {
             "type": "object",
             "required": [
                 "current_password",
@@ -4348,7 +3979,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.Cluster": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.Cluster": {
             "type": "object",
             "properties": {
                 "api_url": {
@@ -4359,7 +3990,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "cluster_type": {
-                    "$ref": "#/definitions/types.ClusterType"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterType"
                 },
                 "console_url": {
                     "type": "string"
@@ -4371,7 +4002,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "custom_post_config": {
-                    "$ref": "#/definitions/types.CustomPostConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
                 },
                 "destroy_at": {
                     "type": "string"
@@ -4380,7 +4011,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "effective_tags": {
-                    "$ref": "#/definitions/types.Tags"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags"
                 },
                 "id": {
                     "type": "string"
@@ -4403,7 +4034,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "platform": {
-                    "$ref": "#/definitions/types.Platform"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform"
                 },
                 "post_deploy_completed_at": {
                     "type": "string"
@@ -4418,7 +4049,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_tags": {
-                    "$ref": "#/definitions/types.Tags"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags"
                 },
                 "requested_by": {
                     "description": "IAM principal ARN",
@@ -4431,10 +4062,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/types.ClusterStatus"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus"
                 },
                 "storage_config": {
-                    "$ref": "#/definitions/types.StorageConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig"
                 },
                 "team": {
                     "type": "string"
@@ -4463,7 +4094,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.ClusterStatus": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus": {
             "type": "string",
             "enum": [
                 "PENDING",
@@ -4509,7 +4140,7 @@ const docTemplate = `{
                 "ClusterStatusFailed"
             ]
         },
-        "types.ClusterStorageLinkRole": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole": {
             "type": "string",
             "enum": [
                 "source",
@@ -4522,7 +4153,7 @@ const docTemplate = `{
                 "ClusterStorageLinkRoleShared"
             ]
         },
-        "types.ClusterType": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterType": {
             "type": "string",
             "enum": [
                 "openshift",
@@ -4545,7 +4176,39 @@ const docTemplate = `{
                 "ClusterTypeIKS"
             ]
         },
-        "types.CreateUserRequest": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreateAPIKeyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "scope"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 3
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.APIKeyScope"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreateAPIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.APIKeyResponse"
+                },
+                "plain_key": {
+                    "description": "Full key, only shown on creation",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -4562,7 +4225,7 @@ const docTemplate = `{
                     "minLength": 8
                 },
                 "role": {
-                    "$ref": "#/definitions/types.UserRole"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
                 },
                 "username": {
                     "type": "string",
@@ -4571,7 +4234,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.CustomHelmChartConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomHelmChartConfig": {
             "type": "object",
             "required": [
                 "chart",
@@ -4620,7 +4283,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.CustomManifestConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomManifestConfig": {
             "type": "object",
             "required": [
                 "name"
@@ -4664,7 +4327,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.CustomOperatorConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomOperatorConfig": {
             "type": "object",
             "required": [
                 "channel",
@@ -4681,7 +4344,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "customResource": {
-                    "$ref": "#/definitions/types.CustomResourceConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomResourceConfig"
                 },
                 "dependsOn": {
                     "description": "Task dependencies (names of other tasks)",
@@ -4702,36 +4365,36 @@ const docTemplate = `{
                 }
             }
         },
-        "types.CustomPostConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig": {
             "type": "object",
             "properties": {
                 "helmCharts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.CustomHelmChartConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomHelmChartConfig"
                     }
                 },
                 "manifests": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.CustomManifestConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomManifestConfig"
                     }
                 },
                 "operators": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.CustomOperatorConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomOperatorConfig"
                     }
                 },
                 "scripts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.CustomScriptConfig"
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomScriptConfig"
                     }
                 }
             }
         },
-        "types.CustomResourceConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomResourceConfig": {
             "type": "object",
             "required": [
                 "apiVersion",
@@ -4757,7 +4420,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.CustomScriptConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.CustomScriptConfig": {
             "type": "object",
             "required": [
                 "name"
@@ -4808,7 +4471,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.Job": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.Job": {
             "type": "object",
             "properties": {
                 "attempt": {
@@ -4833,30 +4496,30 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "job_type": {
-                    "$ref": "#/definitions/types.JobType"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobType"
                 },
                 "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.JobMetadata"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata"
                 },
                 "started_at": {
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/types.JobStatus"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.JobStatus"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "types.JobMetadata": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobMetadata": {
             "type": "object",
             "additionalProperties": true
         },
-        "types.JobStatus": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobStatus": {
             "type": "string",
             "enum": [
                 "PENDING",
@@ -4873,7 +4536,7 @@ const docTemplate = `{
                 "JobStatusRetrying"
             ]
         },
-        "types.JobType": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.JobType": {
             "type": "string",
             "enum": [
                 "CREATE",
@@ -4898,7 +4561,7 @@ const docTemplate = `{
                 "JobTypePostConfigure"
             ]
         },
-        "types.LoginRequest": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -4913,7 +4576,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.LoginResponse": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.LoginResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -4924,11 +4587,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "user": {
-                    "$ref": "#/definitions/types.UserResponse"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserResponse"
                 }
             }
         },
-        "types.OrphanedResource": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource": {
             "type": "object",
             "properties": {
                 "cluster_name": {
@@ -4968,20 +4631,20 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resource_type": {
-                    "$ref": "#/definitions/types.OrphanedResourceType"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType"
                 },
                 "status": {
-                    "$ref": "#/definitions/types.OrphanedResourceStatus"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus"
                 },
                 "tags": {
-                    "$ref": "#/definitions/types.OrphanedResourceTags"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "types.OrphanedResourceStatus": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceStatus": {
             "type": "string",
             "enum": [
                 "ACTIVE",
@@ -4994,13 +4657,13 @@ const docTemplate = `{
                 "OrphanedResourceStatusIgnored"
             ]
         },
-        "types.OrphanedResourceTags": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceTags": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
             }
         },
-        "types.OrphanedResourceType": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResourceType": {
             "type": "string",
             "enum": [
                 "VPC",
@@ -5027,7 +4690,7 @@ const docTemplate = `{
                 "OrphanedResourceTypeCloudWatchLogGroup"
             ]
         },
-        "types.Platform": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.Platform": {
             "type": "string",
             "enum": [
                 "aws",
@@ -5038,11 +4701,11 @@ const docTemplate = `{
                 "PlatformIBMCloud"
             ]
         },
-        "types.PostConfigTemplate": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate": {
             "type": "object",
             "properties": {
                 "config": {
-                    "$ref": "#/definitions/types.CustomPostConfig"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
                 },
                 "createdAt": {
                     "type": "string"
@@ -5074,7 +4737,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.ProfileDeploymentMetrics": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.ProfileDeploymentMetrics": {
             "type": "object",
             "properties": {
                 "avg_duration_seconds": {
@@ -5116,7 +4779,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.StorageConfig": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.StorageConfig": {
             "type": "object",
             "properties": {
                 "auth_mode": {
@@ -5150,7 +4813,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.StorageGroupStatus": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus": {
             "type": "string",
             "enum": [
                 "PROVISIONING",
@@ -5165,13 +4828,23 @@ const docTemplate = `{
                 "StorageGroupStatusDeleting"
             ]
         },
-        "types.Tags": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.Tags": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
             }
         },
-        "types.UpdateMeRequest": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateAPIKeyRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 3
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateMeRequest": {
             "type": "object",
             "properties": {
                 "timezone": {
@@ -5183,14 +4856,14 @@ const docTemplate = `{
                     "minLength": 2
                 },
                 "work_hours": {
-                    "$ref": "#/definitions/types.WorkHoursSchedule"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
                 },
                 "work_hours_enabled": {
                     "type": "boolean"
                 }
             }
         },
-        "types.UpdateUserRequest": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest": {
             "type": "object",
             "properties": {
                 "active": {
@@ -5201,7 +4874,7 @@ const docTemplate = `{
                     "minLength": 8
                 },
                 "role": {
-                    "$ref": "#/definitions/types.UserRole"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
                 },
                 "username": {
                     "type": "string",
@@ -5210,7 +4883,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.UserResponse": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.UserResponse": {
             "type": "object",
             "properties": {
                 "active": {
@@ -5226,7 +4899,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "$ref": "#/definitions/types.UserRole"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
                 },
                 "timezone": {
                     "type": "string"
@@ -5238,14 +4911,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "work_hours": {
-                    "$ref": "#/definitions/types.WorkHoursSchedule"
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
                 },
                 "work_hours_enabled": {
                     "type": "boolean"
                 }
             }
         },
-        "types.UserRole": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.UserRole": {
             "type": "string",
             "enum": [
                 "ADMIN",
@@ -5258,7 +4931,7 @@ const docTemplate = `{
                 "RoleViewer"
             ]
         },
-        "types.WorkHoursSchedule": {
+        "github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule": {
             "type": "object",
             "properties": {
                 "end_time": {
@@ -5275,6 +4948,793 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api.ASGInfo": {
+            "type": "object",
+            "properties": {
+                "desired_capacity": {
+                    "type": "integer"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.WorkerInfo"
+                    }
+                },
+                "max_size": {
+                    "type": "integer"
+                },
+                "min_size": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.AddonWithVersions": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "example": "backup"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Backup and restore OpenShift clusters and applications"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "oadp"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "OpenShift API for Data Protection (OADP)"
+                },
+                "supportedPlatforms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "openshift"
+                    ]
+                },
+                "versions": {
+                    "$ref": "#/definitions/internal_api.VersionsInfo"
+                }
+            }
+        },
+        "internal_api.AddonsListResponse": {
+            "type": "object",
+            "properties": {
+                "addons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.AddonWithVersions"
+                    }
+                },
+                "categories": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/internal_api.AddonWithVersions"
+                        }
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "internal_api.ClusterOutputsResponse": {
+            "type": "object",
+            "properties": {
+                "api_url": {
+                    "type": "string"
+                },
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "console_url": {
+                    "type": "string"
+                },
+                "dashboard_token": {
+                    "description": "Kubernetes Dashboard bearer token",
+                    "type": "string"
+                },
+                "kubeadmin": {
+                    "description": "Actual credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_api.KubeadminCredentials"
+                        }
+                    ]
+                },
+                "kubeadmin_secret_ref": {
+                    "description": "Reference to secret location",
+                    "type": "string"
+                },
+                "kubeconfig": {
+                    "description": "Full kubeconfig content",
+                    "type": "string"
+                },
+                "kubeconfig_s3_uri": {
+                    "description": "S3 URI to kubeconfig file",
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterProfileCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterStatistics": {
+            "type": "object",
+            "properties": {
+                "active_clusters": {
+                    "type": "integer"
+                },
+                "clusters_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterProfileCount"
+                    }
+                },
+                "clusters_by_status": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterStatusCount"
+                    }
+                },
+                "cost_by_profile": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ProfileCostBreakdown"
+                    }
+                },
+                "cost_by_user": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.UserCostBreakdown"
+                    }
+                },
+                "total_clusters": {
+                    "type": "integer"
+                },
+                "total_daily_cost": {
+                    "type": "number"
+                },
+                "total_hourly_cost": {
+                    "type": "number"
+                },
+                "total_monthly_cost": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_api.ClusterStatusCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ClusterStorageLinkResponse": {
+            "type": "object",
+            "properties": {
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "linked_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterStorageLinkRole"
+                }
+            }
+        },
+        "internal_api.CreateClusterRequest": {
+            "type": "object",
+            "required": [
+                "cluster_type",
+                "cost_center",
+                "name",
+                "owner",
+                "platform",
+                "profile",
+                "region",
+                "team",
+                "version"
+            ],
+            "properties": {
+                "base_domain": {
+                    "description": "Only required for OpenShift",
+                    "type": "string"
+                },
+                "cluster_type": {
+                    "type": "string",
+                    "enum": [
+                        "openshift",
+                        "eks",
+                        "iks"
+                    ]
+                },
+                "cost_center": {
+                    "type": "string"
+                },
+                "customPostConfig": {
+                    "description": "Custom post-deployment operators, scripts, and manifests",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
+                        }
+                    ]
+                },
+                "enable_efs_storage": {
+                    "type": "boolean"
+                },
+                "extra_tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "minLength": 3
+                },
+                "offhours_opt_in": {
+                    "type": "boolean"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "aws",
+                        "ibmcloud"
+                    ]
+                },
+                "postConfigAddOns": {
+                    "description": "Pre-approved add-ons with version selection",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.AddonSelection"
+                    }
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "skip_post_deployment": {
+                    "type": "boolean"
+                },
+                "ssh_public_key": {
+                    "type": "string"
+                },
+                "team": {
+                    "type": "string"
+                },
+                "ttl_hours": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "work_hours": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule"
+                },
+                "work_hours_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.CreateTemplateRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "isPublic": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 3
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.DAGInfo": {
+            "type": "object",
+            "properties": {
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "executionOrder": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "taskCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "error": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ExtendClusterRequest": {
+            "type": "object",
+            "required": [
+                "ttl_hours"
+            ],
+            "properties": {
+                "ttl_hours": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.InfrastructureInfo": {
+            "type": "object",
+            "properties": {
+                "api_server": {
+                    "type": "object",
+                    "properties": {
+                        "ip": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        },
+                        "uptime": {
+                            "type": "string"
+                        },
+                        "version": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "autoscale_group": {
+                    "$ref": "#/definitions/internal_api.ASGInfo"
+                },
+                "database": {
+                    "type": "object",
+                    "properties": {
+                        "host": {
+                            "type": "string"
+                        },
+                        "status": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "static_workers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.WorkerInfo"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.KubeadminCredentials": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.LinkStorageRequest": {
+            "type": "object",
+            "required": [
+                "target_cluster_id"
+            ],
+            "properties": {
+                "target_cluster_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.MarkIgnoredRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.MarkResolvedRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.OrphanedResourceListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.OrphanedResource"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.PaginatedResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "pagination": {
+                    "$ref": "#/definitions/internal_api.PaginationMeta"
+                }
+            }
+        },
+        "internal_api.PaginationMeta": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ProfileCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ProfileResponse": {
+            "type": "object",
+            "properties": {
+                "base_domains": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig"
+                },
+                "compute": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig"
+                },
+                "cost_controls": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig"
+                },
+                "deployment_metrics": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ProfileDeploymentMetrics"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "features": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig"
+                },
+                "kubernetes_versions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
+                "lifecycle": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "networking": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig"
+                },
+                "openshift_versions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "post_deployment": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig"
+                },
+                "regions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig"
+                },
+                "tags": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig"
+                }
+            }
+        },
+        "internal_api.StorageGroupResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "efs_id": {
+                    "type": "string"
+                },
+                "efs_security_group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_clusters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterStorageLinkResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "s3_bucket": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.StorageGroupStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.UpdateTemplateRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "isPublic": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 3
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.UserCostBreakdown": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "daily_cost": {
+                    "type": "number"
+                },
+                "hourly_cost": {
+                    "type": "number"
+                },
+                "monthly_cost": {
+                    "type": "number"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ValidateRequest": {
+            "type": "object",
+            "required": [
+                "config"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
+                }
+            }
+        },
+        "internal_api.ValidateResponse": {
+            "type": "object",
+            "properties": {
+                "dag": {
+                    "$ref": "#/definitions/internal_api.DAGInfo"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.VersionOption": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string",
+                    "example": "stable"
+                },
+                "displayName": {
+                    "type": "string",
+                    "example": "OADP 1.5 (Stable)"
+                }
+            }
+        },
+        "internal_api.VersionsInfo": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.VersionOption"
+                    }
+                },
+                "default": {
+                    "type": "string",
+                    "example": "stable"
+                }
+            }
+        },
+        "internal_api.WorkerInfo": {
+            "type": "object",
+            "properties": {
+                "health_status": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "launch_time": {
+                    "type": "string"
+                },
+                "private_ip": {
+                    "type": "string"
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"static\" or \"autoscale\"",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         }
