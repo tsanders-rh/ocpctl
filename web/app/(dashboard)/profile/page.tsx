@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, Save, AlertCircle, CheckCircle, Clock } from "lucide-react";
-import type { UpdateMeRequest } from "@/types/api";
+import { User, Save, AlertCircle, CheckCircle, Clock, Lock } from "lucide-react";
+import type { UpdateMeRequest, ChangePasswordRequest } from "@/types/api";
 import { APIKeyManager } from "@/components/profile/APIKeyManager";
 
 // Common timezones list
@@ -410,6 +410,19 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Password Change Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="h-5 w-5" />
+            Change Password
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PasswordChangeForm />
+        </CardContent>
+      </Card>
+
       {/* API Keys Section */}
       <Card>
         <CardContent className="pt-6">
@@ -417,5 +430,124 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Password Change Component
+function PasswordChangeForm() {
+  const router = useRouter();
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ChangePasswordRequest>({
+    defaultValues: {
+      current_password: "",
+      new_password: "",
+    },
+  });
+
+  const changePassword = useMutation({
+    mutationFn: (data: ChangePasswordRequest) => authApi.changePassword(data),
+    onSuccess: () => {
+      setSuccessMessage("Password changed successfully! Redirecting to login...");
+      setErrorMessage("");
+      reset();
+      // Redirect to login after 2 seconds
+      setTimeout(() => {
+        router.push("/login");
+      }, 2000);
+    },
+    onError: (error: any) => {
+      setErrorMessage(error.message || "Failed to change password");
+      setSuccessMessage("");
+    },
+  });
+
+  const onSubmit = async (data: ChangePasswordRequest) => {
+    setSuccessMessage("");
+    setErrorMessage("");
+    changePassword.mutate(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-md">
+      {/* Current Password */}
+      <div className="space-y-2">
+        <Label htmlFor="current_password">Current Password</Label>
+        <Input
+          id="current_password"
+          type="password"
+          autoComplete="current-password"
+          {...register("current_password", {
+            required: "Current password is required",
+          })}
+        />
+        {errors.current_password && (
+          <p className="text-sm text-red-600">
+            {errors.current_password.message}
+          </p>
+        )}
+      </div>
+
+      {/* New Password */}
+      <div className="space-y-2">
+        <Label htmlFor="new_password">New Password</Label>
+        <Input
+          id="new_password"
+          type="password"
+          autoComplete="new-password"
+          {...register("new_password", {
+            required: "New password is required",
+            minLength: {
+              value: 8,
+              message: "Password must be at least 8 characters",
+            },
+          })}
+        />
+        {errors.new_password && (
+          <p className="text-sm text-red-600">
+            {errors.new_password.message}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          Password must be at least 8 characters long
+        </p>
+      </div>
+
+      {/* Status Messages */}
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 rounded-md p-3 flex items-center gap-2">
+          <CheckCircle className="h-5 w-5 text-green-600" />
+          <p className="text-sm text-green-800">{successMessage}</p>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2">
+          <AlertCircle className="h-5 w-5 text-red-600" />
+          <p className="text-sm text-red-800">{errorMessage}</p>
+        </div>
+      )}
+
+      {/* Submit Button */}
+      <Button
+        type="submit"
+        disabled={changePassword.isPending}
+      >
+        <Lock className="mr-2 h-4 w-4" />
+        {changePassword.isPending ? "Changing Password..." : "Change Password"}
+      </Button>
+
+      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+        <p className="text-sm text-yellow-800">
+          <strong>Note:</strong> Changing your password will log you out of all sessions. You'll need to log in again.
+        </p>
+      </div>
+    </form>
   );
 }
