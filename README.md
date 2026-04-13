@@ -150,9 +150,32 @@ Access at `http://localhost:3000`
 
 ## API Documentation
 
-OCPCTL provides interactive API documentation powered by OpenAPI/Swagger. Access the API documentation at:
+OCPCTL provides interactive API documentation powered by OpenAPI/Swagger.
 
-**Swagger UI:** `http://localhost:8080/swagger/index.html` (or your deployment URL)
+### API Endpoints
+
+For **production deployments**, the API is accessible via two methods:
+
+1. **Dedicated API subdomain** (recommended for direct API access):
+   ```
+   https://api.ocpctl.mg.dog8code.com
+   ```
+
+2. **Path-based proxy** (through web UI domain):
+   ```
+   https://ocpctl.mg.dog8code.com/api
+   ```
+
+For **local development**:
+```
+http://localhost:8080
+```
+
+### Swagger UI
+
+Access the interactive API documentation at:
+- **Production**: `https://api.ocpctl.mg.dog8code.com/swagger/index.html`
+- **Local**: `http://localhost:8080/swagger/index.html`
 
 The Swagger UI provides:
 - Complete API reference with all endpoints and parameters
@@ -189,16 +212,24 @@ For programmatic access to the OCPCTL API:
 Example using curl:
 
 ```bash
+# For production (using API subdomain)
+API_URL="https://api.ocpctl.mg.dog8code.com/v1"
+
+# For local development
+# API_URL="http://localhost:8080/api/v1"
+
 # Login and get token
-TOKEN=$(curl -X POST http://localhost:8080/api/v1/auth/login \
+TOKEN=$(curl -X POST ${API_URL}/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@localhost","password":"changeme"}' \
   | jq -r '.access_token')
 
 # List clusters
-curl -X GET http://localhost:8080/api/v1/clusters \
+curl -X GET ${API_URL}/clusters \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+See [API Subdomain Setup Guide](docs/deployment/API_SUBDOMAIN_SETUP.md) for detailed configuration instructions.
 
 ## Project Structure
 
