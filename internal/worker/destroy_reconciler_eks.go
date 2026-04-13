@@ -422,6 +422,16 @@ func (r *EKSDestroyReconciler) discoverNetworkInterfaces(ctx context.Context, vp
 		eniID := aws.ToString(eni.NetworkInterfaceId)
 		description := aws.ToString(eni.Description)
 
+		// Skip ENIs that are managed by AWS services (like ELB, NLB, ALB)
+		// These are automatically deleted when the service resource (LoadBalancer) is deleted
+		// Including them in discovery creates an infinite loop because reconcileNetworkInterfaces
+		// skips them but they're never removed from the state
+		if eni.RequesterManaged != nil && *eni.RequesterManaged {
+			requesterID := aws.ToString(eni.RequesterId)
+			log.Printf("Skipping discovery of AWS-managed network interface %s (managed by %s)", eniID, requesterID)
+			continue
+		}
+
 		// Match by tags first
 		matched := false
 		for _, tag := range eni.TagSet {
@@ -434,6 +444,7 @@ func (r *EKSDestroyReconciler) discoverNetworkInterfaces(ctx context.Context, vp
 		}
 
 		// Fallback: description-based heuristics for ELB/EKS ENIs
+		// Note: We already filtered out AWS-managed ENIs above, so these are user-managed
 		if matched ||
 			strings.Contains(description, "ELB") ||
 			strings.Contains(description, "amazon-eks") ||
