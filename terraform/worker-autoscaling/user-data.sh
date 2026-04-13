@@ -16,6 +16,13 @@ OPENSHIFT_PULL_SECRET='${openshift_pull_secret}'
 yum update -y
 yum install -y wget postgresql15 awscli jq
 
+# Install kubectl (required for IKS post-config)
+echo "Installing kubectl..."
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+echo "kubectl version: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+
 # Create ocpctl user
 useradd -r -s /bin/false ocpctl || true
 
