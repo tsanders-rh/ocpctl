@@ -21,6 +21,7 @@ Self-service provisioning and lifecycle management for ephemeral Kubernetes clus
 - ✅ **AWS EKS** - Production-ready support for Elastic Kubernetes Service
 - ✅ **IBM Cloud IKS** - IBM Kubernetes Service support
 - ✅ Web UI with Next.js + TypeScript
+- ✅ **Dedicated API subdomain** - Clean REST API at api.ocpctl.mg.dog8code.com
 - ✅ Dual authentication (JWT + AWS IAM)
 - ✅ Enterprise security features
 - ✅ Orphaned resource detection and automated cleanup
@@ -204,16 +205,23 @@ This generates:
 
 For programmatic access to the OCPCTL API:
 
-1. **Authentication:** Obtain a JWT token via `POST /api/v1/auth/login`
+1. **Authentication:** Obtain a JWT token via login endpoint
 2. **Authorization:** Include token in `Authorization: Bearer <token>` header
 3. **Endpoints:** See Swagger UI for complete endpoint reference
 4. **OpenAPI Spec:** Download from `/swagger/doc.json` for code generation
 
+**Important:** The base path differs depending on your access method:
+- **API Subdomain**: Base path is `/v1` (e.g., `/v1/auth/login`)
+- **Path-based (through web UI)**: Base path is `/api/v1` (e.g., `/api/v1/auth/login`)
+
 Example using curl:
 
 ```bash
-# For production (using API subdomain)
+# For production (using API subdomain - recommended)
 API_URL="https://api.ocpctl.mg.dog8code.com/v1"
+
+# For production (using path-based access)
+# API_URL="https://ocpctl.mg.dog8code.com/api/v1"
 
 # For local development
 # API_URL="http://localhost:8080/api/v1"
@@ -221,7 +229,7 @@ API_URL="https://api.ocpctl.mg.dog8code.com/v1"
 # Login and get token
 TOKEN=$(curl -X POST ${API_URL}/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@localhost","password":"changeme"}' \
+  -d '{"email":"test@example.com","password":"yourpassword"}' \
   | jq -r '.access_token')
 
 # List clusters
@@ -229,7 +237,9 @@ curl -X GET ${API_URL}/clusters \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-See [API Subdomain Setup Guide](docs/deployment/API_SUBDOMAIN_SETUP.md) for detailed configuration instructions.
+**API Subdomain Deployment:**
+- **[API Subdomain Setup Guide](docs/deployment/API_SUBDOMAIN_SETUP.md)** - Complete setup instructions
+- **[Zero-Downtime Deployment Guide](docs/deployment/API_SUBDOMAIN_ZERO_DOWNTIME_DEPLOY.md)** - Step-by-step production deployment
 
 ## Project Structure
 
@@ -437,6 +447,8 @@ See [docs/setup/](docs/setup/) for detailed development setup instructions.
 - **[AWS Quick Start](docs/deployment/AWS_QUICKSTART.md)** - Deploy to AWS in 45-60 minutes (~$50/month)
 - **[Security Configuration](docs/deployment/SECURITY_CONFIGURATION.md)** - All security features and settings
 - **[Web Deployment](docs/deployment/DEPLOYMENT_WEB.md)** - Detailed deployment instructions
+- **[API Subdomain Setup](docs/deployment/API_SUBDOMAIN_SETUP.md)** - Configure dedicated API subdomain
+- **[API Subdomain Zero-Downtime Deploy](docs/deployment/API_SUBDOMAIN_ZERO_DOWNTIME_DEPLOY.md)** - Production deployment with zero impact
 
 **Quick Deploy Summary:**
 1. Create RDS PostgreSQL database
@@ -561,6 +573,8 @@ See [Development](#development) section above.
 - [x] EKS destroy reconciler with VPC dependency cleanup
 
 ### Phase 3 (Production Operations) 🚧 IN PROGRESS
+- [x] **API subdomain deployment** - Dedicated subdomain with clean URLs and zero-downtime deployment
+- [x] **Password change UI** - User-facing password management in profile
 - [ ] CloudWatch/monitoring integration
 - [ ] Enhanced metrics and dashboards
 - [ ] Automated backups and disaster recovery
@@ -588,13 +602,16 @@ See [Development](#development) section above.
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Latest Version:** v0.20260405.2d69e13 (April 5, 2026)
+**Latest Version:** v0.20260413.1346b69 (April 13, 2026)
+- ✅ **EKS destroy reconciler fix** - Resolved infinite loop with AWS-managed ENIs
+- ✅ **Password change feature** - Users can change password via profile page
+- ✅ **API subdomain deployment** - Dedicated subdomain (api.ocpctl.mg.dog8code.com) with clean URLs
+- ✅ **IKS cluster creation** - Fixed missing IBMCLOUD_API_KEY error
+- ✅ **OpenShift 4.21 support** - Multi-version installer support for latest OpenShift releases
+
+**Previous Highlights:**
 - ✅ Comprehensive worker robustness improvements (auto-recovery, state persistence, error handling)
 - ✅ Enhanced deployment verification and error handling
-- ✅ Publish strategy validation to prevent DNS issues
-- ✅ Early resource tagging to prevent IAM role leaks
-- ✅ FAILED cluster destroy support (no artifacts required)
-- ✅ MTA addon updates (versions 6.0-8.1, Tackle instance manifests)
 - ✅ EKS destroy reconciler with VPC dependency cleanup
 - ✅ Automated deletion of orphaned AWS resources
 - ✅ Multi-platform support: OpenShift, EKS, and IKS
@@ -617,6 +634,8 @@ Internal use only - All rights reserved.
 - **[AWS Quick Start Guide](docs/deployment/AWS_QUICKSTART.md)** - Deploy to AWS in 45-60 minutes
 - **[Security Configuration](docs/deployment/SECURITY_CONFIGURATION.md)** - Complete security reference
 - **[Web Deployment Guide](docs/deployment/DEPLOYMENT_WEB.md)** - Detailed deployment instructions
+- **[API Subdomain Setup](docs/deployment/API_SUBDOMAIN_SETUP.md)** - Configure dedicated API subdomain
+- **[API Subdomain Zero-Downtime Deploy](docs/deployment/API_SUBDOMAIN_ZERO_DOWNTIME_DEPLOY.md)** - Production deployment guide
 
 ### 👥 User Guides
 - **[Getting Started](docs/user-guide/getting-started.md)** - New user onboarding
@@ -646,28 +665,6 @@ Internal use only - All rights reserved.
 ### 🐛 Issues & Support
 - **Issues**: [GitHub Issues](https://github.com/tsanders-rh/ocpctl/issues)
 - **Security Issues**: [Issue #2 - Security Review](https://github.com/tsanders-rh/ocpctl/issues/2)
-
----
-
-## Quick Reference
-
-**Default Credentials (Change Immediately!):**
-- Email: `admin@localhost`
-- Password: `changeme`
-
-**Service Ports:**
-- API Server: 8080
-- Worker Health: 8081
-- Web UI: 3000
-- Nginx: 80/443
-
-**Health Endpoints:**
-- API: `http://localhost:8080/health`
-- Worker Liveness: `http://localhost:8081/health`
-- Worker Readiness: `http://localhost:8081/ready`
-
-**Deployment Cost (Test Instance):**
-- ~$50/month (EC2 t3.medium + RDS db.t3.micro)
 
 ---
 
