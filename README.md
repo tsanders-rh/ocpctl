@@ -664,7 +664,6 @@ Internal use only - All rights reserved.
 
 ### 🐛 Issues & Support
 - **Issues**: [GitHub Issues](https://github.com/tsanders-rh/ocpctl/issues)
-- **Security Issues**: [Issue #2 - Security Review](https://github.com/tsanders-rh/ocpctl/issues/2)
 
 ---
 
