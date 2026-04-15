@@ -6,16 +6,38 @@ set -e
 
 S3_BUCKET="s3://ocpctl-binaries"
 INSTALL_DIR="/usr/local/bin"
-REQUIRED_VERSIONS=("4.18" "4.19" "4.20")
+REQUIRED_VERSIONS=("4.18" "4.19" "4.20" "4.21" "4.22")
 
 # Default patch versions to use if not specified
 declare -A DEFAULT_PATCHES
 DEFAULT_PATCHES["4.18"]="4.18.35"
 DEFAULT_PATCHES["4.19"]="4.19.23"
 DEFAULT_PATCHES["4.20"]="4.20.3"
+DEFAULT_PATCHES["4.21"]="4.21.0"
+DEFAULT_PATCHES["4.22"]="4.22.0-ec.5"
 
 log() {
     echo "[ensure-installers] $1"
+}
+
+# is_dev_preview_version detects if a version string is a dev-preview/candidate release
+is_dev_preview_version() {
+    local version=$1
+    [[ "$version" == *"-ec."* ]] || \
+    [[ "$version" == *"-rc."* ]] || \
+    [[ "$version" == *"-0.nightly"* ]] || \
+    [[ "$version" == *"-fc."* ]]
+}
+
+# get_mirror_base_path returns the mirror path component based on version type
+# Returns "ocp" for stable versions, "ocp-dev-preview" for dev-preview versions
+get_mirror_base_path() {
+    local full_version=$1
+    if is_dev_preview_version "$full_version"; then
+        echo "ocp-dev-preview"
+    else
+        echo "ocp"
+    fi
 }
 
 download_from_s3() {
@@ -36,7 +58,10 @@ download_from_s3() {
 download_from_mirror() {
     local full_version=$1
     local binary=$2
-    local version=$(echo "$full_version" | cut -d. -f1,2)
+    # Extract major.minor version, stripping pre-release suffix if present
+    # e.g., "4.22.0-ec.5" -> "4.22.0" -> "4.22"
+    local base_version=$(echo "$full_version" | cut -d- -f1)
+    local version=$(echo "$base_version" | cut -d. -f1,2)
     local local_path="${INSTALL_DIR}/${binary}-${version}"
 
     log "Downloading ${binary} ${full_version} from mirror.openshift.com..."
@@ -47,7 +72,9 @@ download_from_mirror() {
         tarball_name="openshift-client-linux.tar.gz"
     fi
 
-    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/${tarball_name}"
+    # Select mirror path based on version type (stable or dev-preview)
+    local mirror_base=$(get_mirror_base_path "$full_version")
+    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/${mirror_base}/${full_version}/${tarball_name}"
     local tmp_dir=$(mktemp -d)
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then

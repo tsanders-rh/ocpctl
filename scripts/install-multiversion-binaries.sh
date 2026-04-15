@@ -1,10 +1,10 @@
 #!/bin/bash
 # Install openshift-install and ccoctl binaries for multiple OpenShift versions
-# Supports: 4.18, 4.19, 4.20, 4.21
+# Supports: 4.18, 4.19, 4.20, 4.21, 4.22 (dev-preview)
 
 set -e
 
-VERSIONS=("4.18" "4.19" "4.20" "4.21")
+VERSIONS=("4.18" "4.19" "4.20" "4.21" "4.22")
 INSTALL_DIR="/usr/local/bin"
 
 echo "OpenShift Multi-Version Binary Installer"
@@ -15,9 +15,10 @@ echo "  - OpenShift 4.18 (Kubernetes 1.31)"
 echo "  - OpenShift 4.19 (Kubernetes 1.32)"
 echo "  - OpenShift 4.20 (Kubernetes 1.33)"
 echo "  - OpenShift 4.21 (Kubernetes 1.34)"
+echo "  - OpenShift 4.22 (Developer Preview - Early Candidate)"
 echo ""
 echo "Installation directory: $INSTALL_DIR"
-echo "Total download size: ~5GB"
+echo "Total download size: ~6GB"
 echo ""
 
 # Check if running as root
@@ -38,9 +39,19 @@ for VERSION in "${VERSIONS[@]}"; do
   echo "Installing OpenShift $VERSION binaries"
   echo "======================================"
 
+  # Determine mirror path and version based on whether this is dev-preview
+  if [ "$VERSION" = "4.22" ]; then
+    MIRROR_PATH="ocp-dev-preview"
+    FULL_VERSION="4.22.0-ec.5"
+    echo "Using dev-preview version: $FULL_VERSION"
+  else
+    MIRROR_PATH="ocp"
+    FULL_VERSION="stable-$VERSION"
+  fi
+
   # Download openshift-install
   echo "Downloading openshift-install-$VERSION..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-$VERSION/openshift-install-linux.tar.gz; then
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/openshift-install-linux.tar.gz; then
     echo "ERROR: Failed to download openshift-install for version $VERSION"
     exit 1
   fi
@@ -55,7 +66,7 @@ for VERSION in "${VERSIONS[@]}"; do
 
   # Download ccoctl
   echo "Downloading ccoctl-$VERSION..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-$VERSION/ccoctl-linux.tar.gz; then
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/ccoctl-linux.tar.gz; then
     echo "ERROR: Failed to download ccoctl for version $VERSION"
     exit 1
   fi
@@ -98,5 +109,6 @@ echo "2. Verify worker logs show multi-version support:"
 echo "   sudo journalctl -u ocpctl-worker -f"
 echo ""
 echo "3. Create clusters with different versions through the web UI"
-echo "   Available versions: 4.18.35, 4.19.23, 4.20.3, 4.20.4, 4.20.5"
+echo "   Available stable versions: 4.18.35, 4.19.23, 4.20.3, 4.20.4, 4.20.5"
+echo "   Available dev-preview: 4.22.0-ec.5"
 echo ""

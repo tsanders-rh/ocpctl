@@ -100,7 +100,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}
 
 	// Validate supported version
-	supportedVersions := []string{"4.18", "4.19", "4.20", "4.21"}
+	supportedVersions := []string{"4.18", "4.19", "4.20", "4.21", "4.22"}
 	isSupported := false
 	for _, v := range supportedVersions {
 		if majorMinor == v {
@@ -109,7 +109,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		}
 	}
 	if !isSupported {
-		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.18, 4.19, 4.20, 4.21)", version)
+		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.18, 4.19, 4.20, 4.21, 4.22)", version)
 	}
 
 	// Check for version-specific binaries in environment
@@ -153,10 +153,33 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}, nil
 }
 
+// isDevPreviewVersion detects if a version string is a dev-preview/candidate release
+// Dev-preview versions contain markers like: -ec. (early candidate), -rc. (release candidate),
+// -0.nightly (nightly builds), or -fc. (feature candidate)
+// Examples: "4.22.0-ec.5", "4.21.0-rc.1", "4.22.0-0.nightly-2024-03-15"
+func isDevPreviewVersion(version string) bool {
+	return strings.Contains(version, "-ec.") ||
+		strings.Contains(version, "-rc.") ||
+		strings.Contains(version, "-0.nightly") ||
+		strings.Contains(version, "-fc.")
+}
+
 // extractMajorMinor extracts the major.minor version from a full version string
-// Examples: "4.20.3" -> "4.20", "4.19" -> "4.19", "4.18.15" -> "4.18"
+// For dev-preview versions, strips the pre-release suffix before extracting
+// Examples:
+//   - "4.20.3" -> "4.20"
+//   - "4.19" -> "4.19"
+//   - "4.18.15" -> "4.18"
+//   - "4.22.0-ec.5" -> "4.22" (strips "-ec.5" first)
+//   - "4.22.0-0.nightly-2024-03-15" -> "4.22" (strips nightly suffix)
 func extractMajorMinor(version string) string {
-	parts := strings.Split(version, ".")
+	// Strip pre-release suffix if present (e.g., "4.22.0-ec.5" -> "4.22.0")
+	baseVersion := version
+	if idx := strings.Index(version, "-"); idx > 0 {
+		baseVersion = version[:idx]
+	}
+
+	parts := strings.Split(baseVersion, ".")
 	if len(parts) < 2 {
 		return ""
 	}
