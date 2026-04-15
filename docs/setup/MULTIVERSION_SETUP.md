@@ -159,6 +159,105 @@ openshiftVersions:
 
 Users can select any of these versions when creating a cluster.
 
+## Developer Preview Support
+
+ocpctl supports deploying pre-release OpenShift versions alongside stable versions. This allows testing of early candidate (EC), release candidate (RC), and nightly builds.
+
+### Supported Dev-Preview Versions
+
+- **OpenShift 4.22.0-ec.5** (Developer Preview - Early Candidate 5)
+
+### Version Format Patterns
+
+Dev-preview versions use specific naming patterns that ocpctl automatically detects:
+
+| Pattern | Example | Description |
+|---------|---------|-------------|
+| `-ec.N` | `4.22.0-ec.5` | Early Candidate builds |
+| `-rc.N` | `4.21.0-rc.1` | Release Candidate builds |
+| `-0.nightly` | `4.22.0-0.nightly-2024-03-15` | Nightly builds with timestamp |
+| `-fc.N` | `4.22.0-fc.2` | Feature Candidate builds |
+
+### Mirror Path Differences
+
+Dev-preview versions are downloaded from a different mirror path:
+
+- **Stable versions**: `https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{version}/`
+- **Dev-preview versions**: `https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/{version}/`
+
+ocpctl automatically detects the version type and uses the correct mirror path.
+
+### Installing Dev-Preview Binaries
+
+Dev-preview binaries follow the same major.minor naming convention:
+
+```bash
+# Download 4.22 dev-preview (Early Candidate 5)
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/4.22.0-ec.5/openshift-install-linux.tar.gz
+tar xvf openshift-install-linux.tar.gz
+sudo mv openshift-install /usr/local/bin/openshift-install-4.22
+sudo chmod +x /usr/local/bin/openshift-install-4.22
+
+# Download ccoctl for 4.22
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/4.22.0-ec.5/ccoctl-linux.tar.gz
+tar xvf ccoctl-linux.tar.gz
+sudo mv ccoctl /usr/local/bin/ccoctl-4.22
+sudo chmod +x /usr/local/bin/ccoctl-4.22
+```
+
+**Note:** Binary naming uses major.minor version (4.22), not the full version string (4.22.0-ec.5). Multiple dev-preview versions with the same major.minor will share the same binary location.
+
+### Profile Configuration
+
+Dev-preview versions can be mixed with stable versions in profile allowlists:
+
+```yaml
+openshiftVersions:
+  allowlist:
+    - "4.18.35"      # Stable
+    - "4.19.23"      # Stable
+    - "4.20.3"       # Stable
+    - "4.20.4"       # Stable
+    - "4.20.5"       # Stable
+    - "4.22.0-ec.5"  # Dev-preview (Early Candidate 5)
+  default: "4.20.3"  # Keep default as stable version
+```
+
+**Important:** Always keep the default version as a stable release. Users must explicitly select dev-preview versions.
+
+### When to Use Dev-Preview Versions
+
+**Use dev-preview for:**
+- Testing new OpenShift features before GA
+- Early validation of upcoming releases
+- Bug verification in candidate builds
+- Development environments only
+
+**Do not use dev-preview for:**
+- Production workloads
+- Long-lived test environments
+- Performance benchmarking
+- Customer demonstrations
+
+### Caveats and Risks
+
+1. **Stability**: Dev-preview builds may contain bugs and breaking changes
+2. **Support**: Limited or no support for pre-release versions
+3. **Upgrades**: Upgrade paths from dev-preview versions may not be supported
+4. **Breaking Changes**: APIs and features may change between dev-preview releases
+5. **Binary Replacement**: Different dev-preview versions (e.g., 4.22.0-ec.5 vs 4.22.0-ec.6) will overwrite each other at `/usr/local/bin/openshift-install-4.22`
+
+### Finding Available Dev-Preview Versions
+
+Browse the dev-preview mirror to find available versions:
+
+```bash
+# View available dev-preview versions
+curl -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/ | grep -o 'href="[^"]*"' | grep -E '4\.[0-9]+\.[0-9]+'
+```
+
+Or visit in a browser: https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/
+
 ## Troubleshooting
 
 ### Binary Not Found Error
