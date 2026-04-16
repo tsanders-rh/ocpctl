@@ -780,7 +780,6 @@ func (w *Worker) validateInstallerBinaries() error {
 		optional bool
 	}{
 		{"eksctl", "/usr/local/bin/eksctl", false},
-		{"openshift-install", "/usr/local/bin/openshift-install", false},
 		{"ibmcloud", "/usr/local/bin/ibmcloud", true}, // Optional - only needed for IKS
 	}
 
@@ -796,6 +795,36 @@ func (w *Worker) validateInstallerBinaries() error {
 			}
 		} else {
 			log.Printf("✓ Found %s at %s", binary.name, binary.path)
+		}
+	}
+
+	// Check for versioned OpenShift installer binaries (openshift-install-4.*)
+	openshiftBinaries, err := filepath.Glob("/usr/local/bin/openshift-install-*")
+	if err != nil {
+		return fmt.Errorf("failed to check for openshift-install binaries: %w", err)
+	}
+	if len(openshiftBinaries) == 0 {
+		missing = append(missing, "openshift-install")
+		log.Printf("✗ No versioned openshift-install binaries found (expected openshift-install-4.* in /usr/local/bin/)")
+	} else {
+		log.Printf("✓ Found %d versioned openshift-install binaries:", len(openshiftBinaries))
+		for _, binary := range openshiftBinaries {
+			log.Printf("  - %s", filepath.Base(binary))
+		}
+	}
+
+	// Check for versioned ccoctl binaries (ccoctl-4.*)
+	ccoctlBinaries, err := filepath.Glob("/usr/local/bin/ccoctl-*")
+	if err != nil {
+		return fmt.Errorf("failed to check for ccoctl binaries: %w", err)
+	}
+	if len(ccoctlBinaries) == 0 {
+		missing = append(missing, "ccoctl")
+		log.Printf("✗ No versioned ccoctl binaries found (expected ccoctl-4.* in /usr/local/bin/)")
+	} else {
+		log.Printf("✓ Found %d versioned ccoctl binaries:", len(ccoctlBinaries))
+		for _, binary := range ccoctlBinaries {
+			log.Printf("  - %s", filepath.Base(binary))
 		}
 	}
 
