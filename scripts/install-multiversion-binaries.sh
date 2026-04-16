@@ -42,7 +42,7 @@ for VERSION in "${VERSIONS[@]}"; do
   # Determine mirror path and version based on whether this is dev-preview
   if [ "$VERSION" = "4.22" ]; then
     MIRROR_PATH="ocp-dev-preview"
-    FULL_VERSION="4.22.0-ec.5"
+    FULL_VERSION="4.22.0-ec.4"
     echo "Using dev-preview version: $FULL_VERSION"
   else
     MIRROR_PATH="ocp"
@@ -110,5 +110,5 @@ echo "   sudo journalctl -u ocpctl-worker -f"
 echo ""
 echo "3. Create clusters with different versions through the web UI"
 echo "   Available stable versions: 4.18.35, 4.19.23, 4.20.3, 4.20.4, 4.20.5"
-echo "   Available dev-preview: 4.22.0-ec.5"
+echo "   Available dev-preview: 4.22.0-ec.4"
 echo ""

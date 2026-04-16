@@ -14,7 +14,7 @@ DEFAULT_PATCHES["4.18"]="4.18.35"
 DEFAULT_PATCHES["4.19"]="4.19.23"
 DEFAULT_PATCHES["4.20"]="4.20.3"
 DEFAULT_PATCHES["4.21"]="4.21.0"
-DEFAULT_PATCHES["4.22"]="4.22.0-ec.5"
+DEFAULT_PATCHES["4.22"]="4.22.0-ec.4"
 
 log() {
     echo "[ensure-installers] $1"
