@@ -14,7 +14,7 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-    - "4.22.0-ec.4"   # Dev-preview (Early Candidate 4)
+    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
   default: "4.20.3"
 
 regions:

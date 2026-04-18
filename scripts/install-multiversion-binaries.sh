@@ -42,7 +42,7 @@ for VERSION in "${VERSIONS[@]}"; do
   # Determine mirror path and version based on whether this is dev-preview
   if [ "$VERSION" = "4.22" ]; then
     MIRROR_PATH="ocp-dev-preview"
-    FULL_VERSION="4.22.0-ec.4"
+    FULL_VERSION="4.22.0-ec.5"
     echo "Using dev-preview version: $FULL_VERSION"
   else
     MIRROR_PATH="ocp"
@@ -50,17 +50,24 @@ for VERSION in "${VERSIONS[@]}"; do
   fi
 
   # Download openshift-install
-  echo "Downloading openshift-install-$VERSION..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/openshift-install-linux.tar.gz; then
+  # Use RHEL9 tarball for 4.22 (FIPS-enabled)
+  if [ "$VERSION" = "4.22" ]; then
+    INSTALLER_TARBALL="openshift-install-linux-amd64-rhel9.tar.gz"
+  else
+    INSTALLER_TARBALL="openshift-install-linux.tar.gz"
+  fi
+
+  echo "Downloading openshift-install-$VERSION ($INSTALLER_TARBALL)..."
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/$INSTALLER_TARBALL; then
     echo "ERROR: Failed to download openshift-install for version $VERSION"
     exit 1
   fi
 
   echo "Extracting openshift-install-$VERSION..."
-  tar xzf openshift-install-linux.tar.gz
+  tar xzf $INSTALLER_TARBALL
   mv openshift-install "$INSTALL_DIR/openshift-install-$VERSION"
   chmod +x "$INSTALL_DIR/openshift-install-$VERSION"
-  rm openshift-install-linux.tar.gz README.md 2>/dev/null || true
+  rm $INSTALLER_TARBALL README.md 2>/dev/null || true
 
   echo "✓ Installed openshift-install-$VERSION"
 
@@ -110,5 +117,5 @@ echo "   sudo journalctl -u ocpctl-worker -f"
 echo ""
 echo "3. Create clusters with different versions through the web UI"
 echo "   Available stable versions: 4.18.35, 4.19.23, 4.20.3, 4.20.4, 4.20.5"
-echo "   Available dev-preview: 4.22.0-ec.4"
+echo "   Available dev-preview: 4.22.0-ec.5 (RHEL9 FIPS-enabled)"
 echo ""

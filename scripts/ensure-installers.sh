@@ -14,7 +14,7 @@ DEFAULT_PATCHES["4.18"]="4.18.35"
 DEFAULT_PATCHES["4.19"]="4.19.23"
 DEFAULT_PATCHES["4.20"]="4.20.3"
 DEFAULT_PATCHES["4.21"]="4.21.0"
-DEFAULT_PATCHES["4.22"]="4.22.0-ec.4"
+DEFAULT_PATCHES["4.22"]="4.22.0-ec.5"
 
 log() {
     echo "[ensure-installers] $1"
@@ -67,9 +67,12 @@ download_from_mirror() {
     log "Downloading ${binary} ${full_version} from mirror.openshift.com..."
 
     # oc client has different tarball name
+    # Use RHEL9 tarball for 4.22.0-ec.5 (FIPS-enabled)
     local tarball_name="${binary}-linux.tar.gz"
     if [ "$binary" = "oc" ]; then
         tarball_name="openshift-client-linux.tar.gz"
+    elif [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+        tarball_name="openshift-install-linux-amd64-rhel9.tar.gz"
     fi
 
     # Select mirror path based on version type (stable or dev-preview)
