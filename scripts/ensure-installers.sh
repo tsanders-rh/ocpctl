@@ -72,12 +72,17 @@ download_from_mirror() {
     if [ "$binary" = "oc" ]; then
         tarball_name="openshift-client-linux.tar.gz"
     elif [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
-        tarball_name="openshift-install-linux-amd64-rhel9.tar.gz"
+        tarball_name="openshift-install-rhel9-amd64.tar.gz"
     fi
 
     # Select mirror path based on version type (stable or dev-preview)
     local mirror_base=$(get_mirror_base_path "$full_version")
-    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/${mirror_base}/${full_version}/${tarball_name}"
+    # Dev-preview versions use x86_64/clients path structure
+    local arch_path=""
+    if is_dev_preview_version "$full_version"; then
+        arch_path="x86_64/"
+    fi
+    local mirror_url="https://mirror.openshift.com/pub/openshift-v4/${arch_path}clients/${mirror_base}/${full_version}/${tarball_name}"
     local tmp_dir=$(mktemp -d)
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then

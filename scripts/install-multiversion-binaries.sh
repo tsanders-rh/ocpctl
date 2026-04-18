@@ -51,14 +51,17 @@ for VERSION in "${VERSIONS[@]}"; do
 
   # Download openshift-install
   # Use RHEL9 tarball for 4.22 (FIPS-enabled)
+  # Dev-preview versions use x86_64/clients path structure
   if [ "$VERSION" = "4.22" ]; then
-    INSTALLER_TARBALL="openshift-install-linux-amd64-rhel9.tar.gz"
+    INSTALLER_TARBALL="openshift-install-rhel9-amd64.tar.gz"
+    ARCH_PATH="x86_64/"
   else
     INSTALLER_TARBALL="openshift-install-linux.tar.gz"
+    ARCH_PATH=""
   fi
 
   echo "Downloading openshift-install-$VERSION ($INSTALLER_TARBALL)..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/$INSTALLER_TARBALL; then
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/${ARCH_PATH}clients/$MIRROR_PATH/$FULL_VERSION/$INSTALLER_TARBALL; then
     echo "ERROR: Failed to download openshift-install for version $VERSION"
     exit 1
   fi
@@ -73,7 +76,7 @@ for VERSION in "${VERSIONS[@]}"; do
 
   # Download ccoctl
   echo "Downloading ccoctl-$VERSION..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/clients/$MIRROR_PATH/$FULL_VERSION/ccoctl-linux.tar.gz; then
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/${ARCH_PATH}clients/$MIRROR_PATH/$FULL_VERSION/ccoctl-linux.tar.gz; then
     echo "ERROR: Failed to download ccoctl for version $VERSION"
     exit 1
   fi
