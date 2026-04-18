@@ -68,7 +68,12 @@ for VERSION in "${VERSIONS[@]}"; do
 
   echo "Extracting openshift-install-$VERSION..."
   tar xzf $INSTALLER_TARBALL
-  mv openshift-install "$INSTALL_DIR/openshift-install-$VERSION"
+  # RHEL9 FIPS tarball contains openshift-install-fips
+  if [ "$VERSION" = "4.22" ]; then
+    mv openshift-install-fips "$INSTALL_DIR/openshift-install-$VERSION"
+  else
+    mv openshift-install "$INSTALL_DIR/openshift-install-$VERSION"
+  fi
   chmod +x "$INSTALL_DIR/openshift-install-$VERSION"
   rm $INSTALLER_TARBALL README.md 2>/dev/null || true
 

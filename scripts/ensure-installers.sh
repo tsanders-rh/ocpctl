@@ -86,9 +86,15 @@ download_from_mirror() {
     local tmp_dir=$(mktemp -d)
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
+        # RHEL9 FIPS tarball contains openshift-install-fips instead of openshift-install
+        local extracted_binary="${binary}"
+        if [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+            extracted_binary="openshift-install-fips"
+        fi
+
         # oc client tarball contains both 'oc' and 'kubectl'
-        if [ -f "${tmp_dir}/${binary}" ]; then
-            mv "${tmp_dir}/${binary}" "${local_path}"
+        if [ -f "${tmp_dir}/${extracted_binary}" ]; then
+            mv "${tmp_dir}/${extracted_binary}" "${local_path}"
             chmod +x "${local_path}"
 
             # If this is the oc binary, also install kubectl from the same tarball
@@ -107,7 +113,7 @@ download_from_mirror() {
             log "✓ Downloaded ${binary} ${full_version} from mirror"
             return 0
         else
-            log "✗ Binary ${binary} not found in tarball"
+            log "✗ Binary ${extracted_binary} not found in tarball"
             rm -rf "${tmp_dir}"
             return 1
         fi
