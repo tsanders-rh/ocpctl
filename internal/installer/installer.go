@@ -126,7 +126,12 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	ccoCtlPath := os.Getenv(ccoCtlEnvKey)
 
 	if ccoCtlPath == "" {
-		ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s", majorMinor)
+		// For 4.22, use RHEL9-specific ccoctl (required for RHEL9 FIPS releases)
+		if majorMinor == "4.22" {
+			ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s-rhel9", majorMinor)
+		} else {
+			ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s", majorMinor)
+		}
 	}
 
 	// Verify binaries exist

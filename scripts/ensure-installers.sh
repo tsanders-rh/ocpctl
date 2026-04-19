@@ -73,6 +73,8 @@ download_from_mirror() {
         tarball_name="openshift-client-linux.tar.gz"
     elif [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
         tarball_name="openshift-install-rhel9-amd64.tar.gz"
+    elif [ "$binary" = "ccoctl" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+        tarball_name="ccoctl-rhel9-amd64.tar.gz"
     fi
 
     # Select mirror path based on version type (stable or dev-preview)
@@ -87,9 +89,19 @@ download_from_mirror() {
 
     if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
         # RHEL9 FIPS tarball contains openshift-install-fips instead of openshift-install
+        # RHEL9 FIPS tarball contains ccoctl-fips instead of ccoctl
         local extracted_binary="${binary}"
+        local install_suffix=""
         if [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
             extracted_binary="openshift-install-fips"
+        elif [ "$binary" = "ccoctl" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+            extracted_binary="ccoctl-fips"
+            install_suffix="-rhel9"  # Save as ccoctl-4.22-rhel9
+        fi
+
+        # Update local_path for RHEL9 ccoctl
+        if [ -n "$install_suffix" ]; then
+            local_path="${INSTALL_DIR}/${binary}-${version}${install_suffix}"
         fi
 
         # oc client tarball contains both 'oc' and 'kubectl'
