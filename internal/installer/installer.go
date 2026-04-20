@@ -34,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"gopkg.in/yaml.v3"
 )
 
 // ocpctlVersion is the version of ocpctl, injected at build time
@@ -413,15 +414,54 @@ func (i *Installer) runCCOCtl(ctx context.Context, workDir string, metadata *Clu
 
 // getClusterInfo extracts cluster name and region from install-config.yaml
 func (i *Installer) getClusterInfo(workDir string) (string, string, error) {
-	// For now, default to reading from environment or standard AWS region
-	// TODO: Parse install-config.yaml to get actual cluster name and region
-	clusterName := filepath.Base(workDir) // Use work dir name as cluster name
-	region := os.Getenv("AWS_REGION")
-	if region == "" {
-		region = os.Getenv("AWS_DEFAULT_REGION")
+	// Try to read install-config.yaml first
+	installConfigPath := filepath.Join(workDir, "install-config.yaml")
+	data, err := os.ReadFile(installConfigPath)
+	if err != nil {
+		// Fall back to metadata.json if install-config.yaml doesn't exist
+		metadataPath := filepath.Join(workDir, "metadata.json")
+		metadataData, metaErr := os.ReadFile(metadataPath)
+		if metaErr != nil {
+			return "", "", fmt.Errorf("failed to read install-config.yaml or metadata.json: %w", err)
+		}
+
+		var metadata struct {
+			ClusterName string `json:"clusterName"`
+			AWS         struct {
+				Region string `json:"region"`
+			} `json:"aws"`
+		}
+		if err := json.Unmarshal(metadataData, &metadata); err != nil {
+			return "", "", fmt.Errorf("parse metadata.json: %w", err)
+		}
+
+		return metadata.ClusterName, metadata.AWS.Region, nil
+	}
+
+	// Parse install-config.yaml
+	var installConfig struct {
+		Metadata struct {
+			Name string `yaml:"name"`
+		} `yaml:"metadata"`
+		Platform struct {
+			AWS struct {
+				Region string `yaml:"region"`
+			} `yaml:"aws"`
+		} `yaml:"platform"`
+	}
+
+	if err := yaml.Unmarshal(data, &installConfig); err != nil {
+		return "", "", fmt.Errorf("parse install-config.yaml: %w", err)
+	}
+
+	clusterName := installConfig.Metadata.Name
+	region := installConfig.Platform.AWS.Region
+
+	if clusterName == "" {
+		return "", "", fmt.Errorf("cluster name not found in install-config.yaml")
 	}
 	if region == "" {
-		region = "us-east-1" // Default region
+		return "", "", fmt.Errorf("region not found in install-config.yaml")
 	}
 
 	return clusterName, region, nil
