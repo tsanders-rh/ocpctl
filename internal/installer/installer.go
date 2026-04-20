@@ -309,10 +309,10 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 
 // runCCOCtl runs ccoctl to create IAM resources and generate credential manifests
 func (i *Installer) runCCOCtl(ctx context.Context, workDir string, metadata *ClusterMetadata) error {
-	// Get region for ccoctl
-	_, region, err := i.getClusterInfo(workDir)
-	if err != nil {
-		return fmt.Errorf("get cluster info: %w", err)
+	// Use region from cluster metadata (already parsed from install-config before it was consumed)
+	region := metadata.Region
+	if region == "" {
+		return fmt.Errorf("region not specified in cluster metadata")
 	}
 
 	// Get infraID from state file (created by openshift-install create manifests)
