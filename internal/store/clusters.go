@@ -280,6 +280,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
 			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
 			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
+			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status,
 			co.api_url, co.console_url
 		FROM clusters c
 		LEFT JOIN cluster_outputs co ON c.id = co.cluster_id
@@ -383,6 +384,9 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.WorkHoursEnd,
 			&cluster.WorkDays,
 			&cluster.LastWorkHoursCheck,
+			&cluster.SkipPostDeployment,
+			&cluster.CustomPostConfig,
+			&cluster.PostDeployStatus,
 			&cluster.APIURL,
 			&cluster.ConsoleURL,
 		)
