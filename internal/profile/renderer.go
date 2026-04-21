@@ -196,10 +196,6 @@ platform:
         iops: {{.AWSRootVolumeIOPS}}
 {{- end}}
 {{- end}}
-{{- if and (eq .ControlPlaneReplicas 1) (eq .WorkerReplicas 0)}}
-bootstrapInPlace:
-  installationDisk: /dev/sda
-{{- end}}
 controlPlane:
   name: master
   replicas: {{.ControlPlaneReplicas}}
