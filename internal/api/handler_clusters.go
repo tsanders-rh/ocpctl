@@ -80,6 +80,7 @@ type CreateClusterRequest struct {
 	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
 	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
+	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 
@@ -243,6 +244,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		OffhoursOptIn:      req.OffhoursOptIn,
 		SkipPostDeployment: req.SkipPostDeployment,
 		CustomPostConfig:   req.CustomPostConfig,
+		PreserveOnFailure:  req.PreserveOnFailure,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}

@@ -631,6 +631,14 @@ func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
 		return
 	}
 
+	// Check if user wants to preserve resources for debugging
+	if cluster.PreserveOnFailure {
+		log.Printf("Preserving failed cluster resources for debugging (preserve_on_failure=true)")
+		log.Printf("Cluster: %s, Work directory: %s/%s", cluster.ID, w.config.WorkDir, job.ClusterID)
+		log.Printf("To manually clean up later, run: openshift-install destroy cluster --dir=%s/%s", w.config.WorkDir, job.ClusterID)
+		return
+	}
+
 	log.Printf("Cleaning up partial deployment for job %s (cluster %s, type %s)", job.ID, job.ClusterID, cluster.ClusterType)
 
 	// Clean up DNS records for OpenShift clusters (have base domain)

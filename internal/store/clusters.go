@@ -25,10 +25,10 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
 			offhours_opt_in, work_hours_enabled, work_hours_start, work_hours_end, work_days,
-			skip_post_deployment, custom_post_config, post_deploy_status
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+			$16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
 		)
 	`
 
@@ -60,6 +60,7 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.SkipPostDeployment,
 		cluster.CustomPostConfig,
 		cluster.PostDeployStatus,
+		cluster.PreserveOnFailure,
 	)
 
 	if err != nil {
@@ -78,7 +79,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure
 		FROM clusters
 		WHERE id = $1
 	`
@@ -116,6 +117,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.SkipPostDeployment,
 		&cluster.CustomPostConfig,
 		&cluster.PostDeployStatus,
+		&cluster.PreserveOnFailure,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -141,7 +143,7 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure
 		FROM clusters
 		WHERE id = ANY($1)
 	`
@@ -187,6 +189,7 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			&cluster.SkipPostDeployment,
 			&cluster.CustomPostConfig,
 			&cluster.PostDeployStatus,
+			&cluster.PreserveOnFailure,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)
@@ -209,7 +212,8 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure
 		FROM clusters
 		WHERE id = $1
 		FOR UPDATE
@@ -245,6 +249,10 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.WorkHoursEnd,
 		&cluster.WorkDays,
 		&cluster.LastWorkHoursCheck,
+		&cluster.SkipPostDeployment,
+		&cluster.CustomPostConfig,
+		&cluster.PostDeployStatus,
+		&cluster.PreserveOnFailure,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -280,7 +288,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
 			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
 			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
-			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status,
+			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status, c.preserve_on_failure,
 			co.api_url, co.console_url
 		FROM clusters c
 		LEFT JOIN cluster_outputs co ON c.id = co.cluster_id
@@ -387,6 +395,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.SkipPostDeployment,
 			&cluster.CustomPostConfig,
 			&cluster.PostDeployStatus,
+			&cluster.PreserveOnFailure,
 			&cluster.APIURL,
 			&cluster.ConsoleURL,
 		)

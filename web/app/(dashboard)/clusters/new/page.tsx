@@ -67,6 +67,7 @@ export default function NewClusterPage() {
       postConfigAddOns: [],
       customPostConfig: undefined,
       enable_efs_storage: false,
+      preserve_on_failure: false,
       override_work_hours: false,
       work_hours_enabled: user?.work_hours_enabled || false,
       work_hours_start: user?.work_hours?.start_time || "09:00",
@@ -655,6 +656,30 @@ export default function NewClusterPage() {
                         </div>
                       </div>
                     )}
+
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="preserve_on_failure"
+                        checked={watchedValues.preserve_on_failure}
+                        onCheckedChange={(checked) =>
+                          setValue("preserve_on_failure", checked as boolean)
+                        }
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="preserve_on_failure" className="cursor-pointer">
+                          Preserve resources on failure (debugging)
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Keep cluster resources and work directories when installation fails for debugging purposes
+                        </p>
+                        {getFieldError("preserve_on_failure") && (
+                          <p className="text-sm text-red-600 mt-1">
+                            {getFieldError("preserve_on_failure")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

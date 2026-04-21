@@ -92,6 +92,7 @@ export const createClusterSchema = z.object({
   })).optional(),
   customPostConfig: customPostConfigSchema,
   enable_efs_storage: z.boolean().default(false),
+  preserve_on_failure: z.boolean().default(false),
   override_work_hours: z.boolean().default(false),
   work_hours_enabled: z.boolean().optional(),
   work_hours_start: z.string().optional(),
