@@ -251,6 +251,61 @@ ensure_ibmcloud() {
     return 0
 }
 
+ensure_4_22_standard_binaries() {
+    # Download standard (non-RHEL9) binaries for 4.22.0-ec.5 testing
+    # These are used when CCOCTL_BINARY_4_22 and OPENSHIFT_INSTALL_BINARY_4_22 env vars are set
+    local full_version="4.22.0-ec.5"
+    local version="4.22"
+
+    log "Downloading standard (non-RHEL9) binaries for ${full_version}..."
+
+    # Download standard openshift-install
+    local installer_path="${INSTALL_DIR}/openshift-install-${version}-standard"
+    if [ ! -f "${installer_path}" ]; then
+        log "Downloading standard openshift-install ${full_version}..."
+        local tmp_dir=$(mktemp -d)
+        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/${full_version}/openshift-install-linux.tar.gz"
+
+        if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
+            if [ -f "${tmp_dir}/openshift-install" ]; then
+                mv "${tmp_dir}/openshift-install" "${installer_path}"
+                chmod +x "${installer_path}"
+                log "✓ Downloaded openshift-install-${version}-standard"
+            else
+                log "WARNING: openshift-install not found in tarball"
+            fi
+        else
+            log "WARNING: Failed to download standard openshift-install ${full_version}"
+        fi
+        rm -rf "${tmp_dir}"
+    else
+        log "✓ openshift-install-${version}-standard already installed"
+    fi
+
+    # Download standard ccoctl
+    local ccoctl_path="${INSTALL_DIR}/ccoctl-${version}-standard"
+    if [ ! -f "${ccoctl_path}" ]; then
+        log "Downloading standard ccoctl ${full_version}..."
+        local tmp_dir=$(mktemp -d)
+        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/${full_version}/ccoctl-linux.tar.gz"
+
+        if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
+            if [ -f "${tmp_dir}/ccoctl" ]; then
+                mv "${tmp_dir}/ccoctl" "${ccoctl_path}"
+                chmod +x "${ccoctl_path}"
+                log "✓ Downloaded ccoctl-${version}-standard"
+            else
+                log "WARNING: ccoctl not found in tarball"
+            fi
+        else
+            log "WARNING: Failed to download standard ccoctl ${full_version}"
+        fi
+        rm -rf "${tmp_dir}"
+    else
+        log "✓ ccoctl-${version}-standard already installed"
+    fi
+}
+
 main() {
     log "Ensuring required installer binaries..."
 
@@ -271,6 +326,11 @@ main() {
         if ! ensure_binary "${version}" "oc"; then
             log "WARNING: Failed to ensure oc ${version} (non-fatal)"
             # Don't fail - we'll create symlink to latest available version
+        fi
+
+        # For 4.22, also download standard (non-RHEL9) binaries for testing
+        if [ "$version" = "4.22" ]; then
+            ensure_4_22_standard_binaries
         fi
     done
 
