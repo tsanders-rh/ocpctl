@@ -80,19 +80,28 @@ for VERSION in "${VERSIONS[@]}"; do
   echo "✓ Installed openshift-install-$VERSION"
 
   # Download ccoctl
-  echo "Downloading ccoctl-$VERSION..."
-  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/${ARCH_PATH}clients/$MIRROR_PATH/$FULL_VERSION/ccoctl-linux.tar.gz; then
+  # Use RHEL9 tarball for 4.22 (FIPS-enabled, matches installer.go expectations)
+  if [ "$VERSION" = "4.22" ]; then
+    CCOCTL_TARBALL="ccoctl-linux-rhel9.tar.gz"
+    CCOCTL_BINARY_NAME="ccoctl-$VERSION-rhel9"
+  else
+    CCOCTL_TARBALL="ccoctl-linux.tar.gz"
+    CCOCTL_BINARY_NAME="ccoctl-$VERSION"
+  fi
+
+  echo "Downloading $CCOCTL_BINARY_NAME ($CCOCTL_TARBALL)..."
+  if ! wget -q --show-progress https://mirror.openshift.com/pub/openshift-v4/${ARCH_PATH}clients/$MIRROR_PATH/$FULL_VERSION/$CCOCTL_TARBALL; then
     echo "ERROR: Failed to download ccoctl for version $VERSION"
     exit 1
   fi
 
-  echo "Extracting ccoctl-$VERSION..."
-  tar xzf ccoctl-linux.tar.gz
-  mv ccoctl "$INSTALL_DIR/ccoctl-$VERSION"
-  chmod +x "$INSTALL_DIR/ccoctl-$VERSION"
-  rm ccoctl-linux.tar.gz 2>/dev/null || true
+  echo "Extracting $CCOCTL_BINARY_NAME..."
+  tar xzf $CCOCTL_TARBALL
+  mv ccoctl "$INSTALL_DIR/$CCOCTL_BINARY_NAME"
+  chmod +x "$INSTALL_DIR/$CCOCTL_BINARY_NAME"
+  rm $CCOCTL_TARBALL 2>/dev/null || true
 
-  echo "✓ Installed ccoctl-$VERSION"
+  echo "✓ Installed $CCOCTL_BINARY_NAME"
   echo ""
 done
 
@@ -109,7 +118,13 @@ echo ""
 for VERSION in "${VERSIONS[@]}"; do
   echo "--- OpenShift $VERSION ---"
   "$INSTALL_DIR/openshift-install-$VERSION" version || echo "ERROR: openshift-install-$VERSION failed"
-  "$INSTALL_DIR/ccoctl-$VERSION" version || echo "ERROR: ccoctl-$VERSION failed"
+
+  # Use RHEL9 binary name for 4.22
+  if [ "$VERSION" = "4.22" ]; then
+    "$INSTALL_DIR/ccoctl-$VERSION-rhel9" version || echo "ERROR: ccoctl-$VERSION-rhel9 failed"
+  else
+    "$INSTALL_DIR/ccoctl-$VERSION" version || echo "ERROR: ccoctl-$VERSION failed"
+  fi
   echo ""
 done
 
