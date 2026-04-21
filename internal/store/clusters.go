@@ -495,7 +495,8 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			preserve_on_failure
 		FROM clusters
 		WHERE destroy_at <= NOW()
 			AND status IN ('READY', 'FAILED')
@@ -540,6 +541,7 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 			&cluster.WorkHoursEnd,
 			&cluster.WorkDays,
 			&cluster.LastWorkHoursCheck,
+			&cluster.PreserveOnFailure,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan expired cluster: %w", err)
@@ -561,7 +563,8 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
-			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			preserve_on_failure
 		FROM clusters
 		ORDER BY created_at DESC
 	`
@@ -604,6 +607,7 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			&cluster.WorkHoursEnd,
 			&cluster.WorkDays,
 			&cluster.LastWorkHoursCheck,
+			&cluster.PreserveOnFailure,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)

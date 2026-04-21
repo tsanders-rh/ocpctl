@@ -194,6 +194,12 @@ func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
 	log.Printf("Found %d expired clusters", len(expired))
 
 	for _, cluster := range expired {
+		// Skip clusters with preserve_on_failure flag
+		if cluster.PreserveOnFailure {
+			log.Printf("Skipping expired cluster %s (preserve_on_failure=true)", cluster.Name)
+			continue
+		}
+
 		// Check if destroy job already exists
 		jobs, err := j.store.Jobs.ListByClusterID(ctx, cluster.ID)
 		if err != nil {
@@ -386,6 +392,11 @@ func (j *Janitor) cleanupFailedClusterDirs(ctx context.Context) error {
 
 	deletedCount := 0
 	for _, cluster := range clusters {
+		// Skip clusters with preserve_on_failure flag
+		if cluster.PreserveOnFailure {
+			continue
+		}
+
 		// Only cleanup old FAILED clusters
 		if cluster.UpdatedAt.Before(cutoff) {
 			clusterDir := filepath.Join(j.workDir, cluster.ID)
