@@ -192,6 +192,7 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			&cluster.CustomPostConfig,
 			&cluster.PostDeployStatus,
 			&cluster.PreserveOnFailure,
+			&cluster.CredentialsMode,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)
