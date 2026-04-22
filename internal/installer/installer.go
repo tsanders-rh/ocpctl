@@ -234,22 +234,29 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Extract credentials from IMDS and export as environment variables
-	// This prevents the installer from seeing credentials as "EC2RoleProvider"
-	// which OpenShift 4.22 rejects for all credentials modes
+	// Check credentials mode from install-config.yaml to determine credential handling
+	credMode := i.getCredentialsModeFromConfig(workDir)
 	envVars := os.Environ()
 
-	// Check if we're running on EC2 with instance profile
-	creds, imdsErr := getAWSCredentialsFromIMDS()
-	if imdsErr == nil && creds.AccessKeyID != "" {
-		log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
-		envVars = append(envVars,
-			fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
-			fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
-			fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
-		)
+	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
+	// (without session token) - these should be permanent IAM user credentials
+	if credMode == "Static" {
+		log.Printf("Static credentials mode - using permanent IAM credentials from environment")
+		// Don't extract from IMDS - let existing env vars be used
 	} else {
-		log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+		// For all other modes, extract credentials from IMDS and export as environment variables
+		// This prevents the installer from seeing credentials as "EC2RoleProvider"
+		creds, imdsErr := getAWSCredentialsFromIMDS()
+		if imdsErr == nil && creds.AccessKeyID != "" {
+			log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
+			envVars = append(envVars,
+				fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
+				fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
+				fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
+			)
+		} else {
+			log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+		}
 	}
 
 	cmd.Env = append(envVars,
@@ -311,22 +318,30 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Extract credentials from IMDS and export as environment variables
-	// This prevents the installer from seeing credentials as "EC2RoleProvider"
-	// which OpenShift 4.22 rejects for all credentials modes
+	// Check credentials mode from install-config.yaml to determine credential handling
+	credMode := i.getCredentialsModeFromConfig(workDir)
 	envVars := os.Environ()
 
-	// Check if we're running on EC2 with instance profile
-	creds, imdsErr := getAWSCredentialsFromIMDS()
-	if imdsErr == nil && creds.AccessKeyID != "" {
-		log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
-		envVars = append(envVars,
-			fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
-			fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
-			fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
-		)
+	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
+	// (without session token) - these should be permanent IAM user credentials
+	if credMode == "Static" {
+		log.Printf("Static credentials mode - using permanent IAM credentials from environment")
+		// Don't extract from IMDS - let existing env vars be used
 	} else {
-		log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+		// For all other modes, extract credentials from IMDS and export as environment variables
+		// This prevents the installer from seeing credentials as "EC2RoleProvider"
+		// which OpenShift 4.22 rejects for all credentials modes
+		creds, imdsErr := getAWSCredentialsFromIMDS()
+		if imdsErr == nil && creds.AccessKeyID != "" {
+			log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
+			envVars = append(envVars,
+				fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
+				fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
+				fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
+			)
+		} else {
+			log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+		}
 	}
 
 	cmd.Env = append(envVars,
@@ -499,6 +514,30 @@ func (i *Installer) getClusterInfo(workDir string) (string, string, error) {
 	}
 
 	return clusterName, region, nil
+}
+
+// getCredentialsModeFromConfig extracts the credentialsMode from install-config.yaml
+// Returns empty string if credentialsMode is not set or file doesn't exist
+func (i *Installer) getCredentialsModeFromConfig(workDir string) string {
+	installConfigPath := filepath.Join(workDir, "install-config.yaml")
+	data, err := os.ReadFile(installConfigPath)
+	if err != nil {
+		// If install-config.yaml doesn't exist yet, return empty string
+		log.Printf("Could not read install-config.yaml for credentials mode check: %v", err)
+		return ""
+	}
+
+	// Parse install-config.yaml to extract credentialsMode
+	var installConfig struct {
+		CredentialsMode string `yaml:"credentialsMode"`
+	}
+
+	if err := yaml.Unmarshal(data, &installConfig); err != nil {
+		log.Printf("Could not parse install-config.yaml for credentials mode: %v", err)
+		return ""
+	}
+
+	return installConfig.CredentialsMode
 }
 
 // copyDir recursively copies a directory tree, preserving file modes

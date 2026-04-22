@@ -81,7 +81,7 @@ type CreateClusterRequest struct {
 	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
 	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
-	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Manual Passthrough Mint"`
+	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Manual Passthrough Mint Static"`
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 

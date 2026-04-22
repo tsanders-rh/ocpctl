@@ -73,6 +73,16 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		publishStrategy = "Internal" // Private clusters use internal-only API
 	}
 
+	// Normalize credentials mode for install-config.yaml
+	// "Static" is an ocpctl-specific mode that tells us to use environment credentials
+	// without extracting from IMDS. It should not be written to install-config.yaml.
+	// When Static is requested, we omit credentialsMode from install-config.yaml to
+	// let OpenShift auto-detect (it will see the static credentials from environment).
+	credentialsMode := stringValue(req.CredentialsMode)
+	if credentialsMode == "Static" {
+		credentialsMode = "" // Don't write "Static" to install-config.yaml
+	}
+
 	// Build template data
 	data := InstallConfigData{
 		ClusterName:          req.Name,
@@ -81,7 +91,7 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		SSHKey:               stringValue(req.SSHPublicKey),
 		Platform:             req.Platform,
 		Region:               req.Region,
-		CredentialsMode:      stringValue(req.CredentialsMode),
+		CredentialsMode:      credentialsMode,
 		ControlPlaneReplicas: prof.Compute.ControlPlane.Replicas,
 		ControlPlaneType:     prof.Compute.ControlPlane.InstanceType,
 		WorkerReplicas:       prof.Compute.Workers.Replicas,

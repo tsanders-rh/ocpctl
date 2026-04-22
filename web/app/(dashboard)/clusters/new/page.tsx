@@ -568,7 +568,7 @@ export default function NewClusterPage() {
                       <Label htmlFor="credentials_mode">Credentials Mode</Label>
                       <Select
                         value={watchedValues.credentials_mode || "Manual"}
-                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "Auto")}
+                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "Auto" | "Static")}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -578,6 +578,7 @@ export default function NewClusterPage() {
                           <SelectItem value="Auto">Auto-detect (recommended for 4.22+)</SelectItem>
                           <SelectItem value="Passthrough">Passthrough</SelectItem>
                           <SelectItem value="Mint">Mint</SelectItem>
+                          <SelectItem value="Static">Static (use worker IAM credentials)</SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-sm text-muted-foreground">
@@ -594,6 +595,11 @@ export default function NewClusterPage() {
                         )}
                         {watchedValues.credentials_mode === "Mint" && (
                           "Let Cloud Credential Operator create limited credentials automatically."
+                        )}
+                        {watchedValues.credentials_mode === "Static" && (
+                          <>
+                            Use static AWS credentials from worker environment (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY). <span className="font-semibold text-amber-600 dark:text-amber-400">Required for OpenShift 4.22 pre-release versions when running on EC2.</span>
+                          </>
                         )}
                       </p>
                       {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Manual" && (
