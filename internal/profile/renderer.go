@@ -75,12 +75,11 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 
 	// Normalize credentials mode for install-config.yaml
 	// "Static" is an ocpctl-specific mode that tells us to use environment credentials
-	// without extracting from IMDS. It should not be written to install-config.yaml.
-	// When Static is requested, we omit credentialsMode from install-config.yaml to
-	// let OpenShift auto-detect (it will see the static credentials from environment).
+	// without extracting from IMDS. When Static is selected, we write "Manual" to
+	// install-config.yaml because Manual mode accepts static credentials from environment.
 	credentialsMode := stringValue(req.CredentialsMode)
 	if credentialsMode == "Static" {
-		credentialsMode = "" // Don't write "Static" to install-config.yaml
+		credentialsMode = "Manual" // Use Manual mode with static credentials from environment
 	}
 
 	// Build template data
