@@ -68,6 +68,7 @@ export default function NewClusterPage() {
       customPostConfig: undefined,
       enable_efs_storage: false,
       preserve_on_failure: false,
+      credentials_mode: "Manual",
       override_work_hours: false,
       work_hours_enabled: user?.work_hours_enabled || false,
       work_hours_start: user?.work_hours?.start_time || "09:00",
@@ -168,6 +169,11 @@ export default function NewClusterPage() {
 
       // Remove override_work_hours from payload (it's only for UI)
       delete payload.override_work_hours;
+
+      // Handle credentials_mode: empty string = auto-detect = don't send to API
+      if (payload.credentials_mode === "") {
+        delete payload.credentials_mode;
+      }
 
       // Only include work hours if override is enabled
       if (!data.override_work_hours) {
@@ -551,6 +557,62 @@ export default function NewClusterPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Cloud Credentials */}
+                {watchedValues.cluster_type === "openshift" && watchedValues.platform === "aws" && (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Cloud Credentials
+                    </h3>
+                    <div className="space-y-2">
+                      <Label htmlFor="credentials_mode">Credentials Mode</Label>
+                      <Select
+                        value={watchedValues.credentials_mode || "Manual"}
+                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "")}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Manual">Manual (default)</SelectItem>
+                          <SelectItem value="">Auto-detect (recommended for 4.22+)</SelectItem>
+                          <SelectItem value="Passthrough">Passthrough</SelectItem>
+                          <SelectItem value="Mint">Mint</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-muted-foreground">
+                        {watchedValues.credentials_mode === "Manual" && (
+                          "Manually manage cloud credentials. Default for 4.21 and earlier."
+                        )}
+                        {watchedValues.credentials_mode === "" && (
+                          <>
+                            Let the installer auto-detect credential mode. <span className="font-semibold text-amber-600 dark:text-amber-400">Required for OpenShift 4.22.0-ec.5 due to bootstrap bug.</span>
+                          </>
+                        )}
+                        {watchedValues.credentials_mode === "Passthrough" && (
+                          "Pass full cloud credentials to all components."
+                        )}
+                        {watchedValues.credentials_mode === "Mint" && (
+                          "Let Cloud Credential Operator create limited credentials automatically."
+                        )}
+                      </p>
+                      {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Manual" && (
+                        <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <div className="text-sm space-y-1">
+                            <p className="font-medium text-amber-900 dark:text-amber-100">
+                              OpenShift 4.22 Compatibility Warning
+                            </p>
+                            <p className="text-amber-800 dark:text-amber-200">
+                              Manual mode has a known issue with OpenShift 4.22.0-ec.5 that causes bootstrap to hang.
+                              Consider using <span className="font-semibold">Auto-detect</span> instead.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Resource Tagging */}
                 <div className="space-y-4">

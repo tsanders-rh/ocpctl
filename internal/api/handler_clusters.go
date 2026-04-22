@@ -81,6 +81,7 @@ type CreateClusterRequest struct {
 	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
 	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
+	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Manual Passthrough Mint"`
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 
@@ -246,6 +247,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		SkipPostDeployment: req.SkipPostDeployment,
 		CustomPostConfig:   req.CustomPostConfig,
 		PreserveOnFailure:  req.PreserveOnFailure,
+		CredentialsMode:    req.CredentialsMode,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}

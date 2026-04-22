@@ -25,10 +25,11 @@ func NewRenderer(registry *Registry) *Renderer {
 type InstallConfigData struct {
 	ClusterName   string
 	BaseDomain    string
-	PullSecret    string
-	SSHKey        string
-	Platform      string
-	Region        string
+	PullSecret      string
+	SSHKey          string
+	Platform        string
+	Region          string
+	CredentialsMode string
 
 	// Compute
 	ControlPlaneReplicas int
@@ -80,6 +81,7 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		SSHKey:               stringValue(req.SSHPublicKey),
 		Platform:             req.Platform,
 		Region:               req.Region,
+		CredentialsMode:      stringValue(req.CredentialsMode),
 		ControlPlaneReplicas: prof.Compute.ControlPlane.Replicas,
 		ControlPlaneType:     prof.Compute.ControlPlane.InstanceType,
 		WorkerReplicas:       prof.Compute.Workers.Replicas,
@@ -165,10 +167,12 @@ func stringValue(s *string) string {
 }
 
 // awsInstallConfigTemplate is the template for AWS install-config.yaml
-// Uses Manual credentialsMode which works with both static and STS/IMDS credentials
+// credentialsMode is optional and defaults to installer auto-detection (Mint or Passthrough)
 const awsInstallConfigTemplate = `apiVersion: v1
 baseDomain: {{.BaseDomain}}
-credentialsMode: Manual
+{{- if .CredentialsMode}}
+credentialsMode: {{.CredentialsMode}}
+{{- end}}
 metadata:
   name: {{.ClusterName}}
 publish: {{.PublishStrategy}}
@@ -224,10 +228,14 @@ sshKey: '{{.SSHKey}}'
 `
 
 // ibmCloudInstallConfigTemplate is the template for IBM Cloud install-config.yaml
-// Uses Manual credentialsMode which requires ccoctl to create service IDs
+// IBM Cloud typically requires Manual credentialsMode with ccoctl
 const ibmCloudInstallConfigTemplate = `apiVersion: v1
 baseDomain: {{.BaseDomain}}
+{{- if .CredentialsMode}}
+credentialsMode: {{.CredentialsMode}}
+{{- else}}
 credentialsMode: Manual
+{{- end}}
 metadata:
   name: {{.ClusterName}}
 platform:
