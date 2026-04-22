@@ -108,19 +108,20 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 	}
 
 	createReq := &types.CreateClusterRequest{
-		Name:          cluster.Name,
-		Platform:      string(cluster.Platform),
-		Version:       cluster.Version,
-		Profile:       cluster.Profile,
-		Region:        cluster.Region,
-		BaseDomain:    baseDomain,
-		Owner:         cluster.Owner,
-		Team:          cluster.Team,
-		CostCenter:    cluster.CostCenter,
-		TTLHours:      cluster.TTLHours,
-		SSHPublicKey:  cluster.SSHPublicKey,
-		ExtraTags:     cluster.RequestTags,
-		OffhoursOptIn: cluster.OffhoursOptIn,
+		Name:            cluster.Name,
+		Platform:        string(cluster.Platform),
+		Version:         cluster.Version,
+		Profile:         cluster.Profile,
+		Region:          cluster.Region,
+		BaseDomain:      baseDomain,
+		Owner:           cluster.Owner,
+		Team:            cluster.Team,
+		CostCenter:      cluster.CostCenter,
+		TTLHours:        cluster.TTLHours,
+		SSHPublicKey:    cluster.SSHPublicKey,
+		ExtraTags:       cluster.RequestTags,
+		OffhoursOptIn:   cluster.OffhoursOptIn,
+		CredentialsMode: cluster.CredentialsMode,
 	}
 
 	installConfig, err := renderer.RenderInstallConfig(createReq, pullSecret, cluster.EffectiveTags)
