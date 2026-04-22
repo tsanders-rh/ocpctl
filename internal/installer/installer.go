@@ -236,7 +236,25 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	cmd.Env = append(os.Environ(),
+	// Extract credentials from IMDS and export as environment variables
+	// This prevents the installer from seeing credentials as "EC2RoleProvider"
+	// which OpenShift 4.22 rejects for all credentials modes
+	envVars := os.Environ()
+
+	// Check if we're running on EC2 with instance profile
+	creds, imdsErr := getAWSCredentialsFromIMDS()
+	if imdsErr == nil && creds.AccessKeyID != "" {
+		log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
+		envVars = append(envVars,
+			fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
+			fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
+			fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.Token),
+		)
+	} else {
+		log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+	}
+
+	cmd.Env = append(envVars,
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
 	)
 
