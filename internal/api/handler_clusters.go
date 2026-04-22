@@ -240,6 +240,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		TTLHours:           ttl,
 		RequestTags:        validation.MergedTags,
 		EffectiveTags:      validation.MergedTags,
+		SSHPublicKey:       req.SSHPublicKey,
 		DestroyAt:          destroyAt,
 		OffhoursOptIn:      req.OffhoursOptIn,
 		SkipPostDeployment: req.SkipPostDeployment,
