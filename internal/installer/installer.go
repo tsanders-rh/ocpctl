@@ -212,18 +212,16 @@ func detectSTSCredentials() bool {
 }
 
 // CreateCluster runs openshift-install create cluster
-// If using STS/IMDS credentials, uses Manual mode with ccoctl workflow
+// With IMDS credential extraction, we always use direct cluster creation
+// The user's selected credentials mode in install-config.yaml will be respected
 func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata *ClusterMetadata) (string, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, i.timeout)
 	defer cancel()
 
-	// If using STS credentials, we must use Manual mode with ccoctl workflow
-	if i.useSTSCreds {
-		return i.createClusterManualMode(ctx, workDir, metadata)
-	}
-
-	// Static credentials - direct cluster creation
+	// Since we extract IMDS credentials to env vars in CreateClusterDirect,
+	// we can use direct cluster creation for all credential modes
+	// The install-config.yaml credentialsMode field controls the behavior
 	return i.CreateClusterDirect(ctx, workDir)
 }
 
