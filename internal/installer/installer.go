@@ -249,10 +249,11 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	}
 	envVars := os.Environ()
 
-	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
+	// For Static or Mint mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
 	// (without session token) - these should be permanent IAM user credentials
-	if credMode == "Static" {
-		log.Printf("Static credentials mode - using permanent IAM credentials from environment")
+	// Mint mode requires permanent credentials and will reject temporary credentials with session tokens
+	if credMode == "Static" || credMode == "Mint" {
+		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
 	} else {
 		// For all other modes, extract credentials from IMDS and export as environment variables
@@ -337,10 +338,11 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	}
 	envVars := os.Environ()
 
-	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
+	// For Static or Mint mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
 	// (without session token) - these should be permanent IAM user credentials
-	if credMode == "Static" {
-		log.Printf("Static credentials mode - using permanent IAM credentials from environment")
+	// Mint mode requires permanent credentials and will reject temporary credentials with session tokens
+	if credMode == "Static" || credMode == "Mint" {
+		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
 	} else {
 		// For all other modes, extract credentials from IMDS and export as environment variables

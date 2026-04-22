@@ -1,0 +1,89 @@
+name: aws-sno-422-test
+displayName: AWS SNO 4.22 Test (m6i.4xlarge)
+description: Single node cluster for 4.22.0-ec.5 testing with increased resources (16 vCPU, 64GB RAM)
+platform: aws
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5) - requires larger instance
+  default: "4.22.0-ec.5"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+    - eu-west-1
+    - eu-west-2
+    - eu-west-3
+    - eu-central-1
+    - eu-north-1
+    - ap-southeast-1
+    - ap-southeast-2
+    - ap-northeast-1
+    - ap-northeast-2
+    - ap-south-1
+    - ca-central-1
+    - sa-east-1
+  default: us-east-1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 1
+    instanceType: m6i.4xlarge
+    schedulable: true
+  workers:
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 0
+    instanceType: m6i.4xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 24
+  defaultTTLHours: 8
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 1
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: test
+  defaults:
+    Purpose: testing-4.22
+    ManagedBy: cluster-control-plane
+  allowUserTags: true
+
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 1.60
+  maxMonthlyCost: 1152
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000

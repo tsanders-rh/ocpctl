@@ -73,14 +73,9 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		publishStrategy = "Internal" // Private clusters use internal-only API
 	}
 
-	// Normalize credentials mode for install-config.yaml
-	// "Static" is an ocpctl-specific mode that tells us to use environment credentials
-	// without extracting from IMDS. When Static is selected, we write "Manual" to
-	// install-config.yaml because Manual mode accepts static credentials from environment.
+	// Pass through credentials mode unchanged
+	// Both "Static" and "Mint" work with permanent IAM credentials from environment
 	credentialsMode := stringValue(req.CredentialsMode)
-	if credentialsMode == "Static" {
-		credentialsMode = "Manual" // Use Manual mode with static credentials from environment
-	}
 
 	// Build template data
 	data := InstallConfigData{

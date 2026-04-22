@@ -65,6 +65,10 @@ WORKER_MAX_CONCURRENT=$MAX_CONCURRENT
 OPENSHIFT_PULL_SECRET_FILE=/etc/ocpctl/pull-secret.json
 PROFILES_DIR=/opt/ocpctl/profiles/definitions
 AWS_REGION=$DETECTED_AWS_REGION
+
+# Static AWS credentials for OpenShift 4.22 compatibility (if needed)
+# These should be provided via instance metadata or environment variables
+# NOT hardcoded in user-data for security reasons
 EOF
 
 chown ocpctl:ocpctl /etc/ocpctl/worker.env
