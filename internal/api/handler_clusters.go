@@ -157,20 +157,22 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	// Build policy validation request
 	policyReq := &types.CreateClusterRequest{
-		Name:          req.Name,
-		Platform:      req.Platform,
-		ClusterType:   req.ClusterType,
-		Version:       req.Version,
-		Profile:       req.Profile,
-		Region:        req.Region,
-		BaseDomain:    req.BaseDomain,
-		Owner:         req.Owner,
-		Team:          req.Team,
-		CostCenter:    req.CostCenter,
-		TTLHours:      ttl,
-		SSHPublicKey:  req.SSHPublicKey,
-		ExtraTags:     req.ExtraTags,
-		OffhoursOptIn: req.OffhoursOptIn,
+		Name:              req.Name,
+		Platform:          req.Platform,
+		ClusterType:       req.ClusterType,
+		Version:           req.Version,
+		Profile:           req.Profile,
+		Region:            req.Region,
+		BaseDomain:        req.BaseDomain,
+		Owner:             req.Owner,
+		Team:              req.Team,
+		CostCenter:        req.CostCenter,
+		TTLHours:          ttl,
+		SSHPublicKey:      req.SSHPublicKey,
+		ExtraTags:         req.ExtraTags,
+		OffhoursOptIn:     req.OffhoursOptIn,
+		CredentialsMode:   req.CredentialsMode,
+		PreserveOnFailure: req.PreserveOnFailure,
 	}
 
 	// Validate against policy

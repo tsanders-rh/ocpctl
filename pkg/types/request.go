@@ -19,4 +19,5 @@ type CreateClusterRequest struct {
 	WorkHoursEnabled  *bool
 	WorkHours         *WorkHoursSchedule
 	PreserveOnFailure bool
+	CredentialsMode   *string
 }
