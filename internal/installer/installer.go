@@ -43,10 +43,11 @@ var ocpctlVersion = "dev"
 
 // Installer wraps the openshift-install CLI
 type Installer struct {
-	binaryPath  string
-	ccoCtlPath  string
-	timeout     time.Duration
-	useSTSCreds bool // true if using temporary STS/IMDS credentials
+	binaryPath      string
+	ccoCtlPath      string
+	timeout         time.Duration
+	useSTSCreds     bool   // true if using temporary STS/IMDS credentials
+	credentialsMode string // credentials mode from cluster request (e.g., "Static", "Manual")
 }
 
 // CredentialType represents the type of AWS credentials in use
@@ -211,6 +212,12 @@ func detectSTSCredentials() bool {
 	return false
 }
 
+// SetCredentialsMode sets the credentials mode for the installer
+// This should be called before CreateCluster or CreateManifests
+func (i *Installer) SetCredentialsMode(mode string) {
+	i.credentialsMode = mode
+}
+
 // CreateCluster runs openshift-install create cluster
 // With IMDS credential extraction, we always use direct cluster creation
 // The user's selected credentials mode in install-config.yaml will be respected
@@ -234,8 +241,12 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Check credentials mode from install-config.yaml to determine credential handling
-	credMode := i.getCredentialsModeFromConfig(workDir)
+	// Check credentials mode from installer configuration (set by worker)
+	// Fall back to reading from install-config.yaml if not set
+	credMode := i.credentialsMode
+	if credMode == "" {
+		credMode = i.getCredentialsModeFromConfig(workDir)
+	}
 	envVars := os.Environ()
 
 	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment
@@ -318,8 +329,12 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Check credentials mode from install-config.yaml to determine credential handling
-	credMode := i.getCredentialsModeFromConfig(workDir)
+	// Check credentials mode from installer configuration (set by worker)
+	// Fall back to reading from install-config.yaml if not set
+	credMode := i.credentialsMode
+	if credMode == "" {
+		credMode = i.getCredentialsModeFromConfig(workDir)
+	}
 	envVars := os.Environ()
 
 	// For Static mode, use existing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from environment

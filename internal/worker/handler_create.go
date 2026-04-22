@@ -156,6 +156,12 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
 	}
 
+	// Set credentials mode if specified (e.g., "Static" for permanent credentials)
+	if cluster.CredentialsMode != nil && *cluster.CredentialsMode != "" {
+		inst.SetCredentialsMode(*cluster.CredentialsMode)
+		log.Printf("Set credentials mode: %s", *cluster.CredentialsMode)
+	}
+
 	// Platform-specific pre-installation steps
 	if cluster.Platform == types.PlatformIBMCloud {
 		// IBM Cloud requires CCO manual mode - run ccoctl before cluster creation
