@@ -170,8 +170,8 @@ export default function NewClusterPage() {
       // Remove override_work_hours from payload (it's only for UI)
       delete payload.override_work_hours;
 
-      // Handle credentials_mode: empty string = auto-detect = don't send to API
-      if (payload.credentials_mode === "") {
+      // Handle credentials_mode: "Auto" = auto-detect = don't send to API (null in backend)
+      if (payload.credentials_mode === "Auto") {
         delete payload.credentials_mode;
       }
 
@@ -568,14 +568,14 @@ export default function NewClusterPage() {
                       <Label htmlFor="credentials_mode">Credentials Mode</Label>
                       <Select
                         value={watchedValues.credentials_mode || "Manual"}
-                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "")}
+                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "Auto")}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Manual">Manual (default)</SelectItem>
-                          <SelectItem value="">Auto-detect (recommended for 4.22+)</SelectItem>
+                          <SelectItem value="Auto">Auto-detect (recommended for 4.22+)</SelectItem>
                           <SelectItem value="Passthrough">Passthrough</SelectItem>
                           <SelectItem value="Mint">Mint</SelectItem>
                         </SelectContent>
@@ -584,7 +584,7 @@ export default function NewClusterPage() {
                         {watchedValues.credentials_mode === "Manual" && (
                           "Manually manage cloud credentials. Default for 4.21 and earlier."
                         )}
-                        {watchedValues.credentials_mode === "" && (
+                        {watchedValues.credentials_mode === "Auto" && (
                           <>
                             Let the installer auto-detect credential mode. <span className="font-semibold text-amber-600 dark:text-amber-400">Required for OpenShift 4.22.0-ec.5 due to bootstrap bug.</span>
                           </>
