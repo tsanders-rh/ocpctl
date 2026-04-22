@@ -64,11 +64,16 @@ echo ""
 echo -e "${YELLOW}Uploading binaries to S3 for autoscaling workers...${NC}"
 S3_BUCKET="s3://ocpctl-binaries"
 
+# Upload versioned binary
 aws s3 cp bin/ocpctl-worker-${VERSION} ${S3_BUCKET}/releases/${VERSION}/ocpctl-worker
 echo "${VERSION}" | aws s3 cp - ${S3_BUCKET}/LATEST
 
+# Also copy to stable path for autoscaling workers
+aws s3 cp bin/ocpctl-worker-${VERSION} ${S3_BUCKET}/binaries/ocpctl-worker
+
 echo -e "${GREEN}✓ Uploaded to ${S3_BUCKET}/releases/${VERSION}/${NC}"
 echo -e "${GREEN}✓ Updated LATEST pointer to ${VERSION}${NC}"
+echo -e "${GREEN}✓ Updated stable path ${S3_BUCKET}/binaries/ocpctl-worker${NC}"
 echo ""
 
 # Upload bootstrap artifacts to S3

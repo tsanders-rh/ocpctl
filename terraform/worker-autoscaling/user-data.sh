@@ -36,12 +36,10 @@ aws s3 cp "$WORKER_BINARY_URL" /usr/local/bin/ocpctl-worker
 chmod +x /usr/local/bin/ocpctl-worker
 chown root:root /usr/local/bin/ocpctl-worker
 
-# Download and extract profile definitions
+# Download profile definitions
 echo "Downloading profile definitions"
-aws s3 cp "s3://ocpctl-binaries-346869059911/binaries/profiles.tar.gz" /tmp/profiles.tar.gz
-mkdir -p /opt/ocpctl/profiles
-tar -xzf /tmp/profiles.tar.gz -C /opt/ocpctl/profiles
-rm /tmp/profiles.tar.gz
+mkdir -p /opt/ocpctl/profiles/definitions
+aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/definitions/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
 
 # Create config directory and environment file
