@@ -80,6 +80,12 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		credentialsMode = prof.CredentialsMode
 	}
 
+	// "Auto" means omit credentialsMode from install-config.yaml
+	// This allows the installer to auto-detect (Mint or Passthrough)
+	if credentialsMode == "Auto" {
+		credentialsMode = ""
+	}
+
 	// Build template data
 	data := InstallConfigData{
 		ClusterName:          req.Name,
