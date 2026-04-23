@@ -222,6 +222,17 @@ export interface ClusterOutputs {
   updated_at: string;
 }
 
+// EC2 Instance Types
+export interface EC2Instance {
+  instance_id: string;
+  instance_type: string;
+  state: string;
+  private_ip_address?: string;
+  public_ip_address?: string;
+  launch_time: string;
+  name: string;
+}
+
 // Profile Types
 export interface PostDeploymentConfig {
   enabled: boolean;
@@ -289,7 +300,9 @@ export interface Profile {
   display_name: string;
   description: string;
   platform: Platform;
+  track?: string;
   enabled: boolean;
+  credentials_mode?: string;
   openshift_versions?: {
     allowed: string[];
     default: string;

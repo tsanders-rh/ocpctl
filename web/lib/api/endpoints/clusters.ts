@@ -7,6 +7,7 @@ import type {
   ClusterOutputs,
   DeploymentLogsResponse,
   ClusterConfigurationsResponse,
+  EC2Instance,
 } from "@/types/api";
 
 export interface ClusterFilters {
@@ -109,5 +110,9 @@ export const clustersApi = {
 
   retryConfiguration: async (id: string, configId: string): Promise<{ message: string; configuration_id: string; job_id: string }> => {
     return apiClient.patch<{ message: string; configuration_id: string; job_id: string }>(`/clusters/${id}/configurations/${configId}/retry`, {});
+  },
+
+  getInstances: async (id: string): Promise<EC2Instance[]> => {
+    return apiClient.get<EC2Instance[]>(`/clusters/${id}/instances`);
   },
 };

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
@@ -1285,4 +1289,179 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 	}
 
 	return SuccessOK(c, stats)
+}
+
+// EC2Instance represents an EC2 instance with relevant details
+type EC2Instance struct {
+	InstanceID       string    `json:"instance_id"`
+	InstanceType     string    `json:"instance_type"`
+	State            string    `json:"state"`
+	PrivateIPAddress *string   `json:"private_ip_address"`
+	PublicIPAddress  *string   `json:"public_ip_address"`
+	LaunchTime       time.Time `json:"launch_time"`
+	Name             string    `json:"name"`
+}
+
+// GetInstances handles GET /api/v1/clusters/:id/instances
+//
+//	@Summary		Get cluster EC2 instances
+//	@Description	Returns all EC2 instances associated with the cluster (AWS only)
+//	@Tags			clusters
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{array}		EC2Instance
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/instances [get]
+func (h *ClusterHandler) GetInstances(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Only AWS clusters have EC2 instances
+	if cluster.Platform != types.PlatformAWS {
+		return ErrorBadRequest(c, "EC2 instance information is only available for AWS clusters")
+	}
+
+	// Get instances from AWS
+	instances, err := h.getClusterEC2Instances(ctx, cluster)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get EC2 instances: %w", err))
+	}
+
+	return SuccessOK(c, instances)
+}
+
+// getClusterEC2Instances fetches EC2 instances for a cluster from AWS
+func (h *ClusterHandler) getClusterEC2Instances(ctx context.Context, cluster *types.Cluster) ([]EC2Instance, error) {
+	// Get infraID from metadata.json
+	infraID, err := h.getInfraIDFromMetadata(cluster)
+	if err != nil {
+		// If we can't get infraID, try using cluster name as fallback
+		// (for clusters that haven't completed provisioning)
+		return []EC2Instance{}, nil
+	}
+
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Find all instances with tag kubernetes.io/cluster/{infraID}=owned
+	tagKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+	describeInput := &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   strPtr("tag-key"),
+				Values: []string{tagKey},
+			},
+			{
+				Name: strPtr("instance-state-name"),
+				Values: []string{
+					"pending",
+					"running",
+					"stopping",
+					"stopped",
+				},
+			},
+		},
+	}
+
+	result, err := ec2Client.DescribeInstances(ctx, describeInput)
+	if err != nil {
+		return nil, fmt.Errorf("describe instances: %w", err)
+	}
+
+	// Collect instance information
+	var instances []EC2Instance
+	for _, reservation := range result.Reservations {
+		for _, instance := range reservation.Instances {
+			if instance.InstanceId == nil {
+				continue
+			}
+
+			// Extract name from tags
+			name := ""
+			for _, tag := range instance.Tags {
+				if tag.Key != nil && *tag.Key == "Name" && tag.Value != nil {
+					name = *tag.Value
+					break
+				}
+			}
+
+			ec2Instance := EC2Instance{
+				InstanceID:       *instance.InstanceId,
+				InstanceType:     string(instance.InstanceType),
+				State:            string(instance.State.Name),
+				PrivateIPAddress: instance.PrivateIpAddress,
+				PublicIPAddress:  instance.PublicIpAddress,
+				Name:             name,
+			}
+
+			if instance.LaunchTime != nil {
+				ec2Instance.LaunchTime = *instance.LaunchTime
+			}
+
+			instances = append(instances, ec2Instance)
+		}
+	}
+
+	return instances, nil
+}
+
+// getInfraIDFromMetadata extracts the infrastructure ID from cluster metadata
+func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string, error) {
+	// Get work directory from environment
+	workDir := os.Getenv("WORK_DIR")
+	if workDir == "" {
+		workDir = "/tmp/ocpctl"
+	}
+	clusterWorkDir := filepath.Join(workDir, cluster.ID)
+	metadataPath := filepath.Join(clusterWorkDir, "metadata.json")
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return "", fmt.Errorf("read metadata.json: %w", err)
+	}
+
+	var metadata struct {
+		InfraID string `json:"infraID"`
+	}
+
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return "", fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	if metadata.InfraID == "" {
+		return "", fmt.Errorf("infraID not found in metadata.json")
+	}
+
+	return metadata.InfraID, nil
+}
+
+// strPtr returns a pointer to a string
+func strPtr(s string) *string {
+	return &s
 }

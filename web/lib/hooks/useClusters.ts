@@ -161,3 +161,12 @@ export function useRetryConfiguration() {
     },
   });
 }
+
+export function useClusterInstances(id: string, platform?: string) {
+  return useQuery({
+    queryKey: ["cluster", id, "instances"],
+    queryFn: () => clustersApi.getInstances(id),
+    enabled: !!id && platform === "aws", // Only fetch for AWS clusters
+    staleTime: 60 * 1000, // 60 seconds
+  });
+}

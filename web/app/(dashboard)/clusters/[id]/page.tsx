@@ -11,6 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { ClusterStatusBadge } from "@/components/clusters/ClusterStatusBadge";
 import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { StorageTab } from "@/components/clusters/StorageTab";
+import { ClusterTopology } from "@/components/clusters/ClusterTopology";
+import { EC2InstancesCard } from "@/components/clusters/EC2InstancesCard";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, RefreshCw, Play, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -283,6 +286,14 @@ export default function ClusterDetailPage() {
         <ClusterStatusBadge status={cluster.status} />
       </div>
 
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="topology">Topology</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Overview Card */}
         <Card className="md:col-span-2">
@@ -666,6 +677,9 @@ export default function ClusterDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* EC2 Instances Card */}
+      <EC2InstancesCard clusterId={cluster.id} platform={cluster.platform} />
 
       {/* Storage Card */}
       {(cluster.status === "READY" || cluster.status === "HIBERNATED") && (
@@ -1064,19 +1078,6 @@ export default function ClusterDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Deployment Logs Card */}
-      {(cluster.status === "CREATING" || cluster.status === "READY" || cluster.status === "FAILED" || cluster.status === "DESTROYING") && (
-        <DeploymentLogs
-          clusterId={cluster.id}
-          clusterStatus={cluster.status}
-          hasActiveJobs={
-            jobsData?.data?.some((job) =>
-              ["PENDING", "RUNNING", "RETRYING"].includes(job.status)
-            ) || false
-          }
-        />
-      )}
-
       {/* Tags Card */}
       <Card>
         <CardHeader>
@@ -1097,6 +1098,42 @@ export default function ClusterDetailPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="topology" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cluster Architecture</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ClusterTopology cluster={cluster} outputs={outputs} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="logs" className="space-y-6">
+          {(cluster.status === "CREATING" || cluster.status === "READY" || cluster.status === "FAILED" || cluster.status === "DESTROYING") && (
+            <DeploymentLogs
+              clusterId={cluster.id}
+              clusterStatus={cluster.status}
+              hasActiveJobs={
+                jobsData?.data?.some((job) =>
+                  ["PENDING", "RUNNING", "RETRYING"].includes(job.status)
+                ) || false
+              }
+            />
+          )}
+          {!(cluster.status === "CREATING" || cluster.status === "READY" || cluster.status === "FAILED" || cluster.status === "DESTROYING") && (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center text-muted-foreground">
+                  <p>Deployment logs are not available for this cluster status.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Manifest Viewer Dialog */}
       <Dialog open={!!selectedManifest} onOpenChange={(open) => !open && setSelectedManifest(null)}>
