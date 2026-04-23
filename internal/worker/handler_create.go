@@ -484,7 +484,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 			}
 
 			// Add SSH configuration if public key provided
-			if cluster.SSHPublicKey != nil {
+			if cluster.SSHPublicKey != nil && *cluster.SSHPublicKey != "" {
 				sshKeyPath := filepath.Join(workDir, "ssh-key.pub")
 				if err := os.WriteFile(sshKeyPath, []byte(*cluster.SSHPublicKey), 0600); err != nil {
 					return fmt.Errorf("write SSH public key: %w", err)
@@ -515,7 +515,7 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 			}
 
 			// Add SSH configuration if public key provided
-			if cluster.SSHPublicKey != nil {
+			if cluster.SSHPublicKey != nil && *cluster.SSHPublicKey != "" {
 				sshKeyPath := filepath.Join(workDir, "ssh-key.pub")
 				if err := os.WriteFile(sshKeyPath, []byte(*cluster.SSHPublicKey), 0600); err != nil {
 					return fmt.Errorf("write SSH public key: %w", err)
