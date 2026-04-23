@@ -4,6 +4,7 @@ description: Single node OpenShift for production-ready releases (4.18-4.21)
 platform: aws
 track: ga
 enabled: true
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

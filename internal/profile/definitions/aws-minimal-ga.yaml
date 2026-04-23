@@ -4,7 +4,7 @@ description: Compact 3-node cluster for production-ready releases (masters sched
 platform: aws
 track: ga
 enabled: true
-credentialsMode: Manual
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

@@ -4,7 +4,7 @@ description: Standard 6-node cluster with dedicated workers for development and 
 platform: aws
 track: ga
 enabled: true
-credentialsMode: Manual
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:
