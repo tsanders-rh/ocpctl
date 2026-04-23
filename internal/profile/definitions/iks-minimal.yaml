@@ -3,6 +3,7 @@ displayName: IBM Cloud IKS Minimal Cluster
 description: Minimal 2-node IKS cluster for development and testing
 platform: ibmcloud
 clusterType: iks
+track: kube
 enabled: true
 
 kubernetesVersions:

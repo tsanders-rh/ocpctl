@@ -1,8 +1,10 @@
-name: aws-standard
-displayName: AWS Standard Development Cluster
-description: Standard 6-node cluster with dedicated workers for development and integration testing
+name: aws-virtualization-ga
+displayName: AWS OpenShift Virtualization
+description: Cluster optimized for OpenShift Virtualization with bare metal instances supporting nested virtualization
 platform: aws
-enabled: false
+track: ga
+enabled: true
+credentialsMode: Manual
 
 openshiftVersions:
   allowlist:
@@ -14,8 +16,7 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
-  default: "4.20.3"
+  default: "4.21.10"
 
 regions:
   allowlist:
@@ -45,13 +46,13 @@ baseDomains:
 compute:
   controlPlane:
     replicas: 3
-    instanceType: m6i.xlarge
+    instanceType: m6i.2xlarge
     schedulable: false
   workers:
     replicas: 3
-    minReplicas: 0
-    maxReplicas: 10
-    instanceType: m6i.2xlarge
+    minReplicas: 2
+    maxReplicas: 6
+    instanceType: m6i.metal
     autoscaling: false
 
 lifecycle:
@@ -72,20 +73,22 @@ networking:
 
 tags:
   required:
-    Environment: development
+    Environment: production
   defaults:
-    Purpose: development
+    Purpose: virtualization
     ManagedBy: cluster-control-plane
+    Workload: openshift-virtualization
+    Track: ga
   allowUserTags: true
 
 features:
-  offHoursScaling: true
+  offHoursScaling: false
   fipsMode: false
   privateCluster: false
 
 costControls:
-  estimatedHourlyCost: 7.80
-  maxMonthlyCost: 5600
+  estimatedHourlyCost: 35.50
+  maxMonthlyCost: 25500
   budgetAlertThreshold: 0.8
 
 platformConfig:
@@ -93,5 +96,5 @@ platformConfig:
     instanceMetadataService: required
     rootVolume:
       type: gp3
-      size: 120
-      iops: 3000
+      size: 200
+      iops: 4000

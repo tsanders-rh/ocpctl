@@ -1,8 +1,10 @@
-name: aws-virt-windows-minimal
+name: aws-virt-windows-minimal-ga
 displayName: AWS OpenShift Virtualization (HA Windows Testing)
 description: High-availability OpenShift Virtualization setup for Windows VM testing with dual metal workers and automated S3-backed Windows image deployment. Supports 25-30 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$4,868/month.
 platform: aws
-enabled: false
+track: ga
+enabled: true
+credentialsMode: Manual
 
 openshiftVersions:
   allowlist:
@@ -14,8 +16,7 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
-  default: "4.20.3"
+  default: "4.21.10"
 
 regions:
   allowlist:
@@ -66,12 +67,13 @@ networking:
 
 tags:
   required:
-    Environment: development
+    Environment: production
   defaults:
     Purpose: virtualization-testing
     ManagedBy: cluster-control-plane
     Workload: openshift-virtualization
     CostSavings: use-work-hours-hibernation
+    Track: ga
   allowUserTags: true
 
 features:

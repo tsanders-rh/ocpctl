@@ -2,7 +2,7 @@ name: aws-sno-test
 displayName: AWS Single Node OpenShift (SNO)
 description: Single node cluster for rapid testing and development (fastest deployment, lowest cost)
 platform: aws
-enabled: true
+enabled: false
 
 openshiftVersions:
   allowlist:

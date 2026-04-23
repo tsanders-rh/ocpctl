@@ -2,8 +2,11 @@ import { apiClient } from "../client";
 import type { Profile, Platform } from "@/types/api";
 
 export const profilesApi = {
-  list: async (platform?: Platform): Promise<Profile[]> => {
-    const query = platform ? `?platform=${platform}` : "";
+  list: async (platform?: Platform, track?: string): Promise<Profile[]> => {
+    const params = new URLSearchParams();
+    if (platform) params.append("platform", platform);
+    if (track) params.append("track", track);
+    const query = params.toString() ? `?${params.toString()}` : "";
     return apiClient.get<Profile[]>(`/profiles${query}`);
   },
 

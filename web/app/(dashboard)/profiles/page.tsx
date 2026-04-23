@@ -10,7 +10,8 @@ import { Platform } from "@/types/api";
 
 export default function ProfilesPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | undefined>();
-  const { data: profiles, isLoading, error } = useProfiles(selectedPlatform);
+  const [selectedTrack, setSelectedTrack] = useState<string | undefined>();
+  const { data: profiles, isLoading, error } = useProfiles(selectedPlatform, selectedTrack);
 
   if (isLoading) {
     return (
@@ -47,37 +48,93 @@ export default function ProfilesPage() {
         </p>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          variant={selectedPlatform === undefined ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSelectedPlatform(undefined)}
-        >
-          All Platforms
-        </Button>
-        <Button
-          variant={selectedPlatform === Platform.AWS ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSelectedPlatform(Platform.AWS)}
-        >
-          AWS
-        </Button>
-        <Button
-          variant={selectedPlatform === Platform.IBMCloud ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSelectedPlatform(Platform.IBMCloud)}
-        >
-          IBM Cloud
-        </Button>
+      <div className="space-y-4">
+        <div>
+          <div className="text-sm font-medium mb-2">Platform</div>
+          <div className="flex gap-2">
+            <Button
+              variant={selectedPlatform === undefined ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(undefined)}
+            >
+              All Platforms
+            </Button>
+            <Button
+              variant={selectedPlatform === Platform.AWS ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(Platform.AWS)}
+            >
+              AWS
+            </Button>
+            <Button
+              variant={selectedPlatform === Platform.IBMCloud ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(Platform.IBMCloud)}
+            >
+              IBM Cloud
+            </Button>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium mb-2">Release Track</div>
+          <div className="flex gap-2">
+            <Button
+              variant={selectedTrack === undefined ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedTrack(undefined)}
+            >
+              All Tracks
+            </Button>
+            <Button
+              variant={selectedTrack === "ga" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedTrack("ga")}
+            >
+              GA (Stable)
+            </Button>
+            <Button
+              variant={selectedTrack === "prerelease" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedTrack("prerelease")}
+            >
+              Pre-Release
+            </Button>
+            <Button
+              variant={selectedTrack === "kube" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedTrack("kube")}
+            >
+              Kubernetes
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {profiles.map((profile) => (
           <Card key={profile.name} className="hover:shadow-lg transition-shadow">
             <CardHeader>
-              <div className="flex justify-between items-start">
+              <div className="flex justify-between items-start gap-2">
                 <CardTitle>{profile.display_name}</CardTitle>
-                <Badge>{profile.platform.toUpperCase()}</Badge>
+                <div className="flex gap-1 flex-wrap justify-end">
+                  <Badge>{profile.platform.toUpperCase()}</Badge>
+                  {profile.track && (
+                    <Badge
+                      className={
+                        profile.track === "ga"
+                          ? "bg-green-600 hover:bg-green-700 text-white"
+                          : profile.track === "prerelease"
+                          ? "bg-yellow-500 hover:bg-yellow-600 text-black"
+                          : profile.track === "kube"
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : ""
+                      }
+                    >
+                      {profile.track === "ga" ? "GA" : profile.track === "prerelease" ? "Pre-Release" : "Kube"}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <CardDescription>{profile.description}</CardDescription>
             </CardHeader>
@@ -230,6 +287,17 @@ export default function ProfilesPage() {
                   Available: {(profile.openshift_versions?.allowed || profile.kubernetes_versions?.allowed)?.join(", ") || "N/A"}
                 </div>
               </div>
+
+              {profile.credentials_mode && (
+                <div className="border-t pt-4">
+                  <div className="text-sm text-muted-foreground mb-2">
+                    Credentials Mode
+                  </div>
+                  <div className="text-sm">
+                    {profile.credentials_mode}
+                  </div>
+                </div>
+              )}
 
               <div className="border-t pt-4">
                 <div className="text-sm text-muted-foreground mb-2">

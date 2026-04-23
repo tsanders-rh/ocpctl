@@ -9,7 +9,9 @@ type Profile struct {
 	Description        string                 `yaml:"description" validate:"required"`
 	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
 	ClusterType        types.ClusterType      `yaml:"clusterType,omitempty"`
+	Track              string                 `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
 	Enabled            bool                   `yaml:"enabled"`
+	CredentialsMode    string                 `yaml:"credentialsMode,omitempty"`                                // Default credentials mode (Mint, Passthrough, Manual, Static)
 	OpenshiftVersions  *VersionConfig         `yaml:"openshiftVersions,omitempty"`
 	KubernetesVersions *VersionConfig         `yaml:"kubernetesVersions,omitempty"`
 	Regions            RegionConfig           `yaml:"regions" validate:"required"`

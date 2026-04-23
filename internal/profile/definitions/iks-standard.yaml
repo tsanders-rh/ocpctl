@@ -3,6 +3,7 @@ displayName: IBM Cloud IKS Standard Cluster
 description: Standard 4-node IKS cluster for development and integration testing
 platform: ibmcloud
 clusterType: iks
+track: kube
 enabled: true
 
 kubernetesVersions:

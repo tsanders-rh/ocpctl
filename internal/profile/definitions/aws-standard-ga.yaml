@@ -1,8 +1,10 @@
-name: aws-standard
-displayName: AWS Standard Development Cluster
+name: aws-standard-ga
+displayName: AWS Standard
 description: Standard 6-node cluster with dedicated workers for development and integration testing
 platform: aws
-enabled: false
+track: ga
+enabled: true
+credentialsMode: Manual
 
 openshiftVersions:
   allowlist:
@@ -14,8 +16,7 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
-  default: "4.20.3"
+  default: "4.21.10"
 
 regions:
   allowlist:
@@ -72,10 +73,11 @@ networking:
 
 tags:
   required:
-    Environment: development
+    Environment: production
   defaults:
     Purpose: development
     ManagedBy: cluster-control-plane
+    Track: ga
   allowUserTags: true
 
 features:

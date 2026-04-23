@@ -73,9 +73,12 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		publishStrategy = "Internal" // Private clusters use internal-only API
 	}
 
-	// Pass through credentials mode unchanged
+	// Use credentials mode from request, or fall back to profile default
 	// Both "Static" and "Mint" work with permanent IAM credentials from environment
 	credentialsMode := stringValue(req.CredentialsMode)
+	if credentialsMode == "" && prof.CredentialsMode != "" {
+		credentialsMode = prof.CredentialsMode
+	}
 
 	// Build template data
 	data := InstallConfigData{

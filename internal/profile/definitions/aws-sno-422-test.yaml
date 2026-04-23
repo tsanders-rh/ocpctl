@@ -2,7 +2,7 @@ name: aws-sno-422-test
 displayName: AWS SNO 4.22 Test (m6i.4xlarge)
 description: Single node cluster for 4.22.0-ec.5 testing with increased resources (16 vCPU, 64GB RAM)
 platform: aws
-enabled: true
+enabled: false
 
 openshiftVersions:
   allowlist:

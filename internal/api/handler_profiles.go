@@ -29,7 +29,9 @@ type ProfileResponse struct {
 	DisplayName        string                            `json:"display_name"`
 	Description        string                            `json:"description"`
 	Platform           string                            `json:"platform"`
+	Track              string                            `json:"track,omitempty"`
 	Enabled            bool                              `json:"enabled"`
+	CredentialsMode    string                            `json:"credentials_mode,omitempty"`
 	OpenshiftVersions  *profile.VersionConfig            `json:"openshift_versions,omitempty"`
 	KubernetesVersions *profile.VersionConfig            `json:"kubernetes_versions,omitempty"`
 	Regions            profile.RegionConfig              `json:"regions"`
@@ -51,7 +53,9 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 		DisplayName:        p.DisplayName,
 		Description:        p.Description,
 		Platform:           string(p.Platform),
+		Track:              p.Track,
 		Enabled:            p.Enabled,
+		CredentialsMode:    p.CredentialsMode,
 		OpenshiftVersions:  p.OpenshiftVersions,
 		KubernetesVersions: p.KubernetesVersions,
 		Regions:            p.Regions,
@@ -69,23 +73,26 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 // List handles GET /api/v1/profiles
 //
 //	@Summary		List cluster profiles
-//	@Description	Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud).
+//	@Description	Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud) and track (ga or prerelease).
 //	@Tags			Profiles
 //	@Accept			json
 //	@Produce		json
 //	@Param			platform	query		string	false	"Filter by platform (aws, ibmcloud)"
+//	@Param			track		query		string	false	"Filter by track (ga, prerelease)"
 //	@Success		200			{array}		ProfileResponse
-//	@Failure		400			{object}	map[string]string	"Invalid platform parameter"
+//	@Failure		400			{object}	map[string]string	"Invalid platform or track parameter"
 //	@Security		BearerAuth
 //	@Router			/profiles [get]
 func (h *ProfileHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Parse platform filter
+	// Parse filters
 	platformParam := c.QueryParam("platform")
+	trackParam := c.QueryParam("track")
 
 	var profiles []*profile.Profile
 
+	// Start with platform filter if specified
 	if platformParam != "" {
 		// Validate platform
 		var platform types.Platform
@@ -101,6 +108,23 @@ func (h *ProfileHandler) List(c echo.Context) error {
 		profiles = h.registry.ListByPlatform(platform)
 	} else {
 		profiles = h.registry.List()
+	}
+
+	// Apply track filter if specified
+	if trackParam != "" {
+		// Validate track
+		if trackParam != "ga" && trackParam != "prerelease" && trackParam != "kube" {
+			return ErrorBadRequest(c, "Invalid track. Must be 'ga', 'prerelease', or 'kube'")
+		}
+
+		// Filter profiles by track
+		var filtered []*profile.Profile
+		for _, p := range profiles {
+			if p.Track == trackParam {
+				filtered = append(filtered, p)
+			}
+		}
+		profiles = filtered
 	}
 
 	// Load deployment metrics for all profiles

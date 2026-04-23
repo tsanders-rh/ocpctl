@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { TagsInput } from "@/components/ui/tags-input";
 import { CustomPostConfigEditor } from "@/components/postconfig/CustomPostConfigEditor";
 import {
@@ -43,6 +44,7 @@ export default function NewClusterPage() {
   const { user } = useAuthStore();
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>(Platform.AWS);
   const [selectedClusterType, setSelectedClusterType] = useState<ClusterType>(ClusterType.OpenShift);
+  const [selectedTrack, setSelectedTrack] = useState<string | undefined>(undefined);
   const { data: profiles } = useProfiles(selectedPlatform);
   const createCluster = useCreateCluster();
   const [apiValidationErrors, setApiValidationErrors] = useState<ValidationError[]>([]);
@@ -59,8 +61,12 @@ export default function NewClusterPage() {
     defaultValues: {
       platform: Platform.AWS,
       cluster_type: ClusterType.OpenShift,
+      profile: "",
+      region: "",
+      base_domain: "",
+      version: "",
       owner: user?.email || "",
-      team: "Migration Feature Team",
+      team: "",
       cost_center: "733",
       offhours_opt_in: false,
       skip_post_deployment: false,
@@ -68,7 +74,7 @@ export default function NewClusterPage() {
       customPostConfig: undefined,
       enable_efs_storage: false,
       preserve_on_failure: false,
-      credentials_mode: "Manual",
+      credentials_mode: "Auto",
       override_work_hours: false,
       work_hours_enabled: user?.work_hours_enabled || false,
       work_hours_start: user?.work_hours?.start_time || "09:00",
@@ -79,27 +85,33 @@ export default function NewClusterPage() {
 
   const watchedValues = watch();
 
-  // Filter profiles by platform AND cluster type, then sort alphabetically
+  // Filter profiles by platform, cluster type, and track, then sort alphabetically
   const sortedProfiles = useMemo(() => {
     const filteredProfiles = profiles?.filter((p) => {
+      // Filter by cluster type
+      let clusterTypeMatch = false;
       // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-)
       if (selectedClusterType === ClusterType.OpenShift) {
-        return p.name.startsWith(`${selectedPlatform}-`);
+        clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`);
       }
       // For EKS/IKS clusters, show profiles that start with cluster type prefix (eks-, iks-)
-      if (selectedClusterType === ClusterType.EKS) {
-        return p.name.startsWith('eks-');
+      else if (selectedClusterType === ClusterType.EKS) {
+        clusterTypeMatch = p.name.startsWith('eks-');
       }
-      if (selectedClusterType === ClusterType.IKS) {
-        return p.name.startsWith('iks-');
+      else if (selectedClusterType === ClusterType.IKS) {
+        clusterTypeMatch = p.name.startsWith('iks-');
       }
-      return false;
+
+      // Filter by track if one is selected
+      const trackMatch = selectedTrack === undefined || p.track === selectedTrack;
+
+      return clusterTypeMatch && trackMatch;
     });
 
     return filteredProfiles?.slice().sort((a, b) =>
       a.display_name.localeCompare(b.display_name)
     );
-  }, [profiles, selectedClusterType, selectedPlatform]);
+  }, [profiles, selectedClusterType, selectedPlatform, selectedTrack]);
 
   const selectedProfile = sortedProfiles?.find((p) => p.name === watchedValues.profile);
 
@@ -109,52 +121,46 @@ export default function NewClusterPage() {
     return error?.message;
   };
 
-  // Set default profile based on cluster type when profiles load or cluster type changes
+  // Clear profile selection when track/cluster type changes if current profile is no longer available
   useEffect(() => {
-    if (sortedProfiles && sortedProfiles.length > 0) {
-      // Determine default profile based on cluster type
-      let defaultProfileName = "";
+    if (sortedProfiles && watchedValues.profile) {
+      // Check if current profile is still in the filtered list
+      const currentProfileStillValid = sortedProfiles.some(p => p.name === watchedValues.profile);
 
-      if (selectedClusterType === ClusterType.OpenShift) {
-        // Default to SNO for OpenShift
-        defaultProfileName = "aws-sno-test";
-      } else if (selectedClusterType === ClusterType.EKS) {
-        // Default to minimal EKS profile
-        defaultProfileName = "eks-minimal";
-      } else if (selectedClusterType === ClusterType.IKS) {
-        // Default to minimal IKS profile
-        defaultProfileName = "iks-minimal";
-      }
-
-      const defaultProfile = sortedProfiles.find(p => p.name === defaultProfileName);
-      if (defaultProfile) {
-        setValue("profile", defaultProfile.name);
-      } else if (sortedProfiles.length > 0) {
-        // Fallback to first available profile if default not found
-        setValue("profile", sortedProfiles[0].name);
+      if (!currentProfileStillValid) {
+        // Current profile is not in filtered list, clear the selection
+        setValue("profile", "");
       }
     }
-  }, [sortedProfiles, selectedClusterType, setValue]);
+  }, [sortedProfiles, setValue, watchedValues.profile]);
 
   // Update form defaults when profile changes
   useEffect(() => {
     if (selectedProfile) {
-      // Set version based on cluster type
-      const defaultVersion = watchedValues.cluster_type === "openshift"
-        ? selectedProfile.openshift_versions?.default
-        : selectedProfile.kubernetes_versions?.default;
-      if (defaultVersion) {
-        setValue("version", defaultVersion);
-      }
+      // Use setTimeout to ensure Select components are rendered with options before setting values
+      setTimeout(() => {
+        // Set version based on cluster type
+        const defaultVersion = watchedValues.cluster_type === "openshift"
+          ? selectedProfile.openshift_versions?.default
+          : selectedProfile.kubernetes_versions?.default;
+        if (defaultVersion) {
+          setValue("version", defaultVersion, { shouldValidate: true });
+        }
 
-      setValue("region", selectedProfile.regions.default);
+        setValue("region", selectedProfile.regions.default, { shouldValidate: true });
 
-      // Only set base_domain for OpenShift clusters
-      if (watchedValues.cluster_type === "openshift" && selectedProfile.base_domains?.default) {
-        setValue("base_domain", selectedProfile.base_domains.default);
-      }
+        // Only set base_domain for OpenShift clusters
+        if (watchedValues.cluster_type === "openshift" && selectedProfile.base_domains?.default) {
+          setValue("base_domain", selectedProfile.base_domains.default, { shouldValidate: true });
+        }
 
-      setValue("ttl_hours", selectedProfile.lifecycle.default_ttl_hours);
+        // Set credentials mode from profile if available
+        if (selectedProfile.credentials_mode) {
+          setValue("credentials_mode", selectedProfile.credentials_mode as "Manual" | "Passthrough" | "Mint" | "Auto" | "Static", { shouldValidate: true });
+        }
+
+        setValue("ttl_hours", selectedProfile.lifecycle.default_ttl_hours, { shouldValidate: true });
+      }, 0);
     }
   }, [selectedProfile, setValue, watchedValues.cluster_type]);
 
@@ -321,6 +327,48 @@ export default function NewClusterPage() {
             <div className="rounded-lg border bg-card p-6 space-y-4">
               <h2 className="text-lg font-semibold">Profile</h2>
 
+              {/* Track Filter */}
+              <div className="space-y-2">
+                <Label>Release Track</Label>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant={selectedTrack === undefined ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedTrack(undefined)}
+                  >
+                    All Tracks
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={selectedTrack === "ga" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedTrack("ga")}
+                  >
+                    GA (Stable)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={selectedTrack === "prerelease" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedTrack("prerelease")}
+                  >
+                    Pre-Release
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={selectedTrack === "kube" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedTrack("kube")}
+                  >
+                    Kubernetes
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Filter profiles by release track
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="profile">Size Profile</Label>
                 <Select
@@ -334,7 +382,24 @@ export default function NewClusterPage() {
                     {sortedProfiles && sortedProfiles.length > 0 ? (
                       sortedProfiles.map((profile) => (
                         <SelectItem key={profile.name} value={profile.name}>
-                          {profile.display_name} (${profile.cost_controls?.estimated_hourly_cost || 0}/hr)
+                          <div className="flex items-center gap-2">
+                            <span>{profile.display_name} (${profile.cost_controls?.estimated_hourly_cost || 0}/hr)</span>
+                            {profile.track && (
+                              <Badge
+                                className={
+                                  profile.track === "ga"
+                                    ? "bg-green-600 hover:bg-green-700 text-white"
+                                    : profile.track === "prerelease"
+                                    ? "bg-yellow-500 hover:bg-yellow-600 text-black"
+                                    : profile.track === "kube"
+                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                    : ""
+                                }
+                              >
+                                {profile.track === "ga" ? "GA" : profile.track === "prerelease" ? "Pre-Release" : "Kube"}
+                              </Badge>
+                            )}
+                          </div>
                         </SelectItem>
                       ))
                     ) : (
@@ -567,51 +632,37 @@ export default function NewClusterPage() {
                     <div className="space-y-2">
                       <Label htmlFor="credentials_mode">Credentials Mode</Label>
                       <Select
-                        value={watchedValues.credentials_mode || "Manual"}
-                        onValueChange={(value) => setValue("credentials_mode", value as "Manual" | "Passthrough" | "Mint" | "Auto" | "Static")}
+                        value={watchedValues.credentials_mode || "Auto"}
+                        onValueChange={(value) => setValue("credentials_mode", value as "Auto" | "Mint" | "Static")}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Manual">Manual (default)</SelectItem>
-                          <SelectItem value="Auto">Auto-detect (recommended for 4.22+)</SelectItem>
-                          <SelectItem value="Passthrough">Passthrough</SelectItem>
+                          <SelectItem value="Auto">Auto (Recommended)</SelectItem>
                           <SelectItem value="Mint">Mint</SelectItem>
-                          <SelectItem value="Static">Static (use worker IAM credentials)</SelectItem>
+                          <SelectItem value="Static">Static</SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-sm text-muted-foreground">
-                        {watchedValues.credentials_mode === "Manual" && (
-                          "Manually manage cloud credentials. Default for 4.21 and earlier."
-                        )}
-                        {watchedValues.credentials_mode === "Auto" && (
-                          <>
-                            Let the installer auto-detect credential mode. <span className="font-semibold text-amber-600 dark:text-amber-400">Required for OpenShift 4.22.0-ec.5 due to bootstrap bug.</span>
-                          </>
-                        )}
-                        {watchedValues.credentials_mode === "Passthrough" && (
-                          "Pass full cloud credentials to all components."
-                        )}
-                        {watchedValues.credentials_mode === "Mint" && (
-                          "Let Cloud Credential Operator create limited credentials automatically."
-                        )}
-                        {watchedValues.credentials_mode === "Static" && (
-                          <>
-                            Use static AWS credentials from worker environment (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY). <span className="font-semibold text-amber-600 dark:text-amber-400">Required for OpenShift 4.22 pre-release versions when running on EC2.</span>
-                          </>
+                        {watchedValues.credentials_mode === "Auto" ? (
+                          "Let the installer auto-detect the best credentials mode. Uses EC2 instance profile credentials (Passthrough mode). Recommended for GA releases (OpenShift 4.18-4.21)."
+                        ) : watchedValues.credentials_mode === "Mint" ? (
+                          "CCO mints new credentials with fine-grained permissions. Requires permanent IAM credentials. Use for pre-release testing (OpenShift 4.22+)."
+                        ) : (
+                          "Static credentials mode for OpenShift 4.22+. Requires permanent IAM credentials from environment variables."
                         )}
                       </p>
-                      {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Manual" && (
+                      {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Auto" && (
                         <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
                           <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                           <div className="text-sm space-y-1">
                             <p className="font-medium text-amber-900 dark:text-amber-100">
-                              OpenShift 4.22 Compatibility Warning
+                              OpenShift 4.22 Requires Mint or Static Mode
                             </p>
                             <p className="text-amber-800 dark:text-amber-200">
-                              Manual mode has a known issue with OpenShift 4.22.0-ec.5 that causes bootstrap to hang.
-                              Consider using <span className="font-semibold">Auto-detect</span> instead.
+                              OpenShift 4.22 pre-release requires <span className="font-semibold">Mint</span> or <span className="font-semibold">Static</span> credentials mode with permanent IAM credentials.
+                              Auto mode (Passthrough) will not work.
                             </p>
                           </div>
                         </div>

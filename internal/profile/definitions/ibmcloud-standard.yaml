@@ -2,6 +2,7 @@ name: ibmcloud-standard
 displayName: IBM Cloud Standard Development Cluster
 description: Standard 6-node cluster with dedicated workers for IBM Cloud development
 platform: ibmcloud
+track: ga
 enabled: true
 
 openshiftVersions:

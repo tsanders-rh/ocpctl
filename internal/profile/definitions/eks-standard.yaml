@@ -3,6 +3,7 @@ displayName: AWS EKS Standard Cluster
 description: Standard 4-node EKS cluster for development and integration testing
 platform: aws
 clusterType: eks
+track: kube
 enabled: true
 
 kubernetesVersions:

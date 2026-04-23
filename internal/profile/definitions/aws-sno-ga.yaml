@@ -1,8 +1,9 @@
-name: aws-standard
-displayName: AWS Standard Development Cluster
-description: Standard 6-node cluster with dedicated workers for development and integration testing
+name: aws-sno-ga
+displayName: AWS SNO
+description: Single node OpenShift for production-ready releases (4.18-4.21)
 platform: aws
-enabled: false
+track: ga
+enabled: true
 
 openshiftVersions:
   allowlist:
@@ -14,8 +15,7 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
-  default: "4.20.3"
+  default: "4.21.10"
 
 regions:
   allowlist:
@@ -44,19 +44,19 @@ baseDomains:
 
 compute:
   controlPlane:
-    replicas: 3
-    instanceType: m6i.xlarge
-    schedulable: false
+    replicas: 1
+    instanceType: m6i.2xlarge
+    schedulable: true
   workers:
-    replicas: 3
+    replicas: 0
     minReplicas: 0
-    maxReplicas: 10
+    maxReplicas: 0
     instanceType: m6i.2xlarge
     autoscaling: false
 
 lifecycle:
-  maxTTLHours: 168
-  defaultTTLHours: 72
+  maxTTLHours: 72
+  defaultTTLHours: 24
   allowCustomTTL: true
   warnBeforeDestroyHours: 2
 
@@ -72,20 +72,21 @@ networking:
 
 tags:
   required:
-    Environment: development
+    Environment: production
   defaults:
-    Purpose: development
+    Purpose: stable-testing
     ManagedBy: cluster-control-plane
+    Track: ga
   allowUserTags: true
 
 features:
-  offHoursScaling: true
+  offHoursScaling: false
   fipsMode: false
   privateCluster: false
 
 costControls:
-  estimatedHourlyCost: 7.80
-  maxMonthlyCost: 5600
+  estimatedHourlyCost: 0.80
+  maxMonthlyCost: 1728
   budgetAlertThreshold: 0.8
 
 platformConfig:

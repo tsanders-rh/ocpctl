@@ -2,7 +2,7 @@ name: aws-virtualization
 displayName: AWS OpenShift Virtualization
 description: Cluster optimized for OpenShift Virtualization with bare metal instances supporting nested virtualization
 platform: aws
-enabled: true
+enabled: false
 
 openshiftVersions:
   allowlist:

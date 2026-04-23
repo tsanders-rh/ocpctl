@@ -3,6 +3,7 @@ displayName: AWS EKS Minimal Cluster
 description: Minimal 2-node EKS cluster for development and testing
 platform: aws
 clusterType: eks
+track: kube
 enabled: true
 
 kubernetesVersions:
