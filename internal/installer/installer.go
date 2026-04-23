@@ -255,12 +255,17 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	if credMode == "Static" || credMode == "Mint" {
 		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
+	} else if credMode == "" {
+		// Auto mode (no credentialsMode set) - let installer use default EC2 instance profile detection
+		// DO NOT extract IMDS credentials to env vars - OpenShift 4.18-4.21 wants to detect EC2 role itself
+		log.Printf("Auto credentials mode - using installer's default EC2 instance profile detection")
+		// Use existing environment without modification
 	} else {
-		// For all other modes, extract credentials from IMDS and export as environment variables
+		// For other explicit modes (Passthrough, Manual, etc.), extract credentials from IMDS
 		// This prevents the installer from seeing credentials as "EC2RoleProvider"
 		creds, imdsErr := getAWSCredentialsFromIMDS()
 		if imdsErr == nil && creds.AccessKeyID != "" {
-			log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
+			log.Printf("%s credentials mode - extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)", credMode)
 			envVars = append(envVars,
 				fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
 				fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),
@@ -344,13 +349,18 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	if credMode == "Static" || credMode == "Mint" {
 		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
+	} else if credMode == "" {
+		// Auto mode (no credentialsMode set) - let installer use default EC2 instance profile detection
+		// DO NOT extract IMDS credentials to env vars - OpenShift 4.18-4.21 wants to detect EC2 role itself
+		log.Printf("Auto credentials mode - using installer's default EC2 instance profile detection")
+		// Use existing environment without modification
 	} else {
-		// For all other modes, extract credentials from IMDS and export as environment variables
+		// For other explicit modes (Passthrough, Manual, etc.), extract credentials from IMDS
 		// This prevents the installer from seeing credentials as "EC2RoleProvider"
 		// which OpenShift 4.22 rejects for all credentials modes
 		creds, imdsErr := getAWSCredentialsFromIMDS()
 		if imdsErr == nil && creds.AccessKeyID != "" {
-			log.Printf("Extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)")
+			log.Printf("%s credentials mode - extracted credentials from EC2 instance metadata (hiding EC2RoleProvider from installer)", credMode)
 			envVars = append(envVars,
 				fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID),
 				fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey),

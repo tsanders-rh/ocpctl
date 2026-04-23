@@ -16,6 +16,19 @@ OPENSHIFT_PULL_SECRET='${openshift_pull_secret}'
 yum update -y
 yum install -y wget postgresql15 awscli jq
 
+# Configure systemd-resolved to use external DNS for faster propagation of new Route53 records
+echo "Configuring DNS resolution with external DNS servers..."
+mkdir -p /etc/systemd/resolved.conf.d/
+cat > /etc/systemd/resolved.conf.d/dns_servers.conf <<'DNSEOF'
+[Resolve]
+DNS=8.8.8.8 1.1.1.1
+FallbackDNS=8.8.4.4 1.0.0.1
+CacheFromLocalhost=no
+DNSEOF
+
+systemctl restart systemd-resolved
+echo "DNS configuration applied - using Google/Cloudflare DNS for faster Route53 propagation"
+
 # Install kubectl (required for IKS post-config)
 echo "Installing kubectl..."
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -41,6 +54,78 @@ echo "Downloading profile definitions"
 mkdir -p /opt/ocpctl/profiles/definitions
 aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/definitions/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
+
+# Download OpenShift installer binaries for all supported versions
+echo "Downloading OpenShift installer binaries..."
+cd /tmp
+
+# 4.18 (latest stable in 4.18 series)
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.18.35/openshift-install-linux.tar.gz
+tar -xzf openshift-install-linux.tar.gz
+mv openshift-install /usr/local/bin/openshift-install-4.18
+chmod +x /usr/local/bin/openshift-install-4.18
+rm openshift-install-linux.tar.gz README.md
+
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.18.35/ccoctl-linux.tar.gz
+tar -xzf ccoctl-linux.tar.gz
+mv ccoctl /usr/local/bin/ccoctl-4.18
+chmod +x /usr/local/bin/ccoctl-4.18
+rm ccoctl-linux.tar.gz
+
+# 4.19 (latest stable in 4.19 series)
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.19.23/openshift-install-linux.tar.gz
+tar -xzf openshift-install-linux.tar.gz
+mv openshift-install /usr/local/bin/openshift-install-4.19
+chmod +x /usr/local/bin/openshift-install-4.19
+rm openshift-install-linux.tar.gz README.md
+
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.19.23/ccoctl-linux.tar.gz
+tar -xzf ccoctl-linux.tar.gz
+mv ccoctl /usr/local/bin/ccoctl-4.19
+chmod +x /usr/local/bin/ccoctl-4.19
+rm ccoctl-linux.tar.gz
+
+# 4.20 (latest stable in 4.20 series)
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.20.5/openshift-install-linux.tar.gz
+tar -xzf openshift-install-linux.tar.gz
+mv openshift-install /usr/local/bin/openshift-install-4.20
+chmod +x /usr/local/bin/openshift-install-4.20
+rm openshift-install-linux.tar.gz README.md
+
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.20.5/ccoctl-linux.tar.gz
+tar -xzf ccoctl-linux.tar.gz
+mv ccoctl /usr/local/bin/ccoctl-4.20
+chmod +x /usr/local/bin/ccoctl-4.20
+rm ccoctl-linux.tar.gz
+
+# 4.21 (latest stable in 4.21 series)
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.21.10/openshift-install-linux.tar.gz
+tar -xzf openshift-install-linux.tar.gz
+mv openshift-install /usr/local/bin/openshift-install-4.21
+chmod +x /usr/local/bin/openshift-install-4.21
+rm openshift-install-linux.tar.gz README.md
+
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.21.10/ccoctl-linux.tar.gz
+tar -xzf ccoctl-linux.tar.gz
+mv ccoctl /usr/local/bin/ccoctl-4.21
+chmod +x /usr/local/bin/ccoctl-4.21
+rm ccoctl-linux.tar.gz
+
+# 4.22 (pre-release - use RHEL9 version for FIPS compatibility)
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/latest-4.22/openshift-install-linux.tar.gz
+tar -xzf openshift-install-linux.tar.gz
+mv openshift-install /usr/local/bin/openshift-install-4.22
+chmod +x /usr/local/bin/openshift-install-4.22
+rm openshift-install-linux.tar.gz README.md
+
+wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/latest-4.22/ccoctl-rhel9-linux.tar.gz
+tar -xzf ccoctl-rhel9-linux.tar.gz
+mv ccoctl /usr/local/bin/ccoctl-4.22-rhel9
+chmod +x /usr/local/bin/ccoctl-4.22-rhel9
+rm ccoctl-rhel9-linux.tar.gz
+
+cd -
+echo "OpenShift installer binaries installed"
 
 # Create config directory and environment file
 mkdir -p /etc/ocpctl
