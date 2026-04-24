@@ -85,6 +85,26 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
+	// AWS-specific pre-flight checks (instance type availability)
+	if cluster.Platform == types.PlatformAWS {
+		prof, err := h.registry.Get(cluster.Profile)
+		if err != nil {
+			return fmt.Errorf("get profile for pre-flight check: %w", err)
+		}
+
+		log.Printf("Running AWS pre-flight capacity checks for region %s", cluster.Region)
+		checker, err := NewAWSPreflightChecker(ctx, cluster.Region)
+		if err != nil {
+			log.Printf("Warning: failed to create AWS pre-flight checker: %v", err)
+			// Don't fail cluster creation if pre-flight check setup fails
+		} else {
+			if err := checker.CheckInstanceTypeAvailability(ctx, prof); err != nil {
+				// Pre-flight check failed - fail immediately before starting installation
+				return fmt.Errorf("AWS capacity pre-flight check failed: %w", err)
+			}
+		}
+	}
+
 	// Create work directory for this cluster with secure permissions
 	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
 	if err != nil {
