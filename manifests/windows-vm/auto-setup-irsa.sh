@@ -223,16 +223,35 @@ if oc --kubeconfig="$KUBECONFIG" get storageclass ocs-storagecluster-ceph-rbd-vi
     ACCESS_MODE="ReadWriteMany"
     log_info "✓ Using ODF storage: $STORAGE_CLASS (supports live migration)"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi &>/dev/null; then
-    # Create gp3-csi-immediate for CDI imports (WaitForFirstConsumer causes issues)
-    if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi-immediate &>/dev/null; then
-        log_info "Creating gp3-csi-immediate storage class for CDI imports..."
+    # CRITICAL: Detect worker zones FIRST to avoid zone mismatch failures
+    # If we create an Immediate storage class without zone constraints, AWS may provision
+    # the volume in a zone with no workers, causing the importer pod to be unschedulable
+    log_info "Detecting worker node zones to ensure DataVolume can be imported..."
+    WORKER_ZONES=$(oc --kubeconfig="$KUBECONFIG" get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' | sort -u)
+
+    if [ -z "$WORKER_ZONES" ]; then
+        log_error "No worker nodes found in cluster"
+        exit 1
+    fi
+
+    # Pick the first worker zone for DataVolume import
+    IMPORT_ZONE=$(echo "$WORKER_ZONES" | head -1)
+    log_info "✓ Detected worker zones: $(echo $WORKER_ZONES | tr '\n' ', ')"
+    log_info "✓ Using zone $IMPORT_ZONE for DataVolume import (has workers)"
+
+    # Create zone-constrained Immediate storage class for CDI imports
+    # This ensures the DataVolume PVC is created in a zone where workers exist
+    IMPORT_STORAGE_CLASS="gp3-csi-immediate-${IMPORT_ZONE}"
+    if ! oc --kubeconfig="$KUBECONFIG" get storageclass "$IMPORT_STORAGE_CLASS" &>/dev/null; then
+        log_info "Creating zone-constrained storage class for CDI imports: $IMPORT_STORAGE_CLASS..."
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: gp3-csi-immediate
+  name: ${IMPORT_STORAGE_CLASS}
   annotations:
-    storageclass.kubernetes.io/description: "AWS EBS gp3 with immediate binding for CDI imports"
+    storageclass.kubernetes.io/description: "AWS EBS gp3 with immediate binding in zone ${IMPORT_ZONE} for CDI imports"
 allowVolumeExpansion: true
 parameters:
   encrypted: "true"
@@ -240,6 +259,11 @@ parameters:
 provisioner: ebs.csi.aws.com
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
+allowedTopologies:
+- matchLabelExpressions:
+  - key: topology.ebs.csi.aws.com/zone
+    values:
+    - ${IMPORT_ZONE}
 EOF
     fi
 
@@ -264,10 +288,10 @@ EOF
         log_info "✓ Created gp3-csi-wfc storage class for VM disks (prevents AZ mismatch)"
     fi
 
-    STORAGE_CLASS="gp3-csi-immediate"
+    STORAGE_CLASS="$IMPORT_STORAGE_CLASS"
     ACCESS_MODE="ReadWriteOnce"
-    log_info "✓ Using AWS EBS storage: $STORAGE_CLASS for image import"
-    log_info "✓ VM template will use gp3-csi-wfc for VM disks"
+    log_info "✓ Using zone-constrained storage: $STORAGE_CLASS for image import"
+    log_info "✓ VM template will use zone-specific Immediate class for clones"
 elif oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi &>/dev/null; then
     # Create gp2-csi-immediate for CDI imports
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass gp2-csi-immediate &>/dev/null; then
