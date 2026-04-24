@@ -425,8 +425,9 @@ fi
 log_info "Source Windows image is in availability zone: $SOURCE_ZONE"
 log_info "Creating zone-aware storage class for VM cloning..."
 
-# Create a storage class with WaitForFirstConsumer and allowed topology for the source zone
-# This ensures the PVC waits for pod scheduling before provisioning, allowing proper zone placement
+# Create a storage class with Immediate binding and allowed topology for the source zone
+# Using Immediate binding allows the PVC to be provisioned right away, even if VM is stopped
+# The allowedTopologies constraint ensures it's provisioned in the correct zone
 cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -436,7 +437,7 @@ provisioner: ebs.csi.aws.com
 parameters:
   type: gp3
   encrypted: "true"
-volumeBindingMode: WaitForFirstConsumer
+volumeBindingMode: Immediate
 allowedTopologies:
 - matchLabelExpressions:
   - key: topology.kubernetes.io/zone
