@@ -83,7 +83,7 @@ func (h *DestroyHandler) HandleAWSDestroy(ctx context.Context, cluster *types.Cl
 	discoveryCleanupSuccess := false
 	if usedFallback && !ccoctlSuccess && !manifestCleanupSuccess {
 		log.Printf("Attempting discovery-based AWS SDK cleanup for cluster %s", cluster.Name)
-		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, infraID); err != nil {
+		if err := h.cleanupIAMResourcesByClusterName(ctx, cluster, workDir, infraID); err != nil {
 			log.Printf("Warning: discovery-based IAM cleanup encountered errors: %v", err)
 		} else {
 			log.Printf("Successfully cleaned up IAM resources using discovery-based method")
@@ -454,7 +454,7 @@ func (h *DestroyHandler) waitForRoute53ChangeInsync(ctx context.Context, client 
 
 // cleanupIAMResourcesByClusterName deletes IAM roles and OIDC providers using targeted lookups.
 // Uses infraID-based exact prefix matching instead of tag inspection on every role.
-func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster, infraID string) error {
+func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, cluster *types.Cluster, workDir string, infraID string) error {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
@@ -538,6 +538,15 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 		} else {
 			deletedRoles++
 			log.Printf("Deleted Windows IRSA role: %s", windowsRoleName)
+
+			// Clean up cluster-scoped storage classes created by Windows IRSA setup
+			if infraID != "" {
+				log.Printf("Cleaning up cluster-scoped storage classes for infraID: %s", infraID)
+				if err := h.deleteWindowsStorageClasses(ctx, cluster, workDir, infraID); err != nil {
+					log.Printf("Warning: failed to delete Windows storage classes: %v", err)
+					// Don't fail the entire cleanup if storage class deletion fails
+				}
+			}
 		}
 	} else if !isNoSuchEntityError(err) {
 		addErr("check Windows IRSA role %s: %v", windowsRoleName, err)
@@ -841,6 +850,75 @@ func isNoSuchEntityError(err error) bool {
 	}
 
 	return false
+}
+
+// deleteWindowsStorageClasses deletes cluster-scoped storage classes created by Windows IRSA setup.
+// These storage classes follow the pattern: gp3-csi-${INFRA_ID}-${ZONE}
+// Also deletes shared storage classes if they were created: gp3-csi-immediate, gp3-csi-wfc
+func (h *DestroyHandler) deleteWindowsStorageClasses(ctx context.Context, cluster *types.Cluster, workDir string, infraID string) error {
+	// Get kubeconfig path from workDir
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		log.Printf("Kubeconfig not found at %s, skipping storage class cleanup", kubeconfigPath)
+		return nil
+	}
+
+	log.Printf("Using kubeconfig: %s", kubeconfigPath)
+
+	// List all storage classes and filter for cluster-scoped ones
+	cmd := exec.CommandContext(ctx, "oc", "get", "storageclass",
+		"--kubeconfig", kubeconfigPath,
+		"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("list storage classes: %w (output: %s)", err, string(output))
+	}
+
+	storageClasses := strings.Split(strings.TrimSpace(string(output)), "\n")
+	clusterScopedPrefix := fmt.Sprintf("gp3-csi-%s-", infraID)
+	var toDelete []string
+
+	for _, sc := range storageClasses {
+		sc = strings.TrimSpace(sc)
+		if sc == "" {
+			continue
+		}
+
+		// Delete cluster-scoped storage classes (gp3-csi-${INFRA_ID}-${ZONE})
+		if strings.HasPrefix(sc, clusterScopedPrefix) {
+			toDelete = append(toDelete, sc)
+		}
+
+		// Also delete shared storage classes created by Windows IRSA setup
+		// Only delete if they match exactly (to avoid deleting user-created classes)
+		if sc == "gp3-csi-immediate" || sc == "gp3-csi-wfc" {
+			toDelete = append(toDelete, sc)
+		}
+	}
+
+	if len(toDelete) == 0 {
+		log.Printf("No Windows-related storage classes found to delete")
+		return nil
+	}
+
+	log.Printf("Deleting %d storage classes: %v", len(toDelete), toDelete)
+
+	for _, sc := range toDelete {
+		deleteCmd := exec.CommandContext(ctx, "oc", "delete", "storageclass", sc,
+			"--kubeconfig", kubeconfigPath,
+			"--ignore-not-found=true")
+
+		output, err := deleteCmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Warning: failed to delete storage class %s: %v (output: %s)", sc, err, string(output))
+			continue
+		}
+
+		log.Printf("Deleted storage class: %s", sc)
+	}
+
+	return nil
 }
 
 // Avoid unused import errors if iamtypes ends up needed by future edits in this file.

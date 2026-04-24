@@ -351,13 +351,8 @@ log_info "Creating DataSource (windows10-datasource)"
 oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/3_datasource-windows.yaml"
 log_info "✓ DataSource created"
 
-# Apply VM Template with dynamic storage class substitution
-log_info "Creating Windows VM template in openshift namespace"
-# Use envsubst to replace STORAGE_CLASS placeholder in template
-export STORAGE_CLASS
-export ACCESS_MODE
-cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
-log_info "✓ VM Template created (using storage class: $STORAGE_CLASS)"
+# Note: VM Template creation moved to after zone detection
+# so it defaults to the correct zone-specific storage class
 
 # Wait for DataVolume to complete before creating VM
 log_info ""
@@ -410,29 +405,71 @@ log_info "Subsequent VMs will clone in 2-3 minutes using the snapshot"
 
 # Detect the availability zone of the source Windows image PVC to ensure clone works
 log_info "Detecting source PVC availability zone for proper VM placement..."
+log_info "Waiting for source PVC to be bound..."
+
+# Wait for PVC to be bound (should be fast since import already succeeded)
+PVC_WAIT=0
+PVC_MAX_WAIT=120  # 2 minutes
+while [ $PVC_WAIT -lt $PVC_MAX_WAIT ]; do
+    PVC_PHASE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    if [ "$PVC_PHASE" = "Bound" ]; then
+        log_info "✓ Source PVC is bound"
+        break
+    fi
+    sleep 2
+    PVC_WAIT=$((PVC_WAIT + 2))
+done
+
+if [ $PVC_WAIT -ge $PVC_MAX_WAIT ]; then
+    log_error "Source PVC did not become Bound within timeout"
+    exit 1
+fi
+
+# Get the PV name from the bound PVC
 SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
 if [ -z "$SOURCE_PV" ]; then
-    log_error "Could not find source PVC 'windows' in namespace $SERVICE_ACCOUNT_NAMESPACE"
+    log_error "Could not find PV for source PVC 'windows' in namespace $SERVICE_ACCOUNT_NAMESPACE"
     exit 1
 fi
 
-SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
+log_info "Source PV: $SOURCE_PV"
+
+# Extract the actual availability zone from the PV's node affinity
+# Use the EBS CSI-specific topology key for accurate zone detection
+SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
+
+# Fallback to kubernetes.io topology key if EBS CSI key not found (older clusters)
+if [ -z "$SOURCE_ZONE" ]; then
+    log_warn "EBS CSI topology key not found, trying fallback..."
+    SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
+fi
+
 if [ -z "$SOURCE_ZONE" ]; then
     log_error "Could not determine availability zone for source PV $SOURCE_PV"
+    log_error "PV nodeAffinity:"
+    oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity}' || true
     exit 1
 fi
 
-log_info "Source Windows image is in availability zone: $SOURCE_ZONE"
-log_info "Creating zone-aware storage class for VM cloning..."
+log_info "✓ Source Windows image is in availability zone: $SOURCE_ZONE"
 
-# Create a storage class with Immediate binding and allowed topology for the source zone
-# Using Immediate binding allows the PVC to be provisioned right away, even if VM is stopped
-# The allowedTopologies constraint ensures it's provisioned in the correct zone
-cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
+# Create a cluster-scoped zone-specific storage class with Immediate binding
+# This ensures VM clone PVCs are created in the same AZ as the source, avoiding clone failures
+# Using Immediate binding allows provisioning even when VM is stopped (no pod to trigger WaitForFirstConsumer)
+# Cluster-scoped naming avoids collisions if multiple clusters share admin context
+CLONE_STORAGE_CLASS="gp3-csi-${INFRA_ID}-${SOURCE_ZONE}"
+
+# Check if zone-specific storage class already exists (reuse across clusters in same zone)
+if oc --kubeconfig="$KUBECONFIG" get storageclass "${CLONE_STORAGE_CLASS}" &>/dev/null; then
+    log_info "✓ Zone-specific storage class already exists: ${CLONE_STORAGE_CLASS}"
+    log_info "✓ Reusing existing storage class for VM cloning"
+else
+    log_info "Creating zone-specific storage class: ${CLONE_STORAGE_CLASS}..."
+    cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: gp3-csi-zone-aware
+  name: ${CLONE_STORAGE_CLASS}
 provisioner: ebs.csi.aws.com
 parameters:
   type: gp3
@@ -440,20 +477,30 @@ parameters:
 volumeBindingMode: Immediate
 allowedTopologies:
 - matchLabelExpressions:
-  - key: topology.kubernetes.io/zone
+  - key: topology.ebs.csi.aws.com/zone
     values:
-    - $SOURCE_ZONE
+    - ${SOURCE_ZONE}
 reclaimPolicy: Delete
 EOF_SC
+    log_info "✓ Created storage class: ${CLONE_STORAGE_CLASS}"
+fi
 
-log_info "VM will be constrained to nodes in $SOURCE_ZONE to enable volume clone"
+log_info "✓ VM clone will be constrained to availability zone: $SOURCE_ZONE"
 
-# Process template using the zone-aware storage class and add node affinity
+# Now create VM Template with the zone-specific storage class as default
+log_info "Creating Windows VM template with zone-specific storage class..."
+export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
+export ACCESS_MODE="ReadWriteOnce"
+cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
+log_info "✓ VM Template created (default storage class: ${CLONE_STORAGE_CLASS})"
+log_info "✓ Future VMs created from template will use the correct zone-specific class"
+
+# Process template using the zone-specific storage class and add node affinity
 VM_YAML=$(mktemp)
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-oadp-test-1 \
     -p VM_NAMESPACE=default \
-    -p STORAGE_CLASS=gp3-csi-zone-aware > "$VM_YAML"
+    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} > "$VM_YAML"
 
 # Add node affinity to ensure VM pod lands in correct zone
 export VM_YAML SOURCE_ZONE
