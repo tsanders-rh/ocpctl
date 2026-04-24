@@ -574,6 +574,24 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		return
 	}
 
+	// Check if this is a preflight check error - fail immediately without retries
+	if types.IsPreflightCheckError(jobErr) {
+		log.Printf("Job %s failed preflight check (will not retry): %v", job.ID, jobErr)
+
+		// Mark job as permanently failed with specific error code
+		errorCode := "PREFLIGHT_CHECK_FAILED"
+		errorMessage := jobErr.Error()
+		if err := w.store.Jobs.MarkFailed(ctx, job.ID, errorCode, errorMessage); err != nil {
+			log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
+		}
+
+		// Update cluster status to FAILED
+		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+		}
+		return
+	}
+
 	// Check if max attempts reached BEFORE incrementing
 	// job.Attempt is 1-indexed, so if attempt 3 just failed and max is 3, we're done
 	if job.Attempt >= job.MaxAttempts {

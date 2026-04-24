@@ -93,3 +93,25 @@ type JobLock struct {
 	LockedBy  string    `db:"locked_by" json:"locked_by"` // Worker instance ID
 	ExpiresAt time.Time `db:"expires_at" json:"expires_at"`
 }
+
+// PreflightCheckError represents a preflight validation error that should not be retried
+type PreflightCheckError struct {
+	Message string
+}
+
+func (e *PreflightCheckError) Error() string {
+	return e.Message
+}
+
+// NewPreflightCheckError creates a new preflight check error
+func NewPreflightCheckError(format string, args ...interface{}) error {
+	return &PreflightCheckError{
+		Message: fmt.Sprintf(format, args...),
+	}
+}
+
+// IsPreflightCheckError checks if an error is a preflight check error
+func IsPreflightCheckError(err error) bool {
+	_, ok := err.(*PreflightCheckError)
+	return ok
+}

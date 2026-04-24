@@ -100,7 +100,8 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		} else {
 			if err := checker.CheckInstanceTypeAvailability(ctx, prof); err != nil {
 				// Pre-flight check failed - fail immediately before starting installation
-				return fmt.Errorf("AWS capacity pre-flight check failed: %w", err)
+				// Use PreflightCheckError to prevent retries and provide clear error code
+				return types.NewPreflightCheckError("AWS capacity pre-flight check failed: %v", err)
 			}
 		}
 	}
