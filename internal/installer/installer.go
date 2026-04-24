@@ -219,16 +219,25 @@ func (i *Installer) SetCredentialsMode(mode string) {
 }
 
 // CreateCluster runs openshift-install create cluster
-// With IMDS credential extraction, we always use direct cluster creation
-// The user's selected credentials mode in install-config.yaml will be respected
+// Detects credentials mode and routes to appropriate workflow
 func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata *ClusterMetadata) (string, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, i.timeout)
 	defer cancel()
 
-	// Since we extract IMDS credentials to env vars in CreateClusterDirect,
-	// we can use direct cluster creation for all credential modes
-	// The install-config.yaml credentialsMode field controls the behavior
+	// Check credentials mode to determine workflow
+	credMode := i.credentialsMode
+	if credMode == "" {
+		credMode = i.getCredentialsModeFromConfig(workDir)
+	}
+
+	// Manual mode requires CCO workflow (creates OIDC provider and IAM roles)
+	if credMode == "Manual" {
+		log.Printf("Manual credentials mode detected - using CCO workflow")
+		return i.createClusterManualMode(ctx, workDir, metadata)
+	}
+
+	// All other modes use direct cluster creation
 	return i.CreateClusterDirect(ctx, workDir)
 }
 

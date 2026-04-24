@@ -4,7 +4,7 @@ description: High-availability OpenShift Virtualization setup for Windows VM tes
 platform: aws
 track: ga
 enabled: true
-credentialsMode: Auto
+credentialsMode: Manual
 
 openshiftVersions:
   allowlist:
