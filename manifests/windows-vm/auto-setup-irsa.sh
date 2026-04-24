@@ -343,7 +343,8 @@ fi
 
 if [ "$EXISTING_DV_PHASE" != "Succeeded" ]; then
     log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
-    PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region ${REGION})
+    # IMPORTANT: Use bucket region (us-east-1), not cluster region, to avoid 301 redirects
+    PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
 
     log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
     cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
