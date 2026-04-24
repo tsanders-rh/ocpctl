@@ -633,13 +633,14 @@ export default function NewClusterPage() {
                       <Label htmlFor="credentials_mode">Credentials Mode</Label>
                       <Select
                         value={watchedValues.credentials_mode || "Auto"}
-                        onValueChange={(value) => setValue("credentials_mode", value as "Auto" | "Mint" | "Static")}
+                        onValueChange={(value) => setValue("credentials_mode", value as "Auto" | "Mint" | "Static" | "Manual")}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Auto">Auto (Recommended)</SelectItem>
+                          <SelectItem value="Manual">Manual</SelectItem>
                           <SelectItem value="Mint">Mint</SelectItem>
                           <SelectItem value="Static">Static</SelectItem>
                         </SelectContent>
@@ -647,6 +648,8 @@ export default function NewClusterPage() {
                       <p className="text-sm text-muted-foreground">
                         {watchedValues.credentials_mode === "Auto" ? (
                           "Let the installer auto-detect the best credentials mode. Uses EC2 instance profile credentials (Passthrough mode). Recommended for GA releases (OpenShift 4.18-4.21)."
+                        ) : watchedValues.credentials_mode === "Manual" ? (
+                          "Creates OIDC provider and IAM roles using CCO. Required for OpenShift Virtualization profiles with Windows VM IRSA support."
                         ) : watchedValues.credentials_mode === "Mint" ? (
                           "CCO mints new credentials with fine-grained permissions. Requires permanent IAM credentials. Use for pre-release testing (OpenShift 4.22+)."
                         ) : (
