@@ -524,32 +524,95 @@ func (h *DestroyHandler) cleanupIAMResourcesByClusterName(ctx context.Context, c
 		}
 	}
 
-	// Clean up Windows IRSA role if it exists
-	windowsRoleName := fmt.Sprintf("ocpctl-win-s3-%s", cluster.ID)
-	log.Printf("Checking for Windows IRSA role: %s", windowsRoleName)
+	// Clean up Windows IRSA resources (role for Manual mode, user for Mint mode)
+	windowsResourceName := fmt.Sprintf("ocpctl-win-s3-%s", cluster.ID)
 
+	// Try Manual mode (IAM role) first
+	log.Printf("Checking for Windows IRSA role (Manual mode): %s", windowsResourceName)
 	_, err = iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(windowsRoleName),
+		RoleName: aws.String(windowsResourceName),
 	})
 	if err == nil {
-		log.Printf("Windows IRSA role exists, deleting: %s", windowsRoleName)
-		if err := h.deleteSingleIAMRole(ctx, iamClient, windowsRoleName); err != nil {
-			addErr("delete Windows IRSA role %s: %v", windowsRoleName, err)
+		log.Printf("Windows IRSA role exists, deleting: %s", windowsResourceName)
+		if err := h.deleteSingleIAMRole(ctx, iamClient, windowsResourceName); err != nil {
+			addErr("delete Windows IRSA role %s: %v", windowsResourceName, err)
 		} else {
 			deletedRoles++
-			log.Printf("Deleted Windows IRSA role: %s", windowsRoleName)
+			log.Printf("Deleted Windows IRSA role: %s", windowsResourceName)
 
-			// Clean up cluster-scoped storage classes created by Windows IRSA setup
+			// Clean up cluster-scoped storage classes
 			if infraID != "" {
 				log.Printf("Cleaning up cluster-scoped storage classes for infraID: %s", infraID)
 				if err := h.deleteWindowsStorageClasses(ctx, cluster, workDir, infraID); err != nil {
 					log.Printf("Warning: failed to delete Windows storage classes: %v", err)
-					// Don't fail the entire cleanup if storage class deletion fails
 				}
 			}
 		}
 	} else if !isNoSuchEntityError(err) {
-		addErr("check Windows IRSA role %s: %v", windowsRoleName, err)
+		addErr("check Windows IRSA role %s: %v", windowsResourceName, err)
+	}
+
+	// Try Mint mode (IAM user) if role doesn't exist
+	log.Printf("Checking for Windows IAM user (Mint mode): %s", windowsResourceName)
+	_, err = iamClient.GetUser(ctx, &iam.GetUserInput{
+		UserName: aws.String(windowsResourceName),
+	})
+	if err == nil {
+		log.Printf("Windows IAM user exists, deleting: %s", windowsResourceName)
+
+		// Delete access keys first
+		listKeysOut, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{
+			UserName: aws.String(windowsResourceName),
+		})
+		if err == nil {
+			for _, key := range listKeysOut.AccessKeyMetadata {
+				log.Printf("Deleting access key for user %s: %s", windowsResourceName, *key.AccessKeyId)
+				_, err := iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{
+					UserName:    aws.String(windowsResourceName),
+					AccessKeyId: key.AccessKeyId,
+				})
+				if err != nil {
+					addErr("delete access key %s for user %s: %v", *key.AccessKeyId, windowsResourceName, err)
+				}
+			}
+		}
+
+		// Delete inline policies
+		listPoliciesOut, err := iamClient.ListUserPolicies(ctx, &iam.ListUserPoliciesInput{
+			UserName: aws.String(windowsResourceName),
+		})
+		if err == nil {
+			for _, policyName := range listPoliciesOut.PolicyNames {
+				log.Printf("Deleting inline policy for user %s: %s", windowsResourceName, policyName)
+				_, err := iamClient.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{
+					UserName:   aws.String(windowsResourceName),
+					PolicyName: aws.String(policyName),
+				})
+				if err != nil {
+					addErr("delete inline policy %s for user %s: %v", policyName, windowsResourceName, err)
+				}
+			}
+		}
+
+		// Delete user
+		_, err = iamClient.DeleteUser(ctx, &iam.DeleteUserInput{
+			UserName: aws.String(windowsResourceName),
+		})
+		if err != nil {
+			addErr("delete Windows IAM user %s: %v", windowsResourceName, err)
+		} else {
+			log.Printf("Deleted Windows IAM user: %s", windowsResourceName)
+
+			// Clean up storage classes for Mint mode too
+			if infraID != "" {
+				log.Printf("Cleaning up cluster-scoped storage classes for infraID: %s", infraID)
+				if err := h.deleteWindowsStorageClasses(ctx, cluster, workDir, infraID); err != nil {
+					log.Printf("Warning: failed to delete Windows storage classes: %v", err)
+				}
+			}
+		}
+	} else if !isNoSuchEntityError(err) {
+		addErr("check Windows IAM user %s: %v", windowsResourceName, err)
 	}
 
 	log.Printf("Cleanup summary: deleted %d IAM roles, %d OIDC providers", deletedRoles, deletedProviders)

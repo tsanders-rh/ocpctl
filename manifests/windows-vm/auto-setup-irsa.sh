@@ -60,19 +60,26 @@ SERVICE_ACCOUNT_NAMESPACE="openshift-virtualization-os-images"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 log_info "AWS Account ID: $AWS_ACCOUNT_ID"
 
-# Construct OIDC provider URL
+# Detect credentials mode (Manual vs Mint)
 OIDC_PROVIDER="${INFRA_ID}-oidc.s3.${REGION}.amazonaws.com"
 OIDC_PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
 
-log_info "OIDC Provider: $OIDC_PROVIDER"
-
-# Verify OIDC provider exists
-if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_PROVIDER_ARN" &>/dev/null; then
-    log_error "OIDC provider not found: $OIDC_PROVIDER_ARN"
-    log_error "Cluster may not be using STS mode"
-    exit 1
+if aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_PROVIDER_ARN" &>/dev/null; then
+    # Manual mode (OIDC provider exists)
+    CREDENTIALS_MODE="manual"
+    log_info "✓ OIDC provider detected: $OIDC_PROVIDER"
+    log_info "Using Manual mode (IRSA with IAM role)"
+else
+    # Mint mode (no OIDC provider - pre-release clusters)
+    CREDENTIALS_MODE="mint"
+    log_info "OIDC provider not found - using Mint mode"
+    log_info "Using Mint mode (IAM user with access keys)"
 fi
-log_info "✓ OIDC provider verified"
+
+##############################################################################
+# Manual Mode Setup (IAM Role + OIDC)
+##############################################################################
+if [ "$CREDENTIALS_MODE" = "manual" ]; then
 
 # Create trust policy document
 TRUST_POLICY=$(cat <<EOF
@@ -188,6 +195,67 @@ aws iam update-assume-role-policy \
     --policy-document file:///tmp/trust-policy-${CLUSTER_ID}-updated.json
 rm /tmp/trust-policy-${CLUSTER_ID}-updated.json
 log_info "✓ Trust policy updated"
+
+##############################################################################
+# Mint Mode Setup (IAM User + Access Keys + Secret)
+##############################################################################
+else
+    # Mint mode: Create IAM user with access keys instead of role
+    IAM_USER_NAME="ocpctl-win-s3-${CLUSTER_ID}"
+
+    log_info "Creating IAM user: $IAM_USER_NAME"
+    if aws iam get-user --user-name "$IAM_USER_NAME" &>/dev/null; then
+        log_warn "IAM user already exists: $IAM_USER_NAME"
+    else
+        aws iam create-user \
+            --user-name "$IAM_USER_NAME" \
+            --tags Key=ClusterID,Value=$CLUSTER_ID Key=ClusterName,Value=$CLUSTER_NAME Key=ManagedBy,Value=ocpctl
+        log_info "✓ IAM user created"
+    fi
+
+    # Attach S3 read-only policy to user
+    log_info "Attaching S3 read-only policy to IAM user"
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    aws iam put-user-policy \
+        --user-name "$IAM_USER_NAME" \
+        --policy-name S3WindowsImageReadOnly \
+        --policy-document file://${SCRIPT_DIR}/iam-policy.json
+    log_info "✓ Policy attached to IAM user"
+
+    # Create access keys (delete old ones first if they exist)
+    log_info "Creating access keys for IAM user"
+    EXISTING_KEYS=$(aws iam list-access-keys --user-name "$IAM_USER_NAME" --query 'AccessKeyMetadata[*].AccessKeyId' --output text)
+    for key in $EXISTING_KEYS; do
+        log_warn "Deleting existing access key: $key"
+        aws iam delete-access-key --user-name "$IAM_USER_NAME" --access-key-id "$key"
+    done
+
+    ACCESS_KEY_OUTPUT=$(aws iam create-access-key --user-name "$IAM_USER_NAME" --output json)
+    AWS_ACCESS_KEY_ID=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.AccessKeyId')
+    AWS_SECRET_ACCESS_KEY=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.SecretAccessKey')
+    log_info "✓ Access keys created"
+
+    # Create namespace
+    log_info "Creating namespace: $SERVICE_ACCOUNT_NAMESPACE"
+    oc --kubeconfig="$KUBECONFIG" create namespace "$SERVICE_ACCOUNT_NAMESPACE" --dry-run=client -o yaml | \
+        oc --kubeconfig="$KUBECONFIG" apply -f -
+    log_info "✓ Namespace ready"
+
+    # Create Secret with AWS credentials for CDI
+    log_info "Creating Secret with AWS credentials for CDI"
+    cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cdi-s3-import-creds
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+type: Opaque
+stringData:
+  accessKeyId: ${AWS_ACCESS_KEY_ID}
+  secretKey: ${AWS_SECRET_ACCESS_KEY}
+EOF
+    log_info "✓ Secret created with AWS credentials"
+fi
 
 # Wait for CDI API to be ready
 log_info "Waiting for CDI API to be ready..."
@@ -342,12 +410,15 @@ elif [ "$EXISTING_DV_PHASE" != "NotFound" ]; then
 fi
 
 if [ "$EXISTING_DV_PHASE" != "Succeeded" ]; then
-    log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
-    # IMPORTANT: Use bucket region (us-east-1), not cluster region, to avoid 301 redirects
-    PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
-
     log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
-    cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+
+    if [ "$CREDENTIALS_MODE" = "manual" ]; then
+        # Manual mode: Use HTTP with presigned URL (IRSA doesn't work with CDI S3 imports)
+        log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
+        # IMPORTANT: Use bucket region (us-east-1), not cluster region, to avoid 301 redirects
+        PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
+
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
@@ -368,6 +439,33 @@ spec:
         storage: 70Gi
     storageClassName: ${STORAGE_CLASS}
 EOF
+    else
+        # Mint mode: Use S3 source with credentials from Secret
+        log_info "Using S3 source with credentials from Secret"
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  annotations:
+    cdi.kubevirt.io/storage.usePopulator: "false"
+spec:
+  contentType: kubevirt
+  source:
+    s3:
+      url: "https://s3.us-east-1.amazonaws.com/ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+      secretRef: "cdi-s3-import-creds"
+  storage:
+    accessModes:
+      - ${ACCESS_MODE}
+    resources:
+      requests:
+        storage: 70Gi
+    storageClassName: ${STORAGE_CLASS}
+EOF
+    fi
+
     log_info "✓ DataVolume created (import starting - this will take 5-10 minutes)"
 fi
 
