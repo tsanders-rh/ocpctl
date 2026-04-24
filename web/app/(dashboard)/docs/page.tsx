@@ -202,6 +202,55 @@ Fill in the required fields:
 - **Off-hours Opt-in** - Allow cluster to run outside defined work hours
 - **Skip Post-Deployment** - Skip automated configuration (operators, scripts, etc.) for profiles that include it
 
+**Cloud Credentials (AWS OpenShift only):**
+
+OpenShift clusters need AWS credentials to manage cloud resources. OCPCTL supports four credentials modes:
+
+**Auto (Recommended for most deployments)**
+- Installer automatically selects the best credentials strategy
+- Uses temporary EC2 instance credentials during installation
+- Works with GA releases (OpenShift 4.18-4.21)
+- Simplest option - no manual AWS configuration needed
+
+**When to use:** Most production and development clusters
+
+**Manual (IRSA with OIDC)**
+- Creates AWS IAM Roles for Service Accounts (IRSA)
+- Sets up OIDC provider and fine-grained IAM roles
+- Required for: OpenShift Virtualization with Windows VMs
+- Enables workload identity federation
+
+**When to use:**
+- OpenShift Virtualization profiles requiring Windows VM support (e.g., aws-virt-windows-minimal)
+- When you need fine-grained IAM permissions per operator
+- Production workloads requiring least-privilege security
+
+**Mint (Fine-grained credentials)**
+- Cloud Credential Operator creates short-lived credentials with specific permissions
+- Requires permanent AWS credentials (Access Key ID/Secret) during installation
+- Best for testing pre-release versions (OpenShift 4.22+)
+
+**When to use:**
+- Testing OpenShift 4.22 pre-release versions
+- When you need CCO to manage credentials automatically
+- Development/testing environments where you have permanent AWS credentials
+
+**Static (Shared credentials)**
+- All cluster components use the same static AWS credentials
+- Simpler credential model than Mint
+- Requires permanent AWS credentials during installation
+- Available for OpenShift 4.22+
+
+**When to use:**
+- Testing OpenShift 4.22+ with simpler credential requirements
+- Development clusters where credential complexity isn't needed
+- When Mint mode is not working as expected
+
+**Important Notes:**
+- OpenShift 4.22 pre-release requires Mint or Static mode (Auto will not work)
+- Profiles with credentials_mode set will pre-select the appropriate mode
+- For most users, leaving it on **Auto** is the best choice
+
 ### Step 4: Create Cluster
 
 1. Review your configuration
