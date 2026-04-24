@@ -1222,8 +1222,8 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 			statusCounts[string(cluster.Status)]++
 			profileCounts[cluster.Profile]++
 
-			// Get profile cost
-			if prof, err := h.registry.Get(cluster.Profile); err == nil && prof != nil {
+			// Get profile cost (use GetAny to include disabled profiles for existing clusters)
+			if prof, err := h.registry.GetAny(cluster.Profile); err == nil && prof != nil {
 				hourlyCost := prof.CostControls.EstimatedHourlyCost
 				stats.TotalHourlyCost += hourlyCost
 				profileCosts[cluster.Profile] += hourlyCost

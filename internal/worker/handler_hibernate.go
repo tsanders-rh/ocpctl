@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -166,6 +167,23 @@ func (h *HibernateHandler) hibernateAWS(ctx context.Context, cluster *types.Clus
 	}
 
 	log.Printf("Successfully initiated stop for %d instances", len(stopResult.StoppingInstances))
+
+	// Wait for instances to be fully stopped before marking as HIBERNATED
+	// This is especially important for bare metal instances (m5zn.metal, m6i.metal) which can take 20+ minutes
+	log.Printf("Waiting for all instances to fully stop...")
+	stoppedWaiter := ec2.NewInstanceStoppedWaiter(ec2Client)
+	waitInput := &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer waitCancel()
+
+	if err := stoppedWaiter.Wait(waitCtx, waitInput, 30*time.Minute); err != nil {
+		return fmt.Errorf("instances did not stop within 30 minutes: %w", err)
+	}
+
+	log.Printf("All instances are now fully stopped")
 
 	// Update cluster status to HIBERNATED
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {

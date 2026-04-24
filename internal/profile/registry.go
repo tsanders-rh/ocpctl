@@ -45,6 +45,20 @@ func (r *Registry) Get(name string) (*Profile, error) {
 	return profile, nil
 }
 
+// GetAny retrieves a profile by name regardless of enabled status
+// Use this for statistics, cost calculations, and displaying existing clusters
+func (r *Registry) GetAny(name string) (*Profile, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	profile, exists := r.profiles[name]
+	if !exists {
+		return nil, fmt.Errorf("profile not found: %s", name)
+	}
+
+	return profile, nil
+}
+
 // List returns all enabled profiles
 func (r *Registry) List() []*Profile {
 	r.mu.RLock()

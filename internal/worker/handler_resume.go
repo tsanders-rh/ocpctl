@@ -202,25 +202,8 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 
 	ec2Client := ec2.NewFromConfig(cfg)
 
-	// Wait for instances to be fully stopped before attempting to start them
-	// This prevents "IncorrectInstanceState" errors when instances are still stopping
-	log.Printf("Waiting for all instances to be fully stopped...")
-	stoppedWaiter := ec2.NewInstanceStoppedWaiter(ec2Client)
-	waitInput := &ec2.DescribeInstancesInput{
-		InstanceIds: instanceIDs,
-	}
-
-	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer waitCancel()
-
-	if err := stoppedWaiter.Wait(waitCtx, waitInput, 5*time.Minute); err != nil {
-		log.Printf("Warning: instances may not be fully stopped yet: %v", err)
-		// Don't fail the job - instances might already be stopped or will be soon
-	} else {
-		log.Printf("All instances are confirmed stopped")
-	}
-
-	// Start instances
+	// Instances are guaranteed to be fully stopped (hibernate handler waits for this)
+	// Start instances directly without additional waiting
 	startInput := &ec2.StartInstancesInput{
 		InstanceIds: instanceIDs,
 	}
