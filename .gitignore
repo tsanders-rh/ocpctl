@@ -93,3 +93,5 @@ temp/
 ocpctl-worker
 ocpctl-api
 config/worker.env
+*.tfplan
+tfplan
