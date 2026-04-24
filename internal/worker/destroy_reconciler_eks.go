@@ -38,12 +38,13 @@ type EKSDestroyState struct {
 	FargateProfiles      []string
 	CloudFormationStacks []string
 	// VPC-level resources
-	VPCID               string
-	NetworkInterfaceIDs []string
-	LoadBalancerARNs    []string
-	TargetGroupARNs     []string
-	InstanceIDs         []string
-	SecurityGroupIDs    []string
+	VPCID                 string
+	NetworkInterfaceIDs   []string
+	LoadBalancerARNs      []string // Application/Network Load Balancers (v2)
+	ClassicLoadBalancers  []string // Classic Load Balancers (v1)
+	TargetGroupARNs       []string
+	InstanceIDs           []string
+	SecurityGroupIDs      []string
 }
 
 // EKSDestroyReconciler implements reconciliation-based EKS cluster deletion
@@ -118,27 +119,38 @@ func (r *EKSDestroyReconciler) Reconcile(ctx context.Context) (bool, error) {
 		return false, r.reconcileClusterDelete(ctx, state)
 	}
 
-	// Phase 6: Delete load balancers (must happen before deleting subnets/VPC)
+	// Phase 6: Delete Application/Network load balancers (must happen before deleting subnets/VPC)
 	if len(state.LoadBalancerARNs) > 0 {
 		return false, r.reconcileLoadBalancers(ctx, state)
 	}
 
-	// Phase 7: Delete target groups (after load balancers)
+	// Phase 7: Delete Classic load balancers (must happen before deleting subnets/VPC)
+	if len(state.ClassicLoadBalancers) > 0 {
+		return false, r.reconcileClassicLoadBalancers(ctx, state)
+	}
+
+	// Phase 8: Delete target groups (after load balancers)
 	if len(state.TargetGroupARNs) > 0 {
 		return false, r.reconcileTargetGroups(ctx, state)
 	}
 
-	// Phase 8: Delete network interfaces (after load balancers, before subnets)
+	// Phase 9: Delete network interfaces (after load balancers, before subnets)
 	if len(state.NetworkInterfaceIDs) > 0 {
 		return false, r.reconcileNetworkInterfaces(ctx, state)
 	}
 
-	// Phase 9: Delete security groups (after ENIs, before VPC)
+	// Phase 10: Delete security groups (after ENIs, before VPC)
+	// Don't block on security group deletion - they may be managed by CloudFormation
 	if len(state.SecurityGroupIDs) > 0 {
-		return false, r.reconcileSecurityGroups(ctx, state)
+		err := r.reconcileSecurityGroups(ctx, state)
+		if err != nil && !errors.Is(err, ErrDestroyInProgress) {
+			log.Printf("Warning: security group cleanup encountered errors (continuing): %v", err)
+		}
+		// Continue to CloudFormation deletion even if security groups fail
+		// CloudFormation will clean them up
 	}
 
-	// Phase 10: Delete supporting CloudFormation stacks (cluster stack, addons, VPC)
+	// Phase 11: Delete supporting CloudFormation stacks (cluster stack, addons, VPC)
 	// VPC dependencies should now be clear
 	if len(state.CloudFormationStacks) > 0 {
 		return false, r.reconcileInfraStacks(ctx, state.CloudFormationStacks)
@@ -237,9 +249,12 @@ func (r *EKSDestroyReconciler) discover(ctx context.Context) (*EKSDestroyState, 
 	//   - eksctl-{cluster-name}-nodegroup-{ng-name} (per nodegroup)
 	//   - eksctl-{cluster-name}-addon-{addon-name} (per addon)
 
+	// Use a map to avoid duplicates
+	stackNamesMap := make(map[string]bool)
+
 	// First, check if the main cluster stack exists
 	mainStackName := fmt.Sprintf("eksctl-%s-cluster", r.clusterName)
-	stackNames := []string{mainStackName}
+	stackNamesMap[mainStackName] = true
 
 	// Try to find node group and addon stacks by checking common patterns
 	// We still need to list stacks, but with a targeted prefix to reduce the result set
@@ -261,19 +276,19 @@ func (r *EKSDestroyReconciler) discover(ctx context.Context) (*EKSDestroyState, 
 		for _, stack := range page.StackSummaries {
 			stackName := aws.ToString(stack.StackName)
 			if strings.HasPrefix(stackName, "eksctl-"+r.clusterName+"-") {
-				stackNames = append(stackNames, stackName)
+				stackNamesMap[stackName] = true
 			}
 		}
 
 		// If we found stacks, no need to keep paginating through thousands more
-		if len(stackNames) > 1 { // > 1 because we pre-added mainStackName
+		if len(stackNamesMap) > 1 {
 			break
 		}
 	}
 
-	// Remove duplicates and verify stacks exist
+	// Verify stacks exist (convert map to slice)
 	verifiedStacks := []string{}
-	for _, stackName := range stackNames {
+	for stackName := range stackNamesMap {
 		// Quick check if stack actually exists (avoids including stacks that don't exist)
 		describeInput := &cloudformation.DescribeStacksInput{
 			StackName: aws.String(stackName),
@@ -317,6 +332,15 @@ func (r *EKSDestroyReconciler) discover(ctx context.Context) (*EKSDestroyState, 
 			state.TargetGroupARNs = tgs
 			if len(lbs) > 0 {
 				log.Printf("Found %d load balancers and %d target groups", len(lbs), len(tgs))
+			}
+		}
+
+		if classicLBs, err := r.discoverClassicLoadBalancers(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to discover classic load balancers: %v", err)
+		} else {
+			state.ClassicLoadBalancers = classicLBs
+			if len(classicLBs) > 0 {
+				log.Printf("Found %d classic load balancers", len(classicLBs))
 			}
 		}
 
@@ -458,7 +482,7 @@ func (r *EKSDestroyReconciler) discoverNetworkInterfaces(ctx context.Context, vp
 
 // discoverLoadBalancers finds all cluster-related load balancers and target groups
 func (r *EKSDestroyReconciler) discoverLoadBalancers(ctx context.Context, vpcID string) ([]string, []string, error) {
-	// List all load balancers
+	// List all Application/Network load balancers (v2)
 	lbInput := &elasticloadbalancingv2.DescribeLoadBalancersInput{}
 	lbOutput, err := r.elbv2Client.DescribeLoadBalancers(ctx, lbInput)
 	if err != nil {
@@ -480,7 +504,7 @@ func (r *EKSDestroyReconciler) discoverLoadBalancers(ctx context.Context, vpcID 
 		}
 		tagsOutput, err := r.elbv2Client.DescribeTags(ctx, tagsInput)
 		if err != nil {
-			log.Printf("Warning: failed to get tags for LB %s: %v", lbARN, err)
+			log.Printf("Warning: failed to get tags for ALB/NLB %s: %v", lbARN, err)
 			continue
 		}
 
@@ -553,6 +577,64 @@ func (r *EKSDestroyReconciler) discoverLoadBalancers(ctx context.Context, vpcID 
 	}
 
 	return lbARNs, tgARNs, nil
+}
+
+// discoverClassicLoadBalancers finds all cluster-related Classic Load Balancers (ELBv1)
+func (r *EKSDestroyReconciler) discoverClassicLoadBalancers(ctx context.Context, vpcID string) ([]string, error) {
+	// List all Classic load balancers
+	elbInput := &elasticloadbalancing.DescribeLoadBalancersInput{}
+	elbOutput, err := r.elbClient.DescribeLoadBalancers(ctx, elbInput)
+	if err != nil {
+		return nil, fmt.Errorf("describe classic load balancers: %w", err)
+	}
+
+	var classicLBNames []string
+	for _, lb := range elbOutput.LoadBalancerDescriptions {
+		// Filter by VPC
+		if aws.ToString(lb.VPCId) != vpcID {
+			continue
+		}
+
+		lbName := aws.ToString(lb.LoadBalancerName)
+
+		// Check tags
+		tagsInput := &elasticloadbalancing.DescribeTagsInput{
+			LoadBalancerNames: []string{lbName},
+		}
+		tagsOutput, err := r.elbClient.DescribeTags(ctx, tagsInput)
+		if err != nil {
+			log.Printf("Warning: failed to get tags for classic ELB %s: %v", lbName, err)
+			continue
+		}
+
+		// Check if this LB belongs to our cluster
+		matched := false
+		for _, tagDesc := range tagsOutput.TagDescriptions {
+			for _, tag := range tagDesc.Tags {
+				key := aws.ToString(tag.Key)
+				val := aws.ToString(tag.Value)
+				// Classic load balancers created by Kubernetes have this tag
+				if key == "kubernetes.io/cluster/"+r.clusterName && (val == "owned" || val == "shared") {
+					matched = true
+					break
+				}
+				// Also check for the service tag (LoadBalancer services)
+				if key == "kubernetes.io/service-name" {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+
+		if matched {
+			classicLBNames = append(classicLBNames, lbName)
+		}
+	}
+
+	return classicLBNames, nil
 }
 
 // discoverInstances finds all cluster-related EC2 instances
@@ -779,10 +861,11 @@ func (r *EKSDestroyReconciler) reconcileSelfManagedStacks(ctx context.Context, s
 			return fmt.Errorf("%w: stack %s still deleting", ErrDestroyInProgress, stackName)
 		}
 
-		// If delete failed, log and skip
+		// If delete failed, retry after disabling termination protection
+		// The failure might have been due to dependencies that we've since cleaned up
 		if status == cfntypes.StackStatusDeleteFailed {
-			log.Printf("Warning: stack %s delete failed, skipping", stackName)
-			continue
+			log.Printf("Stack %s delete previously failed, retrying after dependency cleanup", stackName)
+			// Continue to termination protection check and retry deletion
 		}
 
 		// Disable termination protection if enabled
@@ -1029,6 +1112,33 @@ func (r *EKSDestroyReconciler) reconcileLoadBalancers(ctx context.Context, state
 
 		// Return in-progress error to trigger next reconcile iteration
 		return fmt.Errorf("%w: load balancer %s deletion in progress", ErrDestroyInProgress, lbARN)
+	}
+
+	return nil
+}
+
+// reconcileClassicLoadBalancers deletes Classic Load Balancers created by the cluster
+func (r *EKSDestroyReconciler) reconcileClassicLoadBalancers(ctx context.Context, state *EKSDestroyState) error {
+	log.Printf("Reconciling classic load balancers deletion for %s", r.clusterName)
+
+	for _, lbName := range state.ClassicLoadBalancers {
+		log.Printf("Deleting classic load balancer %s", lbName)
+
+		_, err := r.elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancing.DeleteLoadBalancerInput{
+			LoadBalancerName: aws.String(lbName),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+				log.Printf("Classic load balancer %s already deleted", lbName)
+				continue
+			}
+			return fmt.Errorf("delete classic load balancer %s: %w", lbName, err)
+		}
+		log.Printf("Issued delete for classic load balancer %s", lbName)
+
+		// Return in-progress error to trigger next reconcile iteration
+		// Classic LB deletion can take a few seconds
+		return fmt.Errorf("%w: classic load balancer %s deletion in progress", ErrDestroyInProgress, lbName)
 	}
 
 	return nil
