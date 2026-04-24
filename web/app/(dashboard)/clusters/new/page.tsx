@@ -647,13 +647,13 @@ export default function NewClusterPage() {
                       </Select>
                       <p className="text-sm text-muted-foreground">
                         {watchedValues.credentials_mode === "Auto" ? (
-                          "Let the installer auto-detect the best credentials mode. Uses EC2 instance profile credentials (Passthrough mode). Recommended for GA releases (OpenShift 4.18-4.21)."
+                          "Use for most deployments. The installer automatically selects the best credentials strategy based on your OpenShift version. Works with GA releases (4.18-4.21) using temporary EC2 instance credentials."
                         ) : watchedValues.credentials_mode === "Manual" ? (
-                          "Creates OIDC provider and IAM roles using CCO. Required for OpenShift Virtualization profiles with Windows VM IRSA support."
+                          "Use when you need IAM Roles for Service Accounts (IRSA). Creates an OIDC provider and IAM roles with fine-grained permissions. Required for: OpenShift Virtualization with Windows VMs, or when you want workload identity federation."
                         ) : watchedValues.credentials_mode === "Mint" ? (
-                          "CCO mints new credentials with fine-grained permissions. Requires permanent IAM credentials. Use for pre-release testing (OpenShift 4.22+)."
+                          "Use for testing pre-release versions (4.22+) or when you need the Cloud Credential Operator to create fine-grained IAM credentials. Requires permanent AWS credentials (Access Key ID/Secret) during installation."
                         ) : (
-                          "Static credentials mode for OpenShift 4.22+. Requires permanent IAM credentials from environment variables."
+                          "Use when testing OpenShift 4.22+ with a simpler credential model. All cluster components share the same static AWS credentials from the installer. Requires permanent AWS credentials during installation."
                         )}
                       </p>
                       {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Auto" && (
