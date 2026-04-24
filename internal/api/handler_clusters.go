@@ -1224,7 +1224,7 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 
 			// Get profile cost (use GetAny to include disabled profiles for existing clusters)
 			if prof, err := h.registry.GetAny(cluster.Profile); err == nil && prof != nil {
-				hourlyCost := prof.CostControls.EstimatedHourlyCost
+				hourlyCost := h.calculateEffectiveCost(cluster, prof)
 				stats.TotalHourlyCost += hourlyCost
 				profileCosts[cluster.Profile] += hourlyCost
 
@@ -1464,4 +1464,33 @@ func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string,
 // strPtr returns a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// calculateEffectiveCost calculates the effective hourly cost based on cluster state
+// Hibernated clusters cost significantly less than running clusters
+func (h *ClusterHandler) calculateEffectiveCost(cluster *types.Cluster, prof *profile.Profile) float64 {
+	baseCost := prof.CostControls.EstimatedHourlyCost
+
+	// If cluster is hibernated, calculate reduced cost based on cluster type
+	if cluster.Status == types.ClusterStatusHibernated {
+		switch cluster.ClusterType {
+		case types.ClusterTypeOpenShift:
+			// OpenShift on AWS: All instances stopped, only EBS storage remains
+			// Estimate ~10% of running cost (storage only)
+			return baseCost * 0.10
+		case types.ClusterTypeEKS:
+			// EKS: Node groups scaled to 0, but control plane still runs at $0.10/hr
+			return 0.10
+		case types.ClusterTypeIKS:
+			// IKS: Workers scaled to 0, minimal cost
+			// Estimate ~5% of running cost
+			return baseCost * 0.05
+		default:
+			// Unknown cluster type, use conservative estimate
+			return baseCost * 0.10
+		}
+	}
+
+	// For all other states (READY, PENDING, etc.), use full cost
+	return baseCost
 }

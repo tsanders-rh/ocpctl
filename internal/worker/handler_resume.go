@@ -218,12 +218,14 @@ func (h *ResumeHandler) resumeAWS(ctx context.Context, cluster *types.Cluster, j
 	// Wait for instances to reach running state (with timeout)
 	log.Printf("Waiting for instances to reach running state...")
 	runningWaiter := ec2.NewInstanceRunningWaiter(ec2Client)
-	// Reuse waitInput from above
+	waitInput := &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	}
 
-	waitCtx2, cancel2 := context.WithTimeout(ctx, ClusterStatusCheckTimeout)
-	defer cancel2()
+	waitCtx, cancel := context.WithTimeout(ctx, ClusterStatusCheckTimeout)
+	defer cancel()
 
-	if err := runningWaiter.Wait(waitCtx2, waitInput, ClusterStatusCheckTimeout); err != nil {
+	if err := runningWaiter.Wait(waitCtx, waitInput, ClusterStatusCheckTimeout); err != nil {
 		log.Printf("Warning: instances may not be fully running yet: %v", err)
 		// Don't fail the job, just log the warning
 	} else {
