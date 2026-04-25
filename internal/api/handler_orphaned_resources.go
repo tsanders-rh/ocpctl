@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -260,25 +261,33 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	}
 
 	// Delete the resource based on type
+	// For VPC deletions, use a longer timeout (5 minutes) due to the complex cleanup process
+	ctx := c.Request().Context()
+	if resource.ResourceType == types.OrphanedResourceTypeVPC {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+	}
+
 	switch resource.ResourceType {
 	case types.OrphanedResourceTypeHostedZone:
-		err = h.deleteHostedZone(c.Request().Context(), resource.ResourceID, resource.ResourceName)
+		err = h.deleteHostedZone(ctx, resource.ResourceID, resource.ResourceName)
 	case types.OrphanedResourceTypeDNSRecord:
-		err = h.deleteDNSRecord(c.Request().Context(), resource.ResourceName)
+		err = h.deleteDNSRecord(ctx, resource.ResourceName)
 	case types.OrphanedResourceTypeEBSVolume:
-		err = h.deleteEBSVolume(c.Request().Context(), resource.ResourceID, resource.Region)
+		err = h.deleteEBSVolume(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeElasticIP:
-		err = h.deleteElasticIP(c.Request().Context(), resource.ResourceID, resource.Region)
+		err = h.deleteElasticIP(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeIAMRole:
-		err = h.deleteIAMRole(c.Request().Context(), resource.ResourceName)
+		err = h.deleteIAMRole(ctx, resource.ResourceName)
 	case types.OrphanedResourceTypeOIDCProvider:
-		err = h.deleteOIDCProvider(c.Request().Context(), resource.ResourceID)
+		err = h.deleteOIDCProvider(ctx, resource.ResourceID)
 	case types.OrphanedResourceTypeCloudWatchLogGroup:
-		err = h.deleteCloudWatchLogGroup(c.Request().Context(), resource.ResourceID, resource.Region)
+		err = h.deleteCloudWatchLogGroup(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeLoadBalancer:
-		err = h.deleteLoadBalancer(c.Request().Context(), resource.ResourceID, resource.Region)
+		err = h.deleteLoadBalancer(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeVPC:
-		err = h.deleteVPCAndDependencies(c.Request().Context(), resource.ResourceID, resource.Region)
+		err = h.deleteVPCAndDependencies(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeEC2Instance:
 		return ErrorBadRequest(c, "EC2Instance deletion not supported - delete via AWS Console")
 	default:
