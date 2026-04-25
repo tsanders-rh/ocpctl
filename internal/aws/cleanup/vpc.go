@@ -57,7 +57,10 @@ func isNotFoundOrDependencyViolation(err error) bool {
 		strings.Contains(msg, "DependencyViolation") ||
 		strings.Contains(msg, "InvalidInternetGatewayID.NotFound") ||
 		strings.Contains(msg, "InvalidNatGatewayID.NotFound") ||
-		strings.Contains(msg, "InvalidVpcEndpointId.NotFound")
+		strings.Contains(msg, "InvalidVpcEndpointId.NotFound") ||
+		strings.Contains(msg, "InvalidNetworkInterfaceID.NotFound") ||
+		strings.Contains(msg, "InvalidAttachmentID.NotFound") ||
+		strings.Contains(msg, "AuthFailure")
 }
 
 func ignoreBenignError(err error) error {
