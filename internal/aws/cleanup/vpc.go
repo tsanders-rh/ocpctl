@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 )
 
@@ -363,40 +364,71 @@ func deleteVPC(ctx context.Context, ec2Client *ec2.Client, vpcID string) error {
 }
 
 func deleteLoadBalancers(ctx context.Context, region, vpcID string) error {
-	// Load AWS config for the ELB client
+	// Load AWS config for the ELB clients
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
 	}
 
-	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+	totalLBsDeleted := 0
 
-	// List all load balancers
-	listResult, err := elbClient.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
+	// ===== Check for Classic Load Balancers (ELBv1) =====
+	elbv1Client := elasticloadbalancing.NewFromConfig(cfg)
+	classicLBsResult, err := elbv1Client.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{})
 	if err != nil {
-		return fmt.Errorf("describe load balancers: %w", err)
+		return fmt.Errorf("describe classic load balancers: %w", err)
 	}
 
-	// Filter load balancers by VPC ID
-	var lbsToDelete []string
-	for _, lb := range listResult.LoadBalancers {
-		if aws.ToString(lb.VpcId) == vpcID {
-			lbArn := aws.ToString(lb.LoadBalancerArn)
+	// Filter Classic LBs by VPC ID
+	var classicLBsToDelete []string
+	for _, lb := range classicLBsResult.LoadBalancerDescriptions {
+		if aws.ToString(lb.VPCId) == vpcID {
 			lbName := aws.ToString(lb.LoadBalancerName)
-			lbsToDelete = append(lbsToDelete, lbArn)
-			log.Printf("Found load balancer %s (%s) in VPC %s", lbName, lbArn, vpcID)
+			classicLBsToDelete = append(classicLBsToDelete, lbName)
+			log.Printf("Found Classic Load Balancer %s in VPC %s", lbName, vpcID)
 		}
 	}
 
-	if len(lbsToDelete) == 0 {
-		log.Printf("No load balancers found in VPC %s", vpcID)
-		return nil
+	// Delete Classic Load Balancers
+	for _, lbName := range classicLBsToDelete {
+		log.Printf("Deleting Classic Load Balancer %s", lbName)
+		_, err := elbv1Client.DeleteLoadBalancer(ctx, &elasticloadbalancing.DeleteLoadBalancerInput{
+			LoadBalancerName: aws.String(lbName),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+				log.Printf("Classic Load Balancer %s not found - assuming already deleted", lbName)
+				continue
+			}
+			return fmt.Errorf("delete Classic Load Balancer %s: %w", lbName, err)
+		}
+		log.Printf("Successfully initiated deletion of Classic Load Balancer %s", lbName)
+		totalLBsDeleted++
 	}
 
-	// Delete each load balancer
-	for _, lbArn := range lbsToDelete {
-		log.Printf("Deleting load balancer %s", lbArn)
-		_, err := elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+	// ===== Check for Application/Network Load Balancers (ELBv2) =====
+	elbv2Client := elasticloadbalancingv2.NewFromConfig(cfg)
+	elbv2Result, err := elbv2Client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
+	if err != nil {
+		return fmt.Errorf("describe application/network load balancers: %w", err)
+	}
+
+	// Filter Application/Network LBs by VPC ID
+	var elbv2ToDelete []string
+	for _, lb := range elbv2Result.LoadBalancers {
+		if aws.ToString(lb.VpcId) == vpcID {
+			lbArn := aws.ToString(lb.LoadBalancerArn)
+			lbName := aws.ToString(lb.LoadBalancerName)
+			lbType := lb.Type
+			elbv2ToDelete = append(elbv2ToDelete, lbArn)
+			log.Printf("Found %s Load Balancer %s (%s) in VPC %s", lbType, lbName, lbArn, vpcID)
+		}
+	}
+
+	// Delete Application/Network Load Balancers
+	for _, lbArn := range elbv2ToDelete {
+		log.Printf("Deleting Application/Network Load Balancer %s", lbArn)
+		_, err := elbv2Client.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
 			LoadBalancerArn: aws.String(lbArn),
 		})
 		if err != nil {
@@ -406,15 +438,19 @@ func deleteLoadBalancers(ctx context.Context, region, vpcID string) error {
 			}
 			return fmt.Errorf("delete load balancer %s: %w", lbArn, err)
 		}
-		log.Printf("Successfully initiated deletion of load balancer %s", lbArn)
+		log.Printf("Successfully initiated deletion of Application/Network Load Balancer %s", lbArn)
+		totalLBsDeleted++
+	}
+
+	if totalLBsDeleted == 0 {
+		log.Printf("No load balancers found in VPC %s", vpcID)
+		return nil
 	}
 
 	// Wait for load balancers to start deleting
 	// This is critical - service-managed ENIs won't be cleaned up until LBs are deleting
-	if len(lbsToDelete) > 0 {
-		log.Printf("Waiting 30 seconds for %d load balancer(s) to start deleting and ENIs to be cleaned up", len(lbsToDelete))
-		time.Sleep(30 * time.Second)
-	}
+	log.Printf("Waiting 30 seconds for %d load balancer(s) to start deleting and ENIs to be cleaned up", totalLBsDeleted)
+	time.Sleep(30 * time.Second)
 
 	return nil
 }
