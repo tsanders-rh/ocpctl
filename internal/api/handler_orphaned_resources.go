@@ -6,7 +6,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -620,38 +619,24 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 						}
 					}
 
-					// Delete the NAT Gateway first - you cannot disassociate an EIP from a NAT Gateway
-					log.Printf("Deleting NAT Gateway %s before releasing EIP %s", natGatewayID, allocationID)
+					// Delete the NAT Gateway - AWS will automatically release the EIP when deletion completes
+					log.Printf("EIP %s is attached to NAT Gateway %s - deleting NAT Gateway (EIP will be auto-released)", allocationID, natGatewayID)
 					_, err = ec2Client.DeleteNatGateway(ctx, &ec2.DeleteNatGatewayInput{
 						NatGatewayId: aws.String(natGatewayID),
 					})
 					if err != nil {
 						if strings.Contains(err.Error(), "NatGatewayNotFound") {
-							log.Printf("NAT Gateway %s not found - assuming already deleted, proceeding to release EIP", natGatewayID)
-							// Continue to release the EIP below
+							log.Printf("NAT Gateway %s not found - assuming already deleted", natGatewayID)
+							// NAT Gateway already deleted, EIP should be released - continue to skip manual release below
 						} else {
 							return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
 						}
 					} else {
-						log.Printf("NAT Gateway %s deletion initiated, waiting for deletion to complete...", natGatewayID)
-
-						// Wait for NAT Gateway deletion to complete (with timeout)
-						// NAT Gateway deletion can take 1-2 minutes
-						waiter := ec2.NewNatGatewayDeletedWaiter(ec2Client)
-						waitErr := waiter.Wait(ctx, &ec2.DescribeNatGatewaysInput{
-							NatGatewayIds: []string{natGatewayID},
-						}, 5*time.Minute) // 5 minute timeout
-
-						if waitErr != nil {
-							log.Printf("Warning: NAT Gateway deletion wait failed: %v (proceeding anyway)", waitErr)
-							// Continue to try releasing EIP - it might work or return proper error
-						} else {
-							log.Printf("NAT Gateway %s deletion completed", natGatewayID)
-						}
+						log.Printf("NAT Gateway %s deletion initiated - EIP %s will be automatically released in 1-2 minutes", natGatewayID, allocationID)
 					}
-					// Mark that we deleted NAT Gateway so we skip disassociation step
+					// Mark that we deleted/found deleted NAT Gateway
+					// Skip manual EIP release below since AWS handles it automatically
 					deletedNatGateway = true
-					// Now that NAT Gateway is deleted, we can release the EIP
 				}
 			}
 		}
@@ -677,7 +662,14 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 		}
 	}
 
-	// Now release the Elastic IP
+	// If we deleted a NAT Gateway, skip manual EIP release
+	// AWS will automatically release the EIP when NAT Gateway deletion completes (1-2 minutes)
+	if deletedNatGateway {
+		log.Printf("Skipping manual EIP release - AWS will automatically release %s when NAT Gateway deletion completes", allocationID)
+		return nil // Return success immediately - EIP will be released automatically
+	}
+
+	// Otherwise, release the Elastic IP manually
 	_, err = ec2Client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
 		AllocationId: aws.String(allocationID),
 	})
@@ -687,8 +679,6 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
 			return nil
 		}
-		// Since we now wait for NAT Gateway deletion to complete, EIP release should succeed
-		// If it still fails, return the error so orphan stays ACTIVE until actually deleted
 		return fmt.Errorf("release Elastic IP: %w", err)
 	}
 
