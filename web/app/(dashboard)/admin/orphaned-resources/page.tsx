@@ -74,6 +74,7 @@ export default function OrphanedResourcesPage() {
       OIDCProvider: "Delete OIDC Provider",
       CloudWatchLogGroup: "Delete Log Group",
       LoadBalancer: "Delete Load Balancer",
+      VPC: "Delete VPC",
     };
     return titles[resourceType] || "Delete Resource";
   };
@@ -88,6 +89,7 @@ export default function OrphanedResourcesPage() {
       OIDCProvider: "This will delete the OIDC provider. This action cannot be undone.",
       CloudWatchLogGroup: "This will delete the CloudWatch log group and all its logs. This action cannot be undone.",
       LoadBalancer: "This will delete the Application/Network Load Balancer from AWS. This action cannot be undone.",
+      VPC: "This will delete the VPC and ALL dependent resources (subnets, route tables, security groups, NAT gateways, internet gateways, VPC endpoints, network interfaces, etc.). This action cannot be undone.",
     };
     return descriptions[resourceType] || "This will delete the resource from AWS. This action cannot be undone.";
   };
@@ -438,7 +440,8 @@ export default function OrphanedResourcesPage() {
                             resource.resource_type === "IAMRole" ||
                             resource.resource_type === "OIDCProvider" ||
                             resource.resource_type === "CloudWatchLogGroup" ||
-                            resource.resource_type === "LoadBalancer") && (
+                            resource.resource_type === "LoadBalancer" ||
+                            resource.resource_type === "VPC") && (
                             <Button
                               variant="destructive"
                               size="sm"

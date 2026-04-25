@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/aws/cleanup"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -277,7 +278,7 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	case types.OrphanedResourceTypeLoadBalancer:
 		err = h.deleteLoadBalancer(c.Request().Context(), resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeVPC:
-		return ErrorBadRequest(c, "VPC deletion not supported - must delete all dependent resources first (subnets, route tables, etc)")
+		err = h.deleteVPCAndDependencies(c.Request().Context(), resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeEC2Instance:
 		return ErrorBadRequest(c, "EC2Instance deletion not supported - delete via AWS Console")
 	default:
@@ -886,4 +887,15 @@ func (h *OrphanedResourceHandler) deleteLoadBalancer(ctx context.Context, loadBa
 
 	log.Printf("Successfully deleted load balancer %s", loadBalancerArn)
 	return nil
+}
+
+// deleteVPCAndDependencies deletes a VPC and all its dependent resources
+func (h *OrphanedResourceHandler) deleteVPCAndDependencies(ctx context.Context, vpcID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+	return cleanup.DeleteVPCAndDependencies(ctx, ec2Client, vpcID)
 }
