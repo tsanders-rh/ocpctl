@@ -594,11 +594,32 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 
 	address := describeResult.Addresses[0]
 
-	// If the EIP is associated, check if it's attached to a NAT Gateway
+	// If the EIP is associated, check what it's attached to and handle accordingly
 	if address.AssociationId != nil {
-		// Check if the network interface is a NAT Gateway interface
-		if address.NetworkInterfaceId != nil {
-			log.Printf("Checking if EIP %s is attached to NAT Gateway (interface: %s)", allocationID, *address.NetworkInterfaceId)
+		// First check if it's associated with an EC2 instance directly
+		if address.InstanceId != nil && *address.InstanceId != "" {
+			instanceID := *address.InstanceId
+			log.Printf("EIP %s is attached to EC2 instance %s - terminating instance (EIP will be auto-released)", allocationID, instanceID)
+
+			// Terminate the EC2 instance
+			_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: []string{instanceID},
+			})
+			if err != nil {
+				if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+					log.Printf("EC2 instance %s not found - assuming already terminated", instanceID)
+					// Instance already gone, continue to release EIP manually below
+				} else {
+					return fmt.Errorf("terminate EC2 instance %s: %w", instanceID, err)
+				}
+			} else {
+				log.Printf("EC2 instance %s termination initiated - EIP %s will be automatically released when instance terminates", instanceID, allocationID)
+				// Mark that we terminated instance so we skip manual release
+				deletedNatGateway = true // Reuse this flag (could rename to deletedAssociatedResource)
+			}
+		} else if address.NetworkInterfaceId != nil {
+			// Check if the network interface is a NAT Gateway or other resource
+			log.Printf("Checking network interface %s for EIP %s", *address.NetworkInterfaceId, allocationID)
 			niResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
 				NetworkInterfaceIds: []string{*address.NetworkInterfaceId},
 			})
@@ -607,6 +628,7 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 				// Continue anyway - if we can't check, we'll try to disassociate and let AWS return the proper error
 			} else if len(niResult.NetworkInterfaces) > 0 {
 				ni := niResult.NetworkInterfaces[0]
+
 				// Check if interface type is nat_gateway
 				interfaceTypeStr := string(ni.InterfaceType)
 				if interfaceTypeStr == "nat_gateway" || ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
@@ -637,12 +659,33 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 					// Mark that we deleted/found deleted NAT Gateway
 					// Skip manual EIP release below since AWS handles it automatically
 					deletedNatGateway = true
+				} else if ni.Attachment != nil && ni.Attachment.InstanceId != nil && *ni.Attachment.InstanceId != "" {
+					// Network interface is attached to an EC2 instance
+					instanceID := *ni.Attachment.InstanceId
+					log.Printf("EIP %s is attached via network interface to EC2 instance %s - terminating instance (EIP will be auto-released)", allocationID, instanceID)
+
+					// Terminate the EC2 instance
+					_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+						InstanceIds: []string{instanceID},
+					})
+					if err != nil {
+						if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+							log.Printf("EC2 instance %s not found - assuming already terminated", instanceID)
+							// Instance already gone, continue to disassociate/release below
+						} else {
+							return fmt.Errorf("terminate EC2 instance %s: %w", instanceID, err)
+						}
+					} else {
+						log.Printf("EC2 instance %s termination initiated - EIP %s will be automatically released when instance terminates", instanceID, allocationID)
+						// Mark that we terminated instance so we skip manual release
+						deletedNatGateway = true
+					}
 				}
 			}
 		}
 
-		// Only disassociate if we didn't delete a NAT Gateway
-		// (NAT Gateway deletion automatically disassociates the EIP)
+		// Only disassociate if we didn't delete a NAT Gateway or terminate an EC2 instance
+		// (Resource deletion automatically disassociates and releases the EIP)
 		if !deletedNatGateway {
 			log.Printf("Disassociating Elastic IP %s (association: %s)", allocationID, *address.AssociationId)
 			_, err = ec2Client.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
@@ -658,14 +701,14 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 				}
 			}
 		} else {
-			log.Printf("Skipping disassociation for EIP %s (NAT Gateway deletion handles it)", allocationID)
+			log.Printf("Skipping disassociation for EIP %s (associated resource deletion handles it)", allocationID)
 		}
 	}
 
-	// If we deleted a NAT Gateway, skip manual EIP release
-	// AWS will automatically release the EIP when NAT Gateway deletion completes (1-2 minutes)
+	// If we deleted a NAT Gateway or terminated an EC2 instance, skip manual EIP release
+	// AWS will automatically release the EIP when the resource deletion completes
 	if deletedNatGateway {
-		log.Printf("Skipping manual EIP release - AWS will automatically release %s when NAT Gateway deletion completes", allocationID)
+		log.Printf("Skipping manual EIP release - AWS will automatically release %s when associated resource deletion completes", allocationID)
 		return nil // Return success immediately - EIP will be released automatically
 	}
 
