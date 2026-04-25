@@ -345,7 +345,7 @@ func deleteVPC(ctx context.Context, ec2Client *ec2.Client, vpcID string) error {
 		return nil
 	}
 	if strings.Contains(err.Error(), "DependencyViolation") {
-		return fmt.Errorf("VPC still has dependencies - AWS may still be deleting async resources (NAT gateways, etc.). Wait a few minutes and retry")
+		return fmt.Errorf("VPC has remaining dependencies (likely service-managed network interfaces from deleted load balancers). These are being cleaned up by AWS automatically. Please wait 2-3 minutes and try deleting the VPC again")
 	}
 	if strings.Contains(err.Error(), "InvalidVpcID.NotFound") {
 		log.Printf("VPC %s not found - assuming already deleted", vpcID)
