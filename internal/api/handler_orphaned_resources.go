@@ -286,6 +286,15 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	}
 
 	if err != nil {
+		// For VPC deletion errors, return the specific error message (contains helpful retry instructions)
+		if resource.ResourceType == types.OrphanedResourceTypeVPC {
+			log.Printf("[ERROR] request_id=unknown method=%s path=%s error=failed to delete %s resource %s: %v",
+				c.Request().Method, c.Request().URL.Path, resource.ResourceType, resource.ResourceName, err)
+			return c.JSON(500, map[string]string{
+				"error":   "vpc_deletion_failed",
+				"message": err.Error(),
+			})
+		}
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to delete %s resource %s: %w", resource.ResourceType, resource.ResourceName, err))
 	}
 
