@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -632,11 +633,25 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 							return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
 						}
 					} else {
-						log.Printf("NAT Gateway %s deletion initiated", natGatewayID)
+						log.Printf("NAT Gateway %s deletion initiated, waiting for deletion to complete...", natGatewayID)
+
+						// Wait for NAT Gateway deletion to complete (with timeout)
+						// NAT Gateway deletion can take 1-2 minutes
+						waiter := ec2.NewNatGatewayDeletedWaiter(ec2Client)
+						waitErr := waiter.Wait(ctx, &ec2.DescribeNatGatewaysInput{
+							NatGatewayIds: []string{natGatewayID},
+						}, 5*time.Minute) // 5 minute timeout
+
+						if waitErr != nil {
+							log.Printf("Warning: NAT Gateway deletion wait failed: %v (proceeding anyway)", waitErr)
+							// Continue to try releasing EIP - it might work or return proper error
+						} else {
+							log.Printf("NAT Gateway %s deletion completed", natGatewayID)
+						}
 					}
 					// Mark that we deleted NAT Gateway so we skip disassociation step
 					deletedNatGateway = true
-					// Fall through to release the EIP (will fail if NAT Gateway still deleting, but that's OK)
+					// Now that NAT Gateway is deleted, we can release the EIP
 				}
 			}
 		}
@@ -672,12 +687,8 @@ func (h *OrphanedResourceHandler) deleteElasticIP(ctx context.Context, allocatio
 			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
 			return nil
 		}
-		// If we deleted a NAT Gateway and release fails, it's likely still deleting
-		// Treat as success - the EIP will be released once NAT Gateway deletion completes
-		if deletedNatGateway && (strings.Contains(err.Error(), "InUse") || strings.Contains(err.Error(), "associated") || strings.Contains(err.Error(), "AuthFailure")) {
-			log.Printf("EIP %s still in transitional state after NAT Gateway deletion (error: %v) - will be auto-released when NAT Gateway deletion completes", allocationID, err)
-			return nil
-		}
+		// Since we now wait for NAT Gateway deletion to complete, EIP release should succeed
+		// If it still fails, return the error so orphan stays ACTIVE until actually deleted
 		return fmt.Errorf("release Elastic IP: %w", err)
 	}
 
