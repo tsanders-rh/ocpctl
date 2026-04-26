@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -102,12 +103,14 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	}
 
 	// Set refresh token as httpOnly cookie
+	// In production, always require secure cookies
+	isProduction := os.Getenv("ENVIRONMENT") == "production"
 	cookie := &http.Cookie{
 		Name:     "refresh_token",
 		Value:    refreshToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   c.Request().TLS != nil, // Only secure in HTTPS
+		Secure:   isProduction || c.Request().TLS != nil, // Always secure in production
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(h.auth.GetRefreshTTL().Seconds()),
 	}

@@ -64,7 +64,7 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
-	Name             string                    `json:"name" validate:"required,min=3,max=63"`
+	Name             string                    `json:"name" validate:"required,min=3,max=63,cluster_name"`
 	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud"`
 	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift eks iks"`
 	Version          string                    `json:"version" validate:"required"`
@@ -371,9 +371,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		cluster.ID, cluster.Name, cluster.ClusterType, cluster.OwnerID, baseDomainStr)
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
-		log.Printf("[ERROR] Database insert failed: %v (owner_id=%s, cluster_type=%s)", err, ownerID, cluster.ClusterType)
-		// Return detailed error for debugging
-		return ErrorBadRequest(c, fmt.Sprintf("Database error: %v (owner_id=%s, cluster_type=%s)", err, ownerID, cluster.ClusterType))
+		// Log detailed error server-side for debugging
+		requestID := GetRequestID(c)
+		log.Printf("[ERROR] Database insert failed: %v (request_id=%s, owner_id=%s, cluster_type=%s, cluster_id=%s)",
+			err, requestID, ownerID, cluster.ClusterType, cluster.ID)
+		// Return generic error to client to avoid information disclosure
+		return ErrorBadRequest(c, fmt.Sprintf("Failed to create cluster. Please contact support with request ID: %s", requestID))
 	}
 
 	log.Printf("[DEBUG] Cluster created successfully: %s", cluster.ID)
@@ -619,6 +622,21 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 	// Check access
 	if err := h.checkClusterAccess(c, cluster); err != nil {
 		return err
+	}
+
+	// Validate region access for AWS clusters
+	// This prevents delete jobs from failing due to missing AWS credentials for the region
+	if cluster.Platform == types.PlatformAWS {
+		if err := h.validateRegionAccess(ctx, cluster.Region); err != nil {
+			LogWarning(c, "region access validation failed",
+				"cluster_id", cluster.ID,
+				"region", cluster.Region,
+				"error", err.Error())
+			return ErrorBadRequest(c, fmt.Sprintf(
+				"Cannot delete cluster: AWS region '%s' is not accessible. "+
+					"Ensure AWS credentials are configured for this region. Error: %v",
+				cluster.Region, err))
+		}
 	}
 
 	// Check if cluster can be deleted
@@ -1233,6 +1251,18 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to fetch users: %w", err))
 	}
 
+	// Validate that all requested users were fetched
+	// A mismatch could indicate database corruption, partial query failure, or missing user records
+	if len(usersByID) != len(ownerIDs) {
+		// Log warning with details for debugging
+		LogWarning(c, "partial user fetch detected in statistics",
+			"requested", len(ownerIDs),
+			"fetched", len(usersByID))
+		return LogAndReturnGenericError(c, fmt.Errorf(
+			"partial user fetch failure: requested %d users but got %d (possible database inconsistency)",
+			len(ownerIDs), len(usersByID)))
+	}
+
 	// Initialize statistics response
 	stats := ClusterStatistics{
 		TotalClusters:     totalClusters,
@@ -1503,6 +1533,30 @@ func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string,
 // strPtr returns a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// validateRegionAccess validates that AWS credentials have access to the specified region
+// Makes a lightweight API call to verify credentials work in the region
+func (h *ClusterHandler) validateRegionAccess(ctx context.Context, region string) error {
+	// Load AWS config for the specified region
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	// Create EC2 client
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Make a lightweight API call to verify credentials work in this region
+	// DescribeAvailabilityZones is a read-only call that requires minimal permissions
+	_, err = ec2Client.DescribeAvailabilityZones(ctx, &ec2.DescribeAvailabilityZonesInput{
+		// Empty input - just list all AZs in the region
+	})
+	if err != nil {
+		return fmt.Errorf("test AWS API access in region %s: %w", region, err)
+	}
+
+	return nil
 }
 
 // calculateEffectiveCost calculates the effective hourly cost based on cluster state

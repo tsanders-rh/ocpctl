@@ -1,0 +1,85 @@
+# GolangCI-Lint configuration for OCPCTL
+# See: https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - gosec        # Security-focused linter
+    - govet        # Standard Go vet checks
+    - errcheck     # Checks for unchecked errors
+    - staticcheck  # Advanced static analysis
+    - unused       # Checks for unused code
+    - ineffassign  # Detects ineffectual assignments
+    - typecheck    # Type-checks Go code
+
+linters-settings:
+  govet:
+    enable:
+      - composites  # Check for unkeyed fields in composite literals
+      - printf      # Check printf-like functions
+
+  gosec:
+    # CRITICAL: Enable SQL injection detection
+    # G201 - SQL query construction using format string
+    # G202 - SQL query construction using string concatenation
+    excludes: []  # Do not exclude any gosec checks - we want ALL security checks enabled
+
+    # Additional important security checks:
+    # G101 - Look for hard coded credentials
+    # G102 - Bind to all interfaces
+    # G103 - Audit the use of unsafe block
+    # G104 - Audit errors not checked
+    # G106 - Audit the use of ssh.InsecureIgnoreHostKey
+    # G201 - SQL query construction using format string
+    # G202 - SQL query construction using string concatenation
+    # G203 - Use of unescaped data in HTML templates
+    # G204 - Audit use of command execution
+    # G301 - Poor file permissions used when creating a directory
+    # G302 - Poor file permissions used when creation file or using chmod
+    # G303 - Creating tempfile using a predictable path
+    # G304 - File path provided as taint input
+    # G305 - File traversal when extracting zip archive
+    # G306 - Poor file permissions used when writing to a new file
+    # G307 - Deferring a method which returns an error
+    # G401 - Detect the usage of DES, RC4, MD5 or SHA1
+    # G402 - Look for bad TLS connection settings
+    # G403 - Ensure minimum RSA key length of 2048 bits
+    # G404 - Insecure random number source (rand instead of crypto/rand)
+    # G501 - Import blacklist: crypto/md5
+    # G502 - Import blacklist: crypto/des
+    # G503 - Import blacklist: crypto/rc4
+    # G504 - Import blacklist: net/http/cgi
+    # G505 - Import blacklist: crypto/sha1
+
+    severity: medium
+    confidence: medium
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Don't hide new issues in existing code
+  new: false
+
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+
+    # Allow embedding in tests
+    - path: _test\.go
+      text: "G103: Use of unsafe calls should be audited"

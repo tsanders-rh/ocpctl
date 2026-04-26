@@ -23,6 +23,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -46,6 +48,16 @@ var (
 	Commit    = "unknown"
 	BuildTime = "unknown"
 )
+
+// generateDevelopmentSecret generates a random secret for development use only.
+// The actual secret value is not logged to prevent it from appearing in audit logs.
+func generateDevelopmentSecret() string {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		panic("failed to generate development secret: " + err.Error())
+	}
+	return base64.StdEncoding.EncodeToString(secret)
+}
 
 func main() {
 	// Get environment for configuration validation
@@ -100,9 +112,10 @@ func main() {
 		if environment == "production" {
 			log.Fatalf("CRITICAL: JWT_SECRET must be set in production environment")
 		}
-		log.Println("WARNING: Using default JWT_SECRET for development only")
+		log.Println("WARNING: JWT_SECRET not set. Generating random development secret.")
+		log.Println("WARNING: This is INSECURE and must not be used in production!")
 		log.Println("         Set JWT_SECRET environment variable or JWT_SECRET_NAME for AWS Secrets Manager!")
-		jwtSecret = "change-me-in-production-min-32-chars"
+		jwtSecret = generateDevelopmentSecret()
 	}
 
 	// Validate JWT secret length
