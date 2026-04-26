@@ -4,7 +4,10 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"log"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +18,16 @@ import (
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
+
+const (
+	// DefaultStatementTimeout is the default timeout for database queries (30 seconds)
+	// Can be overridden with DB_STATEMENT_TIMEOUT_MS environment variable
+	DefaultStatementTimeout = 30000 // milliseconds
+
+	// SlowQueryThreshold is the duration after which a query is considered slow
+	// Slow queries are logged for monitoring and performance analysis
+	SlowQueryThreshold = 5 * time.Second
+)
 
 // Store provides database operations
 type Store struct {
@@ -150,9 +163,29 @@ func NewStore(databaseURL string) (*Store, error) {
 	config.MaxConnIdleTime = 30 * time.Minute   // Max idle time before closing
 	config.HealthCheckPeriod = 1 * time.Minute  // How often to check connection health
 
+	// Get statement timeout from environment or use default
+	statementTimeout := DefaultStatementTimeout
+	if timeoutStr := os.Getenv("DB_STATEMENT_TIMEOUT_MS"); timeoutStr != "" {
+		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
+			statementTimeout = timeout
+			log.Printf("Using custom statement timeout: %d ms", timeout)
+		} else {
+			log.Printf("Invalid DB_STATEMENT_TIMEOUT_MS value '%s', using default: %d ms", timeoutStr, DefaultStatementTimeout)
+		}
+	}
+
 	// Add statement timeout to prevent long-running queries
 	// This adds a runtime parameter that PostgreSQL will enforce
-	config.ConnConfig.RuntimeParams["statement_timeout"] = "30000" // 30 seconds in milliseconds
+	config.ConnConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(statementTimeout)
+	log.Printf("Database statement timeout configured: %d ms", statementTimeout)
+
+	// Add query tracing for monitoring slow queries
+	// This callback is invoked after each query completes
+	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		// Set up query tracing to log slow queries
+		conn.Config().Tracer = &queryTracer{}
+		return nil
+	}
 
 	// Create the pool with configured timeouts
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
@@ -335,4 +368,56 @@ func (s *Store) VerifyMigrations(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// queryTracer implements pgx.QueryTracer to monitor and log slow queries
+type queryTracer struct{}
+
+// TraceQueryStart is called when a query begins
+func (t *queryTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	// Store query start time and SQL in context for later duration calculation
+	ctx = context.WithValue(ctx, "query_start_time", time.Now())
+	ctx = context.WithValue(ctx, "query_sql", data.SQL)
+	return ctx
+}
+
+// TraceQueryEnd is called when a query completes
+func (t *queryTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+	// Calculate query duration
+	startTime, ok := ctx.Value("query_start_time").(time.Time)
+	if !ok {
+		return
+	}
+
+	duration := time.Since(startTime)
+
+	// Get query SQL from context (stored in TraceQueryStart)
+	querySQLRaw := ctx.Value("query_sql")
+	querySQL, _ := querySQLRaw.(string)
+
+	// Log slow queries for monitoring
+	if duration > SlowQueryThreshold {
+		// Truncate query for logging (max 200 chars)
+		query := querySQL
+		if len(query) > 200 {
+			query = query[:200] + "..."
+		}
+
+		log.Printf("SLOW QUERY: duration=%s query=%s", duration, query)
+
+		// TODO: Add metrics publishing here for production monitoring
+		// Example: publishMetric("database.slow_query", duration, map[string]string{"query_type": detectQueryType(querySQL)})
+	}
+
+	// Log query errors
+	if data.Err != nil && data.Err != pgx.ErrNoRows {
+		log.Printf("QUERY ERROR: duration=%s error=%v query=%s", duration, data.Err, querySQL)
+	}
+}
+
+// NewQueryContext creates a context with timeout for database operations
+// Use this for critical queries that should timeout before the default statement timeout
+// Example: ctx := store.NewQueryContext(parentCtx, 5*time.Second)
+func NewQueryContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, timeout)
 }

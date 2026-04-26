@@ -115,11 +115,25 @@ func (h *APIKeyHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create API key")
 	}
 
+	// Audit log: API key created
+	// CRITICAL: Do NOT log the plainKey itself - only log metadata
+	LogInfo(c, "api key created",
+		"api_key_id", apiKey.ID,
+		"api_key_name", apiKey.Name,
+		"api_key_prefix", apiKey.KeyPrefix,
+		"user_id", userID,
+		"scope", string(apiKey.Scope))
+
 	// Return response with plaintext key (only time it's shown)
 	response := &types.CreateAPIKeyResponse{
 		APIKey:   apiKey.ToResponse(),
 		PlainKey: plainKey,
 	}
+
+	// IMPORTANT: The plainKey in the response will be logged by Echo's middleware
+	// To prevent exposure, we must filter it before returning
+	// Set a custom response header to signal that this response contains sensitive data
+	c.Response().Header().Set("X-Contains-Secret", "true")
 
 	return c.JSON(http.StatusCreated, response)
 }
@@ -185,6 +199,12 @@ func (h *APIKeyHandler) Update(c echo.Context) error {
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update API key")
 		}
+
+		// Audit log: API key updated
+		LogInfo(c, "api key updated",
+			"api_key_id", keyID,
+			"api_key_name", *req.Name,
+			"user_id", userID)
 	}
 
 	// Get updated API key
@@ -246,6 +266,13 @@ func (h *APIKeyHandler) Revoke(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to revoke API key")
 	}
 
+	// Audit log: API key revoked
+	LogInfo(c, "api key revoked",
+		"api_key_id", keyID,
+		"api_key_name", apiKey.Name,
+		"api_key_prefix", apiKey.KeyPrefix,
+		"user_id", userID)
+
 	return c.JSON(http.StatusOK, map[string]string{
 		"message": "API key revoked successfully",
 	})
@@ -300,6 +327,13 @@ func (h *APIKeyHandler) Delete(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete API key")
 	}
+
+	// Audit log: API key deleted (permanent removal)
+	LogInfo(c, "api key deleted",
+		"api_key_id", keyID,
+		"api_key_name", apiKey.Name,
+		"api_key_prefix", apiKey.KeyPrefix,
+		"user_id", userID)
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"message": "API key deleted successfully",

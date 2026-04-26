@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/tsanders-rh/ocpctl/internal/metrics"
+	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
@@ -30,18 +31,11 @@ type OrphanedResource struct {
 
 // DetectOrphanedResources finds AWS resources that don't match any cluster in the database
 func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
-	// Get all cluster IDs and names from database
-	clusters, err := j.store.Clusters.ListAll(ctx)
+	// Build lookup maps using streaming to prevent memory exhaustion
+	// Process clusters in batches instead of loading all at once
+	_, clustersByName, err := j.buildClusterLookupMaps(ctx)
 	if err != nil {
-		return fmt.Errorf("list clusters: %w", err)
-	}
-
-	// Build lookup maps
-	clustersByID := make(map[string]*types.Cluster)
-	clustersByName := make(map[string]*types.Cluster)
-	for _, cluster := range clusters {
-		clustersByID[cluster.ID] = cluster
-		clustersByName[cluster.Name] = cluster
+		return fmt.Errorf("build cluster lookup maps: %w", err)
 	}
 
 	// Initialize AWS SDK with default config
@@ -1090,4 +1084,47 @@ func (j *Janitor) detectOrphanedCloudWatchLogGroups(ctx context.Context, cfg aws
 	}
 
 	return orphans, nil
+}
+
+// buildClusterLookupMaps builds lookup maps for clusters using streaming to prevent memory exhaustion
+// Processes clusters in batches of 1000 instead of loading all clusters at once
+func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types.Cluster, map[string]*types.Cluster, error) {
+	const batchSize = 1000
+
+	clustersByID := make(map[string]*types.Cluster)
+	clustersByName := make(map[string]*types.Cluster)
+
+	offset := 0
+	for {
+		// Fetch clusters in batches
+		batch, total, err := j.store.Clusters.List(ctx, store.ListFilters{
+			Limit:  batchSize,
+			Offset: offset,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("list clusters batch (offset=%d): %w", offset, err)
+		}
+
+		// Add to lookup maps
+		for _, cluster := range batch {
+			// Skip DESTROYED clusters as they can't have orphaned resources
+			if cluster.Status == types.ClusterStatusDestroyed {
+				continue
+			}
+
+			clustersByID[cluster.ID] = cluster
+			clustersByName[cluster.Name] = cluster
+		}
+
+		// Check if we've processed all clusters
+		offset += batchSize
+		if offset >= total {
+			break
+		}
+	}
+
+	log.Printf("Built cluster lookup maps with %d clusters (by ID) and %d clusters (by name)",
+		len(clustersByID), len(clustersByName))
+
+	return clustersByID, clustersByName, nil
 }
