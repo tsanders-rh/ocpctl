@@ -95,3 +95,17 @@ ocpctl-api
 config/worker.env
 *.tfplan
 tfplan
+
+# OpenShift Pull Secrets (NEVER commit these!)
+pull-secret.json
+pull-secret.txt
+**/pull-secret*
+*pullsecret*
+.openshift/pull-secret.json
+
+# Credentials and secrets
+*.pem
+*.key
+!*.pub
+credentials.json
+secrets.yaml
