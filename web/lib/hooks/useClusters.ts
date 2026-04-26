@@ -7,6 +7,21 @@ export function useClusters(filters?: ClusterFilters) {
     queryKey: ["clusters", filters],
     queryFn: () => clustersApi.list(filters),
     staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: (query) => {
+      // Poll every 10 seconds if any cluster is transitioning or post-deploying
+      const data = query.state.data;
+      if (!data?.data) return false;
+
+      const transitioningStatuses = ["PENDING", "CREATING", "DESTROYING", "HIBERNATING", "RESUMING"];
+      const hasTransitioningCluster = data.data.some(
+        (cluster) => transitioningStatuses.includes(cluster.status)
+      );
+      const hasPostDeploying = data.data.some(
+        (cluster) => cluster.post_deploy_status === "in_progress"
+      );
+
+      return (hasTransitioningCluster || hasPostDeploying) ? 10000 : false;
+    },
   });
 }
 

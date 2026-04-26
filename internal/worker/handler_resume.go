@@ -409,6 +409,12 @@ func (h *ResumeHandler) waitForClusterHealth(ctx context.Context, cluster *types
 		return fmt.Errorf("wait for router pods: %w", err)
 	}
 
+	// Wait for CNI pods to be healthy (multus, OVN) on all nodes
+	log.Printf("Waiting for CNI networking pods to be healthy...")
+	if err := h.waitForCNIPods(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for CNI pods: %w", err)
+	}
+
 	// Update load balancer health checks if needed
 	log.Printf("Verifying load balancer health check configuration...")
 	if err := h.updateLoadBalancerHealthChecks(ctx, cluster, kubeconfigPath); err != nil {
@@ -534,6 +540,179 @@ func (h *ResumeHandler) waitForRouterPods(ctx context.Context, kubeconfigPath st
 	}
 
 	return fmt.Errorf("router pods did not become ready after %d attempts", maxAttempts)
+}
+
+// waitForCNIPods waits for CNI networking pods (multus, OVN) to be healthy on all nodes
+// This catches post-hibernation networking issues that operator-level checks miss
+func (h *ResumeHandler) waitForCNIPods(ctx context.Context, kubeconfigPath string) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
+	retryDelay := 10 * time.Second
+	stabilityChecks := 3 // Pods must stay healthy for this many consecutive checks
+	stableCount := 0      // Track consecutive healthy checks
+
+	// Track if we've already attempted remediation to avoid infinite loops
+	remediationAttempted := false
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Check multus pods health
+		multusHealthy, multusIssues, err := h.checkPodHealth(ctx, kubeconfigPath, "openshift-multus", "app=multus")
+		if err != nil {
+			log.Printf("Warning: failed to check multus pod health: %v", err)
+		}
+
+		// Check OVN-Kubernetes pods health
+		ovnHealthy, ovnIssues, err := h.checkPodHealth(ctx, kubeconfigPath, "openshift-ovn-kubernetes", "app=ovnkube-node")
+		if err != nil {
+			log.Printf("Warning: failed to check OVN pod health: %v", err)
+		}
+
+		// If all CNI pods are healthy, increment stability counter
+		if multusHealthy && ovnHealthy {
+			stableCount++
+			if stableCount >= stabilityChecks {
+				log.Printf("All CNI networking pods are healthy and stable (%d consecutive checks)", stabilityChecks)
+				return nil
+			}
+			log.Printf("CNI pods healthy, verifying stability (%d/%d checks)...", stableCount, stabilityChecks)
+			// Continue to next check without remediation
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled while waiting for CNI pods")
+			case <-time.After(retryDelay):
+				continue
+			}
+		}
+
+		// Pods are not healthy - reset stability counter
+		stableCount = 0
+
+		// If we detect issues and haven't attempted remediation yet, try automatic recovery
+		if !remediationAttempted && (len(multusIssues) > 0 || len(ovnIssues) > 0) {
+			log.Printf("Detected CNI pod issues, attempting automatic remediation...")
+			if err := h.remediateCNIPods(ctx, kubeconfigPath, multusIssues, ovnIssues); err != nil {
+				log.Printf("Warning: automatic remediation failed: %v", err)
+			} else {
+				log.Printf("Automatic remediation completed, waiting for pods to restart...")
+				remediationAttempted = true
+				// Give pods time to restart
+				time.Sleep(30 * time.Second)
+				continue
+			}
+		}
+
+		if attempt%6 == 0 { // Log every minute
+			log.Printf("CNI networking pods not yet healthy (attempt %d/%d)...", attempt, maxAttempts)
+			if len(multusIssues) > 0 {
+				log.Printf("  Multus issues: %v", multusIssues)
+			}
+			if len(ovnIssues) > 0 {
+				log.Printf("  OVN issues: %v", ovnIssues)
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for CNI pods")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("CNI networking pods did not become healthy after %d attempts", maxAttempts)
+}
+
+// checkPodHealth checks if pods in a namespace with a given label are healthy
+// Returns: (allHealthy bool, issuesList []string, error)
+func (h *ResumeHandler) checkPodHealth(ctx context.Context, kubeconfigPath, namespace, labelSelector string) (bool, []string, error) {
+	// Get pod status
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "pods", "-n", namespace, "-l", labelSelector,
+		"-o", "jsonpath={range .items[*]}{.metadata.name},{.status.phase},{.status.containerStatuses[*].ready}|{end}")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return false, nil, fmt.Errorf("get pods: %w", err)
+	}
+
+	if len(output) == 0 {
+		return true, nil, nil // No pods found, consider healthy
+	}
+
+	var issues []string
+	allHealthy := true
+
+	// Parse output: name,phase,ready|name,phase,ready|...
+	pods := strings.Split(strings.TrimSuffix(string(output), "|"), "|")
+	for _, podInfo := range pods {
+		if podInfo == "" {
+			continue
+		}
+
+		parts := strings.Split(podInfo, ",")
+		if len(parts) < 3 {
+			continue
+		}
+
+		podName := parts[0]
+		phase := parts[1]
+		readyStatuses := parts[2]
+
+		// Check if pod is in a bad state
+		if phase == "CrashLoopBackOff" || phase == "Error" || phase == "Failed" {
+			issues = append(issues, fmt.Sprintf("%s (phase: %s)", podName, phase))
+			allHealthy = false
+		} else if phase == "Running" {
+			// Check if containers are ready
+			if !strings.Contains(readyStatuses, "true") || strings.Contains(readyStatuses, "false") {
+				issues = append(issues, fmt.Sprintf("%s (containers not ready)", podName))
+				allHealthy = false
+			}
+		} else if phase == "Pending" || phase == "ContainerCreating" {
+			// Check if pod has been pending for too long
+			// For now, just mark as not healthy but don't add to issues (may be starting up)
+			allHealthy = false
+		}
+	}
+
+	return allHealthy, issues, nil
+}
+
+// remediateCNIPods attempts to fix CNI pod issues by deleting problematic pods
+func (h *ResumeHandler) remediateCNIPods(ctx context.Context, kubeconfigPath string, multusIssues, ovnIssues []string) error {
+	var deletedPods []string
+
+	// Delete problematic multus pods
+	for _, issue := range multusIssues {
+		podName := strings.Split(issue, " ")[0]
+		log.Printf("Deleting problematic multus pod: %s", podName)
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"delete", "pod", "-n", "openshift-multus", podName, "--wait=false")
+		if err := cmd.Run(); err != nil {
+			log.Printf("Warning: failed to delete pod %s: %v", podName, err)
+		} else {
+			deletedPods = append(deletedPods, podName)
+		}
+	}
+
+	// Delete problematic OVN pods
+	for _, issue := range ovnIssues {
+		podName := strings.Split(issue, " ")[0]
+		log.Printf("Deleting problematic OVN pod: %s", podName)
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"delete", "pod", "-n", "openshift-ovn-kubernetes", podName, "--wait=false")
+		if err := cmd.Run(); err != nil {
+			log.Printf("Warning: failed to delete pod %s: %v", podName, err)
+		} else {
+			deletedPods = append(deletedPods, podName)
+		}
+	}
+
+	if len(deletedPods) > 0 {
+		log.Printf("Deleted %d problematic CNI pods for automatic recovery", len(deletedPods))
+		return nil
+	}
+
+	return fmt.Errorf("no pods were deleted")
 }
 
 // updateLoadBalancerHealthChecks updates ELB health check configuration if NodePort changed
