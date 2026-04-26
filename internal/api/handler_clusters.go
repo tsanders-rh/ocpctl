@@ -1199,6 +1199,24 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to list clusters: %w", err))
 	}
 
+	// Collect unique owner IDs for batch user lookup (prevents N+1 queries)
+	ownerIDs := make([]string, 0)
+	ownerIDSet := make(map[string]bool)
+	for _, cluster := range clusters {
+		if cluster.Status != types.ClusterStatusDestroyed && cluster.Status != types.ClusterStatusFailed {
+			if !ownerIDSet[cluster.OwnerID] {
+				ownerIDs = append(ownerIDs, cluster.OwnerID)
+				ownerIDSet[cluster.OwnerID] = true
+			}
+		}
+	}
+
+	// Batch fetch all users in a single query
+	usersByID, err := h.store.Users.GetByIDs(ctx, ownerIDs)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to fetch users: %w", err))
+	}
+
 	// Calculate statistics
 	stats := ClusterStatistics{
 		TotalClusters:    len(clusters),
@@ -1233,10 +1251,9 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 					userCost.ClusterCount++
 					userCost.HourlyCost += hourlyCost
 				} else {
-					// Get username
-					user, err := h.store.Users.GetByID(ctx, cluster.OwnerID)
+					// Get username from batch-fetched users map
 					username := cluster.OwnerID
-					if err == nil && user != nil {
+					if user, exists := usersByID[cluster.OwnerID]; exists {
 						username = user.Username
 					}
 					userCosts[cluster.OwnerID] = &UserCostBreakdown{

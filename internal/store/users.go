@@ -115,6 +115,56 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*types.User, 
 	return &user, nil
 }
 
+// GetByIDs retrieves multiple users by their IDs in a single query
+// Returns a map of user_id -> user for efficient lookups
+func (s *UserStore) GetByIDs(ctx context.Context, ids []string) (map[string]*types.User, error) {
+	if len(ids) == 0 {
+		return make(map[string]*types.User), nil
+	}
+
+	query := `
+		SELECT id, email, username, password_hash, role, timezone, work_hours_enabled, work_hours_start, work_hours_end, work_days, active, created_at, updated_at
+		FROM users
+		WHERE id = ANY($1)
+	`
+
+	rows, err := s.pool.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("get users by ids: %w", err)
+	}
+	defer rows.Close()
+
+	users := make(map[string]*types.User)
+	for rows.Next() {
+		var user types.User
+		err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.Username,
+			&user.PasswordHash,
+			&user.Role,
+			&user.Timezone,
+			&user.WorkHoursEnabled,
+			&user.WorkHoursStart,
+			&user.WorkHoursEnd,
+			&user.WorkDays,
+			&user.Active,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users[user.ID] = &user
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate users: %w", err)
+	}
+
+	return users, nil
+}
+
 // Update updates a user
 func (s *UserStore) Update(ctx context.Context, user *types.User) error {
 	user.UpdatedAt = time.Now()
