@@ -166,6 +166,7 @@ func (h *ProfileHandler) List(c echo.Context) error {
 //	@Security		BearerAuth
 //	@Router			/profiles/{name} [get]
 func (h *ProfileHandler) Get(c echo.Context) error {
+	ctx := c.Request().Context()
 	name := c.Param("name")
 
 	prof, err := h.registry.Get(name)
@@ -173,5 +174,16 @@ func (h *ProfileHandler) Get(c echo.Context) error {
 		return ErrorNotFound(c, "Profile not found: "+err.Error())
 	}
 
-	return SuccessOK(c, toProfileResponse(prof))
+	response := toProfileResponse(prof)
+
+	// Load deployment metrics for this profile
+	metrics, err := h.store.ProfileDeploymentMetrics.GetByProfile(ctx, name)
+	if err != nil {
+		log.Printf("Failed to load deployment metrics for profile %s: %v", name, err)
+		// Continue without metrics (non-critical)
+	} else {
+		response.DeploymentMetrics = metrics
+	}
+
+	return SuccessOK(c, response)
 }
