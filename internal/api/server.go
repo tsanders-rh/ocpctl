@@ -257,6 +257,7 @@ func (s *Server) setupRoutes() {
 	clustersGroup.GET("/:id/kubeconfig", clusterHandler.DownloadKubeconfig)
 	clustersGroup.GET("/:id/kubeconfig/download-url", clusterHandler.GetKubeconfigDownloadURL)
 	clustersGroup.GET("/:id/instances", clusterHandler.GetInstances)
+	clustersGroup.GET("/:id/storage-classes", clusterHandler.GetStorageClasses)
 
 	// Deployment logs routes (require authentication, checked within handler)
 	logHandler := NewLogHandler(s.store)

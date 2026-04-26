@@ -233,6 +233,15 @@ export interface EC2Instance {
   name: string;
 }
 
+// Storage Class Types
+export interface StorageClass {
+  name: string;
+  provisioner: string;
+  reclaim_policy?: string;
+  volume_binding_mode?: string;
+  is_default: boolean;
+}
+
 // Profile Types
 export interface PostDeploymentConfig {
   enabled: boolean;

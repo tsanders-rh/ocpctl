@@ -8,6 +8,7 @@ import type {
   DeploymentLogsResponse,
   ClusterConfigurationsResponse,
   EC2Instance,
+  StorageClass,
 } from "@/types/api";
 
 export interface ClusterFilters {
@@ -114,5 +115,9 @@ export const clustersApi = {
 
   getInstances: async (id: string): Promise<EC2Instance[]> => {
     return apiClient.get<EC2Instance[]>(`/clusters/${id}/instances`);
+  },
+
+  getStorageClasses: async (id: string): Promise<StorageClass[]> => {
+    return apiClient.get<StorageClass[]>(`/clusters/${id}/storage-classes`);
   },
 };

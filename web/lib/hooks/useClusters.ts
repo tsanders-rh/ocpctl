@@ -185,3 +185,12 @@ export function useClusterInstances(id: string, platform?: string) {
     staleTime: 60 * 1000, // 60 seconds
   });
 }
+
+export function useClusterStorageClasses(id: string, clusterStatus?: string) {
+  return useQuery({
+    queryKey: ["cluster", id, "storage-classes"],
+    queryFn: () => clustersApi.getStorageClasses(id),
+    enabled: !!id && (clusterStatus === "READY" || clusterStatus === "HIBERNATED"),
+    staleTime: 60 * 1000, // 60 seconds
+  });
+}

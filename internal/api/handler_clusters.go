@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -1606,4 +1607,123 @@ func (h *ClusterHandler) calculateEffectiveCost(cluster *types.Cluster, prof *pr
 
 	// For all other states (READY, PENDING, etc.), use full cost
 	return baseCost
+}
+
+// StorageClass represents a Kubernetes storage class
+type StorageClass struct {
+	Name              string `json:"name"`
+	Provisioner       string `json:"provisioner"`
+	ReclaimPolicy     string `json:"reclaim_policy,omitempty"`
+	VolumeBindingMode string `json:"volume_binding_mode,omitempty"`
+	IsDefault         bool   `json:"is_default"`
+}
+
+// GetStorageClasses handles GET /api/v1/clusters/:id/storage-classes
+//
+//	@Summary		Get cluster storage classes
+//	@Description	Returns all storage classes available in the cluster
+//	@Tags			clusters
+//	@Produce		json
+//	@Param			id	path		string	true	"Cluster ID"
+//	@Success		200	{array}		StorageClass
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/clusters/{id}/storage-classes [get]
+func (h *ClusterHandler) GetStorageClasses(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get cluster ID
+	id := c.Param("id")
+
+	// Get cluster
+	cluster, err := h.store.Clusters.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrorNotFound(c, "Cluster not found")
+		}
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
+	}
+
+	// Check access
+	if err := h.checkClusterAccess(c, cluster); err != nil {
+		return err
+	}
+
+	// Only get storage classes if cluster is READY or HIBERNATED
+	if cluster.Status != types.ClusterStatusReady && cluster.Status != types.ClusterStatusHibernated {
+		return ErrorBadRequest(c, "Storage class information is only available for READY or HIBERNATED clusters")
+	}
+
+	// Get storage classes from Kubernetes
+	storageClasses, err := h.getClusterStorageClasses(ctx, cluster)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get storage classes: %w", err))
+	}
+
+	return SuccessOK(c, storageClasses)
+}
+
+// getClusterStorageClasses fetches storage classes from a Kubernetes cluster
+func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *types.Cluster) ([]StorageClass, error) {
+	// Construct kubeconfig path
+	workDir := os.Getenv("WORK_DIR")
+	if workDir == "" {
+		workDir = "/opt/ocpctl/clusters"
+	}
+	kubeconfigPath := filepath.Join(workDir, cluster.ID, "auth", "kubeconfig")
+
+	// Check if kubeconfig exists
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		return []StorageClass{}, nil // Return empty list if kubeconfig doesn't exist yet
+	}
+
+	// Get storage classes using kubectl with JSON output
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "storageclass", "-o", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("kubectl get storageclass: %w", err)
+	}
+
+	// Parse kubectl output
+	var result struct {
+		Items []struct {
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+			Provisioner       string `json:"provisioner"`
+			ReclaimPolicy     string `json:"reclaimPolicy"`
+			VolumeBindingMode string `json:"volumeBindingMode"`
+		} `json:"items"`
+	}
+
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("parse kubectl output: %w", err)
+	}
+
+	// Convert to StorageClass objects
+	var storageClasses []StorageClass
+	for _, item := range result.Items {
+		isDefault := false
+		// Check for default storage class annotation
+		if val, ok := item.Metadata.Annotations["storageclass.kubernetes.io/is-default-class"]; ok && val == "true" {
+			isDefault = true
+		}
+
+		storageClasses = append(storageClasses, StorageClass{
+			Name:              item.Metadata.Name,
+			Provisioner:       item.Provisioner,
+			ReclaimPolicy:     item.ReclaimPolicy,
+			VolumeBindingMode: item.VolumeBindingMode,
+			IsDefault:         isDefault,
+		})
+	}
+
+	return storageClasses, nil
 }
