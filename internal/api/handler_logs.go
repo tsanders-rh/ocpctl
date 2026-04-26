@@ -1,13 +1,25 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
+)
+
+const (
+	// MaxLogLimit is the maximum number of log lines that can be requested at once
+	// Reduced from 2000 to prevent memory exhaustion and improve response times
+	MaxLogLimit = 500
+
+	// MaxLogOffset is the maximum offset allowed for pagination
+	// This prevents abuse and limits memory/database load for deep pagination
+	MaxLogOffset = 10000
 )
 
 // LogHandler handles deployment log API endpoints
@@ -66,25 +78,40 @@ func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 	afterSequence := parseInt64Param(c.QueryParam("after_sequence"), 0)
 	afterID := parseInt64Param(c.QueryParam("after_id"), 0)
 	limit := parseIntParam(c.QueryParam("limit"), 500)
-	if limit > 2000 {
-		limit = 2000
+
+	// Enforce maximum limit to prevent memory exhaustion
+	if limit > MaxLogLimit {
+		limit = MaxLogLimit
 	}
 	if limit < 1 {
 		limit = 500
+	}
+
+	// Validate offset to prevent abuse and excessive database load
+	// Reject requests that attempt to paginate too far into the log history
+	if afterSequence > MaxLogOffset {
+		return ErrorBadRequest(c, "after_sequence offset too large (max 10,000)")
+	}
+	if afterID > MaxLogOffset {
+		return ErrorBadRequest(c, "after_id offset too large (max 10,000)")
 	}
 
 	// If no job_id specified, return logs from ALL jobs for this cluster
 	// This allows UI to see CREATE, POST_CONFIGURE, and other job logs together
 	if jobID == "" {
 		// Use after_id for pagination (not after_sequence, since sequence is per-job)
+		// Create timeout context for log queries to prevent hanging on large datasets
+		queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
 		// Fetch all logs from database
-		logs, err := h.store.DeploymentLogs.GetAllLogs(ctx, clusterID, afterID, limit)
+		logs, err := h.store.DeploymentLogs.GetAllLogs(queryCtx, clusterID, afterID, limit)
 		if err != nil {
 			return LogAndReturnGenericError(c, err)
 		}
 
 		// Get log statistics for all jobs
-		stats, err := h.store.DeploymentLogs.GetAllLogStats(ctx, clusterID)
+		stats, err := h.store.DeploymentLogs.GetAllLogStats(queryCtx, clusterID)
 		if err != nil {
 			// Non-fatal, log and continue
 			c.Logger().Warnf("Failed to get all log stats: %v", err)
@@ -106,14 +133,18 @@ func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 		})
 	}
 
+	// Create timeout context for log queries to prevent hanging on large datasets
+	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	// Fetch logs from database for specific job
-	logs, err := h.store.DeploymentLogs.GetLogs(ctx, clusterID, jobID, afterSequence, limit)
+	logs, err := h.store.DeploymentLogs.GetLogs(queryCtx, clusterID, jobID, afterSequence, limit)
 	if err != nil {
 		return LogAndReturnGenericError(c, err)
 	}
 
 	// Get log statistics for specific job
-	stats, err := h.store.DeploymentLogs.GetLogStats(ctx, clusterID, jobID)
+	stats, err := h.store.DeploymentLogs.GetLogStats(queryCtx, clusterID, jobID)
 	if err != nil {
 		// Non-fatal, log and continue
 		c.Logger().Warnf("Failed to get log stats: %v", err)

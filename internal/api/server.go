@@ -201,23 +201,23 @@ func (s *Server) setupRoutes() {
 
 	// Strict rate limiting for login to prevent brute force
 	authGroup.POST("/login", authHandler.Login, apimiddleware.StrictRateLimit(5)) // 5 requests/minute
-	authGroup.POST("/logout", authHandler.Logout)
-	authGroup.POST("/refresh", authHandler.Refresh)
+	authGroup.POST("/logout", authHandler.Logout, apimiddleware.StrictRateLimit(10))   // 10 requests/minute
+	authGroup.POST("/refresh", authHandler.Refresh, apimiddleware.StrictRateLimit(10)) // 10 requests/minute
 
 	// Protected auth routes (require authentication)
 	authProtected := authGroup.Group("", auth.RequireAuthDual(s.auth, s.iamAuth))
 	authProtected.GET("/me", authHandler.GetMe)
 	authProtected.PATCH("/me", authHandler.UpdateMe)
-	authProtected.POST("/password", authHandler.ChangePassword)
+	authProtected.POST("/password", authHandler.ChangePassword, apimiddleware.StrictRateLimit(3)) // 3 password changes/minute
 
 	// API key management routes (require authentication)
 	apiKeyHandler := NewAPIKeyHandler(s.store)
 	apiKeysGroup := v1.Group("/api-keys", auth.RequireAuthDual(s.auth, s.iamAuth))
 	apiKeysGroup.GET("", apiKeyHandler.List)
-	apiKeysGroup.POST("", apiKeyHandler.Create)
-	apiKeysGroup.PATCH("/:id", apiKeyHandler.Update)
-	apiKeysGroup.POST("/:id/revoke", apiKeyHandler.Revoke)
-	apiKeysGroup.DELETE("/:id", apiKeyHandler.Delete)
+	apiKeysGroup.POST("", apiKeyHandler.Create, apimiddleware.StrictRateLimit(5))       // 5 creates/minute
+	apiKeysGroup.PATCH("/:id", apiKeyHandler.Update, apimiddleware.StrictRateLimit(10)) // 10 updates/minute
+	apiKeysGroup.POST("/:id/revoke", apiKeyHandler.Revoke, apimiddleware.StrictRateLimit(10)) // 10 revocations/minute
+	apiKeysGroup.DELETE("/:id", apiKeyHandler.Delete, apimiddleware.StrictRateLimit(10)) // 10 deletions/minute
 
 	// User management routes (admin only)
 	userHandler := NewUserHandler(s.store)

@@ -121,24 +121,42 @@ type ListClustersFilters struct {
 //	@Security		BearerAuth
 //	@Router			/clusters [post]
 func (h *ClusterHandler) Create(c echo.Context) error {
-	log.Printf("[DEBUG] Create cluster endpoint called")
+	debugLog( Create cluster endpoint called")
 	var req CreateClusterRequest
 	if err := c.Bind(&req); err != nil {
 		log.Printf("[ERROR] Failed to bind request: %v", err)
 		return ErrorBadRequest(c, "Invalid request body")
 	}
-	log.Printf("[DEBUG] Request bound successfully: name=%s, cluster_type=%s, profile=%s", req.Name, req.ClusterType, req.Profile)
+	debugLog( Request bound successfully: name=%s, cluster_type=%s, profile=%s", req.Name, req.ClusterType, req.Profile)
 
 	// Validate request body
 	if err := c.Validate(req); err != nil {
 		log.Printf("[ERROR] Request validation failed: %v", err)
 		return ErrorBadRequest(c, err.Error())
 	}
-	log.Printf("[DEBUG] Request validation passed")
+	debugLog( Request validation passed")
 
 	// Custom validation: base_domain is required for OpenShift clusters
 	if req.ClusterType == "openshift" && req.BaseDomain == "" {
 		return ErrorBadRequest(c, "base_domain is required for OpenShift clusters")
+	}
+
+	// Check for duplicate cluster creation using idempotency key
+	// If idempotency key is provided, check if cluster with same key already exists
+	if req.IdempotencyKey != "" {
+		// Check for existing cluster with same name and owner (basic deduplication)
+		existingCluster, err := h.store.Clusters.GetByName(ctx, req.Name)
+		if err == nil && existingCluster != nil {
+			// Cluster with same name exists - check if it matches the request
+			if existingCluster.OwnerID == req.Owner {
+				log.Printf("[INFO] Idempotency key=%s: Returning existing cluster %s instead of creating duplicate",
+					req.IdempotencyKey, existingCluster.ID)
+				return c.JSON(http.StatusOK, existingCluster)
+			}
+		}
+		// NOTE: Full idempotency implementation requires storing idempotency_key in database schema
+		// and checking against it. This is a basic implementation using cluster name + owner.
+		debugLog( Idempotency key provided: %s", req.IdempotencyKey)
 	}
 
 	// Convert empty base_domain to empty string for non-OpenShift clusters
@@ -180,13 +198,13 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	// Validate against policy
-	log.Printf("[DEBUG] Starting policy validation for profile: %s", req.Profile)
+	debugLog( Starting policy validation for profile: %s", req.Profile)
 	validation, err := h.policy.ValidateCreateRequest(policyReq)
 	if err != nil {
 		log.Printf("[ERROR] Policy validation error: %v", err)
 		return LogAndReturnGenericError(c, fmt.Errorf("policy validation failed: %w", err))
 	}
-	log.Printf("[DEBUG] Policy validation completed, valid=%v", validation.Valid)
+	debugLog( Policy validation completed, valid=%v", validation.Valid)
 
 	if !validation.Valid {
 		log.Printf("[ERROR] Policy validation failed: %+v", validation)
@@ -208,7 +226,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		log.Printf("[ERROR] Failed to get user ID: %v", err)
 		return err
 	}
-	log.Printf("[DEBUG] Creating cluster for user ID: %s", ownerID)
+	debugLog( Creating cluster for user ID: %s", ownerID)
 
 	ctx := c.Request().Context()
 
@@ -300,7 +318,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		len(prof.PostDeployment.HelmCharts) > 0)
 
 	// Load add-ons and merge into custom post-config if specified
-	log.Printf("[DEBUG] PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
+	debugLog( PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
 	if len(req.PostConfigAddOns) > 0 {
 		// Initialize custom post-config if it doesn't exist
 		if req.CustomPostConfig == nil {
@@ -309,14 +327,22 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 		// Load each add-on with specific version and merge into custom post-config
 		for _, selection := range req.PostConfigAddOns {
-			log.Printf("[DEBUG] Processing add-on: %s version %s", selection.ID, selection.Version)
+			// Validate add-on selection has required fields
+			if selection.ID == "" {
+				return ErrorBadRequest(c, "add-on ID is required")
+			}
+			if selection.Version == "" {
+				return ErrorBadRequest(c, fmt.Sprintf("version is required for add-on '%s'", selection.ID))
+			}
+
+			debugLog( Processing add-on: %s version %s", selection.ID, selection.Version)
 			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
 			if err != nil {
 				log.Printf("[ERROR] Failed to load add-on %s version %s: %v", selection.ID, selection.Version, err)
 				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' version '%s' not found or disabled", selection.ID, selection.Version))
 			}
 
-			log.Printf("[DEBUG] Loaded add-on %s: %d operators, %d scripts, %d manifests, %d helm charts",
+			debugLog( Loaded add-on %s: %d operators, %d scripts, %d manifests, %d helm charts",
 				addon.Name,
 				len(addon.Config.Operators),
 				len(addon.Config.Scripts),
@@ -329,7 +355,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
 			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
 		}
-		log.Printf("[DEBUG] After merging add-ons: %d total operators, %d scripts, %d manifests, %d helm charts",
+		debugLog( After merging add-ons: %d total operators, %d scripts, %d manifests, %d helm charts",
 			len(req.CustomPostConfig.Operators),
 			len(req.CustomPostConfig.Scripts),
 			len(req.CustomPostConfig.Manifests),
@@ -343,7 +369,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 		// Update cluster object with merged configuration
 		cluster.CustomPostConfig = req.CustomPostConfig
-		log.Printf("[DEBUG] Updated cluster.CustomPostConfig with merged add-ons")
+		debugLog( Updated cluster.CustomPostConfig with merged add-ons")
 	}
 
 	// Check if user provided custom post-config (including from add-ons)
@@ -367,7 +393,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	if cluster.BaseDomain != nil {
 		baseDomainStr = *cluster.BaseDomain
 	}
-	log.Printf("[DEBUG] About to insert cluster: ID=%s, Name=%s, ClusterType=%s, OwnerID=%s, BaseDomain='%s'",
+	debugLog( About to insert cluster: ID=%s, Name=%s, ClusterType=%s, OwnerID=%s, BaseDomain='%s'",
 		cluster.ID, cluster.Name, cluster.ClusterType, cluster.OwnerID, baseDomainStr)
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
@@ -379,7 +405,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		return ErrorBadRequest(c, fmt.Sprintf("Failed to create cluster. Please contact support with request ID: %s", requestID))
 	}
 
-	log.Printf("[DEBUG] Cluster created successfully: %s", cluster.ID)
+	debugLog( Cluster created successfully: %s", cluster.ID)
 
 	// Create provision job
 	job := &types.Job{
@@ -818,6 +844,11 @@ func (h *ClusterHandler) RefreshOutputs(c echo.Context) error {
 
 // extractClusterOutputs extracts cluster access information from the install directory
 func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.ClusterOutputs, error) {
+	// Validate cluster is not nil
+	if cluster == nil {
+		return nil, fmt.Errorf("cluster cannot be nil")
+	}
+
 	// Get work directory from environment
 	workDir := os.Getenv("WORK_DIR")
 	if workDir == "" {
