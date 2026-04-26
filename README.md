@@ -229,20 +229,6 @@ See [API Documentation](docs/deployment/API_SUBDOMAIN_SETUP.md) for complete end
 
 See [CHANGELOG.md](CHANGELOG.md) for complete release history.
 
-### Roadmap
-
-**Completed:**
-- ✅ Phase 0: Foundation (scaffolding, schema, profiles)
-- ✅ Phase 1: Core Platform (API, worker, web UI, authentication)
-- ✅ Phase 2: Enterprise Security (rate limiting, audit logging, IAM, hibernation)
-- ✅ Phase 3: Production Operations (monitoring, deployment guides, API subdomain)
-
-**In Progress:**
-- 🚧 Phase 4: Platform Expansion (multi-region, cost analytics, bulk operations)
-
-**Future:**
-- 💡 Phase 5: Advanced Features (snapshots, upgrades, ML-based predictions)
-
 ---
 
 ## Contributing
