@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -18,7 +19,14 @@ const (
 	APIKeyPrefix = "ocpctl_"
 	// APIKeyLength is the total length of the random part (32 bytes = 43 chars base64)
 	APIKeyLength = 32
+	// MaxConcurrentAPIKeyUpdates limits the number of concurrent last-used timestamp updates
+	// This prevents goroutine leaks under high API key usage
+	MaxConcurrentAPIKeyUpdates = 100
 )
+
+// apiKeyUpdateSemaphore controls concurrent API key last-used updates
+// Using a buffered channel as a semaphore to limit goroutine creation
+var apiKeyUpdateSemaphore = make(chan struct{}, MaxConcurrentAPIKeyUpdates)
 
 // GenerateAPIKey generates a new random API key with the ocpctl_ prefix
 // Returns the full plaintext key (only shown once) and the prefix for display
@@ -67,10 +75,24 @@ func ValidateAPIKey(ctx context.Context, st *store.Store, plainKey string) (*typ
 		return nil, fmt.Errorf("lookup API key: %w", err)
 	}
 
-	// Update last used timestamp (fire and forget)
-	go func() {
-		_ = st.APIKeys.UpdateLastUsed(context.Background(), apiKey.ID)
-	}()
+	// Update last used timestamp (fire and forget with semaphore)
+	// Try to acquire semaphore, but don't block if at capacity
+	select {
+	case apiKeyUpdateSemaphore <- struct{}{}:
+		// Semaphore acquired, spawn goroutine
+		go func() {
+			defer func() { <-apiKeyUpdateSemaphore }() // Release semaphore when done
+
+			// Use a context with timeout to prevent hanging updates
+			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			_ = st.APIKeys.UpdateLastUsed(updateCtx, apiKey.ID)
+		}()
+	default:
+		// Semaphore at capacity, skip update (non-critical operation)
+		// This prevents goroutine accumulation under high load
+	}
 
 	// Get the user
 	user, err := st.Users.GetByID(ctx, apiKey.UserID)

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -675,7 +676,25 @@ func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platfor
 // DeleteDestroyedClusters deletes DESTROYED clusters older than the specified time
 // This is used by the janitor to cleanup old cluster records from the database
 // Returns the number of clusters deleted
+//
+// Safety validations:
+// - olderThan must not be zero
+// - olderThan must be at least 24 hours in the past
+// - Only DESTROYED status clusters with destroyed_at set are deleted
+// - All deletions are logged for audit trail
 func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan time.Time) (int, error) {
+	// Validate inputs to prevent accidental data loss
+	if olderThan.IsZero() {
+		return 0, fmt.Errorf("olderThan time cannot be zero (safety check)")
+	}
+
+	// Prevent deleting recent data (safety check)
+	minOldTime := time.Now().Add(-24 * time.Hour)
+	if olderThan.After(minOldTime) {
+		return 0, fmt.Errorf("olderThan must be at least 24 hours in the past (got: %s, minimum: %s)",
+			olderThan.Format(time.RFC3339), minOldTime.Format(time.RFC3339))
+	}
+
 	query := `
 		DELETE FROM clusters
 		WHERE status = $1
@@ -688,7 +707,14 @@ func (s *ClusterStore) DeleteDestroyedClusters(ctx context.Context, olderThan ti
 		return 0, fmt.Errorf("delete destroyed clusters: %w", err)
 	}
 
-	return int(result.RowsAffected()), nil
+	deleted := int(result.RowsAffected())
+
+	// Log deletions for audit trail
+	if deleted > 0 {
+		log.Printf("Deleted %d destroyed clusters older than %s", deleted, olderThan.Format(time.RFC3339))
+	}
+
+	return deleted, nil
 }
 
 // GetClustersForWorkHoursEnforcement returns clusters that need work hours enforcement
@@ -782,4 +808,112 @@ func (s *ClusterStore) UpdatePostDeployStatus(ctx context.Context, clusterID, st
 	}
 
 	return nil
+}
+
+// ClusterStatsByStatus represents cluster count and total by status
+type ClusterStatsByStatus struct {
+	Status string
+	Count  int
+}
+
+// ClusterStatsByProfile represents cluster count by profile with owner info for cost calculation
+type ClusterStatsByProfile struct {
+	Profile  string
+	Status   string
+	OwnerID  string
+	Count    int
+}
+
+// GetStatisticsByStatus returns aggregated cluster counts by status
+// Excludes DESTROYED and FAILED clusters by default
+func (s *ClusterStore) GetStatisticsByStatus(ctx context.Context) ([]*ClusterStatsByStatus, error) {
+	query := `
+		SELECT status, COUNT(*) as count
+		FROM clusters
+		WHERE status NOT IN ('DESTROYED', 'FAILED')
+		GROUP BY status
+		ORDER BY count DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query statistics by status: %w", err)
+	}
+	defer rows.Close()
+
+	stats := []*ClusterStatsByStatus{}
+	for rows.Next() {
+		var stat ClusterStatsByStatus
+		err := rows.Scan(&stat.Status, &stat.Count)
+		if err != nil {
+			return nil, fmt.Errorf("scan statistics: %w", err)
+		}
+		stats = append(stats, &stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate statistics: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetStatisticsByProfile returns aggregated cluster counts by profile and status
+// Returns profile, status, owner_id, and count for cost calculation
+func (s *ClusterStore) GetStatisticsByProfile(ctx context.Context) ([]*ClusterStatsByProfile, error) {
+	query := `
+		SELECT profile, status, owner_id, COUNT(*) as count
+		FROM clusters
+		WHERE status NOT IN ('DESTROYED', 'FAILED')
+		GROUP BY profile, status, owner_id
+		ORDER BY profile, status, owner_id
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query statistics by profile: %w", err)
+	}
+	defer rows.Close()
+
+	stats := []*ClusterStatsByProfile{}
+	for rows.Next() {
+		var stat ClusterStatsByProfile
+		err := rows.Scan(&stat.Profile, &stat.Status, &stat.OwnerID, &stat.Count)
+		if err != nil {
+			return nil, fmt.Errorf("scan statistics: %w", err)
+		}
+		stats = append(stats, &stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate statistics: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetTotalClusterCount returns total count of all clusters (including DESTROYED/FAILED)
+func (s *ClusterStore) GetTotalClusterCount(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM clusters`
+
+	var count int
+	err := s.pool.QueryRow(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("query total cluster count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetActiveClusterCount returns count of active clusters (not DESTROYED/FAILED)
+func (s *ClusterStore) GetActiveClusterCount(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM clusters WHERE status NOT IN ('DESTROYED', 'FAILED')`
+
+	var count int
+	err := s.pool.QueryRow(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("query active cluster count: %w", err)
+	}
+
+	return count, nil
 }

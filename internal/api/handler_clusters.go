@@ -1190,25 +1190,41 @@ type UserCostBreakdown struct {
 func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Get all clusters (no filters for stats)
-	clusters, _, err := h.store.Clusters.List(ctx, store.ListFilters{
-		Limit:  10000, // High limit to get all clusters
-		Offset: 0,
-	})
+	// Use database aggregation instead of loading all clusters into memory
+	// This prevents memory exhaustion with large deployments (>10k clusters)
+
+	// Get total and active cluster counts
+	totalClusters, err := h.store.Clusters.GetTotalClusterCount(ctx)
 	if err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to list clusters: %w", err))
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get total cluster count: %w", err))
 	}
 
-	// Collect unique owner IDs for batch user lookup (prevents N+1 queries)
-	ownerIDs := make([]string, 0)
+	activeClusters, err := h.store.Clusters.GetActiveClusterCount(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get active cluster count: %w", err))
+	}
+
+	// Get aggregated statistics by status
+	statusStats, err := h.store.Clusters.GetStatisticsByStatus(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get statistics by status: %w", err))
+	}
+
+	// Get aggregated statistics by profile (includes owner_id for cost calculation)
+	profileStats, err := h.store.Clusters.GetStatisticsByProfile(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get statistics by profile: %w", err))
+	}
+
+	// Collect unique owner IDs for batch user lookup
 	ownerIDSet := make(map[string]bool)
-	for _, cluster := range clusters {
-		if cluster.Status != types.ClusterStatusDestroyed && cluster.Status != types.ClusterStatusFailed {
-			if !ownerIDSet[cluster.OwnerID] {
-				ownerIDs = append(ownerIDs, cluster.OwnerID)
-				ownerIDSet[cluster.OwnerID] = true
-			}
-		}
+	for _, stat := range profileStats {
+		ownerIDSet[stat.OwnerID] = true
+	}
+
+	ownerIDs := make([]string, 0, len(ownerIDSet))
+	for ownerID := range ownerIDSet {
+		ownerIDs = append(ownerIDs, ownerID)
 	}
 
 	// Batch fetch all users in a single query
@@ -1217,52 +1233,66 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to fetch users: %w", err))
 	}
 
-	// Calculate statistics
+	// Initialize statistics response
 	stats := ClusterStatistics{
-		TotalClusters:    len(clusters),
-		ClustersByStatus: make([]ClusterStatusCount, 0),
+		TotalClusters:     totalClusters,
+		ActiveClusters:    activeClusters,
+		ClustersByStatus:  make([]ClusterStatusCount, 0),
 		ClustersByProfile: make([]ClusterProfileCount, 0),
-		CostByProfile:    make([]ProfileCostBreakdown, 0),
-		CostByUser:       make([]UserCostBreakdown, 0),
-		ActiveClusters:   0,
+		CostByProfile:     make([]ProfileCostBreakdown, 0),
+		CostByUser:        make([]UserCostBreakdown, 0),
 	}
 
-	// Count by status and profile (only for active clusters)
-	statusCounts := make(map[string]int)
+	// Convert status stats to response format
+	for _, stat := range statusStats {
+		stats.ClustersByStatus = append(stats.ClustersByStatus, ClusterStatusCount{
+			Status: stat.Status,
+			Count:  stat.Count,
+		})
+	}
+
+	// Calculate costs from aggregated profile stats
 	profileCounts := make(map[string]int)
 	profileCosts := make(map[string]float64)
 	userCosts := make(map[string]*UserCostBreakdown)
 
-	for _, cluster := range clusters {
-		// Count active clusters (not Destroyed/Failed)
-		if cluster.Status != types.ClusterStatusDestroyed && cluster.Status != types.ClusterStatusFailed {
-			stats.ActiveClusters++
-			statusCounts[string(cluster.Status)]++
-			profileCounts[cluster.Profile]++
+	for _, stat := range profileStats {
+		profileCounts[stat.Profile] += stat.Count
 
-			// Get profile cost (use GetAny to include disabled profiles for existing clusters)
-			if prof, err := h.registry.GetAny(cluster.Profile); err == nil && prof != nil {
-				hourlyCost := h.calculateEffectiveCost(cluster, prof)
-				stats.TotalHourlyCost += hourlyCost
-				profileCosts[cluster.Profile] += hourlyCost
+		// Get profile cost (use GetAny to include disabled profiles for existing clusters)
+		prof, err := h.registry.GetAny(stat.Profile)
+		if err != nil || prof == nil {
+			continue // Skip if profile not found
+		}
 
-				// Track cost by user
-				if userCost, exists := userCosts[cluster.OwnerID]; exists {
-					userCost.ClusterCount++
-					userCost.HourlyCost += hourlyCost
-				} else {
-					// Get username from batch-fetched users map
-					username := cluster.OwnerID
-					if user, exists := usersByID[cluster.OwnerID]; exists {
-						username = user.Username
-					}
-					userCosts[cluster.OwnerID] = &UserCostBreakdown{
-						UserID:       cluster.OwnerID,
-						Username:     username,
-						ClusterCount: 1,
-						HourlyCost:   hourlyCost,
-					}
-				}
+		// Calculate cost per cluster based on status
+		// We need to create a minimal cluster object for cost calculation
+		cluster := &types.Cluster{
+			Status:      types.ClusterStatus(stat.Status),
+			ClusterType: types.ClusterTypeOpenShift, // Default, actual value doesn't affect cost much
+		}
+		hourlyCostPerCluster := h.calculateEffectiveCost(cluster, prof)
+
+		// Multiply by count to get total cost for this group
+		totalHourlyCost := hourlyCostPerCluster * float64(stat.Count)
+		stats.TotalHourlyCost += totalHourlyCost
+		profileCosts[stat.Profile] += totalHourlyCost
+
+		// Track cost by user
+		if userCost, exists := userCosts[stat.OwnerID]; exists {
+			userCost.ClusterCount += stat.Count
+			userCost.HourlyCost += totalHourlyCost
+		} else {
+			// Get username from batch-fetched users map
+			username := stat.OwnerID
+			if user, exists := usersByID[stat.OwnerID]; exists {
+				username = user.Username
+			}
+			userCosts[stat.OwnerID] = &UserCostBreakdown{
+				UserID:       stat.OwnerID,
+				Username:     username,
+				ClusterCount: stat.Count,
+				HourlyCost:   totalHourlyCost,
 			}
 		}
 	}
@@ -1271,15 +1301,7 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 	stats.TotalDailyCost = stats.TotalHourlyCost * 24
 	stats.TotalMonthlyCost = stats.TotalHourlyCost * 24 * 30
 
-	// Convert status map to slice
-	for status, count := range statusCounts {
-		stats.ClustersByStatus = append(stats.ClustersByStatus, ClusterStatusCount{
-			Status: status,
-			Count:  count,
-		})
-	}
-
-	// Convert profile map to slice
+	// Convert profile counts to response format
 	for profile, count := range profileCounts {
 		stats.ClustersByProfile = append(stats.ClustersByProfile, ClusterProfileCount{
 			Profile: profile,
@@ -1287,14 +1309,14 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		})
 	}
 
-	// Convert profile costs to slice
+	// Convert profile costs to response format
 	for profile, hourlyCost := range profileCosts {
 		stats.CostByProfile = append(stats.CostByProfile, ProfileCostBreakdown{
-			Profile:     profile,
+			Profile:      profile,
 			ClusterCount: profileCounts[profile],
-			HourlyCost:  hourlyCost,
-			DailyCost:   hourlyCost * 24,
-			MonthlyCost: hourlyCost * 24 * 30,
+			HourlyCost:   hourlyCost,
+			DailyCost:    hourlyCost * 24,
+			MonthlyCost:  hourlyCost * 24 * 30,
 		})
 	}
 

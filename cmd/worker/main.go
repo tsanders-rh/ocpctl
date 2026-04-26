@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,7 +33,7 @@ var (
 type HealthCheckServer struct {
 	store  *store.Store
 	worker *worker.Worker
-	ready  bool
+	ready  atomic.Bool // Thread-safe ready flag
 }
 
 // healthHandler returns basic health status
@@ -62,7 +64,7 @@ func (h *HealthCheckServer) readyHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Check if worker is marked as ready
-	if !h.ready {
+	if !h.ready.Load() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "not_ready",
@@ -114,7 +116,7 @@ func (h *HealthCheckServer) statusHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":     "running",
-		"ready":      h.ready,
+		"ready":      h.ready.Load(),
 		"activeJobs": len(jobs),
 		"jobs":       jobs,
 		"timestamp":  time.Now().UTC().Format(time.RFC3339),
@@ -328,30 +330,41 @@ func main() {
 	healthCheck := &HealthCheckServer{
 		store:  st,
 		worker: w,
-		ready:  false,
+		// ready is initialized to false by default (atomic.Bool zero value)
 	}
 	healthServer := startHealthCheckServer(healthCheck, healthCheckPort)
+
+	// Use WaitGroup to track goroutines for graceful shutdown
+	var wg sync.WaitGroup
 
 	// Start worker and janitor in separate goroutines
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 
+	// Start worker
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		if err := w.Start(workerCtx); err != nil && err != context.Canceled {
 			log.Printf("Worker error: %v", err)
 		}
+		log.Println("Worker goroutine exiting")
 	}()
 
+	// Start janitor
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		if err := j.Start(janitorCtx); err != nil && err != context.Canceled {
 			log.Printf("Janitor error: %v", err)
 		}
+		log.Println("Janitor goroutine exiting")
 	}()
 
 	log.Println("Worker and janitor started successfully")
 
-	// Mark health check as ready
-	healthCheck.ready = true
+	// Mark health check as ready (thread-safe atomic store)
+	healthCheck.ready.Store(true)
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
@@ -360,15 +373,29 @@ func main() {
 
 	log.Println("Shutting down worker and janitor...")
 
-	// Mark as not ready during shutdown
-	healthCheck.ready = false
+	// Mark as not ready during shutdown (thread-safe atomic store)
+	healthCheck.ready.Store(false)
 
 	// Stop worker gracefully (waits for running jobs to complete)
 	w.Stop()
 
-	// Cancel contexts
+	// Cancel contexts to signal goroutines to exit
 	workerCancel()
 	janitorCancel()
+
+	// Wait for all goroutines to complete with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All goroutines stopped gracefully")
+	case <-time.After(30 * time.Second):
+		log.Println("WARNING: Timeout waiting for goroutines to stop")
+	}
 
 	// Shutdown health check server gracefully
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

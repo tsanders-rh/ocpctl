@@ -111,7 +111,8 @@ func (j *Janitor) Stop() {
 
 // run performs all cleanup tasks
 func (j *Janitor) run() {
-	ctx := context.Background()
+	// Use the janitor's context for proper cancellation during shutdown
+	ctx := j.ctx
 
 	log.Printf("Janitor running cleanup tasks")
 
