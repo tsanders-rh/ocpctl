@@ -561,7 +561,12 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 	return clusters, nil
 }
 
-// ListAll retrieves all clusters (used for orphan resource detection)
+// ListAll retrieves all active clusters (excludes DESTROYED status) for orphan resource detection.
+// IMPORTANT: This query has a safety limit of 100,000 clusters to prevent memory issues.
+// In production environments with >100k active clusters, consider:
+// 1. Implementing pagination for janitor operations
+// 2. Archiving DESTROYED clusters to a separate table
+// 3. Using a streaming approach for resource detection
 func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
@@ -571,7 +576,9 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
 			preserve_on_failure
 		FROM clusters
+		WHERE status != 'DESTROYED'
 		ORDER BY created_at DESC
+		LIMIT 100000
 	`
 
 	rows, err := s.pool.Query(ctx, query)
