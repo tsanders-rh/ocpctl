@@ -323,7 +323,8 @@ platform:
 {{- if .UserTags}}
     userLabels:
 {{- range $key, $value := .UserTags}}
-      {{$key}}: {{$value}}
+    - key: {{$key}}
+      value: "{{$value}}"
 {{- end}}
 {{- end}}
 controlPlane:
