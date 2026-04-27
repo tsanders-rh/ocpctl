@@ -15,15 +15,24 @@ interface EC2InstancesCardProps {
 export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps) {
   const { data: instances, isLoading, error } = useClusterInstances(clusterId, platform);
 
-  if (platform !== "aws") {
-    return null; // Only show for AWS clusters
+  // Only show for AWS and GCP clusters
+  if (platform !== "aws" && platform !== "gcp") {
+    return null;
   }
+
+  // Determine title based on platform
+  const title = platform === "aws" ? "EC2 Instances" : platform === "gcp" ? "GCP Instances" : "Instances";
+  const emptyMessage = platform === "aws"
+    ? "No EC2 instances found for this cluster"
+    : platform === "gcp"
+    ? "No GCP instances found for this cluster"
+    : "No instances found for this cluster";
 
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>EC2 Instances</CardTitle>
+          <CardTitle>{title}</CardTitle>
           <CardDescription>Loading instance information...</CardDescription>
         </CardHeader>
       </Card>
@@ -34,9 +43,9 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
     return (
       <Card>
         <CardHeader>
-          <CardTitle>EC2 Instances</CardTitle>
+          <CardTitle>{title}</CardTitle>
           <CardDescription className="text-destructive">
-            Failed to load EC2 instances
+            Failed to load instances
           </CardDescription>
         </CardHeader>
       </Card>
@@ -47,8 +56,8 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
     return (
       <Card>
         <CardHeader>
-          <CardTitle>EC2 Instances</CardTitle>
-          <CardDescription>No EC2 instances found for this cluster</CardDescription>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{emptyMessage}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -57,7 +66,7 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
   return (
     <Card>
       <CardHeader>
-        <CardTitle>EC2 Instances</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
           {instances.length} instance{instances.length !== 1 ? 's' : ''} running
         </CardDescription>
@@ -72,7 +81,7 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
               <div className="flex flex-col space-y-1">
                 <div className="flex items-center space-x-2">
                   <span className="font-mono text-sm font-medium">{instance.instance_id}</span>
-                  <InstanceStateBadge state={instance.state} />
+                  <InstanceStateBadge state={instance.state} platform={platform} />
                 </div>
                 {instance.name && (
                   <span className="text-sm text-muted-foreground">{instance.name}</span>
@@ -100,8 +109,20 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
   );
 }
 
-function InstanceStateBadge({ state }: { state: string }) {
-  const stateColors: Record<string, string> = {
+function InstanceStateBadge({ state, platform }: { state: string; platform?: string }) {
+  // GCP uses different state names than AWS
+  const gcpStateColors: Record<string, string> = {
+    running: "bg-green-500",
+    terminated: "bg-red-500",
+    stopping: "bg-yellow-500",
+    provisioning: "bg-blue-500",
+    staging: "bg-blue-500",
+    suspending: "bg-yellow-500",
+    suspended: "bg-orange-500",
+    repairing: "bg-purple-500",
+  };
+
+  const awsStateColors: Record<string, string> = {
     running: "bg-green-500",
     stopped: "bg-red-500",
     stopping: "bg-yellow-500",
@@ -110,6 +131,7 @@ function InstanceStateBadge({ state }: { state: string }) {
     terminated: "bg-gray-500",
   };
 
+  const stateColors = platform === "gcp" ? gcpStateColors : awsStateColors;
   const color = stateColors[state.toLowerCase()] || "bg-gray-500";
 
   return (

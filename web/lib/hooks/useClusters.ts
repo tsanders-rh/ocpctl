@@ -181,7 +181,7 @@ export function useClusterInstances(id: string, platform?: string) {
   return useQuery({
     queryKey: ["cluster", id, "instances"],
     queryFn: () => clustersApi.getInstances(id),
-    enabled: !!id && platform === "aws", // Only fetch for AWS clusters
+    enabled: !!id && (platform === "aws" || platform === "gcp"), // Fetch for AWS and GCP clusters
     staleTime: 60 * 1000, // 60 seconds
   });
 }

@@ -3,12 +3,14 @@
 export enum Platform {
   AWS = "aws",
   IBMCloud = "ibmcloud",
+  GCP = "gcp",
 }
 
 export enum ClusterType {
   OpenShift = "openshift",
   EKS = "eks",
   IKS = "iks",
+  GKE = "gke",
 }
 
 export enum ClusterStatus {
@@ -376,6 +378,7 @@ export interface Profile {
   platform_config?: {
     aws?: Record<string, any>;
     ibmcloud?: Record<string, any>;
+    gcp?: Record<string, any>;
   };
   post_deployment?: PostDeploymentConfig;
   deployment_metrics?: ProfileDeploymentMetrics;

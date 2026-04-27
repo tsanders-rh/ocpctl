@@ -90,16 +90,19 @@ export default function NewClusterPage() {
     const filteredProfiles = profiles?.filter((p) => {
       // Filter by cluster type
       let clusterTypeMatch = false;
-      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-)
+      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-)
       if (selectedClusterType === ClusterType.OpenShift) {
         clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`);
       }
-      // For EKS/IKS clusters, show profiles that start with cluster type prefix (eks-, iks-)
+      // For EKS/IKS/GKE clusters, show profiles that start with cluster type prefix (eks-, iks-, gke-)
       else if (selectedClusterType === ClusterType.EKS) {
         clusterTypeMatch = p.name.startsWith('eks-');
       }
       else if (selectedClusterType === ClusterType.IKS) {
         clusterTypeMatch = p.name.startsWith('iks-');
+      }
+      else if (selectedClusterType === ClusterType.GKE) {
+        clusterTypeMatch = p.name.startsWith('gke-') || p.name.startsWith('gcp-gke-');
       }
 
       // Filter by track if one is selected
@@ -263,10 +266,13 @@ export default function NewClusterPage() {
 
                     // Reset cluster type if incompatible with new platform
                     const currentClusterType = watchedValues.cluster_type;
-                    if (newPlatform === Platform.AWS && currentClusterType === ClusterType.IKS) {
+                    if (newPlatform === Platform.AWS && (currentClusterType === ClusterType.IKS || currentClusterType === ClusterType.GKE)) {
                       setValue("cluster_type", ClusterType.OpenShift);
                       setSelectedClusterType(ClusterType.OpenShift);
-                    } else if (newPlatform === Platform.IBMCloud && currentClusterType === ClusterType.EKS) {
+                    } else if (newPlatform === Platform.IBMCloud && (currentClusterType === ClusterType.EKS || currentClusterType === ClusterType.GKE)) {
+                      setValue("cluster_type", ClusterType.OpenShift);
+                      setSelectedClusterType(ClusterType.OpenShift);
+                    } else if (newPlatform === Platform.GCP && (currentClusterType === ClusterType.EKS || currentClusterType === ClusterType.IKS)) {
                       setValue("cluster_type", ClusterType.OpenShift);
                       setSelectedClusterType(ClusterType.OpenShift);
                     }
@@ -278,6 +284,7 @@ export default function NewClusterPage() {
                   <SelectContent>
                     <SelectItem value="aws">AWS</SelectItem>
                     <SelectItem value="ibmcloud">IBM Cloud</SelectItem>
+                    <SelectItem value="gcp">Google Cloud Platform</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -292,13 +299,16 @@ export default function NewClusterPage() {
                     setSelectedClusterType(clusterType);
                     setValue("profile", ""); // Reset profile when cluster type changes
 
-                    // Auto-select the correct platform for EKS/IKS
+                    // Auto-select the correct platform for EKS/IKS/GKE
                     if (clusterType === ClusterType.EKS) {
                       setValue("platform", Platform.AWS);
                       setSelectedPlatform(Platform.AWS);
                     } else if (clusterType === ClusterType.IKS) {
                       setValue("platform", Platform.IBMCloud);
                       setSelectedPlatform(Platform.IBMCloud);
+                    } else if (clusterType === ClusterType.GKE) {
+                      setValue("platform", Platform.GCP);
+                      setSelectedPlatform(Platform.GCP);
                     }
                   }}
                 >
@@ -313,12 +323,16 @@ export default function NewClusterPage() {
                     {selectedPlatform === Platform.IBMCloud && (
                       <SelectItem value="iks">IBM Cloud IKS</SelectItem>
                     )}
+                    {selectedPlatform === Platform.GCP && (
+                      <SelectItem value="gke">Google Kubernetes Engine (GKE)</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-muted-foreground">
                   {watchedValues.cluster_type === "openshift" && "Red Hat OpenShift Container Platform"}
                   {watchedValues.cluster_type === "eks" && "AWS Elastic Kubernetes Service (managed Kubernetes)"}
                   {watchedValues.cluster_type === "iks" && "IBM Cloud Kubernetes Service (managed Kubernetes)"}
+                  {watchedValues.cluster_type === "gke" && "Google Kubernetes Engine (managed Kubernetes)"}
                 </p>
               </div>
             </div>
@@ -686,7 +700,7 @@ export default function NewClusterPage() {
                       onChange={(tags) => setValue("extra_tags", tags)}
                     />
                     <p className="text-sm text-muted-foreground">
-                      Add custom tags to apply to all deployed {watchedValues.platform === "aws" ? "AWS" : "IBM Cloud"} resources
+                      Add custom tags to apply to all deployed {watchedValues.platform === "aws" ? "AWS" : watchedValues.platform === "gcp" ? "GCP" : "IBM Cloud"} resources
                     </p>
                   </div>
                 </div>
