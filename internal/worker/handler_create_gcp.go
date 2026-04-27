@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -184,11 +185,48 @@ func (h *CreateHandler) buildGKEClusterConfig(cluster *types.Cluster, prof *prof
 }
 
 // sanitizeGCPLabel converts a string to a valid GCP label value
-// GCP labels must be lowercase alphanumeric plus hyphens, max 63 chars
+// GCP labels must be lowercase alphanumeric plus hyphens and underscores, max 63 chars
+// Keys must start with a lowercase letter
 func sanitizeGCPLabel(s string) string {
-	// TODO: Implement proper GCP label sanitization
-	// For now, just return the input (will be implemented in a follow-up)
-	return s
+	if s == "" {
+		return ""
+	}
+
+	// Convert to lowercase
+	s = strings.ToLower(s)
+
+	// Replace invalid characters with hyphens
+	// Valid characters: lowercase letters, numbers, hyphens, underscores
+	var result strings.Builder
+	for i, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			result.WriteRune(r)
+		} else {
+			// Replace invalid characters with hyphen
+			result.WriteRune('-')
+		}
+
+		// For keys (first position), ensure it starts with a letter
+		// If first character is not a letter, prepend 'x'
+		if i == 0 && !((r >= 'a' && r <= 'z')) {
+			// Move to beginning
+			temp := result.String()
+			result.Reset()
+			result.WriteString("x")
+			result.WriteString(temp)
+		}
+	}
+
+	// Truncate to 63 characters max
+	sanitized := result.String()
+	if len(sanitized) > 63 {
+		sanitized = sanitized[:63]
+	}
+
+	// Remove trailing hyphens or underscores (GCP requirement)
+	sanitized = strings.TrimRight(sanitized, "-_")
+
+	return sanitized
 }
 
 // getGCPProject extracts the GCP project ID from profile configuration

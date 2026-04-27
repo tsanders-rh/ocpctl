@@ -57,6 +57,11 @@ type InstallConfigData struct {
 	// IBM Cloud-specific
 	IBMResourceGroup string
 	IBMVPCName       string
+
+	// GCP-specific
+	GCPProject    string
+	GCPNetwork    string
+	GCPSubnetwork string
 }
 
 // RenderInstallConfig generates an install-config.yaml file
@@ -140,6 +145,12 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		data.IBMVPCName = prof.PlatformConfig.IBMCloud.VPCName
 	}
 
+	if prof.Platform == "gcp" && prof.PlatformConfig.GCP != nil {
+		data.GCPProject = prof.PlatformConfig.GCP.Project
+		data.GCPNetwork = prof.PlatformConfig.GCP.Network
+		data.GCPSubnetwork = prof.PlatformConfig.GCP.Subnetwork
+	}
+
 	// Select appropriate template
 	var tmplStr string
 	switch prof.Platform {
@@ -147,6 +158,8 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		tmplStr = awsInstallConfigTemplate
 	case "ibmcloud":
 		tmplStr = ibmCloudInstallConfigTemplate
+	case "gcp":
+		tmplStr = gcpInstallConfigTemplate
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", prof.Platform)
 	}
@@ -271,6 +284,59 @@ compute:
   replicas: {{.WorkerReplicas}}
   platform:
     ibmcloud:
+      type: {{.WorkerType}}
+networking:
+  networkType: {{.NetworkType}}
+  clusterNetwork:
+  - cidr: {{.ClusterCIDR}}
+    hostPrefix: {{.ClusterPrefix}}
+  serviceNetwork:
+  - {{.ServiceCIDR}}
+  machineNetwork:
+  - cidr: {{.MachineCIDR}}
+pullSecret: '{{.PullSecret}}'
+{{- if .SSHKey}}
+sshKey: '{{.SSHKey}}'
+{{- end}}
+`
+
+// gcpInstallConfigTemplate is the template for GCP install-config.yaml
+const gcpInstallConfigTemplate = `apiVersion: v1
+baseDomain: {{.BaseDomain}}
+{{- if .CredentialsMode}}
+credentialsMode: {{.CredentialsMode}}
+{{- end}}
+metadata:
+  name: {{.ClusterName}}
+publish: {{.PublishStrategy}}
+platform:
+  gcp:
+    projectID: {{.GCPProject}}
+    region: {{.Region}}
+{{- if .GCPNetwork}}
+    network: {{.GCPNetwork}}
+{{- end}}
+{{- if .GCPSubnetwork}}
+    computeSubnet: {{.GCPSubnetwork}}
+    controlPlaneSubnet: {{.GCPSubnetwork}}
+{{- end}}
+{{- if .UserTags}}
+    userLabels:
+{{- range $key, $value := .UserTags}}
+      {{$key}}: {{$value}}
+{{- end}}
+{{- end}}
+controlPlane:
+  name: master
+  replicas: {{.ControlPlaneReplicas}}
+  platform:
+    gcp:
+      type: {{.ControlPlaneType}}
+compute:
+- name: worker
+  replicas: {{.WorkerReplicas}}
+  platform:
+    gcp:
       type: {{.WorkerType}}
 networking:
   networkType: {{.NetworkType}}
