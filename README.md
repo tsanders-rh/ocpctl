@@ -1,8 +1,8 @@
 # ocpctl
 
-**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, EKS, and IKS.**
+**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, EKS, IKS, and GKE.**
 
-ocpctl is a production-ready platform that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters on AWS and IBM Cloud with automated cost controls, comprehensive security, and enterprise-grade operations.
+ocpctl is a production-ready platform that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters on AWS, Google Cloud Platform (GCP), and IBM Cloud with automated cost controls, comprehensive security, and enterprise-grade operations.
 
 ---
 
@@ -26,16 +26,18 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 ## Key Features
 
 ### Platform Support
-- ✅ **OpenShift 4.x** (AWS, IBM Cloud) - Full lifecycle including hibernation
+- ✅ **OpenShift 4.x** (AWS, GCP, IBM Cloud) - Full lifecycle including hibernation
+- ✅ **Google Kubernetes Engine (GKE)** - Managed Kubernetes on Google Cloud
 - ✅ **AWS EKS** - Elastic Kubernetes Service with VPC management
 - ✅ **IBM Cloud IKS** - IBM Kubernetes Service
-- ✅ **Multi-version support** - OpenShift 4.17 - 4.22+
+- ✅ **Multi-version support** - OpenShift 4.18 - 4.22+, Kubernetes 1.30 - 1.35
 
 ### Cost Management
 - **Automatic TTL-based destruction** - Clusters self-destruct after configured lifetime
-- **Work hours hibernation** - Stop instances outside business hours (OpenShift on AWS)
+- **Work hours hibernation** - Stop instances outside business hours (OpenShift + GKE auto-scaling)
 - **Comprehensive resource tagging** - Track costs by owner, team, cost center, and cluster
-- **Orphaned resource detection** - Identify and clean up resources from failed deployments
+- **Orphaned resource detection** - Identify and clean up resources from failed deployments (AWS, GCP)
+- **Cloud billing integration** - GCP BigQuery billing export for accurate cost tracking
 
 ### Security & Compliance
 - **Dual authentication** - JWT (email/password) or AWS IAM credentials
