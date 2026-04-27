@@ -1915,7 +1915,8 @@ func (h *ClusterHandler) calculateEffectiveCost(cluster *types.Cluster, prof *pr
 	if cluster.Status == types.ClusterStatusHibernated {
 		switch cluster.ClusterType {
 		case types.ClusterTypeOpenShift:
-			// OpenShift on AWS: All instances stopped, only EBS storage remains
+			// OpenShift (any platform): All instances stopped, only persistent storage remains
+			// AWS: EBS volumes, GCP: Persistent Disks
 			// Estimate ~10% of running cost (storage only)
 			return baseCost * 0.10
 		case types.ClusterTypeEKS:
@@ -1925,6 +1926,11 @@ func (h *ClusterHandler) calculateEffectiveCost(cluster *types.Cluster, prof *pr
 			// IKS: Workers scaled to 0, minimal cost
 			// Estimate ~5% of running cost
 			return baseCost * 0.05
+		case types.ClusterTypeGKE:
+			// GKE Standard: Node pools scaled to 0, NO control plane cost
+			// GKE Standard tier has no control plane charges
+			// Only persistent disks remain when hibernated (~2-5% of running cost)
+			return baseCost * 0.03
 		default:
 			// Unknown cluster type, use conservative estimate
 			return baseCost * 0.10
