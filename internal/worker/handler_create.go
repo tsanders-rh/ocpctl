@@ -71,6 +71,8 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.handleEKSCreate(ctx, job, cluster)
 	case types.ClusterTypeIKS:
 		return h.handleIKSCreate(ctx, job, cluster)
+	case types.ClusterTypeGKE:
+		return h.handleGKECreate(ctx, job, cluster)
 	default:
 		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}
@@ -85,13 +87,14 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	// AWS-specific pre-flight checks (instance type availability)
-	if cluster.Platform == types.PlatformAWS {
-		prof, err := h.registry.Get(cluster.Profile)
-		if err != nil {
-			return fmt.Errorf("get profile for pre-flight check: %w", err)
-		}
+	// Platform-specific pre-flight checks
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile for pre-flight check: %w", err)
+	}
 
+	if cluster.Platform == types.PlatformAWS {
+		// AWS-specific pre-flight checks (instance type availability)
 		log.Printf("Running AWS pre-flight capacity checks for region %s", cluster.Region)
 		checker, err := NewAWSPreflightChecker(ctx, cluster.Region)
 		if err != nil {
@@ -102,6 +105,20 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 				// Pre-flight check failed - fail immediately before starting installation
 				// Use PreflightCheckError to prevent retries and provide clear error code
 				return types.NewPreflightCheckError("AWS capacity pre-flight check failed: %v", err)
+			}
+		}
+	} else if cluster.Platform == types.PlatformGCP {
+		// GCP-specific pre-flight checks (machine type availability)
+		log.Printf("Running GCP pre-flight capacity checks for region %s", cluster.Region)
+		checker, err := NewGCPPreflightChecker(ctx, getGCPProject(prof), cluster.Region, "")
+		if err != nil {
+			log.Printf("Warning: failed to create GCP pre-flight checker: %v", err)
+			// Don't fail cluster creation if pre-flight check setup fails
+		} else {
+			defer checker.Close()
+			if err := checker.CheckMachineTypeAvailability(ctx, prof); err != nil {
+				// Pre-flight check failed - fail immediately before starting installation
+				return types.NewPreflightCheckError("GCP capacity pre-flight check failed: %v", err)
 			}
 		}
 	}
@@ -189,6 +206,12 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		log.Printf("Running IBM Cloud pre-installation (CCO workflow)...")
 		if err := h.HandleIBMCloudCreate(ctx, job, inst, workDir); err != nil {
 			return fmt.Errorf("IBM Cloud pre-installation: %w", err)
+		}
+	} else if cluster.Platform == types.PlatformGCP {
+		// GCP OpenShift: verify authentication and setup
+		log.Printf("Running GCP pre-installation checks...")
+		if err := h.HandleGCPOpenShiftCreate(ctx, job, inst, workDir, cluster, prof); err != nil {
+			return fmt.Errorf("GCP pre-installation: %w", err)
 		}
 	}
 
@@ -1085,4 +1108,78 @@ func (h *CreateHandler) discoverAndRecordRoute53Zone(ctx context.Context, workDi
 	}
 
 	return fmt.Errorf("Route53 hosted zone not found for %s", zoneName)
+}
+
+// handleGKECreate handles GKE cluster creation
+func (h *CreateHandler) handleGKECreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting GKE cluster creation for %s", cluster.Name)
+
+	// Update cluster status to CREATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusCreating); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	// Create work directory for this cluster with secure permissions
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
+	}
+
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Call GCP-specific create handler
+	if err := h.HandleGKECreate(ctx, job, cluster, prof, workDir); err != nil {
+		return err
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to READY: %w", err)
+	}
+
+	log.Printf("GKE cluster %s is now READY", cluster.Name)
+
+	// Store cluster outputs (API URL, kubeconfig path, etc.)
+	if err := h.storeGKEClusterOutputs(ctx, cluster, workDir, prof); err != nil {
+		log.Printf("Warning: failed to store cluster outputs: %v", err)
+		// Don't fail cluster creation if output storage fails
+	}
+
+	return nil
+}
+
+// storeGKEClusterOutputs stores GKE cluster access information in the database
+func (h *CreateHandler) storeGKEClusterOutputs(ctx context.Context, cluster *types.Cluster, workDir string, prof *profile.Profile) error {
+	// For GKE, we need to get the cluster endpoint from gcloud
+	gkeInstaller := installer.NewGKEInstaller()
+
+	info, err := gkeInstaller.GetClusterInfo(ctx, cluster.Name, getGCPProject(prof), cluster.Region, "")
+	if err != nil {
+		return fmt.Errorf("get GKE cluster info: %w", err)
+	}
+
+	// Build API URL from endpoint
+	apiURL := fmt.Sprintf("https://%s", info.Endpoint)
+
+	// Create cluster outputs record
+	outputs := &types.ClusterOutputs{
+		ID:              uuid.New().String(),
+		ClusterID:       cluster.ID,
+		APIURL:          &apiURL,
+		KubeconfigS3URI: func() *string { s := fmt.Sprintf("file://%s/auth/kubeconfig", workDir); return &s }(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	// Upsert outputs to database
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		return fmt.Errorf("upsert cluster outputs: %w", err)
+	}
+
+	log.Printf("Stored GKE cluster outputs: API URL=%s", apiURL)
+	return nil
 }

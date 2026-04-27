@@ -1,0 +1,116 @@
+name: gke-standard
+displayName: GCP GKE Standard Cluster
+description: Standard 3-node GKE cluster with autoscaling for development and testing
+platform: gcp
+clusterType: gke
+track: kube
+enabled: true
+
+kubernetesVersions:
+  allowlist:
+    - "1.35"
+    - "1.34"
+    - "1.33"
+    - "1.32"
+    - "1.31"
+    - "1.30"
+  default: "1.34"
+
+regions:
+  allowlist:
+    - us-central1
+    - us-east1
+    - us-east4
+    - us-west1
+    - us-west2
+    - us-west3
+    - us-west4
+    - europe-west1
+    - europe-west2
+    - europe-west3
+    - europe-west4
+    - asia-east1
+    - asia-southeast1
+    - asia-northeast1
+  default: us-central1
+
+compute:
+  workers:
+    replicas: 3
+    minReplicas: 1
+    maxReplicas: 10
+    machineType: e2-medium
+    autoscaling: true
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 48   # 2 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: gke
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+
+costControls:
+  estimatedHourlyCost: 0.05   # 3x e2-medium instances (~$0.0168/hr each) - no control plane cost for GKE Standard
+  maxMonthlyCost: 40          # Always-on monthly cost estimate
+  budgetAlertThreshold: 0.8
+  warningMessage: "GKE Standard tier has no control plane cost. Only compute resources are billed."
+
+platformConfig:
+  gke:
+    enabledClusterLogTypes:
+      - SYSTEM_COMPONENTS
+      - WORKLOADS
+    publicAccess: true
+    privateAccess: true
+    enableWorkloadIdentity: true
+    releaseChannel: regular  # stable, regular, or rapid
+    nodePools:
+      - name: default-pool
+        machineType: e2-medium
+        diskType: pd-standard
+        diskSizeGB: 100
+        nodeCount: 3
+        minNodeCount: 1
+        maxNodeCount: 10
+        enableAutoScale: true
+
+postDeployment:
+  enabled: true
+  timeout: 30m
+  manifests:
+    - name: kubernetes-dashboard
+      description: "Kubernetes Dashboard v2.7.0 with token-based authentication and LoadBalancer service"
+      url: "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+      namespace: kubernetes-dashboard
+
+metadata:
+  capabilities:
+    - GCP GKE managed Kubernetes
+    - Workload Identity for secure pod authentication
+    - Kubernetes Dashboard with token authentication
+    - Auto-scaling node pools (1-10 nodes)
+    - Cloud Logging and Monitoring enabled
+    - Regular release channel for balanced stability
+  capacity:
+    nodes: "1-10 nodes (autoscaling)"
+    vcpu: "2 vCPU per node (e2-medium)"
+    memory: "4 GB RAM per node"
+  notes:
+    - "GKE Standard tier has NO control plane charges"
+    - "Nodes are e2-medium (2 vCPU, 4GB RAM) at ~$0.0168/hour each"
+    - "3-node cluster: ~$0.05/hour or $37/month for always-on cluster"
+    - "Autoscaling enabled: scales from 1 to 10 nodes based on demand"
+    - "Workload Identity enabled for secure service account authentication"
+    - "Cloud Logging captures both system and workload logs"
+    - "Kubernetes Dashboard automatically installed with token-based authentication"

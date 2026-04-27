@@ -1,0 +1,128 @@
+name: gcp-standard
+displayName: GCP OpenShift Standard Cluster
+description: Standard 6-node OpenShift cluster on GCP for development and integration testing
+platform: gcp
+clusterType: openshift
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18.35"
+    - "4.19.23"
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+    - "4.21.8"
+    - "4.21.9"
+    - "4.21.10"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-central1
+    - us-east1
+    - us-east4
+    - us-west1
+    - us-west2
+    - europe-west1
+    - europe-west2
+    - europe-west3
+    - europe-west4
+    - asia-east1
+    - asia-southeast1
+    - asia-northeast1
+  default: us-central1
+
+baseDomains:
+  allowlist:
+    - mg.dog8code.com
+  default: mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: n2-standard-4
+    schedulable: false
+  workers:
+    replicas: 3
+    minReplicas: 0
+    maxReplicas: 10
+    instanceType: n2-standard-8
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 168      # 1 week max
+  defaultTTLHours: 72   # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: openshift
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 1.20   # 3x n2-standard-4 control plane + 3x n2-standard-8 workers
+  maxMonthlyCost: 900         # Monthly cost estimate
+  budgetAlertThreshold: 0.8
+  warningMessage: "OpenShift on GCP uses GCE VMs. Control plane: n2-standard-4, Workers: n2-standard-8"
+
+platformConfig:
+  gcp:
+    project: ""  # Set by user during cluster creation
+    network: ""  # Auto-created if not specified
+    subnetwork: ""  # Auto-created if not specified
+    controlPlane:
+      machineType: n2-standard-4
+      diskType: pd-ssd
+      diskSizeGB: 128
+    compute:
+      machineType: n2-standard-8
+      diskType: pd-standard
+      diskSizeGB: 128
+    serviceAccount: ""  # Use default compute service account
+    secureBootPolicy: Disabled
+
+postDeployment:
+  enabled: false
+
+metadata:
+  capabilities:
+    - OpenShift Container Platform on GCP
+    - OVN-Kubernetes networking
+    - Auto-scaling worker nodes (0-10)
+    - Hibernate/resume support (stop/start VMs)
+    - Secure Boot support
+    - Custom VPC and subnet configuration
+  capacity:
+    controlPlane: "3 nodes, n2-standard-4 (4 vCPU, 16 GB RAM each)"
+    workers: "3 nodes, n2-standard-8 (8 vCPU, 32 GB RAM each)"
+    total: "6 nodes, 36 vCPU, 144 GB RAM"
+  notes:
+    - "Control plane: 3x n2-standard-4 (~$0.19/hr each, ~$0.57/hr total)"
+    - "Workers: 3x n2-standard-8 (~$0.39/hr each, ~$1.17/hr total)"
+    - "Total running cost: ~$1.20/hour or ~$870/month"
+    - "Hibernated cost: ~$0.12/hour (storage only, ~90% savings)"
+    - "Persistent disk: SSD for control plane, Standard for workers"
+    - "Supports auto-scaling from 0 to 10 worker nodes"
+    - "OpenShift 4.18+ required for GCP support"

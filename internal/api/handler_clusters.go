@@ -66,8 +66,8 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
 	Name             string                    `json:"name" validate:"required,min=3,max=63,cluster_name"`
-	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud"`
-	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift eks iks"`
+	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud gcp"`
+	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift eks iks gke"`
 	Version          string                    `json:"version" validate:"required"`
 	Profile          string                    `json:"profile" validate:"required"`
 	Region           string                    `json:"region" validate:"required"`

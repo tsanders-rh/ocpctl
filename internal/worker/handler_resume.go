@@ -72,18 +72,22 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.resumeEKS(ctx, cluster, job)
 	case types.ClusterTypeIKS:
 		return h.resumeIKS(ctx, cluster, job)
+	case types.ClusterTypeGKE:
+		return h.resumeGKE(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported cluster type for resume: %s", cluster.ClusterType)
 	}
 }
 
-// resumeOpenShift resumes an OpenShift cluster (AWS or IBMCloud)
+// resumeOpenShift resumes an OpenShift cluster (AWS, IBMCloud, or GCP)
 func (h *ResumeHandler) resumeOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	switch cluster.Platform {
 	case types.PlatformAWS:
 		return h.resumeAWS(ctx, cluster, job)
 	case types.PlatformIBMCloud:
 		return fmt.Errorf("resume not supported for platform %s - cluster was destroyed", cluster.Platform)
+	case types.PlatformGCP:
+		return h.resumeGCPOpenShift(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift resume: %s", cluster.Platform)
 	}

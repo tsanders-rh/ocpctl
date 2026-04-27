@@ -71,6 +71,8 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.handleEKSDestroy(ctx, job, cluster)
 	case types.ClusterTypeIKS:
 		return h.handleIKSDestroy(ctx, job, cluster)
+	case types.ClusterTypeGKE:
+		return h.handleGKEDestroy(ctx, job, cluster)
 	default:
 		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}
@@ -227,6 +229,25 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		} else {
 			cleanupResults["platform_cleanup"] = "success"
 			log.Printf("✓ AWS cleanup completed successfully (IAM roles, OIDC provider, Route53 zone deleted)")
+		}
+	} else if cluster.Platform == types.PlatformGCP {
+		// GCP cleanup - verify authentication and clean up any orphaned resources
+		log.Printf("Running GCP post-destruction cleanup...")
+		prof, err := h.registry.Get(cluster.Profile)
+		if err != nil {
+			log.Printf("Warning: failed to get profile for GCP cleanup: %v", err)
+		} else {
+			if err := h.HandleGCPOpenShiftDestroy(ctx, job, cluster, workDir); err != nil {
+				errMsg := fmt.Sprintf("GCP cleanup failed: %v", err)
+				log.Printf("Warning: %s", errMsg)
+				cleanupWarnings = append(cleanupWarnings, errMsg)
+				cleanupResults["platform_cleanup"] = "failed"
+				cleanupResults["platform_cleanup_error"] = err.Error()
+				platformCleanupSucceeded = false
+			} else {
+				cleanupResults["platform_cleanup"] = "success"
+				log.Printf("✓ GCP cleanup completed successfully")
+			}
 		}
 	}
 

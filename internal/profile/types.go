@@ -155,6 +155,8 @@ type PlatformConfig struct {
 	AWS      *AWSConfig      `yaml:"aws,omitempty"`
 	IBMCloud *IBMCloudConfig `yaml:"ibmcloud,omitempty"`
 	EKS      *EKSConfig      `yaml:"eks,omitempty"`
+	GCP      *GCPConfig      `yaml:"gcp,omitempty"`
+	GKE      *GKEConfig      `yaml:"gke,omitempty"`
 }
 
 // AWSConfig contains AWS-specific settings
@@ -184,6 +186,46 @@ type EKSConfig struct {
 	EnabledClusterLogTypes []string `yaml:"enabledClusterLogTypes,omitempty" json:"enabled_cluster_log_types,omitempty"`
 	PublicAccess           bool     `yaml:"publicAccess,omitempty" json:"public_access,omitempty"`
 	PrivateAccess          bool     `yaml:"privateAccess,omitempty" json:"private_access,omitempty"`
+}
+
+// GCPConfig contains GCP-specific settings for OpenShift on GCP
+type GCPConfig struct {
+	Project              string              `yaml:"project" json:"project"`
+	Network              string              `yaml:"network,omitempty" json:"network,omitempty"`
+	Subnetwork           string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
+	ControlPlane         *GCPMachineConfig   `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Compute              *GCPMachineConfig   `yaml:"compute,omitempty" json:"compute,omitempty"`
+	ServiceAccount       string              `yaml:"serviceAccount,omitempty" json:"service_account,omitempty"`
+	SecureBootPolicy     string              `yaml:"secureBootPolicy,omitempty" json:"secure_boot_policy,omitempty"`
+}
+
+// GCPMachineConfig defines GCP machine configuration
+type GCPMachineConfig struct {
+	MachineType          string  `yaml:"machineType" json:"machine_type"`
+	DiskSizeGB           int     `yaml:"diskSizeGB" json:"disk_size_gb"`
+	DiskType             string  `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
+}
+
+// GKEConfig contains GKE-specific settings
+type GKEConfig struct {
+	EnabledClusterLogTypes []string          `yaml:"enabledClusterLogTypes,omitempty" json:"enabled_cluster_log_types,omitempty"`
+	PublicAccess           bool              `yaml:"publicAccess,omitempty" json:"public_access,omitempty"`
+	PrivateAccess          bool              `yaml:"privateAccess,omitempty" json:"private_access,omitempty"`
+	EnableWorkloadIdentity bool              `yaml:"enableWorkloadIdentity,omitempty" json:"enable_workload_identity,omitempty"`
+	ReleaseChannel         string            `yaml:"releaseChannel,omitempty" json:"release_channel,omitempty"` // "rapid", "regular", "stable"
+	NodePools              []GKENodePoolConfig `yaml:"nodePools,omitempty" json:"node_pools,omitempty"`
+}
+
+// GKENodePoolConfig defines a GKE node pool configuration
+type GKENodePoolConfig struct {
+	Name           string `yaml:"name" json:"name"`
+	MachineType    string `yaml:"machineType" json:"machine_type"`
+	DiskSizeGB     int    `yaml:"diskSizeGB" json:"disk_size_gb"`
+	DiskType       string `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
+	NodeCount      int    `yaml:"nodeCount" json:"node_count"`
+	MinNodeCount   int    `yaml:"minNodeCount,omitempty" json:"min_node_count,omitempty"`
+	MaxNodeCount   int    `yaml:"maxNodeCount,omitempty" json:"max_node_count,omitempty"`
+	EnableAutoScale bool  `yaml:"enableAutoScale,omitempty" json:"enable_auto_scale,omitempty"`
 }
 
 // PostDeploymentConfig defines automated post-deployment configuration

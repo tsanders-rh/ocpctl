@@ -66,18 +66,22 @@ func (h *HibernateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.hibernateEKS(ctx, cluster, job)
 	case types.ClusterTypeIKS:
 		return h.hibernateIKS(ctx, cluster, job)
+	case types.ClusterTypeGKE:
+		return h.hibernateGKE(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported cluster type for hibernation: %s", cluster.ClusterType)
 	}
 }
 
-// hibernateOpenShift hibernates an OpenShift cluster (AWS or IBMCloud)
+// hibernateOpenShift hibernates an OpenShift cluster (AWS, IBMCloud, or GCP)
 func (h *HibernateHandler) hibernateOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	switch cluster.Platform {
 	case types.PlatformAWS:
 		return h.hibernateAWS(ctx, cluster, job)
 	case types.PlatformIBMCloud:
 		return h.fallbackToDestroy(ctx, cluster, job)
+	case types.PlatformGCP:
+		return h.hibernateGCPOpenShift(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift hibernation: %s", cluster.Platform)
 	}
