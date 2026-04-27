@@ -73,11 +73,11 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 // List handles GET /api/v1/profiles
 //
 //	@Summary		List cluster profiles
-//	@Description	Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud) and track (ga or prerelease).
+//	@Description	Returns all available cluster profiles. Can be filtered by platform (aws, ibmcloud, or gcp) and track (ga or prerelease).
 //	@Tags			Profiles
 //	@Accept			json
 //	@Produce		json
-//	@Param			platform	query		string	false	"Filter by platform (aws, ibmcloud)"
+//	@Param			platform	query		string	false	"Filter by platform (aws, ibmcloud, gcp)"
 //	@Param			track		query		string	false	"Filter by track (ga, prerelease)"
 //	@Success		200			{array}		ProfileResponse
 //	@Failure		400			{object}	map[string]string	"Invalid platform or track parameter"
@@ -101,8 +101,10 @@ func (h *ProfileHandler) List(c echo.Context) error {
 			platform = types.PlatformAWS
 		case "ibmcloud":
 			platform = types.PlatformIBMCloud
+		case "gcp":
+			platform = types.PlatformGCP
 		default:
-			return ErrorBadRequest(c, "Invalid platform. Must be 'aws' or 'ibmcloud'")
+			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', or 'gcp'")
 		}
 
 		profiles = h.registry.ListByPlatform(platform)
