@@ -162,13 +162,20 @@ func (j *Janitor) run() {
 		log.Printf("Error enforcing work hours: %v", err)
 	}
 
-	// Detect orphaned AWS resources (less frequently to avoid rate limits)
+	// Detect orphaned cloud resources (less frequently to avoid rate limits)
 	if j.config.OrphanDetection {
 		// Check if enough time has passed since last orphan check
 		if time.Since(j.lastOrphanCheck) >= j.config.OrphanCheckInterval {
+			// Detect AWS orphaned resources
 			if err := j.detectOrphanedResources(ctx); err != nil {
-				log.Printf("Error detecting orphaned resources: %v", err)
+				log.Printf("Error detecting orphaned AWS resources: %v", err)
 			}
+
+			// Detect GCP orphaned resources
+			if err := j.detectOrphanedGCPResources(ctx); err != nil {
+				log.Printf("Error detecting orphaned GCP resources: %v", err)
+			}
+
 			j.lastOrphanCheck = time.Now()
 		}
 	}
