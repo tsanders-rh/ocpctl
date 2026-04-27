@@ -1513,6 +1513,12 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 		"--project", project,
 		"--format", "json")
 
+	// Set environment variables for gcloud authentication
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS=%s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+		fmt.Sprintf("GCP_PROJECT=%s", project),
+	)
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list GKE node pools: %w", err)
@@ -1558,6 +1564,12 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 		"--filter", fmt.Sprintf("name~gke-%s-%s", clusterName, poolName),
 		"--format", "json")
 
+	// Set environment variables for gcloud authentication
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS=%s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+		fmt.Sprintf("GCP_PROJECT=%s", project),
+	)
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instance groups: %w", err)
@@ -1580,6 +1592,12 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 			"--zone", filepath.Base(group.Zone),
 			"--project", project,
 			"--format", "json")
+
+		// Set environment variables for gcloud authentication
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS=%s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+			fmt.Sprintf("GCP_PROJECT=%s", project),
+		)
 
 		output, err := cmd.Output()
 		if err != nil {
@@ -1607,6 +1625,12 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 				"--zone", zone,
 				"--project", project,
 				"--format", "json")
+
+			// Set environment variables for gcloud authentication
+			cmd.Env = append(os.Environ(),
+				fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS=%s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+				fmt.Sprintf("GCP_PROJECT=%s", project),
+			)
 
 			output, err := cmd.Output()
 			if err != nil {
@@ -1699,6 +1723,12 @@ func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *ty
 		"--project", project,
 		"--filter", labelFilter,
 		"--format", "json")
+
+	// Set environment variables for gcloud authentication
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS=%s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+		fmt.Sprintf("GCP_PROJECT=%s", project),
+	)
 
 	output, err := cmd.Output()
 	if err != nil {
