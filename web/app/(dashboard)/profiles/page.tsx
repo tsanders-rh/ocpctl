@@ -67,6 +67,13 @@ export default function ProfilesPage() {
               AWS
             </Button>
             <Button
+              variant={selectedPlatform === Platform.GCP ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(Platform.GCP)}
+            >
+              GCP
+            </Button>
+            <Button
               variant={selectedPlatform === Platform.IBMCloud ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedPlatform(Platform.IBMCloud)}
