@@ -94,3 +94,42 @@ func (c *Client) GetObjectURL(bucket, key string) string {
 	encodedKey := url.PathEscape(key)
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, c.region, encodedKey)
 }
+
+// DownloadFileContent downloads file content from S3
+func (c *Client) DownloadFileContent(ctx context.Context, bucket, key string) ([]byte, error) {
+	result, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("download from S3: %w", err)
+	}
+	defer result.Body.Close()
+
+	// Read the entire content
+	data := make([]byte, 0, *result.ContentLength)
+	buf := make([]byte, 4096)
+	for {
+		n, err := result.Body.Read(buf)
+		if n > 0 {
+			data = append(data, buf[:n]...)
+		}
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return nil, fmt.Errorf("read S3 object: %w", err)
+		}
+	}
+
+	return data, nil
+}
+
+// DownloadFile is a convenience function that creates a client and downloads a file
+func DownloadFile(ctx context.Context, bucket, key string) ([]byte, error) {
+	client, err := NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.DownloadFileContent(ctx, bucket, key)
+}

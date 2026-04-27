@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -20,6 +21,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	validation2 "github.com/tsanders-rh/ocpctl/internal/validation"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -1849,7 +1851,7 @@ func (h *ClusterHandler) getClusterEC2Instances(ctx context.Context, cluster *ty
 
 // getInfraIDFromMetadata extracts the infrastructure ID from cluster metadata
 func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string, error) {
-	// Get work directory from environment
+	// First try reading from local filesystem
 	workDir := os.Getenv("WORK_DIR")
 	if workDir == "" {
 		workDir = "/tmp/ocpctl"
@@ -1859,7 +1861,11 @@ func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string,
 
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		return "", fmt.Errorf("read metadata.json: %w", err)
+		// If local file not found, try downloading from S3
+		data, err = h.getMetadataFromS3(cluster)
+		if err != nil {
+			return "", fmt.Errorf("metadata not available locally or in S3: %w", err)
+		}
 	}
 
 	var metadata struct {
@@ -1875,6 +1881,47 @@ func (h *ClusterHandler) getInfraIDFromMetadata(cluster *types.Cluster) (string,
 	}
 
 	return metadata.InfraID, nil
+}
+
+// getMetadataFromS3 downloads cluster metadata from S3
+func (h *ClusterHandler) getMetadataFromS3(cluster *types.Cluster) ([]byte, error) {
+	ctx := context.Background()
+
+	// Get metadata S3 URI from cluster outputs
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, cluster.ID)
+	if err != nil {
+		return nil, fmt.Errorf("cluster outputs not found: %w", err)
+	}
+
+	if outputs.MetadataS3URI == nil || *outputs.MetadataS3URI == "" {
+		return nil, fmt.Errorf("metadata S3 URI not available")
+	}
+
+	// Parse S3 URI to extract bucket and key
+	s3URI := *outputs.MetadataS3URI
+	// Format: s3://bucket/key or file:///path
+	if strings.HasPrefix(s3URI, "file://") {
+		// Local file reference, try reading it
+		filePath := strings.TrimPrefix(s3URI, "file://")
+		return os.ReadFile(filePath)
+	}
+
+	if !strings.HasPrefix(s3URI, "s3://") {
+		return nil, fmt.Errorf("invalid S3 URI format: %s", s3URI)
+	}
+
+	// Remove s3:// prefix and split bucket/key
+	s3Path := strings.TrimPrefix(s3URI, "s3://")
+	parts := strings.SplitN(s3Path, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid S3 URI format: %s", s3URI)
+	}
+
+	bucket := parts[0]
+	key := parts[1]
+
+	// Download from S3
+	return s3.DownloadFile(ctx, bucket, key)
 }
 
 // strPtr returns a pointer to a string
