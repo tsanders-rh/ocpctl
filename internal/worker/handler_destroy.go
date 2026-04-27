@@ -233,11 +233,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 	} else if cluster.Platform == types.PlatformGCP {
 		// GCP cleanup - verify authentication and clean up any orphaned resources
 		log.Printf("Running GCP post-destruction cleanup...")
-		prof, err := h.registry.Get(cluster.Profile)
-		if err != nil {
-			log.Printf("Warning: failed to get profile for GCP cleanup: %v", err)
-		} else {
-			if err := h.HandleGCPOpenShiftDestroy(ctx, job, cluster, workDir); err != nil {
+		if err := h.HandleGCPOpenShiftDestroy(ctx, job, cluster, workDir); err != nil {
 				errMsg := fmt.Sprintf("GCP cleanup failed: %v", err)
 				log.Printf("Warning: %s", errMsg)
 				cleanupWarnings = append(cleanupWarnings, errMsg)
@@ -248,7 +244,6 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 				cleanupResults["platform_cleanup"] = "success"
 				log.Printf("✓ GCP cleanup completed successfully")
 			}
-		}
 	}
 
 	// Clean up work directory (OPTIONAL: local disk cleanup)

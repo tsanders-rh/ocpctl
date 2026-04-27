@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -61,15 +60,9 @@ func (h *DestroyHandler) handleGKEDestroy(ctx context.Context, job *types.Job, c
 		if isGKEClusterNotFoundError(err) {
 			log.Printf("GKE cluster %s not found (may have been deleted manually), marking as DESTROYED", cluster.Name)
 
-			// Update cluster status to DESTROYED
-			if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyed); err != nil {
-				return fmt.Errorf("update cluster status to DESTROYED: %w", err)
-			}
-
-			// Set destroyed timestamp
-			now := time.Now()
-			if err := h.store.Clusters.SetDestroyedAt(ctx, cluster.ID, &now); err != nil {
-				log.Printf("Warning: failed to set destroyed_at timestamp: %v", err)
+			// Mark cluster as destroyed (sets status to DESTROYED and destroyed_at timestamp)
+			if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+				return fmt.Errorf("mark cluster destroyed: %w", err)
 			}
 
 			return nil
@@ -89,23 +82,9 @@ func (h *DestroyHandler) handleGKEDestroy(ctx context.Context, job *types.Job, c
 		log.Printf("✓ GKE cluster deletion verified")
 	}
 
-	// Update cluster status to DESTROYED
-	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyed); err != nil {
-		return fmt.Errorf("update cluster status to DESTROYED: %w", err)
-	}
-
-	// Set destroyed timestamp
-	now := time.Now()
-	if err := h.store.Clusters.SetDestroyedAt(ctx, cluster.ID, &now); err != nil {
-		log.Printf("Warning: failed to set destroyed_at timestamp: %v", err)
-	}
-
-	// Publish cluster destroyed metric
-	if h.metricsPublisher != nil {
-		destroyTime := time.Since(job.CreatedAt)
-		if err := h.metricsPublisher.PublishClusterDestroyed(ctx, cluster, destroyTime); err != nil {
-			log.Printf("Warning: failed to publish cluster destroyed metric: %v", err)
-		}
+	// Mark cluster as destroyed (sets status to DESTROYED and destroyed_at timestamp)
+	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("mark cluster destroyed: %w", err)
 	}
 
 	log.Printf("GKE cluster %s destruction complete", cluster.Name)

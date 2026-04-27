@@ -7,7 +7,7 @@ type Profile struct {
 	Name               string                 `yaml:"name" validate:"required"`
 	DisplayName        string                 `yaml:"displayName" validate:"required"`
 	Description        string                 `yaml:"description" validate:"required"`
-	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud"`
+	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp"`
 	ClusterType        types.ClusterType      `yaml:"clusterType,omitempty"`
 	Track              string                 `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
 	Enabled            bool                   `yaml:"enabled"`

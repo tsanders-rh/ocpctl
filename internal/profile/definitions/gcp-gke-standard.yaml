@@ -1,4 +1,4 @@
-name: gke-standard
+name: gcp-gke-standard
 displayName: GCP GKE Standard Cluster
 description: Standard 3-node GKE cluster with autoscaling for development and testing
 platform: gcp

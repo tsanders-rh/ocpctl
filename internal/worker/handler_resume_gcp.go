@@ -46,7 +46,7 @@ func (h *ResumeHandler) resumeGKE(ctx context.Context, cluster *types.Cluster, j
 	// Find the most recent successful hibernate job
 	var nodePoolSizes map[string]int
 	for i := len(hibernateJobs) - 1; i >= 0; i-- {
-		if hibernateJobs[i].Status == types.JobStatusCompleted {
+		if hibernateJobs[i].Status == types.JobStatusSucceeded {
 			// Parse node pool sizes from metadata
 			if sizesJSON, ok := hibernateJobs[i].Metadata["node_pool_sizes"].(string); ok {
 				if err := json.Unmarshal([]byte(sizesJSON), &nodePoolSizes); err != nil {
@@ -225,7 +225,7 @@ func (h *ResumeHandler) resumeGCPOpenShift(ctx context.Context, cluster *types.C
 	log.Printf("All instances started, waiting for cluster to become ready...")
 
 	// Wait for cluster to become accessible (similar to AWS resume)
-	if err := h.waitForClusterReady(ctx, cluster); err != nil {
+	if err := h.waitForClusterHealth(ctx, cluster); err != nil {
 		log.Printf("Warning: cluster health check failed: %v", err)
 		// Don't fail - instances are running, cluster may just need more time
 	}
