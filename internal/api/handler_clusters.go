@@ -1392,6 +1392,21 @@ type EC2Instance struct {
 	Name             string    `json:"name"`
 }
 
+// ClusterInstance represents a generic instance across cloud platforms
+type ClusterInstance struct {
+	InstanceID       string            `json:"instance_id"`
+	InstanceType     string            `json:"instance_type"`
+	State            string            `json:"state"`
+	PrivateIPAddress *string           `json:"private_ip_address,omitempty"`
+	PublicIPAddress  *string           `json:"public_ip_address,omitempty"`
+	LaunchTime       *time.Time        `json:"launch_time,omitempty"`
+	Name             string            `json:"name"`
+	Zone             string            `json:"zone,omitempty"`
+	Platform         string            `json:"platform"` // aws, gcp, ibmcloud
+	Labels           map[string]string `json:"labels,omitempty"`
+	MachineType      string            `json:"machine_type,omitempty"` // GCP-specific
+}
+
 // GetInstances handles GET /api/v1/clusters/:id/instances
 //
 //	@Summary		Get cluster EC2 instances
@@ -1427,18 +1442,329 @@ func (h *ClusterHandler) GetInstances(c echo.Context) error {
 		return err
 	}
 
-	// Only AWS clusters have EC2 instances
-	if cluster.Platform != types.PlatformAWS {
-		return ErrorBadRequest(c, "EC2 instance information is only available for AWS clusters")
+	// Route to platform-specific handler
+	var instances []ClusterInstance
+	switch cluster.Platform {
+	case types.PlatformAWS:
+		instances, err = h.getAWSInstances(ctx, cluster)
+	case types.PlatformGCP:
+		instances, err = h.getGCPInstances(ctx, cluster)
+	default:
+		return ErrorBadRequest(c, fmt.Sprintf("Instance information not available for platform: %s", cluster.Platform))
 	}
 
-	// Get instances from AWS
-	instances, err := h.getClusterEC2Instances(ctx, cluster)
 	if err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to get EC2 instances: %w", err))
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get instances: %w", err))
 	}
 
 	return SuccessOK(c, instances)
+}
+
+// getAWSInstances fetches AWS instances and converts to generic ClusterInstance format
+func (h *ClusterHandler) getAWSInstances(ctx context.Context, cluster *types.Cluster) ([]ClusterInstance, error) {
+	ec2Instances, err := h.getClusterEC2Instances(ctx, cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert EC2Instance to ClusterInstance
+	instances := make([]ClusterInstance, len(ec2Instances))
+	for i, ec2 := range ec2Instances {
+		instances[i] = ClusterInstance{
+			InstanceID:       ec2.InstanceID,
+			InstanceType:     ec2.InstanceType,
+			State:            ec2.State,
+			PrivateIPAddress: ec2.PrivateIPAddress,
+			PublicIPAddress:  ec2.PublicIPAddress,
+			LaunchTime:       &ec2.LaunchTime,
+			Name:             ec2.Name,
+			Platform:         "aws",
+		}
+	}
+
+	return instances, nil
+}
+
+// getGCPInstances fetches GCP instances and converts to generic ClusterInstance format
+func (h *ClusterHandler) getGCPInstances(ctx context.Context, cluster *types.Cluster) ([]ClusterInstance, error) {
+	// Handle based on cluster type
+	if cluster.ClusterType == types.ClusterTypeGKE {
+		return h.getGKEInstances(ctx, cluster)
+	}
+
+	// For OpenShift on GCP, get compute instances
+	return h.getGCPComputeInstances(ctx, cluster)
+}
+
+// getGKEInstances fetches GKE node pool instances
+func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Cluster) ([]ClusterInstance, error) {
+	// Get GCP project from environment or cluster metadata
+	project := os.Getenv("GCP_PROJECT")
+	if project == "" {
+		return nil, fmt.Errorf("GCP_PROJECT environment variable not set")
+	}
+
+	// Execute gcloud command to get node pool information
+	cmd := exec.CommandContext(ctx, "gcloud", "container", "node-pools", "list",
+		"--cluster", cluster.Name,
+		"--region", cluster.Region,
+		"--project", project,
+		"--format", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list GKE node pools: %w", err)
+	}
+
+	// Parse node pool information
+	var nodePools []struct {
+		Name              string `json:"name"`
+		InitialNodeCount  int    `json:"initialNodeCount"`
+		Status            string `json:"status"`
+		Config            struct {
+			MachineType string            `json:"machineType"`
+			Labels      map[string]string `json:"labels"`
+		} `json:"config"`
+		Locations []string `json:"locations"`
+	}
+
+	if err := json.Unmarshal(output, &nodePools); err != nil {
+		return nil, fmt.Errorf("failed to parse node pool information: %w", err)
+	}
+
+	// Get actual VM instances for each node pool
+	var instances []ClusterInstance
+	for _, pool := range nodePools {
+		// Get instances in this node pool using instance group managers
+		poolInstances, err := h.getGKENodePoolInstances(ctx, cluster.Name, pool.Name, project, cluster.Region)
+		if err != nil {
+			log.Printf("Warning: failed to get instances for node pool %s: %v", pool.Name, err)
+			continue
+		}
+		instances = append(instances, poolInstances...)
+	}
+
+	return instances, nil
+}
+
+// getGKENodePoolInstances fetches actual VM instances for a GKE node pool
+func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterName, poolName, project, region string) ([]ClusterInstance, error) {
+	// Get instance group manager name (GKE naming convention)
+	// Format: gke-{cluster-name}-{pool-name}-{hash}
+	cmd := exec.CommandContext(ctx, "gcloud", "compute", "instance-groups", "list",
+		"--project", project,
+		"--filter", fmt.Sprintf("name~gke-%s-%s", clusterName, poolName),
+		"--format", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instance groups: %w", err)
+	}
+
+	var instanceGroups []struct {
+		Name string `json:"name"`
+		Zone string `json:"zone"`
+	}
+
+	if err := json.Unmarshal(output, &instanceGroups); err != nil {
+		return nil, fmt.Errorf("failed to parse instance groups: %w", err)
+	}
+
+	var instances []ClusterInstance
+	for _, group := range instanceGroups {
+		// Get instances in this group
+		cmd := exec.CommandContext(ctx, "gcloud", "compute", "instance-groups", "list-instances",
+			group.Name,
+			"--zone", filepath.Base(group.Zone),
+			"--project", project,
+			"--format", "json")
+
+		output, err := cmd.Output()
+		if err != nil {
+			log.Printf("Warning: failed to list instances in group %s: %v", group.Name, err)
+			continue
+		}
+
+		var groupInstances []struct {
+			Instance string `json:"instance"`
+			Status   string `json:"status"`
+		}
+
+		if err := json.Unmarshal(output, &groupInstances); err != nil {
+			log.Printf("Warning: failed to parse instances in group %s: %v", group.Name, err)
+			continue
+		}
+
+		// Get detailed instance information
+		for _, inst := range groupInstances {
+			instanceName := filepath.Base(inst.Instance)
+			zone := filepath.Base(group.Zone)
+
+			cmd := exec.CommandContext(ctx, "gcloud", "compute", "instances", "describe",
+				instanceName,
+				"--zone", zone,
+				"--project", project,
+				"--format", "json")
+
+			output, err := cmd.Output()
+			if err != nil {
+				log.Printf("Warning: failed to describe instance %s: %v", instanceName, err)
+				continue
+			}
+
+			var instanceDetail struct {
+				Name         string `json:"name"`
+				MachineType  string `json:"machineType"`
+				Status       string `json:"status"`
+				Zone         string `json:"zone"`
+				CreationTimestamp string `json:"creationTimestamp"`
+				Labels       map[string]string `json:"labels"`
+				NetworkInterfaces []struct {
+					NetworkIP string `json:"networkIP"`
+					AccessConfigs []struct {
+						NatIP string `json:"natIP"`
+					} `json:"accessConfigs"`
+				} `json:"networkInterfaces"`
+			}
+
+			if err := json.Unmarshal(output, &instanceDetail); err != nil {
+				log.Printf("Warning: failed to parse instance detail for %s: %v", instanceName, err)
+				continue
+			}
+
+			// Parse creation timestamp
+			var launchTime *time.Time
+			if instanceDetail.CreationTimestamp != "" {
+				if t, err := time.Parse(time.RFC3339, instanceDetail.CreationTimestamp); err == nil {
+					launchTime = &t
+				}
+			}
+
+			// Extract machine type name (remove zone prefix)
+			machineType := filepath.Base(instanceDetail.MachineType)
+
+			// Get IP addresses
+			var privateIP, publicIP *string
+			if len(instanceDetail.NetworkInterfaces) > 0 {
+				if instanceDetail.NetworkInterfaces[0].NetworkIP != "" {
+					privateIP = &instanceDetail.NetworkInterfaces[0].NetworkIP
+				}
+				if len(instanceDetail.NetworkInterfaces[0].AccessConfigs) > 0 {
+					if instanceDetail.NetworkInterfaces[0].AccessConfigs[0].NatIP != "" {
+						publicIP = &instanceDetail.NetworkInterfaces[0].AccessConfigs[0].NatIP
+					}
+				}
+			}
+
+			instances = append(instances, ClusterInstance{
+				InstanceID:       instanceName,
+				InstanceType:     machineType,
+				MachineType:      machineType,
+				State:            instanceDetail.Status,
+				PrivateIPAddress: privateIP,
+				PublicIPAddress:  publicIP,
+				LaunchTime:       launchTime,
+				Name:             instanceDetail.Name,
+				Zone:             filepath.Base(instanceDetail.Zone),
+				Platform:         "gcp",
+				Labels:           instanceDetail.Labels,
+			})
+		}
+	}
+
+	return instances, nil
+}
+
+// getGCPComputeInstances fetches GCP Compute instances for OpenShift on GCP
+func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *types.Cluster) ([]ClusterInstance, error) {
+	// Get infraID from metadata.json (similar to AWS)
+	infraID, err := h.getInfraIDFromMetadata(cluster)
+	if err != nil {
+		// If we can't get infraID, return empty list
+		return []ClusterInstance{}, nil
+	}
+
+	// Get GCP project from environment
+	project := os.Getenv("GCP_PROJECT")
+	if project == "" {
+		return nil, fmt.Errorf("GCP_PROJECT environment variable not set")
+	}
+
+	// Find all instances with label kubernetes-io-cluster-{infraID}=owned
+	labelFilter := fmt.Sprintf("labels.kubernetes-io-cluster-%s=owned", infraID)
+
+	cmd := exec.CommandContext(ctx, "gcloud", "compute", "instances", "list",
+		"--project", project,
+		"--filter", labelFilter,
+		"--format", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list GCP instances: %w", err)
+	}
+
+	var gcpInstances []struct {
+		Name         string `json:"name"`
+		MachineType  string `json:"machineType"`
+		Status       string `json:"status"`
+		Zone         string `json:"zone"`
+		CreationTimestamp string `json:"creationTimestamp"`
+		Labels       map[string]string `json:"labels"`
+		NetworkInterfaces []struct {
+			NetworkIP string `json:"networkIP"`
+			AccessConfigs []struct {
+				NatIP string `json:"natIP"`
+			} `json:"accessConfigs"`
+		} `json:"networkInterfaces"`
+	}
+
+	if err := json.Unmarshal(output, &gcpInstances); err != nil {
+		return nil, fmt.Errorf("failed to parse GCP instances: %w", err)
+	}
+
+	// Convert to ClusterInstance format
+	instances := make([]ClusterInstance, 0, len(gcpInstances))
+	for _, gcp := range gcpInstances {
+		// Parse creation timestamp
+		var launchTime *time.Time
+		if gcp.CreationTimestamp != "" {
+			if t, err := time.Parse(time.RFC3339, gcp.CreationTimestamp); err == nil {
+				launchTime = &t
+			}
+		}
+
+		// Extract machine type name (remove zone prefix)
+		machineType := filepath.Base(gcp.MachineType)
+
+		// Get IP addresses
+		var privateIP, publicIP *string
+		if len(gcp.NetworkInterfaces) > 0 {
+			if gcp.NetworkInterfaces[0].NetworkIP != "" {
+				privateIP = &gcp.NetworkInterfaces[0].NetworkIP
+			}
+			if len(gcp.NetworkInterfaces[0].AccessConfigs) > 0 {
+				if gcp.NetworkInterfaces[0].AccessConfigs[0].NatIP != "" {
+					publicIP = &gcp.NetworkInterfaces[0].AccessConfigs[0].NatIP
+				}
+			}
+		}
+
+		instances = append(instances, ClusterInstance{
+			InstanceID:       gcp.Name,
+			InstanceType:     machineType,
+			MachineType:      machineType,
+			State:            gcp.Status,
+			PrivateIPAddress: privateIP,
+			PublicIPAddress:  publicIP,
+			LaunchTime:       launchTime,
+			Name:             gcp.Name,
+			Zone:             filepath.Base(gcp.Zone),
+			Platform:         "gcp",
+			Labels:           gcp.Labels,
+		})
+	}
+
+	return instances, nil
 }
 
 // getClusterEC2Instances fetches EC2 instances for a cluster from AWS
