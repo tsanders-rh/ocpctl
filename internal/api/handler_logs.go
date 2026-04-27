@@ -88,12 +88,10 @@ func (h *LogHandler) GetClusterLogs(c echo.Context) error {
 	}
 
 	// Validate offset to prevent abuse and excessive database load
-	// Reject requests that attempt to paginate too far into the log history
+	// Note: We only validate after_sequence (positional offset within a job)
+	// We don't validate after_id since it's a database primary key that can be arbitrarily large
 	if afterSequence > MaxLogOffset {
 		return ErrorBadRequest(c, "after_sequence offset too large (max 10,000)")
-	}
-	if afterID > MaxLogOffset {
-		return ErrorBadRequest(c, "after_id offset too large (max 10,000)")
 	}
 
 	// If no job_id specified, return logs from ALL jobs for this cluster
