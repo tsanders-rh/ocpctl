@@ -89,7 +89,7 @@ costControls:
 
 platformConfig:
   gcp:
-    project: ""  # Set by user during cluster creation
+    project: "migration-eng"  # GCP project for OpenShift clusters
     network: ""  # Auto-created if not specified
     subnetwork: ""  # Auto-created if not specified
     controlPlane:

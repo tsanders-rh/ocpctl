@@ -67,6 +67,8 @@ costControls:
   warningMessage: "GKE Standard tier has no control plane cost. Only compute resources are billed."
 
 platformConfig:
+  gcp:
+    project: "migration-eng"  # GCP project for GKE clusters
   gke:
     enabledClusterLogTypes:
       - SYSTEM_COMPONENTS
