@@ -87,6 +87,16 @@ else
     echo "WARNING: Failed to sync manifests from S3"
 fi
 
+# Download GCP credentials from S3
+echo "Downloading GCP credentials from S3..."
+if aws s3 cp ${S3_BUCKET}/config/gcp-credentials.json ${REMOTE_BASE}/gcp-credentials.json; then
+    chmod 600 ${REMOTE_BASE}/gcp-credentials.json
+    echo "✓ GCP credentials downloaded"
+else
+    echo "WARNING: Failed to download GCP credentials from S3 (OK if not using GCP)"
+fi
+
+
 # Download ensure-installers script
 echo "Downloading ensure-installers script from S3..."
 mkdir -p ${REMOTE_BASE}/scripts
