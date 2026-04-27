@@ -164,8 +164,11 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		return nil, fmt.Errorf("unsupported platform: %s", prof.Platform)
 	}
 
-	// Render template
-	tmpl, err := template.New("install-config").Parse(tmplStr)
+	// Render template with custom functions
+	funcMap := template.FuncMap{
+		"gcpLabelKey": gcpLabelKey, // Convert tag keys to GCP-compliant format
+	}
+	tmpl, err := template.New("install-config").Funcs(funcMap).Parse(tmplStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse template: %w", err)
 	}
@@ -190,6 +193,45 @@ func stringValue(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// gcpLabelKey converts tag keys to GCP-compliant label keys
+// GCP label keys must:
+// - Begin with a lowercase letter
+// - Contain only lowercase letters, numeric characters, and _-
+// - Have a maximum of 63 characters
+func gcpLabelKey(key string) string {
+	if key == "" {
+		return ""
+	}
+
+	var result []rune
+	for i, r := range key {
+		// Convert to lowercase
+		if r >= 'A' && r <= 'Z' {
+			// Add hyphen before uppercase letters (except first character)
+			if i > 0 && len(result) > 0 {
+				result = append(result, '-')
+			}
+			result = append(result, r+32) // Convert to lowercase
+		} else if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			// Keep lowercase letters, numbers, hyphens, and underscores
+			result = append(result, r)
+		}
+		// Skip any other characters (spaces, special chars, etc.)
+	}
+
+	// Ensure it starts with a lowercase letter
+	for len(result) > 0 && !(result[0] >= 'a' && result[0] <= 'z') {
+		result = result[1:]
+	}
+
+	// Truncate to 63 characters if needed
+	if len(result) > 63 {
+		result = result[:63]
+	}
+
+	return string(result)
 }
 
 // awsInstallConfigTemplate is the template for AWS install-config.yaml
@@ -323,7 +365,7 @@ platform:
 {{- if .UserTags}}
     userLabels:
 {{- range $key, $value := .UserTags}}
-    - key: {{$key}}
+    - key: {{gcpLabelKey $key}}
       value: "{{$value}}"
 {{- end}}
 {{- end}}
