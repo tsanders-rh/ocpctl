@@ -166,7 +166,8 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 
 	// Render template with custom functions
 	funcMap := template.FuncMap{
-		"gcpLabelKey": gcpLabelKey, // Convert tag keys to GCP-compliant format
+		"gcpLabelKey":   gcpLabelKey,   // Convert tag keys to GCP-compliant format
+		"gcpLabelValue": gcpLabelValue, // Convert tag values to GCP-compliant format
 	}
 	tmpl, err := template.New("install-config").Funcs(funcMap).Parse(tmplStr)
 	if err != nil {
@@ -229,6 +230,55 @@ func gcpLabelKey(key string) string {
 	// Truncate to 63 characters if needed
 	if len(result) > 63 {
 		result = result[:63]
+	}
+
+	return string(result)
+}
+
+// gcpLabelValue converts tag values to GCP-compliant label values
+// GCP label values must:
+// - Contain only lowercase letters, numeric characters, and _-
+// - Have a maximum of 63 characters
+// - Cannot be empty
+func gcpLabelValue(value string) string {
+	if value == "" {
+		return "none"
+	}
+
+	var result []rune
+	for _, r := range value {
+		// Convert uppercase to lowercase
+		if r >= 'A' && r <= 'Z' {
+			result = append(result, r+32) // Convert to lowercase
+		} else if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			// Keep lowercase letters, numbers, hyphens, and underscores
+			result = append(result, r)
+		} else {
+			// Replace any other character with hyphen
+			// But avoid consecutive hyphens
+			if len(result) > 0 && result[len(result)-1] != '-' {
+				result = append(result, '-')
+			}
+		}
+	}
+
+	// Remove trailing hyphens
+	for len(result) > 0 && result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+
+	// Truncate to 63 characters if needed
+	if len(result) > 63 {
+		result = result[:63]
+		// Remove trailing hyphen after truncation
+		for len(result) > 0 && result[len(result)-1] == '-' {
+			result = result[:len(result)-1]
+		}
+	}
+
+	// Return "none" if empty after sanitization
+	if len(result) == 0 {
+		return "none"
 	}
 
 	return string(result)
@@ -366,7 +416,7 @@ platform:
     userLabels:
 {{- range $key, $value := .UserTags}}
     - key: {{gcpLabelKey $key}}
-      value: "{{$value}}"
+      value: "{{gcpLabelValue $value}}"
 {{- end}}
 {{- end}}
 controlPlane:
