@@ -1,0 +1,127 @@
+name: gcp-sno-ga
+displayName: GCP SNO
+description: Single Node OpenShift on GCP for development and testing
+platform: gcp
+clusterType: openshift
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18.35"
+    - "4.19.23"
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+    - "4.21.8"
+    - "4.21.9"
+    - "4.21.10"
+  default: "4.20.3"
+
+regions:
+  allowlist:
+    - us-central1
+    - us-east1
+    - us-east4
+    - us-west1
+    - us-west2
+    - europe-west1
+    - europe-west2
+    - europe-west3
+    - europe-west4
+    - asia-east1
+    - asia-southeast1
+    - asia-northeast1
+  default: us-central1
+
+baseDomains:
+  allowlist:
+    - gcp.mg.dog8code.com
+  default: gcp.mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 1
+    instanceType: n2-standard-4
+    schedulable: true  # SNO: control plane runs workloads
+  workers:
+    replicas: 0  # SNO: no separate worker nodes
+    minReplicas: 0
+    maxReplicas: 0
+    instanceType: n2-standard-4
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 72      # 3 days max
+  defaultTTLHours: 24  # 1 day default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: cluster-control-plane
+    ClusterType: sno
+  allowUserTags: true
+
+features:
+  offHoursScaling: false  # SNO doesn't support scaling
+  fipsMode: false
+  privateCluster: false
+
+costControls:
+  estimatedHourlyCost: 0.20   # 1x n2-standard-4 control plane
+  maxMonthlyCost: 175         # Monthly cost estimate
+  budgetAlertThreshold: 0.8
+  warningMessage: "Single Node OpenShift on GCP. All workloads run on one n2-standard-4 VM."
+
+platformConfig:
+  gcp:
+    project: "migration-eng"  # GCP project for OpenShift clusters
+    network: ""  # Auto-created if not specified
+    subnetwork: ""  # Auto-created if not specified
+    controlPlane:
+      machineType: n2-standard-4
+      diskType: pd-ssd
+      diskSizeGB: 128
+    compute:
+      machineType: n2-standard-4
+      diskType: pd-standard
+      diskSizeGB: 128
+    serviceAccount: ""  # Use default compute service account
+    secureBootPolicy: Disabled
+
+postDeployment:
+  enabled: false
+
+metadata:
+  capabilities:
+    - Single Node OpenShift on GCP
+    - OVN-Kubernetes networking
+    - Hibernate/resume support (stop/start VM)
+    - Secure Boot support
+    - Ideal for development and testing
+  capacity:
+    controlPlane: "1 node, n2-standard-4 (4 vCPU, 16 GB RAM)"
+    workers: "0 nodes (SNO configuration)"
+    total: "1 node, 4 vCPU, 16 GB RAM"
+  notes:
+    - "Single node: 1x n2-standard-4 (~$0.19/hr)"
+    - "Total running cost: ~$0.19/hour or ~$140/month"
+    - "Hibernated cost: ~$0.02/hour (storage only, ~90% savings)"
+    - "Persistent disk: 128GB SSD for control plane"
+    - "All workloads run on the single control plane node"
+    - "OpenShift 4.18+ required for GCP support"
+    - "Not suitable for production workloads"
