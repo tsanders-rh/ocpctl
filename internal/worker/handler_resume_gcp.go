@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path"
 
 	compute "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -180,7 +181,9 @@ func (h *ResumeHandler) resumeGCPOpenShift(ctx context.Context, cluster *types.C
 			// Only start stopped instances
 			if instance.Status != nil && (*instance.Status == "TERMINATED" || *instance.Status == "STOPPED") {
 				instanceIDs = append(instanceIDs, *instance.Name)
-				instanceZones = append(instanceZones, *instance.Zone)
+				// Extract zone name from full zone path (e.g., "https://www.googleapis.com/.../zones/us-central1-a" -> "us-central1-a")
+				zoneName := path.Base(*instance.Zone)
+				instanceZones = append(instanceZones, zoneName)
 			}
 		}
 	}

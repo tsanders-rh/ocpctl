@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path"
 
 	compute "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -171,8 +172,9 @@ func (h *HibernateHandler) hibernateGCPOpenShift(ctx context.Context, cluster *t
 			// Only stop running instances
 			if instance.Status != nil && *instance.Status == "RUNNING" {
 				instanceIDs = append(instanceIDs, *instance.Name)
-				// Extract zone name from full zone path
-				instanceZones = append(instanceZones, *instance.Zone)
+				// Extract zone name from full zone path (e.g., "https://www.googleapis.com/.../zones/us-central1-a" -> "us-central1-a")
+				zoneName := path.Base(*instance.Zone)
+				instanceZones = append(instanceZones, zoneName)
 			}
 		}
 	}
@@ -188,7 +190,10 @@ func (h *HibernateHandler) hibernateGCPOpenShift(ctx context.Context, cluster *t
 
 	log.Printf("Found %d running instances to stop: %v", len(instanceIDs), instanceIDs)
 
-	// Stop each instance
+	// Stop each instance and track successes/failures
+	var stoppedCount int
+	var failedInstances []string
+
 	for i, instanceName := range instanceIDs {
 		zone := instanceZones[i]
 		log.Printf("Stopping instance %s in zone %s...", instanceName, zone)
@@ -202,30 +207,47 @@ func (h *HibernateHandler) hibernateGCPOpenShift(ctx context.Context, cluster *t
 		op, err := instancesClient.Stop(ctx, stopReq)
 		if err != nil {
 			log.Printf("Warning: failed to stop instance %s: %v", instanceName, err)
+			failedInstances = append(failedInstances, instanceName)
 			continue
 		}
 
 		// Wait for operation to complete
 		if err := op.Wait(ctx); err != nil {
 			log.Printf("Warning: failed to wait for stop operation on instance %s: %v", instanceName, err)
+			failedInstances = append(failedInstances, instanceName)
 			continue
 		}
 
 		log.Printf("Instance %s stopped successfully", instanceName)
+		stoppedCount++
+	}
+
+	// If all instances failed to stop, return error
+	if stoppedCount == 0 {
+		return fmt.Errorf("failed to stop any instances (0/%d succeeded)", len(instanceIDs))
+	}
+
+	// If some instances failed, log warning but continue
+	if len(failedInstances) > 0 {
+		log.Printf("Warning: failed to stop %d/%d instances: %v", len(failedInstances), len(instanceIDs), failedInstances)
 	}
 
 	// Store instance info in job metadata for resume
 	if job.Metadata == nil {
 		job.Metadata = make(types.JobMetadata)
 	}
-	job.Metadata["instance_count"] = fmt.Sprintf("%d", len(instanceIDs))
+	job.Metadata["instance_count"] = fmt.Sprintf("%d", stoppedCount)
+	job.Metadata["total_instances"] = fmt.Sprintf("%d", len(instanceIDs))
 	job.Metadata["infra_id"] = infraID
+	if len(failedInstances) > 0 {
+		job.Metadata["failed_instances"] = fmt.Sprintf("%v", failedInstances)
+	}
 
 	// Update cluster status to HIBERNATED
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
 		return fmt.Errorf("update cluster status: %w", err)
 	}
 
-	log.Printf("OpenShift on GCP cluster %s hibernated successfully (%d instances stopped)", cluster.Name, len(instanceIDs))
+	log.Printf("OpenShift on GCP cluster %s hibernated successfully (%d/%d instances stopped)", cluster.Name, stoppedCount, len(instanceIDs))
 	return nil
 }
