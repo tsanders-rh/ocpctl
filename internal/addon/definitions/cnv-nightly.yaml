@@ -1,6 +1,6 @@
 id: cnv-nightly
-name: OpenShift Virtualization (Nightly)
-description: OpenShift Virtualization nightly builds for testing unreleased features. Includes KubeVirt for running VMs on OpenShift. Requires bare metal or nested virtualization support.
+name: OpenShift Virtualization (Pre-Release)
+description: OpenShift Virtualization pre-release/nightly builds (4.99.0) for testing unreleased features. Includes KubeVirt for running VMs on OpenShift. Requires bare metal or nested virtualization support and access to Red Hat internal registry.
 category: virtualization
 enabled: true
 supportedPlatforms:
@@ -8,22 +8,25 @@ supportedPlatforms:
 
 versions:
   - channel: nightly
-    displayName: "CNV Nightly (Latest)"
+    displayName: "CNV Pre-Release (4.99.0)"
     isDefault: true
     config:
       manifests:
         - name: cnv-nightly-catalogsource
-          description: CatalogSource for CNV nightly builds
+          description: CatalogSource for CNV pre-release (nightly) builds
           content: |
             apiVersion: operators.coreos.com/v1alpha1
             kind: CatalogSource
             metadata:
               name: cnv-nightly
               namespace: openshift-marketplace
+              labels:
+                cnv-source: pre-release
+                cnv-version: "4.99.0"
             spec:
               sourceType: grpc
-              image: registry.redhat.io/container-native-virtualization/hco-bundle-registry:latest
-              displayName: OpenShift Virtualization Nightly
+              image: registry-proxy.engineering.redhat.com/rh-osbs/container-native-virtualization-hco-bundle-registry:4.99.0
+              displayName: OpenShift Virtualization Pre-Release (4.99.0)
               publisher: Red Hat
               updateStrategy:
                 registryPoll:
@@ -58,12 +61,14 @@ metadata:
   requiresBareMetal: true
   notes:
     - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
-    - "Nightly builds may be unstable - not recommended for production"
-    - "Uses latest nightly index image from registry.redhat.io"
+    - "Pre-release/nightly builds (CNV 4.99.0) - not recommended for production"
+    - "Uses pre-release index from registry-proxy.engineering.redhat.com"
+    - "Equivalent to: CNV_VERSION=4.99.0 CNV_SOURCE=pre-release"
     - "Automatically creates openshift-cnv namespace"
     - "Includes HyperConverged CR with default configuration"
     - "Operator subscription polls for updates every 30 minutes"
   warnings:
-    - "Nightly builds are not GA and may have bugs"
-    - "Requires valid Red Hat registry credentials"
+    - "Pre-release builds are not GA and may have bugs"
+    - "Requires access to Red Hat internal registry (registry-proxy.engineering.redhat.com)"
     - "High resource requirements - recommend 3+ worker nodes"
+    - "Version 4.99.0 indicates pre-release/nightly builds"
