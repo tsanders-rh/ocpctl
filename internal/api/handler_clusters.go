@@ -1718,6 +1718,7 @@ func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *ty
 
 	// Find all instances with label kubernetes-io-cluster-{infraID}=owned
 	labelFilter := fmt.Sprintf("labels.kubernetes-io-cluster-%s=owned", infraID)
+	log.Printf("[DEBUG] getGCPComputeInstances: infraID=%s, labelFilter=%s, project=%s", infraID, labelFilter, project)
 
 	cmd := exec.CommandContext(ctx, "gcloud", "compute", "instances", "list",
 		"--project", project,
@@ -1730,10 +1731,18 @@ func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *ty
 		fmt.Sprintf("GCP_PROJECT=%s", project),
 	)
 
-	output, err := cmd.Output()
+	// Capture both stdout and stderr
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list GCP instances: %w", err)
+		log.Printf("[ERROR] gcloud command failed: %v, stderr: %s", err, stderr.String())
+		return nil, fmt.Errorf("failed to list GCP instances: %w (stderr: %s)", err, stderr.String())
 	}
+
+	output := []byte(stdout.String())
 
 	var gcpInstances []struct {
 		Name         string `json:"name"`
