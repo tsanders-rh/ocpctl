@@ -885,7 +885,7 @@ func (h *ClusterHandler) extractClusterOutputs(cluster *types.Cluster) (*types.C
 // Hibernate handles POST /api/v1/clusters/:id/hibernate
 //
 //	@Summary		Hibernate cluster
-//	@Description	Hibernates a cluster by stopping its instances. Reduces costs during off-hours. (AWS only)
+//	@Description	Hibernates a cluster to reduce costs during off-hours. AWS/GCP: stops instances. EKS/GKE: scales node pools to 0. IKS: scales workers to 0.
 //	@Tags			Clusters
 //	@Accept			json
 //	@Produce		json
@@ -1069,7 +1069,7 @@ func (h *ClusterHandler) calculateNextHibernateTime(ctx context.Context, cluster
 // Resume handles POST /api/v1/clusters/:id/resume
 //
 //	@Summary		Resume cluster
-//	@Description	Resumes a hibernated cluster by starting its instances. (AWS only)
+//	@Description	Resumes a hibernated cluster. AWS/GCP: starts instances. EKS/GKE: restores node pools. IKS: restores workers.
 //	@Tags			Clusters
 //	@Accept			json
 //	@Produce		json
@@ -1506,8 +1506,12 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 		return nil, fmt.Errorf("GCP_PROJECT environment variable not set")
 	}
 
+	// Create a new context with longer timeout for gcloud command (independent of HTTP request timeout)
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Execute gcloud command to get node pool information
-	cmd := exec.CommandContext(ctx, "gcloud", "container", "node-pools", "list",
+	cmd := exec.CommandContext(cmdCtx, "gcloud", "container", "node-pools", "list",
 		"--cluster", cluster.Name,
 		"--region", cluster.Region,
 		"--project", project,
@@ -1557,9 +1561,14 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 
 // getGKENodePoolInstances fetches actual VM instances for a GKE node pool
 func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterName, poolName, project, region string) ([]ClusterInstance, error) {
+	// Create a new context with longer timeout for gcloud commands (independent of HTTP request timeout)
+	// This function makes multiple gcloud calls, so we need a generous timeout
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	// Get instance group manager name (GKE naming convention)
 	// Format: gke-{cluster-name}-{pool-name}-{hash}
-	cmd := exec.CommandContext(ctx, "gcloud", "compute", "instance-groups", "list",
+	cmd := exec.CommandContext(cmdCtx, "gcloud", "compute", "instance-groups", "list",
 		"--project", project,
 		"--filter", fmt.Sprintf("name~gke-%s-%s", clusterName, poolName),
 		"--format", "json")
@@ -1587,7 +1596,7 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 	var instances []ClusterInstance
 	for _, group := range instanceGroups {
 		// Get instances in this group
-		cmd := exec.CommandContext(ctx, "gcloud", "compute", "instance-groups", "list-instances",
+		cmd := exec.CommandContext(cmdCtx, "gcloud", "compute", "instance-groups", "list-instances",
 			group.Name,
 			"--zone", filepath.Base(group.Zone),
 			"--project", project,
@@ -1620,7 +1629,7 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 			instanceName := filepath.Base(inst.Instance)
 			zone := filepath.Base(group.Zone)
 
-			cmd := exec.CommandContext(ctx, "gcloud", "compute", "instances", "describe",
+			cmd := exec.CommandContext(cmdCtx, "gcloud", "compute", "instances", "describe",
 				instanceName,
 				"--zone", zone,
 				"--project", project,
@@ -1720,7 +1729,11 @@ func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *ty
 	labelFilter := fmt.Sprintf("labels.kubernetes-io-cluster-%s=owned", infraID)
 	log.Printf("[DEBUG] getGCPComputeInstances: infraID=%s, labelFilter=%s, project=%s", infraID, labelFilter, project)
 
-	cmd := exec.CommandContext(ctx, "gcloud", "compute", "instances", "list",
+	// Create a new context with longer timeout for gcloud command (independent of HTTP request timeout)
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "gcloud", "compute", "instances", "list",
 		"--project", project,
 		"--filter", labelFilter,
 		"--format", "json")
