@@ -2,9 +2,12 @@ package worker
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,12 +253,29 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 			log.Printf("Install failed, logs:\n%s", string(logData))
 		}
 
-		// Best-effort: try to tag whatever resources were created before failure
-		// This ensures orphaned resources can be detected even from failed installations
-		log.Printf("Cluster creation failed, attempting to tag partial resources...")
-		inst.TagPartialResources(ctx, workDir, *metadata)
+		// GCP-specific handling: Check if cluster API is actually accessible despite timeout
+		// GCP clusters can take 60+ minutes to initialize, exceeding openshift-install's 40-minute timeout
+		// If the cluster API is responding, treat it as successful
+		if cluster.Platform == types.PlatformGCP && cluster.ClusterType == types.ClusterTypeOpenShift {
+			log.Printf("GCP cluster creation reported failure, checking if cluster API is actually accessible...")
+			if h.verifyGCPClusterAccessible(ctx, cluster) {
+				log.Printf("GCP cluster API is accessible despite timeout - treating as successful")
+				// Clear the error and continue with post-install steps
+				err = nil
+			} else {
+				log.Printf("GCP cluster API is not accessible - this is a genuine failure")
+			}
+		}
 
-		return fmt.Errorf("openshift-install create cluster: %w\nOutput: %s", err, output)
+		// If error is still set (not a GCP timeout recovery), handle the failure
+		if err != nil {
+			// Best-effort: try to tag whatever resources were created before failure
+			// This ensures orphaned resources can be detected even from failed installations
+			log.Printf("Cluster creation failed, attempting to tag partial resources...")
+			inst.TagPartialResources(ctx, workDir, *metadata)
+
+			return fmt.Errorf("openshift-install create cluster: %w\nOutput: %s", err, output)
+		}
 	}
 
 	log.Printf("Cluster %s created successfully", cluster.Name)
@@ -1182,4 +1202,61 @@ func (h *CreateHandler) storeGKEClusterOutputs(ctx context.Context, cluster *typ
 
 	log.Printf("Stored GKE cluster outputs: API URL=%s", apiURL)
 	return nil
+}
+
+// verifyGCPClusterAccessible checks if a GCP OpenShift cluster API is accessible
+// This is used to handle cases where openshift-install times out but the cluster actually succeeds
+// GCP clusters can take 60+ minutes to initialize, exceeding the installer's 40-minute timeout
+func (h *CreateHandler) verifyGCPClusterAccessible(ctx context.Context, cluster *types.Cluster) bool {
+	if cluster.BaseDomain == nil || *cluster.BaseDomain == "" {
+		log.Printf("Cannot verify GCP cluster: base domain is not set")
+		return false
+	}
+
+	// Build API URL: https://api.{cluster-name}.{base-domain}:6443
+	apiURL := fmt.Sprintf("https://api.%s.%s:6443", cluster.Name, *cluster.BaseDomain)
+	healthURL := fmt.Sprintf("%s/healthz", apiURL)
+
+	log.Printf("Checking if GCP cluster API is accessible at %s", healthURL)
+
+	// Create HTTP client with TLS skip verification (cluster uses self-signed certs)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	// Try to reach the health endpoint
+	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+	if err != nil {
+		log.Printf("Failed to create request: %v", err)
+		return false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Failed to reach cluster API: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read response: %v", err)
+		return false
+	}
+
+	// Check if response is "ok"
+	responseText := string(body)
+	if resp.StatusCode == 200 && strings.TrimSpace(responseText) == "ok" {
+		log.Printf("GCP cluster API is accessible and healthy: %s", responseText)
+		return true
+	}
+
+	log.Printf("GCP cluster API responded but not healthy: status=%d, body=%s", resp.StatusCode, responseText)
+	return false
 }
