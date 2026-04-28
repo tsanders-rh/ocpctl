@@ -1,0 +1,69 @@
+id: cnv-nightly
+name: OpenShift Virtualization (Nightly)
+description: OpenShift Virtualization nightly builds for testing unreleased features. Includes KubeVirt for running VMs on OpenShift. Requires bare metal or nested virtualization support.
+category: virtualization
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  - channel: nightly
+    displayName: "CNV Nightly (Latest)"
+    isDefault: true
+    config:
+      manifests:
+        - name: cnv-nightly-catalogsource
+          description: CatalogSource for CNV nightly builds
+          content: |
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: CatalogSource
+            metadata:
+              name: cnv-nightly
+              namespace: openshift-marketplace
+            spec:
+              sourceType: grpc
+              image: registry.redhat.io/container-native-virtualization/hco-bundle-registry:latest
+              displayName: OpenShift Virtualization Nightly
+              publisher: Red Hat
+              updateStrategy:
+                registryPoll:
+                  interval: 30m
+          namespace: openshift-marketplace
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: cnv-nightly
+          channel: nightly
+          dependsOn:
+            - cnv-nightly-catalogsource
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+metadata:
+  requiresBareMetal: true
+  notes:
+    - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
+    - "Nightly builds may be unstable - not recommended for production"
+    - "Uses latest nightly index image from registry.redhat.io"
+    - "Automatically creates openshift-cnv namespace"
+    - "Includes HyperConverged CR with default configuration"
+    - "Operator subscription polls for updates every 30 minutes"
+  warnings:
+    - "Nightly builds are not GA and may have bugs"
+    - "Requires valid Red Hat registry credentials"
+    - "High resource requirements - recommend 3+ worker nodes"

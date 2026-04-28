@@ -1,0 +1,47 @@
+id: cnv
+name: OpenShift Virtualization
+description: Run virtual machines alongside containers on OpenShift. Includes KubeVirt for VM management, live migration, and storage integration. Requires bare metal or nested virtualization support.
+category: virtualization
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  - channel: stable
+    displayName: "CNV Stable (4.18)"
+    isDefault: true
+    config:
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+metadata:
+  requiresBareMetal: true
+  notes:
+    - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
+    - "Production-ready GA release"
+    - "Automatically creates openshift-cnv namespace"
+    - "Includes HyperConverged CR with default configuration"
+    - "Supports live VM migration, snapshots, and cloning"
+  warnings:
+    - "Requires valid Red Hat subscription"
+    - "High resource requirements - recommend 3+ worker nodes with bare metal"
+    - "Not compatible with all instance types - verify nested virtualization support"
