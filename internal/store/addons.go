@@ -25,7 +25,7 @@ func NewPostConfigAddonStore(pool *pgxpool.Pool) *PostConfigAddonStore {
 func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platform *string) ([]types.PostConfigAddon, error) {
 	query := `
 		SELECT id, addon_id, name, description, category, config, supported_platforms,
-		       enabled, version, display_name, is_default, created_at, updated_at
+		       enabled, version, display_name, is_default, metadata, created_at, updated_at
 		FROM post_config_addons
 		WHERE enabled = TRUE
 	`
@@ -57,6 +57,7 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 	for rows.Next() {
 		var addon types.PostConfigAddon
 		var configJSON []byte
+		var metadataJSON []byte
 
 		err := rows.Scan(
 			&addon.ID,
@@ -70,6 +71,7 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 			&addon.Version,
 			&addon.DisplayName,
 			&addon.IsDefault,
+			&metadataJSON,
 			&addon.CreatedAt,
 			&addon.UpdatedAt,
 		)
@@ -80,6 +82,14 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 		// Unmarshal config JSONB
 		if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
 			return nil, fmt.Errorf("unmarshal add-on config: %w", err)
+		}
+
+		// Unmarshal metadata JSONB if present
+		if len(metadataJSON) > 0 {
+			addon.Metadata = &types.AddonMetadata{}
+			if err := json.Unmarshal(metadataJSON, addon.Metadata); err != nil {
+				return nil, fmt.Errorf("unmarshal add-on metadata: %w", err)
+			}
 		}
 
 		addons = append(addons, addon)
@@ -177,9 +187,9 @@ func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConf
 	query := `
 		INSERT INTO post_config_addons (
 			addon_id, name, description, category, config, supported_platforms,
-			enabled, version, display_name, is_default
+			enabled, version, display_name, is_default, metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -194,6 +204,7 @@ func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConf
 		addon.Version,
 		addon.DisplayName,
 		addon.IsDefault,
+		addon.MetadataJSON,
 	).Scan(&addon.ID, &addon.CreatedAt, &addon.UpdatedAt)
 
 	if err != nil {
@@ -310,7 +321,7 @@ func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *typ
 		UPDATE post_config_addons
 		SET name = $2, description = $3, category = $4, config = $5,
 		    supported_platforms = $6, enabled = $7, version = $8,
-		    display_name = $9, is_default = $10, updated_at = NOW()
+		    display_name = $9, is_default = $10, metadata = $11, updated_at = NOW()
 		WHERE id = $1
 	`
 
@@ -325,6 +336,7 @@ func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *typ
 		addon.Version,
 		addon.DisplayName,
 		addon.IsDefault,
+		addon.MetadataJSON,
 	)
 
 	if err != nil {

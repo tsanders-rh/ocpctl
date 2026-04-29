@@ -13,11 +13,13 @@ export const postConfigApi = {
     list: async (params?: {
       category?: string;
       platform?: string;
+      profile?: string;
       search?: string;
     }): Promise<PostConfigAddonsResponse> => {
       const queryParams = new URLSearchParams();
       if (params?.category) queryParams.set("category", params.category);
       if (params?.platform) queryParams.set("platform", params.platform);
+      if (params?.profile) queryParams.set("profile", params.profile);
       if (params?.search) queryParams.set("search", params.search);
 
       const query = queryParams.toString() ? `?${queryParams.toString()}` : "";

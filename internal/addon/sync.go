@@ -85,6 +85,15 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
+	// Marshal metadata to JSONB if present
+	var metadataJSON []byte
+	if addon.Metadata != nil {
+		metadataJSON, err = json.Marshal(addon.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal metadata: %w", err)
+		}
+	}
+
 	// Check if this addon+version exists
 	existing, err := s.store.GetByAddonIDAndVersion(ctx, addon.ID, version.Channel)
 
@@ -105,6 +114,7 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 			Version:            version.Channel,
 			DisplayName:        version.DisplayName,
 			IsDefault:          version.IsDefault,
+			MetadataJSON:       metadataJSON,
 		})
 	}
 
@@ -120,5 +130,6 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 		Version:            version.Channel,
 		DisplayName:        version.DisplayName,
 		IsDefault:          version.IsDefault,
+		MetadataJSON:       metadataJSON,
 	})
 }

@@ -11,6 +11,15 @@ type AddonDefinition struct {
 	Enabled            bool                 `yaml:"enabled"`
 	SupportedPlatforms []string             `yaml:"supportedPlatforms" validate:"required,min=1"`
 	Versions           []AddonVersionConfig `yaml:"versions" validate:"required,min=1,dive"`
+	Metadata           *AddonMetadata       `yaml:"metadata,omitempty"`
+}
+
+// AddonMetadata contains additional metadata about addon requirements and notes
+type AddonMetadata struct {
+	RequiresBareMetal bool     `yaml:"requiresBareMetal,omitempty" json:"requiresBareMetal,omitempty"`
+	RequiredCapabilities []string `yaml:"requiredCapabilities,omitempty" json:"requiredCapabilities,omitempty"`
+	Notes             []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+	Warnings          []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 }
 
 // AddonVersionConfig defines a specific version of an add-on

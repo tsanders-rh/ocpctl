@@ -17,12 +17,14 @@ import type { PostConfigAddon, AddonSelection } from "@/types/api";
 
 interface AddonBrowserProps {
   platform?: string;
+  profile?: string;
   selectedAddons: AddonSelection[];
   onSelectionChange: (selections: AddonSelection[]) => void;
 }
 
 export function AddonBrowser({
   platform,
+  profile,
   selectedAddons,
   onSelectionChange,
 }: AddonBrowserProps) {
@@ -32,6 +34,7 @@ export function AddonBrowser({
   const { data, isLoading } = usePostConfigAddons({
     category: category === "all" ? undefined : category,
     platform,
+    profile,
     search: search || undefined,
   });
 

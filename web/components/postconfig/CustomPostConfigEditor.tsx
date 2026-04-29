@@ -6,6 +6,7 @@ import type { CustomPostConfig, AddonSelection } from "@/types/api";
 
 interface CustomPostConfigEditorProps {
   platform?: string;
+  profile?: string;
   value?: CustomPostConfig;
   selectedAddons: AddonSelection[];
   onAddonsChange: (selections: AddonSelection[]) => void;
@@ -14,6 +15,7 @@ interface CustomPostConfigEditorProps {
 
 export function CustomPostConfigEditor({
   platform,
+  profile,
   selectedAddons,
   onAddonsChange,
 }: CustomPostConfigEditorProps) {
@@ -35,6 +37,7 @@ export function CustomPostConfigEditor({
         </div>
         <AddonBrowser
           platform={platform}
+          profile={profile}
           selectedAddons={selectedAddons}
           onSelectionChange={onAddonsChange}
         />

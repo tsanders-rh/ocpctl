@@ -282,7 +282,7 @@ func (s *Server) setupRoutes() {
 	profilesGroup.GET("/:name", profileHandler.Get)
 
 	// Post-config add-ons routes (require authentication)
-	addonsHandler := NewAddonsHandler(s.store)
+	addonsHandler := NewAddonsHandler(s.store, s.registry)
 	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
 	postConfigGroup.GET("/addons", addonsHandler.List)
 

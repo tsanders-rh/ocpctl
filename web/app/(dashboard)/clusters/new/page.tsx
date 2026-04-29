@@ -865,6 +865,7 @@ export default function NewClusterPage() {
                     </p>
                     <CustomPostConfigEditor
                       platform={watchedValues.cluster_type}
+                      profile={watchedValues.profile}
                       value={watchedValues.customPostConfig}
                       selectedAddons={watchedValues.postConfigAddOns || []}
                       onAddonsChange={(addonIds) => setValue("postConfigAddOns", addonIds)}

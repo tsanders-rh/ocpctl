@@ -4,18 +4,23 @@ import (
 	"log"
 
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // AddonsHandler handles HTTP requests for post-config add-ons
 type AddonsHandler struct {
-	store *store.Store
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewAddonsHandler creates a new add-ons handler
-func NewAddonsHandler(store *store.Store) *AddonsHandler {
-	return &AddonsHandler{store: store}
+func NewAddonsHandler(store *store.Store, registry *profile.Registry) *AddonsHandler {
+	return &AddonsHandler{
+		store:    store,
+		registry: registry,
+	}
 }
 
 // AddonWithVersions represents an add-on with all its versions
@@ -48,14 +53,15 @@ type AddonsListResponse struct {
 	Total      int                            `json:"total" example:"3"`
 }
 
-// List returns all enabled add-ons, optionally filtered by category, platform, and search query
+// List returns all enabled add-ons, optionally filtered by category, platform, profile capabilities, and search query
 //
 //	@Summary		List add-ons
-//	@Description	Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, and search query. Each add-on includes multiple versions with one marked as default.
+//	@Description	Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, profile capabilities, and search query. Each add-on includes multiple versions with one marked as default.
 //	@Tags			post-config
 //	@Produce		json
-//	@Param			category	query		string	false	"Filter by category (backup, migration, cicd, monitoring, security, storage, networking)"
+//	@Param			category	query		string	false	"Filter by category (backup, migration, cicd, monitoring, security, storage, networking, virtualization)"
 //	@Param			platform	query		string	false	"Filter by supported platform (openshift, eks, iks)"
+//	@Param			profile		query		string	false	"Filter by profile capabilities (e.g., aws-minimal)"
 //	@Param			search		query		string	false	"Search in name and description"
 //	@Success		200			{object}	AddonsListResponse
 //	@Failure		401			{object}	ErrorResponse
@@ -67,6 +73,7 @@ func (h *AddonsHandler) List(c echo.Context) error {
 	// Get query parameters
 	category := c.QueryParam("category")
 	platform := c.QueryParam("platform")
+	profileName := c.QueryParam("profile")
 	search := c.QueryParam("search")
 
 	var categoryPtr *string
@@ -85,6 +92,59 @@ func (h *AddonsHandler) List(c echo.Context) error {
 	if err != nil {
 		log.Printf("Error listing add-ons: %v", err)
 		return LogAndReturnGenericError(c, err)
+	}
+
+	// Filter by profile capabilities if profile parameter is provided
+	if profileName != "" {
+		prof, err := h.registry.GetAny(profileName)
+		if err != nil {
+			log.Printf("Warning: failed to get profile %s: %v", profileName, err)
+			// Don't fail the request, just skip capability filtering
+		} else {
+			// Filter addons based on profile capabilities
+			// If profile has no metadata or no capabilities, treat as empty capability list
+			filteredAddons := make([]types.PostConfigAddon, 0)
+			var profileCapabilities []string
+			if prof.Metadata != nil {
+				profileCapabilities = prof.Metadata.Capabilities
+			}
+
+			for _, addon := range addons {
+				// If addon has no metadata or no requirements, include it
+				if addon.Metadata == nil {
+					filteredAddons = append(filteredAddons, addon)
+					continue
+				}
+
+				// Check if addon requires bare metal
+				if addon.Metadata.RequiresBareMetal {
+					// Profile must have "bare-metal" capability
+					if !hasCapability(profileCapabilities, "bare-metal") {
+						log.Printf("Filtering out addon %s: requires bare-metal but profile %s doesn't have it", addon.AddonID, profileName)
+						continue
+					}
+				}
+
+				// Check if addon has specific required capabilities
+				if len(addon.Metadata.RequiredCapabilities) > 0 {
+					hasAllCapabilities := true
+					for _, requiredCap := range addon.Metadata.RequiredCapabilities {
+						if !hasCapability(profileCapabilities, requiredCap) {
+							hasAllCapabilities = false
+							break
+						}
+					}
+					if !hasAllCapabilities {
+						log.Printf("Filtering out addon %s: missing required capabilities for profile %s", addon.AddonID, profileName)
+						continue
+					}
+				}
+
+				// Addon meets all requirements
+				filteredAddons = append(filteredAddons, addon)
+			}
+			addons = filteredAddons
+		}
 	}
 
 	// Client-side search filtering if search parameter is provided
@@ -177,6 +237,16 @@ func contains(s, substr string) bool {
 			}
 		}
 		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCapability checks if a capability exists in the capabilities list
+func hasCapability(capabilities []string, capability string) bool {
+	for _, cap := range capabilities {
+		if cap == capability {
 			return true
 		}
 	}

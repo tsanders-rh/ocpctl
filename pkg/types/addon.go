@@ -10,14 +10,24 @@ type PostConfigAddon struct {
 	Description        string              `db:"description" json:"description"`
 	Category           string              `db:"category" json:"category"`
 	Config             CustomPostConfig    `db:"config" json:"config"`
-	ConfigJSON         []byte              `db:"-" json:"-"` // For database storage
+	ConfigJSON         []byte              `db:"-" json:"-"`          // For database storage
 	SupportedPlatforms []string            `db:"supported_platforms" json:"supportedPlatforms"`
 	Enabled            bool                `db:"enabled" json:"enabled"`
 	Version            string              `db:"version" json:"version"`
 	DisplayName        string              `db:"display_name" json:"displayName"`
 	IsDefault          bool                `db:"is_default" json:"isDefault"`
+	Metadata           *AddonMetadata      `db:"metadata" json:"metadata,omitempty"`
+	MetadataJSON       []byte              `db:"-" json:"-"`          // For database storage
 	CreatedAt          time.Time           `db:"created_at" json:"createdAt"`
 	UpdatedAt          time.Time           `db:"updated_at" json:"updatedAt"`
+}
+
+// AddonMetadata contains hardware requirements and additional addon information
+type AddonMetadata struct {
+	RequiresBareMetal    bool     `json:"requiresBareMetal,omitempty"`
+	RequiredCapabilities []string `json:"requiredCapabilities,omitempty"`
+	Notes                []string `json:"notes,omitempty"`
+	Warnings             []string `json:"warnings,omitempty"`
 }
 
 // AddonSelection represents a user's selection of an add-on with a specific version

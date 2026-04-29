@@ -9,6 +9,7 @@ import type {
 export function usePostConfigAddons(params?: {
   category?: string;
   platform?: string;
+  profile?: string;
   search?: string;
 }) {
   return useQuery({
