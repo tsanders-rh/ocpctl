@@ -11,6 +11,33 @@ versions:
     displayName: "CNV Pre-Release (4.99.0)"
     isDefault: true
     config:
+      scripts:
+        - name: setup-registry-access
+          description: Configure pull secret for Red Hat internal registry access
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Checking if registry-proxy.engineering.redhat.com credentials exist..."
+
+            # Check if pull secret already has registry-proxy credentials
+            if oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d | grep -q "registry-proxy.engineering.redhat.com"; then
+              echo "✓ Pull secret already contains registry-proxy.engineering.redhat.com credentials"
+            else
+              echo "⚠ Pull secret does not contain registry-proxy.engineering.redhat.com credentials"
+              echo "Please add Red Hat internal registry credentials to your pull secret:"
+              echo ""
+              echo "1. Get your auth token from https://registry-proxy.engineering.redhat.com"
+              echo "2. Run: oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=<updated-pull-secret>"
+              echo ""
+              echo "Alternatively, merge credentials using:"
+              echo "  oc get secret pull-secret -n openshift-config -o json | jq -r '.data.\".dockerconfigjson\"' | base64 -d > current-pull-secret.json"
+              echo "  # Merge with your registry-proxy credentials"
+              echo "  oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=merged-pull-secret.json"
+              exit 1
+            fi
+          timeout: 5m
+
       manifests:
         - name: cnv-nightly-catalogsource
           description: CatalogSource for CNV pre-release (nightly) builds
@@ -32,6 +59,8 @@ versions:
                 registryPoll:
                   interval: 30m
           namespace: openshift-marketplace
+          dependsOn:
+            - setup-registry-access
 
       operators:
         - name: kubevirt-hyperconverged
