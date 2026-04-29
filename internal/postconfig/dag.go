@@ -102,15 +102,10 @@ func BuildExecutionDAG(config *types.CustomPostConfig) (*ExecutionDAG, error) {
 // Returns error if cycle is detected
 func (dag *ExecutionDAG) topologicalSort() ([]string, error) {
 	// Calculate in-degree for each node
+	// In-degree = number of dependencies (tasks that must run before this task)
 	inDegree := make(map[string]int)
-	for _, node := range dag.Nodes {
-		inDegree[node.Name] = 0
-	}
-
-	for _, deps := range dag.AdjacencyList {
-		for _, dep := range deps {
-			inDegree[dep]++
-		}
+	for taskName, deps := range dag.AdjacencyList {
+		inDegree[taskName] = len(deps)
 	}
 
 	// Queue of nodes with no dependencies
