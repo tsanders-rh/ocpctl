@@ -688,6 +688,40 @@ export default function NewClusterPage() {
                   </div>
                 )}
 
+                {/* Custom Pull Secret */}
+                {watchedValues.cluster_type === "openshift" && (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Custom Pull Secret
+                    </h3>
+                    <div className="space-y-2">
+                      <Label htmlFor="custom_pull_secret">Additional Registry Credentials (Optional)</Label>
+                      <Textarea
+                        id="custom_pull_secret"
+                        placeholder='Paste your Docker config JSON here'
+                        value={watchedValues.custom_pull_secret || ""}
+                        onChange={(e) => setValue("custom_pull_secret", e.target.value || undefined)}
+                        className="font-mono text-xs min-h-[120px]"
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Merge additional registry credentials with the standard pull secret. Useful for accessing pre-release builds (e.g., CNV nightly from quay.io/openshift-cnv) or private registries.
+                      </p>
+                      <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer hover:text-foreground">Format example</summary>
+                        <pre className="mt-2 p-2 bg-muted rounded text-[10px] overflow-x-auto">
+{`{
+  "auths": {
+    "quay.io/your-org": {
+      "auth": "YOUR_BASE64_TOKEN_HERE"
+    }
+  }
+}`}
+                        </pre>
+                      </details>
+                    </div>
+                  </div>
+                )}
+
                 {/* Resource Tagging */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">

@@ -89,6 +89,7 @@ type CreateClusterRequest struct {
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
 	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
 	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Manual Passthrough Mint Static"`
+	CustomPullSecret   *string                    `json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge with standard pull secret
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
 
@@ -214,6 +215,26 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Validate custom pull secret if provided
+	if req.CustomPullSecret != nil && *req.CustomPullSecret != "" {
+		var pullSecretData map[string]interface{}
+		if err := json.Unmarshal([]byte(*req.CustomPullSecret), &pullSecretData); err != nil {
+			log.Printf("[ERROR] Invalid custom pull secret JSON: %v", err)
+			return ErrorBadRequest(c, "custom_pull_secret must be valid JSON")
+		}
+
+		// Validate that it has the expected structure: {"auths": {...}}
+		auths, hasAuths := pullSecretData["auths"]
+		if !hasAuths {
+			return ErrorBadRequest(c, "custom_pull_secret must have an 'auths' field")
+		}
+
+		// Validate auths is an object
+		if _, ok := auths.(map[string]interface{}); !ok {
+			return ErrorBadRequest(c, "custom_pull_secret 'auths' field must be an object")
+		}
+	}
+
 	// Get authenticated user ID
 	ownerID, err := auth.GetUserID(c)
 	if err != nil {
@@ -264,6 +285,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		CustomPostConfig:   req.CustomPostConfig,
 		PreserveOnFailure:  req.PreserveOnFailure,
 		CredentialsMode:    req.CredentialsMode,
+		CustomPullSecret:   req.CustomPullSecret,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}

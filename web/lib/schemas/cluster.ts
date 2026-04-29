@@ -94,6 +94,7 @@ export const createClusterSchema = z.object({
   enable_efs_storage: z.boolean().default(false),
   preserve_on_failure: z.boolean().default(false),
   credentials_mode: z.enum(["Manual", "Passthrough", "Mint", "Auto", "Static"]).optional(),
+  custom_pull_secret: z.string().optional(),
   override_work_hours: z.boolean().default(false),
   work_hours_enabled: z.boolean().optional(),
   work_hours_start: z.string().optional(),

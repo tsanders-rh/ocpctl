@@ -116,6 +116,7 @@ type Cluster struct {
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 	PreserveOnFailure   bool           `db:"preserve_on_failure" json:"preserve_on_failure"`
 	CredentialsMode     *string        `db:"credentials_mode" json:"credentials_mode,omitempty"`
+	CustomPullSecret    *string        `db:"custom_pull_secret" json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge
 	// Cluster outputs (joined from cluster_outputs table)
 	APIURL              *string        `db:"api_url" json:"api_url,omitempty"`
 	ConsoleURL          *string        `db:"console_url" json:"console_url,omitempty"`

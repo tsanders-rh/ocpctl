@@ -141,6 +141,17 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("OPENSHIFT_PULL_SECRET environment variable not set")
 	}
 
+	// Merge custom pull secret if provided
+	if cluster.CustomPullSecret != nil && *cluster.CustomPullSecret != "" {
+		log.Printf("Merging custom pull secret with standard pull secret for cluster %s", cluster.Name)
+		mergedSecret, err := mergePullSecrets(pullSecret, *cluster.CustomPullSecret)
+		if err != nil {
+			return fmt.Errorf("merge pull secrets: %w", err)
+		}
+		pullSecret = mergedSecret
+		log.Printf("Successfully merged custom pull secret")
+	}
+
 	// Build create cluster request for renderer
 	// Convert BaseDomain pointer to string
 	baseDomain := ""
@@ -1259,4 +1270,48 @@ func (h *CreateHandler) verifyGCPClusterAccessible(ctx context.Context, cluster 
 
 	log.Printf("GCP cluster API responded but not healthy: status=%d, body=%s", resp.StatusCode, responseText)
 	return false
+}
+
+// mergePullSecrets merges a custom pull secret with the standard pull secret
+// Both inputs are JSON strings in Docker config format: {"auths": {"registry": {"auth": "..."}}}
+// Returns merged JSON string with auths from both secrets
+func mergePullSecrets(standardSecret, customSecret string) (string, error) {
+	// Parse standard pull secret
+	var standard map[string]interface{}
+	if err := json.Unmarshal([]byte(standardSecret), &standard); err != nil {
+		return "", fmt.Errorf("parse standard pull secret: %w", err)
+	}
+
+	// Parse custom pull secret
+	var custom map[string]interface{}
+	if err := json.Unmarshal([]byte(customSecret), &custom); err != nil {
+		return "", fmt.Errorf("parse custom pull secret: %w", err)
+	}
+
+	// Get auths from both secrets
+	standardAuths, ok := standard["auths"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("standard pull secret missing 'auths' field")
+	}
+
+	customAuths, ok := custom["auths"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("custom pull secret missing 'auths' field")
+	}
+
+	// Merge: custom auths override standard auths for same registry
+	for registry, creds := range customAuths {
+		standardAuths[registry] = creds
+	}
+
+	// Update merged auths back into standard
+	standard["auths"] = standardAuths
+
+	// Marshal back to JSON
+	merged, err := json.Marshal(standard)
+	if err != nil {
+		return "", fmt.Errorf("marshal merged pull secret: %w", err)
+	}
+
+	return string(merged), nil
 }
