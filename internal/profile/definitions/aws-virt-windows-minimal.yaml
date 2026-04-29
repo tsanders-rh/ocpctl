@@ -114,6 +114,7 @@ postDeployment:
 
 metadata:
   capabilities:
+    - bare-metal
     - OpenShift Virtualization (HA)
     - Windows VM support (10, 11, Server 2019/2022)
     - Nested virtualization
