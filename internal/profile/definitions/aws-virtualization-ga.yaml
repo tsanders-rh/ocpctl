@@ -46,13 +46,13 @@ baseDomains:
 compute:
   controlPlane:
     replicas: 3
-    instanceType: m6i.2xlarge
+    instanceType: m6i.xlarge
     schedulable: false
   workers:
-    replicas: 3
+    replicas: 2
     minReplicas: 2
-    maxReplicas: 6
-    instanceType: m6i.metal
+    maxReplicas: 2
+    instanceType: m5zn.metal  # Cheapest metal instance for nested virtualization
     autoscaling: false
 
 lifecycle:
@@ -87,14 +87,23 @@ features:
   privateCluster: false
 
 costControls:
-  estimatedHourlyCost: 35.50
-  maxMonthlyCost: 25500
-  budgetAlertThreshold: 0.8
+  estimatedHourlyCost: 9.08    # 2 workers x $4.54/hr
+  maxMonthlyCost: 6538         # Always-on monthly cost
+  budgetAlertThreshold: 0.7
+  warningMessage: "2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours hibernation to reduce to ~$1,670/month."
 
 platformConfig:
   aws:
     instanceMetadataService: required
     rootVolume:
       type: gp3
-      size: 200
-      iops: 4000
+      size: 500     # Storage for Windows VM images (QCOW2 files)
+      iops: 3000
+      throughput: 125
+
+metadata:
+  capabilities:
+    - bare-metal
+  notes:
+    - "Uses metal instances for nested virtualization support"
+    - "Optimized for OpenShift Virtualization workloads"
