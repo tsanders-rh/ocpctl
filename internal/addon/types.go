@@ -7,7 +7,7 @@ type AddonDefinition struct {
 	ID                 string               `yaml:"id" validate:"required"`
 	Name               string               `yaml:"name" validate:"required"`
 	Description        string               `yaml:"description" validate:"required"`
-	Category           string               `yaml:"category" validate:"required,oneof=backup migration cicd monitoring security storage networking"`
+	Category           string               `yaml:"category" validate:"required,oneof=backup migration cicd monitoring security storage networking virtualization"`
 	Enabled            bool                 `yaml:"enabled"`
 	SupportedPlatforms []string             `yaml:"supportedPlatforms" validate:"required,min=1"`
 	Versions           []AddonVersionConfig `yaml:"versions" validate:"required,min=1,dive"`
