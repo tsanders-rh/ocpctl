@@ -16,26 +16,60 @@
 #   ./setup-irsa.sh sandersvirt6-abc123 us-east-1
 #
 
-set -e
+set -euo pipefail
 
-if [ $# -ne 2 ]; then
-  echo "Usage: $0 <infraID> <region>"
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+  echo "Usage: $0 <infraID> <region> [oidcIssuerURL]"
   echo "Example: $0 sandersvirt6-abc123 us-east-1"
+  echo "Example: $0 sandersvirt6-abc123 us-east-1 https://rh-oidc.s3.us-east-1.amazonaws.com/abc123"
   exit 1
 fi
 
 INFRA_ID="$1"
 REGION="$2"
+OIDC_ISSUER_URL="${3:-}"
 ROLE_NAME="ocpctl-windows-image-s3-reader"
 SERVICE_ACCOUNT_NAME="windows-image-importer"
 SERVICE_ACCOUNT_NAMESPACE="openshift-virtualization-os-images"
 
-# Get AWS account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+# Pre-flight: verify AWS credentials are valid
+echo "Verifying AWS credentials..."
+if ! AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>&1); then
+  echo ""
+  echo "ERROR: AWS credentials are invalid or expired."
+  echo ""
+  echo "  Error details: $AWS_ACCOUNT_ID"
+  echo ""
+  echo "To fix this, refresh your AWS credentials. Common methods:"
+  echo "  - AWS SSO:        aws sso login --profile <profile>"
+  echo "  - saml2aws:       saml2aws login"
+  echo "  - Environment:    export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=..."
+  echo "  - AWS profile:    export AWS_PROFILE=<profile-name>"
+  echo ""
+  echo "After refreshing, verify with:  aws sts get-caller-identity"
+  exit 1
+fi
 echo "AWS Account ID: $AWS_ACCOUNT_ID"
 
-# Construct OIDC provider URL
-OIDC_PROVIDER="${INFRA_ID}-oidc.s3.${REGION}.amazonaws.com"
+# Determine OIDC provider URL
+# If not passed as argument, try to get it from the cluster, then fall back to the standard pattern
+if [ -z "$OIDC_ISSUER_URL" ]; then
+  if command -v oc &>/dev/null; then
+    OIDC_ISSUER_URL=$(oc get authentication.config.openshift.io cluster \
+      -o jsonpath='{.spec.serviceAccountIssuer}' 2>/dev/null || true)
+  fi
+fi
+
+if [ -n "$OIDC_ISSUER_URL" ]; then
+  # Strip the https:// prefix to get the provider host path
+  OIDC_PROVIDER="${OIDC_ISSUER_URL#https://}"
+  echo "OIDC Issuer (from cluster): $OIDC_ISSUER_URL"
+else
+  # Fall back to the standard IPI STS pattern
+  OIDC_PROVIDER="${INFRA_ID}-oidc.s3.${REGION}.amazonaws.com"
+  echo "OIDC Issuer: not found in cluster, using standard IPI STS pattern"
+fi
+
 OIDC_PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
 
 echo "OIDC Provider: $OIDC_PROVIDER"
@@ -43,9 +77,30 @@ echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
 
 # Verify OIDC provider exists
 if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_PROVIDER_ARN" &>/dev/null; then
-  echo "ERROR: OIDC provider not found: $OIDC_PROVIDER_ARN"
-  echo "Make sure the cluster was created with ocpctl and is using STS mode."
-  exit 1
+  echo ""
+  echo "⚠ OIDC provider not found in IAM: $OIDC_PROVIDER_ARN"
+  echo ""
+  echo "This cluster was not created with STS/OIDC mode, so IRSA cannot be"
+  echo "used. The fallback is to store static AWS credentials as a Kubernetes"
+  echo "secret instead."
+  echo ""
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ ! -f "$SCRIPT_DIR/create-s3-secret.sh" ]; then
+    echo "ERROR: create-s3-secret.sh not found at $SCRIPT_DIR"
+    echo "Cannot continue without either IRSA or static credentials."
+    exit 1
+  fi
+
+  read -rp "Would you like to create the static credentials secret now? [y/N] " REPLY
+  echo ""
+  if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    exec "$SCRIPT_DIR/create-s3-secret.sh"
+  else
+    echo "Skipped. To set up credentials manually, run:"
+    echo "  ./create-s3-secret.sh"
+    exit 1
+  fi
 fi
 echo "✓ OIDC provider verified"
 
