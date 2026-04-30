@@ -1,0 +1,40 @@
+---
+# Windows 10 DataVolume - Downloads from S3
+#
+# This DataVolume uses CDI (Containerized Data Importer) to download the Windows 10
+# QCOW2 image from S3 and create a PersistentVolumeClaim in the cluster.
+#
+# Process:
+# 1. CDI creates an importer pod
+# 2. Importer downloads from S3 using credentials from s3-windows-image-secret
+# 3. Image is converted and stored in a PVC (70Gi)
+# 4. DataSource references this PVC for VM cloning
+#
+# Expected Duration: 5-10 minutes (depends on S3 transfer speed)
+#
+# Monitoring:
+#   oc get datavolume windows -n openshift-virtualization-os-images -w
+#   oc get pods -n openshift-virtualization-os-images
+#
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: openshift-virtualization-os-images
+spec:
+  contentType: kubevirt
+  source:
+    s3:
+      # S3 URL format: s3://bucket-name/path/to/object
+      url: "https://s3.us-east-1.amazonaws.com/ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+      # Reference to the secret containing AWS credentials
+      secretRef: windows-image-s3-creds
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        # Must be at least as large as the QCOW2 image (23GB actual, 70GB allocated)
+        storage: 70Gi
+    # gp3-csi-immediate uses Immediate binding mode required for CDI imports
+    storageClassName: gp3-csi-immediate-us-west-2a
