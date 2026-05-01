@@ -83,6 +83,40 @@ func ignoreBenignError(err error) error {
 	return err
 }
 
+// isServiceManagedENI checks if a network interface is managed by an AWS service
+// Service-managed ENIs should not be manually deleted - AWS will clean them up automatically
+func isServiceManagedENI(eni *types.NetworkInterface) bool {
+	// Check RequesterManaged flag - true means AWS is managing it
+	if aws.ToBool(eni.RequesterManaged) {
+		return true
+	}
+
+	// Check interface type - certain types are always service-managed
+	interfaceType := string(eni.InterfaceType)
+	serviceManagedTypes := []string{
+		"load_balancer",           // Elastic Load Balancer
+		"nat_gateway",             // NAT Gateway
+		"gateway_load_balancer",   // Gateway Load Balancer
+		"gateway_load_balancer_endpoint",
+		"network_load_balancer",   // Network Load Balancer
+		"lambda",                  // Lambda function
+		"efs",                     // Elastic File System
+		"api_gateway_managed",     // API Gateway
+		"transit_gateway",         // Transit Gateway
+		"global_accelerator_managed",
+		"aws_codestar_connections_managed",
+		"iot_rules_managed",
+	}
+
+	for _, managedType := range serviceManagedTypes {
+		if interfaceType == managedType {
+			return true
+		}
+	}
+
+	return false
+}
+
 func deleteVPCEndpoints(ctx context.Context, ec2Client *ec2.Client, vpcID string) error {
 	out, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
 		Filters: []types.Filter{{Name: aws.String("vpc-id"), Values: []string{vpcID}}},
@@ -147,6 +181,13 @@ func deleteNetworkInterfaces(ctx context.Context, ec2Client *ec2.Client, vpcID s
 			continue
 		}
 
+		// Skip service-managed network interfaces - AWS will clean them up automatically
+		if isServiceManagedENI(&eni) {
+			log.Printf("Skipping service-managed ENI %s (type: %s, requester-managed: %t, description: %s)",
+				id, eni.InterfaceType, aws.ToBool(eni.RequesterManaged), aws.ToString(eni.Description))
+			continue
+		}
+
 		// Detach if attached
 		if eni.Attachment != nil && aws.ToString(eni.Attachment.AttachmentId) != "" {
 			attachID := aws.ToString(eni.Attachment.AttachmentId)
@@ -155,6 +196,11 @@ func deleteNetworkInterfaces(ctx context.Context, ec2Client *ec2.Client, vpcID s
 				AttachmentId: aws.String(attachID),
 				Force:        aws.Bool(true),
 			})
+			// Skip errors about service-managed attachments (ela-attach, etc.)
+			if err != nil && strings.Contains(err.Error(), "OperationNotPermitted") {
+				log.Printf("Cannot detach ENI %s - appears to be service-managed: %v", id, err)
+				continue
+			}
 			if err := ignoreBenignError(err); err != nil {
 				return err
 			}

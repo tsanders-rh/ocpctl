@@ -307,15 +307,21 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to delete %s resource %s: %w", resource.ResourceType, resource.ResourceName, err))
 	}
 
+	// Resource deletion succeeded - now update the database
+	// Use a fresh context with a reasonable timeout to avoid context deadline exceeded errors
+	// after long-running deletions (like VPC deletions that can take 4-5 minutes)
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dbCancel()
+
 	// Mark as resolved
 	notes := fmt.Sprintf("Automatically deleted via API by %s", userEmail)
-	err = h.store.OrphanedResources.MarkResolved(c.Request().Context(), id, userEmail, notes)
+	err = h.store.OrphanedResources.MarkResolved(dbCtx, id, userEmail, notes)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("resource deleted but failed to update database for %s: %w", id, err))
 	}
 
 	// Get updated resource
-	resource, err = h.store.OrphanedResources.GetByID(c.Request().Context(), id)
+	resource, err = h.store.OrphanedResources.GetByID(dbCtx, id)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("resource deleted but failed to get updated status for %s: %w", id, err))
 	}
