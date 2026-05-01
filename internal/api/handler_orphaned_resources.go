@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -290,6 +292,15 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 		err = h.deleteVPCAndDependencies(ctx, resource.ResourceID, resource.Region)
 	case types.OrphanedResourceTypeEC2Instance:
 		return ErrorBadRequest(c, "EC2Instance deletion not supported - delete via AWS Console")
+
+	// GCP Resources
+	case types.OrphanedResourceTypeGCPServiceAccount:
+		project := os.Getenv("GCP_PROJECT")
+		if project == "" {
+			return ErrorBadRequest(c, "GCP_PROJECT environment variable not set")
+		}
+		err = h.deleteGCPServiceAccount(ctx, resource.ResourceID, project)
+
 	default:
 		return ErrorBadRequest(c, fmt.Sprintf("Deletion not supported for resource type: %s", resource.ResourceType))
 	}
@@ -922,4 +933,29 @@ func (h *OrphanedResourceHandler) deleteVPCAndDependencies(ctx context.Context, 
 
 	ec2Client := ec2.NewFromConfig(cfg)
 	return cleanup.DeleteVPCAndDependencies(ctx, ec2Client, vpcID)
+}
+
+// GCP delete handlers
+
+// deleteGCPServiceAccount deletes a GCP service account
+func (h *OrphanedResourceHandler) deleteGCPServiceAccount(ctx context.Context, serviceAccountEmail, project string) error {
+	log.Printf("Deleting GCP service account %s in project %s", serviceAccountEmail, project)
+
+	// Delete the service account using gcloud command
+	cmd := exec.CommandContext(ctx, "gcloud", "iam", "service-accounts", "delete", serviceAccountEmail,
+		"--project", project,
+		"--quiet") // --quiet skips confirmation prompts
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Check if service account doesn't exist
+		if strings.Contains(string(output), "NOT_FOUND") || strings.Contains(string(output), "does not exist") {
+			log.Printf("GCP service account %s not found - assuming already deleted", serviceAccountEmail)
+			return nil
+		}
+		return fmt.Errorf("delete GCP service account: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Successfully deleted GCP service account %s", serviceAccountEmail)
+	return nil
 }

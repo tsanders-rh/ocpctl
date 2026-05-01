@@ -6,20 +6,30 @@ import (
 	"time"
 )
 
-// OrphanedResourceType represents the type of AWS resource
+// OrphanedResourceType represents the type of cloud resource
 type OrphanedResourceType string
 
 const (
-	OrphanedResourceTypeVPC               OrphanedResourceType = "VPC"
-	OrphanedResourceTypeLoadBalancer      OrphanedResourceType = "LoadBalancer"
-	OrphanedResourceTypeDNSRecord         OrphanedResourceType = "DNSRecord"
-	OrphanedResourceTypeEC2Instance       OrphanedResourceType = "EC2Instance"
-	OrphanedResourceTypeHostedZone        OrphanedResourceType = "HostedZone"
-	OrphanedResourceTypeIAMRole           OrphanedResourceType = "IAMRole"
-	OrphanedResourceTypeOIDCProvider      OrphanedResourceType = "OIDCProvider"
-	OrphanedResourceTypeEBSVolume         OrphanedResourceType = "EBSVolume"
-	OrphanedResourceTypeElasticIP         OrphanedResourceType = "ElasticIP"
+	// AWS Resources
+	OrphanedResourceTypeVPC                OrphanedResourceType = "VPC"
+	OrphanedResourceTypeLoadBalancer       OrphanedResourceType = "LoadBalancer"
+	OrphanedResourceTypeDNSRecord          OrphanedResourceType = "DNSRecord"
+	OrphanedResourceTypeEC2Instance        OrphanedResourceType = "EC2Instance"
+	OrphanedResourceTypeHostedZone         OrphanedResourceType = "HostedZone"
+	OrphanedResourceTypeIAMRole            OrphanedResourceType = "IAMRole"
+	OrphanedResourceTypeOIDCProvider       OrphanedResourceType = "OIDCProvider"
+	OrphanedResourceTypeEBSVolume          OrphanedResourceType = "EBSVolume"
+	OrphanedResourceTypeElasticIP          OrphanedResourceType = "ElasticIP"
 	OrphanedResourceTypeCloudWatchLogGroup OrphanedResourceType = "CloudWatchLogGroup"
+
+	// GCP Resources
+	OrphanedResourceTypeGCPServiceAccount OrphanedResourceType = "GCPServiceAccount"
+	OrphanedResourceTypeGCPNetwork        OrphanedResourceType = "GCPNetwork"
+	OrphanedResourceTypeGCPSubnetwork     OrphanedResourceType = "GCPSubnetwork"
+	OrphanedResourceTypeGCPDisk           OrphanedResourceType = "GCPDisk"
+	OrphanedResourceTypeGCPInstance       OrphanedResourceType = "GCPInstance"
+	OrphanedResourceTypeGCPBucket         OrphanedResourceType = "GCPBucket"
+	OrphanedResourceTypeGCPIPAddress      OrphanedResourceType = "GCPIPAddress"
 )
 
 // OrphanedResourceStatus represents the status of an orphaned resource
@@ -68,7 +78,7 @@ func (t *OrphanedResourceTags) Scan(value interface{}) error {
 	return nil
 }
 
-// OrphanedResource represents an AWS resource that exists but has no matching cluster
+// OrphanedResource represents a cloud resource that exists but has no matching cluster
 type OrphanedResource struct {
 	ID              string                   `db:"id" json:"id"`
 	ResourceType    OrphanedResourceType     `db:"resource_type" json:"resource_type"`

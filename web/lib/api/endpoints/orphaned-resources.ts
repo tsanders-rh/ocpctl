@@ -1,6 +1,7 @@
 import { apiClient } from "../client";
 
 export type OrphanedResourceType =
+  // AWS Resources
   | "VPC"
   | "LoadBalancer"
   | "DNSRecord"
@@ -10,7 +11,15 @@ export type OrphanedResourceType =
   | "OIDCProvider"
   | "EBSVolume"
   | "ElasticIP"
-  | "CloudWatchLogGroup";
+  | "CloudWatchLogGroup"
+  // GCP Resources
+  | "GCPServiceAccount"
+  | "GCPNetwork"
+  | "GCPSubnetwork"
+  | "GCPDisk"
+  | "GCPInstance"
+  | "GCPBucket"
+  | "GCPIPAddress";
 
 export type OrphanedResourceStatus = "ACTIVE" | "RESOLVED" | "IGNORED";
 

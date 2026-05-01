@@ -75,6 +75,7 @@ export default function OrphanedResourcesPage() {
       CloudWatchLogGroup: "Delete Log Group",
       LoadBalancer: "Delete Load Balancer",
       VPC: "Delete VPC",
+      GCPServiceAccount: "Delete GCP Service Account",
     };
     return titles[resourceType] || "Delete Resource";
   };
@@ -90,8 +91,9 @@ export default function OrphanedResourcesPage() {
       CloudWatchLogGroup: "This will delete the CloudWatch log group and all its logs. This action cannot be undone.",
       LoadBalancer: "This will delete the Application/Network Load Balancer from AWS. This action cannot be undone.",
       VPC: "This will delete the VPC and ALL dependent resources (subnets, route tables, security groups, NAT gateways, internet gateways, VPC endpoints, network interfaces, etc.). This action cannot be undone.",
+      GCPServiceAccount: "This will delete the GCP service account. This action cannot be undone.",
     };
-    return descriptions[resourceType] || "This will delete the resource from AWS. This action cannot be undone.";
+    return descriptions[resourceType] || "This will delete the resource. This action cannot be undone.";
   };
 
   const handleAction = async () => {
@@ -441,7 +443,8 @@ export default function OrphanedResourcesPage() {
                             resource.resource_type === "OIDCProvider" ||
                             resource.resource_type === "CloudWatchLogGroup" ||
                             resource.resource_type === "LoadBalancer" ||
-                            resource.resource_type === "VPC") && (
+                            resource.resource_type === "VPC" ||
+                            resource.resource_type === "GCPServiceAccount") && (
                             <Button
                               variant="destructive"
                               size="sm"
