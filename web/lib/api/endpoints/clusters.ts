@@ -1,6 +1,7 @@
 import { apiClient } from "../client";
 import type {
   Cluster,
+  ClusterDetailsResponse,
   CreateClusterRequest,
   ExtendClusterRequest,
   PaginatedResponse,
@@ -42,8 +43,8 @@ export const clustersApi = {
     );
   },
 
-  get: async (id: string): Promise<Cluster> => {
-    return apiClient.get<Cluster>(`/clusters/${id}`);
+  get: async (id: string): Promise<ClusterDetailsResponse> => {
+    return apiClient.get<ClusterDetailsResponse>(`/clusters/${id}`);
   },
 
   create: async (data: CreateClusterRequest): Promise<Cluster> => {

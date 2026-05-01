@@ -948,9 +948,48 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		return fmt.Errorf("kubeconfig not found at %s", kubeconfigPath)
 	}
 
+	// Start log streaming for job output visibility
+	logPath := filepath.Join(workDir, "post-configure.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		log.Printf("Warning: failed to create log file: %v", err)
+	} else {
+		defer logFile.Close()
+	}
+
+	// Create log writer that writes to both stdout and file
+	logWriter := func(format string, args ...interface{}) {
+		msg := fmt.Sprintf(format, args...)
+		log.Print(msg)
+		if logFile != nil {
+			fmt.Fprintln(logFile, msg)
+			logFile.Sync() // Flush to disk so LogStreamer can read it
+		}
+	}
+
+	// Start log streaming to database
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		logWriter("Warning: failed to start log streaming: %v", err)
+	}
+
+	// Ensure final logs are flushed when function returns
+	defer func() {
+		streamCancel()
+		time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
+		if stopErr := streamer.Stop(); stopErr != nil {
+			log.Printf("Warning: error stopping log streamer: %v", stopErr)
+		}
+	}()
+
+	logWriter("Starting post-deployment configuration for OpenShift cluster %s", cluster.Name)
+
 	// Execute profile-defined post-deployment configuration first
 	if hasProfileConfig {
-		log.Printf("Executing profile-defined post-deployment configuration")
+		logWriter("Executing profile-defined post-deployment configuration")
 
 		// Install operators
 		for _, op := range prof.PostDeployment.Operators {
@@ -987,7 +1026,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 
 	// Execute user-defined custom post-deployment configuration
 	if hasCustomConfig {
-		log.Printf("Executing user-defined custom post-deployment configuration with DAG-based execution")
+		logWriter("Executing user-defined custom post-deployment configuration with DAG-based execution")
 
 		// Build execution DAG to resolve dependencies
 		dag, err := postconfig.BuildExecutionDAG(cluster.CustomPostConfig)
@@ -996,7 +1035,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 			return fmt.Errorf("build execution DAG: %w", err)
 		}
 
-		log.Printf("Execution order: %v", dag.ExecutionOrder)
+		logWriter("Execution order: %v", dag.ExecutionOrder)
 
 		// Get infrastructure details for template context
 		infraID, _, err := h.getClusterInfraDetails(ctx, cluster, kubeconfigPath)
@@ -1007,7 +1046,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 
 		// Execute tasks in dependency order
 		for _, task := range dag.GetTasksByExecutionOrder() {
-			log.Printf("[DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
+			logWriter("[DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
 
 			// Execute based on task type
 			switch task.Type {
@@ -1039,7 +1078,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 				return fmt.Errorf("unknown task type: %s", task.Type)
 			}
 
-			log.Printf("[DAG] Task %s completed successfully", task.Name)
+			logWriter("[DAG] Task %s completed successfully", task.Name)
 		}
 	}
 
@@ -1048,7 +1087,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		return fmt.Errorf("update post-deploy status: %w", err)
 	}
 
-	log.Printf("Successfully completed post-deployment configuration for cluster %s", cluster.Name)
+	logWriter("Successfully completed post-deployment configuration for cluster %s", cluster.Name)
 	return nil
 }
 

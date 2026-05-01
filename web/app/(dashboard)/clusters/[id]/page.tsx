@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs, useHibernateCluster, useResumeCluster, useClusterConfigurations, useTriggerPostConfiguration, useRetryConfiguration } from "@/lib/hooks/useClusters";
+import { useCluster, useDeleteCluster, useExtendCluster, useClusterOutputs, useHibernateCluster, useResumeCluster, useClusterConfigurations } from "@/lib/hooks/useClusters";
 import { useJobs } from "@/lib/hooks/useJobs";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
@@ -13,29 +13,14 @@ import { DeploymentLogs } from "@/components/clusters/DeploymentLogs";
 import { StorageTab } from "@/components/clusters/StorageTab";
 import { ClusterTopology } from "@/components/clusters/ClusterTopology";
 import { EC2InstancesCard } from "@/components/clusters/EC2InstancesCard";
+import { AddonExecutionOrder } from "@/components/clusters/AddonExecutionOrder";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, RefreshCw, Play, FileText } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ConfigStatus, CustomManifestConfig } from "@/types/api";
+import { CustomManifestConfig } from "@/types/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-
-// Helper to get badge variant for configuration status
-function getConfigStatusBadge(status: ConfigStatus): { variant: "default" | "secondary" | "destructive" | "outline"; label: string } {
-  switch (status) {
-    case ConfigStatus.COMPLETED:
-      return { variant: "default", label: "Completed" };
-    case ConfigStatus.INSTALLING:
-      return { variant: "secondary", label: "Installing" };
-    case ConfigStatus.PENDING:
-      return { variant: "outline", label: "Pending" };
-    case ConfigStatus.FAILED:
-      return { variant: "destructive", label: "Failed" };
-    default:
-      return { variant: "outline", label: status };
-  }
-}
 
 // Helper to convert work_days bitmask to day names
 function workDaysBitmaskToNames(mask: number): string[] {
@@ -221,8 +206,12 @@ export default function ClusterDetailPage() {
   const id = params.id as string;
 
   const { user } = useAuthStore();
-  const { data: cluster, isLoading } = useCluster(id);
+  const { data: clusterResponse, isLoading } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
+
+  // Extract cluster and execution order from response
+  const cluster = clusterResponse?.cluster;
+  const executionOrder = clusterResponse?.postConfigExecutionOrder;
 
   // Check if there's an active POST_CONFIGURE job
   const hasActivePostConfigureJob = jobsData?.data?.some((job) =>
@@ -235,8 +224,6 @@ export default function ClusterDetailPage() {
   const extendCluster = useExtendCluster();
   const hibernateCluster = useHibernateCluster();
   const resumeCluster = useResumeCluster();
-  const triggerPostConfiguration = useTriggerPostConfiguration();
-  const retryConfiguration = useRetryConfiguration();
 
   const [extendHours, setExtendHours] = useState<number>(24);
   const [selectedManifest, setSelectedManifest] = useState<CustomManifestConfig | null>(null);
@@ -693,167 +680,91 @@ export default function ClusterDetailPage() {
         </Card>
       )}
 
-      {/* Post-Deployment Configuration Card */}
-      {((configurations && configurations.configurations.length > 0) || cluster.custom_post_config) && (
+      {/* Post-Deployment Configuration - Execution Order Visualization */}
+      {executionOrder && executionOrder.length > 0 && (
+        <AddonExecutionOrder
+          executionOrder={executionOrder}
+          configurations={configurations?.configurations}
+        />
+      )}
+
+      {/* Fallback: Show old-style pending configuration if no execution order */}
+      {!executionOrder && cluster.custom_post_config && (!configurations || configurations.configurations.length === 0) && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardHeader>
             <CardTitle>Post-Deployment Configuration</CardTitle>
-            {cluster.status === "READY" && configurations && configurations.configurations.length > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  if (confirm(`Are you sure you want to trigger post-deployment configuration for cluster "${cluster.name}"?`)) {
-                    try {
-                      await triggerPostConfiguration.mutateAsync(id);
-                      alert("Post-deployment configuration triggered successfully");
-                    } catch (error: any) {
-                      const errorMessage = error?.response?.message || error?.message || "Failed to trigger configuration";
-                      alert(`Failed to trigger configuration: ${errorMessage}`);
-                      console.error("Trigger configuration error:", error);
-                    }
-                  }
-                }}
-                disabled={triggerPostConfiguration.isPending}
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {triggerPostConfiguration.isPending ? "Triggering..." : "Trigger Now"}
-              </Button>
-            )}
           </CardHeader>
           <CardContent>
-            {/* Show pending configuration */}
-            {cluster.custom_post_config && (!configurations || configurations.configurations.length === 0) && (
-              <div className="space-y-4">
-                <div className="rounded-lg border bg-blue-50 dark:bg-blue-950 p-4">
-                  <p className="text-sm text-blue-900 dark:text-blue-100">
-                    The following add-ons will be installed automatically after the cluster reaches READY status:
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {cluster.custom_post_config.operators && cluster.custom_post_config.operators.length > 0 && (
-                    <div className="border rounded-md p-3">
-                      <div className="text-sm font-medium mb-2">Operators</div>
-                      <div className="space-y-1">
-                        {cluster.custom_post_config.operators.map((op, idx) => (
-                          <div key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {op.channel}
-                            </Badge>
-                            <span>{op.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {cluster.custom_post_config.scripts && cluster.custom_post_config.scripts.length > 0 && (
-                    <div className="border rounded-md p-3">
-                      <div className="text-sm font-medium mb-2">Scripts</div>
-                      <div className="space-y-1">
-                        {cluster.custom_post_config.scripts.map((script, idx) => (
-                          <div key={idx} className="text-sm text-muted-foreground">
-                            {script.name}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {cluster.custom_post_config.manifests && cluster.custom_post_config.manifests.length > 0 && (
-                    <div className="border rounded-md p-3">
-                      <div className="text-sm font-medium mb-2">Manifests</div>
-                      <div className="space-y-1">
-                        {cluster.custom_post_config.manifests.map((manifest, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => setSelectedManifest(manifest)}
-                            className="w-full text-left text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-md px-2 py-1 transition-colors flex items-center gap-2"
-                          >
-                            <FileText className="h-3 w-3" />
-                            <span>{manifest.name}</span>
-                            {manifest.description && (
-                              <span className="text-xs text-muted-foreground ml-auto">
-                                {manifest.description}
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {cluster.custom_post_config.helmCharts && cluster.custom_post_config.helmCharts.length > 0 && (
-                    <div className="border rounded-md p-3">
-                      <div className="text-sm font-medium mb-2">Helm Charts</div>
-                      <div className="space-y-1">
-                        {cluster.custom_post_config.helmCharts.map((chart, idx) => (
-                          <div key={idx} className="text-sm text-muted-foreground">
-                            {chart.name}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-blue-50 dark:bg-blue-950 p-4">
+                <p className="text-sm text-blue-900 dark:text-blue-100">
+                  The following add-ons will be installed automatically after the cluster reaches READY status:
+                </p>
               </div>
-            )}
-
-            {/* Show execution status */}
-            {configurations && configurations.configurations.length > 0 && (
-              <div className="space-y-3">
-                {configurations.configurations.map((config) => {
-                  const statusBadge = getConfigStatusBadge(config.status);
-                  return (
-                    <div
-                      key={config.id}
-                      className="flex items-center justify-between p-3 border rounded-md"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {cluster.custom_post_config.operators && cluster.custom_post_config.operators.length > 0 && (
+                  <div className="border rounded-md p-3">
+                    <div className="text-sm font-medium mb-2">Operators</div>
+                    <div className="space-y-1">
+                      {cluster.custom_post_config.operators.map((op, idx) => (
+                        <div key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
                           <Badge variant="outline" className="text-xs">
-                            {config.config_type}
+                            {op.channel}
                           </Badge>
-                          <span className="font-medium">{config.config_name}</span>
+                          <span>{op.name}</span>
                         </div>
-                        {config.error_message && (
-                          <div className="text-sm text-destructive mt-1">
-                            {config.error_message}
-                          </div>
-                        )}
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Created: {formatDate(config.created_at)}
-                          {config.completed_at && ` • Completed: ${formatDate(config.completed_at)}`}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-                        {config.status === ConfigStatus.FAILED && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              try {
-                                await retryConfiguration.mutateAsync({
-                                  clusterId: id,
-                                  configId: config.id,
-                                });
-                                alert("Configuration retry initiated successfully");
-                              } catch (error: any) {
-                                const errorMessage = error?.response?.message || error?.message || "Failed to retry configuration";
-                                alert(`Failed to retry: ${errorMessage}`);
-                                console.error("Retry configuration error:", error);
-                              }
-                            }}
-                            disabled={retryConfiguration.isPending}
-                          >
-                            <RefreshCw className="mr-2 h-3 w-3" />
-                            {retryConfiguration.isPending ? "Retrying..." : "Retry"}
-                          </Button>
-                        )}
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+                {cluster.custom_post_config.scripts && cluster.custom_post_config.scripts.length > 0 && (
+                  <div className="border rounded-md p-3">
+                    <div className="text-sm font-medium mb-2">Scripts</div>
+                    <div className="space-y-1">
+                      {cluster.custom_post_config.scripts.map((script, idx) => (
+                        <div key={idx} className="text-sm text-muted-foreground">
+                          {script.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {cluster.custom_post_config.manifests && cluster.custom_post_config.manifests.length > 0 && (
+                  <div className="border rounded-md p-3">
+                    <div className="text-sm font-medium mb-2">Manifests</div>
+                    <div className="space-y-1">
+                      {cluster.custom_post_config.manifests.map((manifest, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedManifest(manifest)}
+                          className="w-full text-left text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-md px-2 py-1 transition-colors flex items-center gap-2"
+                        >
+                          <FileText className="h-3 w-3" />
+                          <span>{manifest.name}</span>
+                          {manifest.description && (
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {manifest.description}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {cluster.custom_post_config.helmCharts && cluster.custom_post_config.helmCharts.length > 0 && (
+                  <div className="border rounded-md p-3">
+                    <div className="text-sm font-medium mb-2">Helm Charts</div>
+                    <div className="space-y-1">
+                      {cluster.custom_post_config.helmCharts.map((chart, idx) => (
+                        <div key={idx} className="text-sm text-muted-foreground">
+                          {chart.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       )}

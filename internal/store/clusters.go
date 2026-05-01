@@ -922,3 +922,47 @@ func (s *ClusterStore) GetActiveClusterCount(ctx context.Context) (int, error) {
 
 	return count, nil
 }
+
+// CheckInfraIDCollision checks if a cluster name could collide with recently destroyed clusters
+// Returns a list of recently destroyed cluster names with similar prefixes (within last 7 days)
+func (s *ClusterStore) CheckInfraIDCollision(ctx context.Context, clusterName string, platform types.Platform) ([]string, error) {
+	// OpenShift truncates cluster names to 27 chars for AWS (32 char limit - 5 char suffix)
+	const maxInfraPrefix = 27
+	infraPrefix := clusterName
+	if len(clusterName) > maxInfraPrefix {
+		infraPrefix = clusterName[:maxInfraPrefix]
+	}
+
+	// Query for recently destroyed clusters with similar names (within last 7 days)
+	query := `
+		SELECT name
+		FROM clusters
+		WHERE platform = $1
+		  AND status = 'DESTROYED'
+		  AND destroyed_at > NOW() - INTERVAL '7 days'
+		  AND name LIKE $2
+		ORDER BY destroyed_at DESC
+		LIMIT 5
+	`
+
+	rows, err := s.pool.Query(ctx, query, platform, infraPrefix+"%")
+	if err != nil {
+		return nil, fmt.Errorf("query clusters for infra ID collision: %w", err)
+	}
+	defer rows.Close()
+
+	var recentClusters []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan cluster name: %w", err)
+		}
+		recentClusters = append(recentClusters, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters: %w", err)
+	}
+
+	return recentClusters, nil
+}

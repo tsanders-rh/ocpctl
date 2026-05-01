@@ -202,6 +202,20 @@ export interface Cluster {
   post_deploy_status?: string;
 }
 
+// Task execution info for UI visualization
+export interface TaskExecutionInfo {
+  name: string;
+  type: "script" | "manifest" | "operator" | "helmChart";
+  dependencies: string[];
+  order: number;
+}
+
+// Enhanced cluster response with execution order metadata
+export interface ClusterDetailsResponse {
+  cluster: Cluster;
+  postConfigExecutionOrder?: TaskExecutionInfo[];
+}
+
 export interface ExtendClusterRequest {
   ttl_hours: number;
 }

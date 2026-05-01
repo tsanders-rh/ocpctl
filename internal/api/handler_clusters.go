@@ -20,6 +20,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
+	"github.com/tsanders-rh/ocpctl/internal/postconfig"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -233,6 +234,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		if _, ok := auths.(map[string]interface{}); !ok {
 			return ErrorBadRequest(c, "custom_pull_secret 'auths' field must be an object")
 		}
+	}
+
+	// Check for potential infra ID collisions with recently destroyed clusters
+	if err := h.checkInfraIDCollision(c.Request().Context(), req.Name, types.Platform(req.Platform)); err != nil {
+		log.Printf("[ERROR] Infra ID collision detected: %v", err)
+		return ErrorBadRequest(c, err.Error())
 	}
 
 	// Get authenticated user ID
@@ -620,7 +627,56 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 		return err
 	}
 
-	return SuccessOK(c, cluster)
+	// Build enhanced response with execution order if custom post-config exists
+	response := map[string]interface{}{
+		"cluster": cluster,
+	}
+
+	// Add execution order metadata if custom post-config exists
+	if cluster.CustomPostConfig != nil {
+		executionOrder, err := h.buildExecutionOrderMetadata(cluster.CustomPostConfig)
+		if err != nil {
+			// Log but don't fail - just return cluster without execution order
+			log.Printf("Warning: failed to build execution order metadata for cluster %s: %v", cluster.ID, err)
+		} else {
+			response["postConfigExecutionOrder"] = executionOrder
+		}
+	}
+
+	return SuccessOK(c, response)
+}
+
+// TaskExecutionInfo represents execution metadata for a single task
+type TaskExecutionInfo struct {
+	Name         string   `json:"name"`
+	Type         string   `json:"type"` // "operator", "script", "manifest", "helmChart"
+	Dependencies []string `json:"dependencies"`
+	Order        int      `json:"order"` // Execution order (1-based)
+}
+
+// buildExecutionOrderMetadata builds execution order metadata for UI visualization
+func (h *ClusterHandler) buildExecutionOrderMetadata(config *types.CustomPostConfig) ([]TaskExecutionInfo, error) {
+	// Build DAG
+	dag, err := postconfig.BuildExecutionDAG(config)
+	if err != nil {
+		return nil, fmt.Errorf("build execution DAG: %w", err)
+	}
+
+	// Get tasks in execution order
+	tasks := dag.GetTasksByExecutionOrder()
+
+	// Build execution info for each task
+	executionInfo := make([]TaskExecutionInfo, len(tasks))
+	for i, task := range tasks {
+		executionInfo[i] = TaskExecutionInfo{
+			Name:         task.Name,
+			Type:         task.Type,
+			Dependencies: task.Dependencies,
+			Order:        i + 1, // 1-based ordering for UI
+		}
+	}
+
+	return executionInfo, nil
 }
 
 // Delete handles DELETE /api/v1/clusters/:id
@@ -2179,4 +2235,28 @@ func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *
 	}
 
 	return storageClasses, nil
+}
+// checkInfraIDCollision checks if the cluster name could collide with recently destroyed clusters
+// OpenShift generates infra IDs by truncating cluster names to ~27 chars + 5-char random suffix
+// Similar names can generate the same infra ID if created close together
+func (h *ClusterHandler) checkInfraIDCollision(ctx context.Context, clusterName string, platform types.Platform) error {
+	// Only check for OpenShift clusters on AWS (where we've seen this issue)
+	if platform != types.PlatformAWS {
+		return nil
+	}
+
+	// Query for recently destroyed clusters with similar name prefixes
+	recentClusters, err := h.store.Clusters.CheckInfraIDCollision(ctx, clusterName, platform)
+	if err != nil {
+		// Don't fail cluster creation if collision check fails - just log
+		log.Printf("[WARN] Failed to check infra ID collision: %v", err)
+		return nil
+	}
+
+	// If we found similar recently-destroyed clusters, return an error
+	if len(recentClusters) > 0 {
+		return fmt.Errorf("potential infra ID collision: cluster name '%s' is similar to recently destroyed cluster(s): %v. OpenShift may reuse the same infrastructure ID, causing creation to fail. Please choose a more distinct cluster name", clusterName, recentClusters)
+	}
+
+	return nil
 }
