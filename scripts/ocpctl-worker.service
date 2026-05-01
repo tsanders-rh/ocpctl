@@ -7,13 +7,26 @@ Wants=network-online.target
 Type=simple
 User=ocpctl
 WorkingDirectory=/opt/ocpctl
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=/etc/ocpctl/worker.env
+
+# Ensure installer binaries are available before starting (runs as root with + prefix)
+ExecStartPre=+/opt/ocpctl/scripts/ensure-installers.sh
+
 ExecStart=/opt/ocpctl/current/ocpctl-worker
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ocpctl-worker
+
+# Graceful shutdown configuration
+# Give jobs up to 1 hour to complete on shutdown
+TimeoutStopSec=3600
+# Send SIGTERM to main process first, only SIGKILL children if timeout exceeded
+KillMode=mixed
+# Use SIGTERM for graceful shutdown (default, but explicit for clarity)
+KillSignal=SIGTERM
 
 # Resource limits
 LimitNOFILE=65536

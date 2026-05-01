@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=ocpctl
 WorkingDirectory=/opt/ocpctl
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=/etc/ocpctl/worker.env
 
 # Ensure installer binaries are available before starting (runs as root with + prefix)
