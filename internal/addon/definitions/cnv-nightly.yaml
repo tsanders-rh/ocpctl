@@ -86,6 +86,94 @@ versions:
                   duration: 24h0m0s
                   renewBefore: 12h0m0s
 
+  # Windows VM Support
+  - channel: nightly-windows
+    displayName: "CNV Pre-Release (4.99.0) + Windows VM Support"
+    isDefault: false
+    config:
+      scripts:
+        - name: verify-quay-credentials
+          description: Verify quay.io credentials are present in pull secret
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Verifying quay.io credentials in pull secret..."
+
+            # Get current pull secret
+            kubectl get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d > /tmp/pull-secret.json
+
+            # Check if quay.io credentials are present
+            if ! jq -e '.auths."quay.io"' /tmp/pull-secret.json > /dev/null 2>&1; then
+              echo "ERROR: General quay.io credentials not found in pull secret"
+              echo "The CNV nightly catalog requires general quay.io access."
+              echo ""
+              echo "Please ensure your cluster's pull secret includes credentials for 'quay.io'"
+              echo "This should be configured in your cluster profile or base pull secret."
+              rm -f /tmp/pull-secret.json
+              exit 1
+            fi
+
+            echo "✓ quay.io credentials verified"
+            rm -f /tmp/pull-secret.json
+          timeout: "60s"
+
+        - name: setup-windows-vm-infrastructure
+          description: Setup Windows VM infrastructure with IRSA and S3 image import
+          path: windows-vm/auto-setup-irsa.sh
+          timeout: "5h"
+          dependsOn:
+            - kubevirt-hyperconverged
+
+      manifests:
+        - name: cnv-nightly-catalogsource
+          description: CatalogSource for CNV pre-release (nightly) builds
+          content: |
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: CatalogSource
+            metadata:
+              name: cnv-nightly
+              namespace: openshift-marketplace
+              labels:
+                cnv-source: pre-release
+                cnv-version: "4.99.0"
+            spec:
+              sourceType: grpc
+              image: quay.io/openshift-cnv/nightly-catalog:4.99
+              displayName: OpenShift Virtualization Pre-Release (4.99)
+              publisher: Red Hat
+              updateStrategy:
+                registryPoll:
+                  interval: 30m
+          namespace: openshift-marketplace
+          dependsOn:
+            - verify-quay-credentials
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: cnv-nightly
+          channel: nightly-4.99
+          dependsOn:
+            - verify-quay-credentials
+            - cnv-nightly-catalogsource
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
 metadata:
   requiresBareMetal: true
   notes:
@@ -97,9 +185,14 @@ metadata:
     - "Automatically creates openshift-cnv namespace"
     - "Includes HyperConverged CR with default configuration"
     - "Operator subscription polls for updates every 30 minutes"
+    - "Windows VM Support version: Adds automated Windows 10 VM infrastructure setup (2-4h for image import)"
+    - "Windows version creates IRSA role, imports 70GB Windows 10 image from S3, and provisions test VM"
+    - "Windows VM ready after post-config completes - supports up to 25-30 concurrent Windows VMs on metal workers"
   warnings:
     - "Pre-release builds are not GA and may have bugs"
     - "Uses nightly catalog - may contain experimental or unstable features"
     - "High resource requirements - recommend 3+ worker nodes"
     - "Version 4.99 indicates pre-release/nightly builds"
     - "Requires general quay.io registry credentials (not just quay.io/openshift-cnv)"
+    - "Windows VM Support adds 2-4 hours to post-deployment time for image download and conversion"
+    - "Windows version requires AWS (IRSA for S3 access) - not supported on other clouds yet"
