@@ -36,7 +36,7 @@ versions:
 
             echo "✓ quay.io credentials verified"
             rm -f /tmp/pull-secret.json
-          timeout: 60
+          timeout: "60s"
       manifests:
         - name: cnv-nightly-catalogsource
           description: CatalogSource for CNV pre-release (nightly) builds
@@ -65,7 +65,7 @@ versions:
         - name: kubevirt-hyperconverged
           namespace: openshift-cnv
           source: cnv-nightly
-          channel: nightly
+          channel: nightly-4.99
           dependsOn:
             - verify-quay-credentials
             - cnv-nightly-catalogsource
