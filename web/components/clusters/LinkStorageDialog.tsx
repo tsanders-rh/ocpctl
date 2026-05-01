@@ -28,7 +28,8 @@ export function LinkStorageDialog({
 }: LinkStorageDialogProps) {
   const [selectedClusterId, setSelectedClusterId] = useState<string>("");
 
-  const { data: sourceCluster } = useCluster(sourceClusterId);
+  const { data: sourceClusterResponse } = useCluster(sourceClusterId);
+  const sourceCluster = sourceClusterResponse?.cluster;
   const { data: clustersResponse } = useClusters();
   const linkMutation = useLinkStorage();
 

@@ -33,10 +33,10 @@ export function useCluster(id: string) {
     refetchInterval: (query) => {
       // Poll every 5 seconds if status is transitioning or post-deployment is active
       const data = query.state.data;
-      if (!data) return false;
+      if (!data?.cluster) return false;
       const activeStatuses = ["PENDING", "CREATING", "DESTROYING", "HIBERNATING", "RESUMING"];
-      const isTransitioning = activeStatuses.includes(data.status);
-      const isPostDeploying = data.post_deploy_status === "in_progress";
+      const isTransitioning = activeStatuses.includes(data.cluster.status);
+      const isPostDeploying = data.cluster.post_deploy_status === "in_progress";
       return (isTransitioning || isPostDeploying) ? 5000 : false;
     },
   });
