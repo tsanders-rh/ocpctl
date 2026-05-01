@@ -206,7 +206,7 @@ export default function ClusterDetailPage() {
   const id = params.id as string;
 
   const { user } = useAuthStore();
-  const { data: clusterResponse, isLoading } = useCluster(id);
+  const { data: clusterResponse, isLoading, error } = useCluster(id);
   const { data: jobsData } = useJobs({ cluster_id: id, per_page: 10 });
 
   // Extract cluster and execution order from response
@@ -230,6 +230,30 @@ export default function ClusterDetailPage() {
 
   if (isLoading) {
     return <div>Loading cluster...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center space-x-4">
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Error Loading Cluster</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-600">{(error as any)?.message || "Failed to load cluster"}</p>
+            <pre className="mt-4 p-4 bg-muted rounded text-xs overflow-auto">
+              {JSON.stringify(error, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   if (!cluster) {
