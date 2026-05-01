@@ -203,9 +203,9 @@ export default function OrphanedResourcesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Orphaned AWS Resources</h1>
+        <h1 className="text-3xl font-bold">Orphaned Cloud Resources</h1>
         <p className="text-muted-foreground">
-          AWS resources that exist but have no matching cluster in the database
+          Cloud resources that exist but have no matching cluster in the database
         </p>
       </div>
 
