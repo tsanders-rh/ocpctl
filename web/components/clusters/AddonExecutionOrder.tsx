@@ -167,14 +167,14 @@ export function AddonExecutionOrder({ executionOrder, configurations }: AddonExe
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Overall Progress</span>
               <span className="font-medium">
-                {configurations.filter((c) => c.status === "completed").length} of {executionOrder.length} completed
+                {executionOrder.filter((task) => getTaskStatus(task.name, configurations) === "completed").length} of {executionOrder.length} completed
               </span>
             </div>
             <div className="mt-2 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-green-500 transition-all duration-500"
                 style={{
-                  width: `${(configurations.filter((c) => c.status === "completed").length / executionOrder.length) * 100}%`,
+                  width: `${(executionOrder.filter((task) => getTaskStatus(task.name, configurations) === "completed").length / executionOrder.length) * 100}%`,
                 }}
               />
             </div>
