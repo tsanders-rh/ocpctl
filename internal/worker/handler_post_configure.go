@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1689,8 +1691,38 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 		}
 	} else if customScript.URL != "" {
 		// Download script from URL
-		// TODO: Add URL validation and download logic in Phase 2
-		return fmt.Errorf("URL-based scripts not yet implemented in Phase 1")
+		scriptsDir := filepath.Join(workDir, "custom-scripts")
+		if err := os.MkdirAll(scriptsDir, 0700); err != nil {
+			return fmt.Errorf("create scripts dir: %w", err)
+		}
+
+		scriptPath = filepath.Join(scriptsDir, customScript.Name+".sh")
+
+		log.Printf("[CUSTOM POST-CONFIG] Downloading script from URL: %s", customScript.URL)
+
+		// Download the script
+		resp, err := http.Get(customScript.URL)
+		if err != nil {
+			return fmt.Errorf("download script from URL: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to download script: HTTP %d", resp.StatusCode)
+		}
+
+		// Read the response body
+		scriptContent, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read script content: %w", err)
+		}
+
+		// Write to file with execute permissions
+		if err := os.WriteFile(scriptPath, scriptContent, 0700); err != nil {
+			return fmt.Errorf("write script file: %w", err)
+		}
+
+		log.Printf("[CUSTOM POST-CONFIG] Downloaded script to: %s (%d bytes)", scriptPath, len(scriptContent))
 	} else {
 		return fmt.Errorf("script must have either content or url")
 	}
