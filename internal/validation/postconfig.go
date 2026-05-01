@@ -16,8 +16,9 @@ const (
 	// MaxManifestSize is the maximum size of an inline manifest (100KB)
 	MaxManifestSize = 100 * 1024
 
-	// MaxScriptTimeout is the maximum timeout for a single script (30 minutes)
-	MaxScriptTimeout = 30 * time.Minute
+	// MaxScriptTimeout is the maximum timeout for a single script (6 hours)
+	// Increased to support long-running operations like Windows VM image imports
+	MaxScriptTimeout = 6 * time.Hour
 
 	// MaxScriptsPerCluster is the maximum number of custom scripts per cluster
 	MaxScriptsPerCluster = 10
