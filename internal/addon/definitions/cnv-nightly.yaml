@@ -120,7 +120,7 @@ versions:
 
         - name: setup-windows-vm-infrastructure
           description: Setup Windows VM infrastructure with IRSA and S3 image import
-          url: https://raw.githubusercontent.com/tsanders-rh/ocpctl/main/manifests/windows-vm/auto-setup-irsa.sh
+          path: windows-vm/auto-setup-irsa.sh
           timeout: "5h"
           dependsOn:
             - kubevirt-hyperconverged
