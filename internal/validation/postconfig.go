@@ -152,21 +152,34 @@ func validateScript(script types.CustomScriptConfig, index int) []error {
 		})
 	}
 
-	// Must have either content or URL, but not both
+	// Must have exactly one of: content, URL, or path
 	hasContent := script.Content != ""
 	hasURL := script.URL != ""
+	hasPath := script.Path != ""
 
-	if !hasContent && !hasURL {
+	// Count how many are set
+	count := 0
+	if hasContent {
+		count++
+	}
+	if hasURL {
+		count++
+	}
+	if hasPath {
+		count++
+	}
+
+	if count == 0 {
 		errors = append(errors, &PostConfigValidationError{
 			Field:   prefix,
-			Message: "script must have either 'content' or 'url'",
+			Message: "script must have either 'content', 'url', or 'path'",
 		})
 	}
 
-	if hasContent && hasURL {
+	if count > 1 {
 		errors = append(errors, &PostConfigValidationError{
 			Field:   prefix,
-			Message: "script cannot have both 'content' and 'url'",
+			Message: "script cannot have more than one of 'content', 'url', or 'path'",
 		})
 	}
 

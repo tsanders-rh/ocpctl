@@ -1723,8 +1723,23 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 		}
 
 		log.Printf("[CUSTOM POST-CONFIG] Downloaded script to: %s (%d bytes)", scriptPath, len(scriptContent))
+	} else if customScript.Path != "" {
+		// Path to script in manifests directory
+		// Build script path - if absolute, use directly; otherwise join with manifests directory
+		if filepath.IsAbs(customScript.Path) {
+			scriptPath = customScript.Path
+		} else {
+			scriptPath = filepath.Join(OcpctlBaseDir, "manifests", customScript.Path)
+		}
+
+		log.Printf("[CUSTOM POST-CONFIG] Using script from path: %s", scriptPath)
+
+		// Verify script exists
+		if _, err := os.Stat(scriptPath); err != nil {
+			return fmt.Errorf("script not found at path %s: %w", scriptPath, err)
+		}
 	} else {
-		return fmt.Errorf("script must have either content or url")
+		return fmt.Errorf("script must have either content, url, or path")
 	}
 
 	// Convert to profile ScriptConfig

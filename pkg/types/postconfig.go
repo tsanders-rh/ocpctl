@@ -35,6 +35,7 @@ type CustomScriptConfig struct {
 	Name        string            `json:"name" yaml:"name" validate:"required"`
 	Content     string            `json:"content,omitempty" yaml:"content,omitempty"` // Inline script content (supports {{.Variable}} templating)
 	URL         string            `json:"url,omitempty" yaml:"url,omitempty"`     // URL to download script from
+	Path        string            `json:"path,omitempty" yaml:"path,omitempty"`   // Path to script in manifests directory
 	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
 	Timeout     string            `json:"timeout,omitempty" yaml:"timeout,omitempty"` // Duration string, e.g. "10m" (max 30m)
 	Env         map[string]string `json:"env,omitempty" yaml:"env,omitempty"`     // Environment variables (supports {{.Variable}} templating)
