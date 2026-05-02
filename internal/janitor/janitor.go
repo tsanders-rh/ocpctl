@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -126,6 +127,11 @@ func (j *Janitor) run() {
 		log.Printf("Error cleaning up stuck jobs: %v", err)
 	}
 
+	// Detect and alert on stuck locks (before cleanup)
+	if err := j.detectStuckLocks(ctx); err != nil {
+		log.Printf("Error detecting stuck locks: %v", err)
+	}
+
 	// Cleanup expired locks
 	if j.config.ExpiredLockCleanup {
 		if err := j.cleanupExpiredLocks(ctx); err != nil {
@@ -244,7 +250,7 @@ func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := j.store.Jobs.Create(ctx, job); err != nil {
+		if err := j.store.Jobs.Create(ctx, nil, job); err != nil {
 			log.Printf("Failed to create destroy job for cluster %s: %v", cluster.Name, err)
 			continue
 		}
@@ -331,6 +337,89 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 	return nil
 }
 
+// detectStuckLocks detects locks held for an unusually long time and publishes alerts
+// This runs BEFORE cleanupExpiredLocks to catch deadlocks before they auto-expire
+func (j *Janitor) detectStuckLocks(ctx context.Context) error {
+	// Detect locks held for 80% of their expected lifetime (worker timeout is 90 minutes)
+	// Stuck threshold: 72 minutes (80% of 90 minutes)
+	stuckThreshold := 72 * time.Minute
+
+	locks, err := j.store.JobLocks.GetStuckLocks(ctx, stuckThreshold)
+	if err != nil {
+		return err
+	}
+
+	if len(locks) == 0 {
+		return nil
+	}
+
+	log.Printf("WARNING: Detected %d stuck locks (held > %v)", len(locks), stuckThreshold)
+
+	for _, lock := range locks {
+		lockAge := time.Since(lock.LockedAt)
+		timeUntilExpiry := time.Until(lock.ExpiresAt)
+
+		// Log detailed information about the stuck lock
+		log.Printf("STUCK LOCK DETECTED: cluster=%s, job=%s, worker=%s, age=%v, expires_in=%v",
+			lock.ClusterID, lock.JobID, lock.LockedBy, lockAge, timeUntilExpiry)
+
+		// Get cluster and job details for more context
+		cluster, clusterErr := j.store.Clusters.GetByID(ctx, lock.ClusterID)
+		if clusterErr == nil {
+			log.Printf("  Cluster: name=%s, status=%s, platform=%s, profile=%s",
+				cluster.Name, cluster.Status, cluster.Platform, cluster.Profile)
+		}
+
+		job, jobErr := j.store.Jobs.GetByID(ctx, lock.JobID)
+		if jobErr == nil {
+			log.Printf("  Job: type=%s, status=%s, attempt=%d/%d, started=%v",
+				job.JobType, job.Status, job.Attempt, job.MaxAttempts, job.StartedAt)
+		}
+
+		// Publish CloudWatch metric for stuck lock
+		if j.metricsPublisher != nil {
+			dimensions := map[string]string{
+				"LockWorker": lock.LockedBy,
+			}
+
+			if clusterErr == nil {
+				dimensions["Platform"] = cluster.Platform
+				dimensions["Profile"] = cluster.Profile
+			}
+
+			if jobErr == nil {
+				dimensions["JobType"] = string(job.JobType)
+			}
+
+			// Publish stuck lock count (this can trigger CloudWatch alarms)
+			if err := j.metricsPublisher.PublishCount(ctx, "StuckLockDetected", 1, dimensions); err != nil {
+				log.Printf("Warning: Failed to publish StuckLockDetected metric: %v", err)
+			}
+
+			// Publish lock age in seconds (for monitoring trends)
+			if err := j.metricsPublisher.PublishValue(ctx, "LockAgeSeconds", lockAge.Seconds(), dimensions); err != nil {
+				log.Printf("Warning: Failed to publish LockAgeSeconds metric: %v", err)
+			}
+		}
+
+		// Log actionable recovery steps
+		log.Printf("  RECOVERY: Lock will auto-expire in %v. If job is genuinely stuck, consider:", timeUntilExpiry)
+		log.Printf("    1. Check worker logs for worker_id=%s", lock.LockedBy)
+		log.Printf("    2. Verify job %s is actually running (check worker health endpoint)", lock.JobID[:8])
+		log.Printf("    3. If worker crashed, lock will auto-expire and job will retry")
+		log.Printf("    4. Manual intervention: DELETE FROM job_locks WHERE cluster_id = '%s'", lock.ClusterID)
+	}
+
+	// Publish aggregate metric for total stuck locks
+	if j.metricsPublisher != nil {
+		if err := j.metricsPublisher.PublishCount(ctx, "TotalStuckLocks", int64(len(locks)), nil); err != nil {
+			log.Printf("Warning: Failed to publish TotalStuckLocks metric: %v", err)
+		}
+	}
+
+	return nil
+}
+
 // cleanupExpiredLocks removes expired job locks
 func (j *Janitor) cleanupExpiredLocks(ctx context.Context) error {
 	count, err := j.store.JobLocks.CleanupExpired(ctx)
@@ -340,6 +429,13 @@ func (j *Janitor) cleanupExpiredLocks(ctx context.Context) error {
 
 	if count > 0 {
 		log.Printf("Cleaned up %d expired job locks", count)
+
+		// Publish metric for expired locks cleaned up
+		if j.metricsPublisher != nil {
+			if err := j.metricsPublisher.PublishCount(ctx, "ExpiredLocksCleanedUp", count, nil); err != nil {
+				log.Printf("Warning: Failed to publish ExpiredLocksCleanedUp metric: %v", err)
+			}
+		}
 	}
 
 	return nil
@@ -431,16 +527,37 @@ func (j *Janitor) cleanupFailedClusterDirs(ctx context.Context) error {
 
 // cleanupOrphanedDirs removes work directories that don't have matching cluster records
 func (j *Janitor) cleanupOrphanedDirs(ctx context.Context) error {
-	// Get all cluster IDs from database
-	clusters, err := j.store.Clusters.ListAll(ctx)
-	if err != nil {
-		return err
+	// Build set of valid cluster IDs using streaming to prevent OOM with large cluster counts
+	validClusterIDs := make(map[string]bool)
+
+	// Use streaming iterator with 1000 clusters per batch
+	clustersCh, errCh := j.store.Clusters.ListAllStreaming(ctx, 1000)
+
+	// Process batches as they arrive
+	for {
+		select {
+		case batch, ok := <-clustersCh:
+			if !ok {
+				// Channel closed, all batches received
+				goto ProcessDirectories
+			}
+			// Add cluster IDs from this batch to the valid set
+			for _, cluster := range batch {
+				validClusterIDs[cluster.ID] = true
+			}
+		case err := <-errCh:
+			if err != nil {
+				return fmt.Errorf("stream clusters: %w", err)
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
-	// Build set of valid cluster IDs
-	validClusterIDs := make(map[string]bool)
-	for _, cluster := range clusters {
-		validClusterIDs[cluster.ID] = true
+ProcessDirectories:
+	// Check for any final errors
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("stream clusters: %w", err)
 	}
 
 	// List all directories in workDir
@@ -658,7 +775,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := j.store.Jobs.Create(ctx, job); err != nil {
+		if err := j.store.Jobs.Create(ctx, nil, job); err != nil {
 			log.Printf("Failed to create %s job for cluster %s: %v", action, cluster.Name, err)
 			continue
 		}

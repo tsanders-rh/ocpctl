@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1298,14 +1300,27 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
-	// Build script path
-	// If script.Path is already absolute (custom scripts), use it directly
-	// Otherwise, join with manifests directory (profile scripts)
+	// Build script path with security validation
+	// Prevents path traversal attacks by ensuring paths are within allowed directories
 	var scriptPath string
 	if filepath.IsAbs(script.Path) {
-		scriptPath = script.Path
+		// Validate absolute paths are within OcpctlBaseDir
+		validatedPath, err := validateSecurePath(script.Path, OcpctlBaseDir)
+		if err != nil {
+			errMsg := fmt.Sprintf("invalid script path: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
+		scriptPath = validatedPath
 	} else {
-		scriptPath = filepath.Join(OcpctlBaseDir, "manifests", script.Path)
+		// Relative paths are joined with manifests directory and validated
+		validatedPath, err := validateSecurePath(filepath.Join("manifests", script.Path), OcpctlBaseDir)
+		if err != nil {
+			errMsg := fmt.Sprintf("invalid script path: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
+		scriptPath = validatedPath
 	}
 
 	// Verify script exists and is executable
@@ -1352,6 +1367,12 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 		// Block dangerous environment variables that could lead to privilege escalation
 		if isDangerousEnvVar(key) {
 			log.Printf("Warning: blocked dangerous environment variable: %s", key)
+			continue
+		}
+
+		// Validate environment variable value to prevent command injection
+		if !isValidEnvVarValue(value) {
+			log.Printf("Warning: blocked environment variable with potentially dangerous value: %s (contains shell metacharacters)", key)
 			continue
 		}
 
@@ -1463,12 +1484,29 @@ func (h *PostConfigureHandler) applyOpenShiftManifest(ctx context.Context, clust
 
 	_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusInstalling, nil)
 
-	// Read manifest file
-	// Use absolute path if provided, otherwise join with "manifests/" directory
-	manifestPath := manifest.Path
-	if !filepath.IsAbs(manifestPath) {
-		manifestPath = filepath.Join("manifests", manifest.Path)
+	// Read manifest file with security validation
+	// Prevents path traversal attacks by validating paths are within allowed directories
+	var manifestPath string
+	if filepath.IsAbs(manifest.Path) {
+		// Validate absolute paths are within OcpctlBaseDir
+		validatedPath, err := validateSecurePath(manifest.Path, OcpctlBaseDir)
+		if err != nil {
+			errMsg := fmt.Sprintf("invalid manifest path: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
+		manifestPath = validatedPath
+	} else {
+		// Relative paths are joined with manifests directory and validated
+		validatedPath, err := validateSecurePath(filepath.Join("manifests", manifest.Path), OcpctlBaseDir)
+		if err != nil {
+			errMsg := fmt.Sprintf("invalid manifest path: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
+		manifestPath = validatedPath
 	}
+
 	content, err := os.ReadFile(manifestPath)
 	if err != nil {
 		errMsg := err.Error()
@@ -1640,6 +1678,134 @@ func isDangerousEnvVar(name string) bool {
 	return dangerousVars[name]
 }
 
+// isValidEnvVarValue validates environment variable values to prevent command injection
+// Rejects values containing shell metacharacters that could be exploited
+func isValidEnvVarValue(value string) bool {
+	// List of dangerous shell metacharacters and sequences
+	// These could be used for command injection if environment variables are used in shell contexts
+	dangerousChars := []string{
+		"$(",  // Command substitution
+		"${",  // Parameter expansion
+		"`",   // Command substitution (backticks)
+		";",   // Command separator
+		"|",   // Pipe
+		"&",   // Background process / AND
+		">",   // Redirection
+		"<",   // Redirection
+		"\n",  // Newline (command separator)
+		"\r",  // Carriage return
+		"\\",  // Escape character
+		"*",   // Glob pattern
+		"?",   // Glob pattern
+		"[",   // Glob pattern
+		"]",   // Glob pattern
+		"!",   // History expansion (in some shells)
+		"#",   // Comment (could hide malicious code)
+	}
+
+	for _, dangerous := range dangerousChars {
+		if strings.Contains(value, dangerous) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// validateSecurePath validates that a file path is safe to use
+// Prevents path traversal attacks by ensuring absolute paths are within allowed directories
+func validateSecurePath(path string, allowedBase string) (string, error) {
+	// Clean the path to resolve any .. or . components
+	cleanPath := filepath.Clean(path)
+
+	// If it's an absolute path, verify it's within the allowed base directory
+	if filepath.IsAbs(cleanPath) {
+		// Ensure the allowed base is also clean
+		cleanBase := filepath.Clean(allowedBase)
+
+		// Check if the clean path is within the allowed base
+		if !strings.HasPrefix(cleanPath, cleanBase+string(filepath.Separator)) && cleanPath != cleanBase {
+			return "", fmt.Errorf("absolute path %s is not within allowed directory %s", path, allowedBase)
+		}
+
+		return cleanPath, nil
+	}
+
+	// For relative paths, join with base and validate the result
+	fullPath := filepath.Join(allowedBase, cleanPath)
+	fullPath = filepath.Clean(fullPath)
+
+	// Verify the joined path is still within the base (prevents ../ attacks)
+	cleanBase := filepath.Clean(allowedBase)
+	if !strings.HasPrefix(fullPath, cleanBase+string(filepath.Separator)) && fullPath != cleanBase {
+		return "", fmt.Errorf("path %s resolves outside allowed directory %s", path, allowedBase)
+	}
+
+	return fullPath, nil
+}
+
+// validateSecureURL validates that a URL is safe to download from
+// Prevents SSRF attacks by blocking private/internal IP addresses and requiring HTTPS
+func validateSecureURL(urlStr string) error {
+	// Parse the URL
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Only allow HTTPS URLs (prevents protocol smuggling and ensures encryption)
+	if parsedURL.Scheme != "https" {
+		return fmt.Errorf("only HTTPS URLs are allowed, got: %s", parsedURL.Scheme)
+	}
+
+	// Resolve hostname to IP address to check if it's private
+	hostname := parsedURL.Hostname()
+	if hostname == "" {
+		return fmt.Errorf("URL has no hostname")
+	}
+
+	// Check for localhost/loopback addresses
+	if hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" {
+		return fmt.Errorf("localhost URLs are not allowed")
+	}
+
+	// Resolve DNS to get IP addresses
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		return fmt.Errorf("failed to resolve hostname %s: %w", hostname, err)
+	}
+
+	// Check each resolved IP
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+
+		// Block private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+		if ip.IsPrivate() {
+			return fmt.Errorf("private IP addresses are not allowed: %s", ipStr)
+		}
+
+		// Block loopback addresses
+		if ip.IsLoopback() {
+			return fmt.Errorf("loopback addresses are not allowed: %s", ipStr)
+		}
+
+		// Block link-local addresses (169.254.0.0/16 for IPv4, fe80::/10 for IPv6)
+		if ip.IsLinkLocalUnicast() {
+			return fmt.Errorf("link-local addresses are not allowed: %s", ipStr)
+		}
+
+		// Block AWS metadata endpoint specifically (169.254.169.254)
+		if ipStr == "169.254.169.254" {
+			return fmt.Errorf("AWS metadata endpoint is blocked")
+		}
+	}
+
+	return nil
+}
+
 // Custom post-config handlers with user tracking
 
 // installCustomOperator installs a user-defined operator with tracking
@@ -1690,7 +1856,7 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 			return fmt.Errorf("write script file: %w", err)
 		}
 	} else if customScript.URL != "" {
-		// Download script from URL
+		// Download script from URL with security validation
 		scriptsDir := filepath.Join(workDir, "custom-scripts")
 		if err := os.MkdirAll(scriptsDir, 0700); err != nil {
 			return fmt.Errorf("create scripts dir: %w", err)
@@ -1700,8 +1866,18 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 
 		log.Printf("[CUSTOM POST-CONFIG] Downloading script from URL: %s", customScript.URL)
 
+		// Validate URL to prevent SSRF attacks
+		if err := validateSecureURL(customScript.URL); err != nil {
+			return fmt.Errorf("invalid script URL: %w", err)
+		}
+
+		// Create HTTP client with timeout to prevent indefinite hangs
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+		}
+
 		// Download the script
-		resp, err := http.Get(customScript.URL)
+		resp, err := client.Get(customScript.URL)
 		if err != nil {
 			return fmt.Errorf("download script from URL: %w", err)
 		}
@@ -1711,8 +1887,9 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 			return fmt.Errorf("failed to download script: HTTP %d", resp.StatusCode)
 		}
 
-		// Read the response body
-		scriptContent, err := io.ReadAll(resp.Body)
+		// Read the response body with size limit (10MB max)
+		limitedReader := io.LimitReader(resp.Body, 10*1024*1024)
+		scriptContent, err := io.ReadAll(limitedReader)
 		if err != nil {
 			return fmt.Errorf("read script content: %w", err)
 		}
@@ -1724,12 +1901,22 @@ func (h *PostConfigureHandler) executeCustomScript(ctx context.Context, cluster 
 
 		log.Printf("[CUSTOM POST-CONFIG] Downloaded script to: %s (%d bytes)", scriptPath, len(scriptContent))
 	} else if customScript.Path != "" {
-		// Path to script in manifests directory
-		// Build script path - if absolute, use directly; otherwise join with manifests directory
+		// Path to script with security validation
+		// Prevents path traversal attacks by validating paths are within allowed directories
 		if filepath.IsAbs(customScript.Path) {
-			scriptPath = customScript.Path
+			// Validate absolute paths are within OcpctlBaseDir
+			validatedPath, err := validateSecurePath(customScript.Path, OcpctlBaseDir)
+			if err != nil {
+				return fmt.Errorf("invalid script path: %w", err)
+			}
+			scriptPath = validatedPath
 		} else {
-			scriptPath = filepath.Join(OcpctlBaseDir, "manifests", customScript.Path)
+			// Relative paths are joined with manifests directory and validated
+			validatedPath, err := validateSecurePath(filepath.Join("manifests", customScript.Path), OcpctlBaseDir)
+			if err != nil {
+				return fmt.Errorf("invalid script path: %w", err)
+			}
+			scriptPath = validatedPath
 		}
 
 		log.Printf("[CUSTOM POST-CONFIG] Using script from path: %s", scriptPath)

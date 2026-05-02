@@ -230,3 +230,43 @@ func (s *JobLockStore) CleanupExpired(ctx context.Context) (int64, error) {
 
 	return result.RowsAffected(), nil
 }
+
+// GetStuckLocks returns locks that have been held for an unusually long time
+// (80% of their TTL or longer) but haven't expired yet. These may indicate deadlocked jobs.
+func (s *JobLockStore) GetStuckLocks(ctx context.Context, stuckThreshold time.Duration) ([]*types.JobLock, error) {
+	query := `
+		SELECT cluster_id, job_id, locked_at, locked_by, expires_at
+		FROM job_locks
+		WHERE locked_at < NOW() - $1::interval
+		  AND expires_at > NOW()
+		ORDER BY locked_at ASC
+	`
+
+	rows, err := s.pool.Query(ctx, query, stuckThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("query stuck locks: %w", err)
+	}
+	defer rows.Close()
+
+	locks := []*types.JobLock{}
+	for rows.Next() {
+		var lock types.JobLock
+		err := rows.Scan(
+			&lock.ClusterID,
+			&lock.JobID,
+			&lock.LockedAt,
+			&lock.LockedBy,
+			&lock.ExpiresAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan stuck lock: %w", err)
+		}
+		locks = append(locks, &lock)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stuck locks: %w", err)
+	}
+
+	return locks, nil
+}

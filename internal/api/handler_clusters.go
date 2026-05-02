@@ -441,7 +441,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create provision job: %w", err))
 	}
 
@@ -459,7 +459,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := h.store.Jobs.Create(ctx, efsJob); err != nil {
+		if err := h.store.Jobs.Create(ctx, nil, efsJob); err != nil {
 			LogWarning(c, "failed to create EFS configuration job",
 				"cluster_id", cluster.ID,
 				"error", err.Error())
@@ -757,14 +757,8 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		}
 	}
 
-	// Update cluster status to destroying (using nil for tx means no transaction)
-	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroying); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
-	}
-
-	cluster.Status = types.ClusterStatusDestroying
-
-	// Create deprovision job
+	// Atomically update cluster status and create destroy job within a transaction
+	// This prevents race conditions where status update succeeds but job creation fails
 	job := &types.Job{
 		ID:          uuid.New().String(),
 		ClusterID:   cluster.ID,
@@ -777,9 +771,25 @@ func (h *ClusterHandler) Delete(c echo.Context) error {
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to create deprovision job: %w", err))
+	err = h.store.WithTx(ctx, func(tx pgx.Tx) error {
+		// Update cluster status to destroying
+		if err := h.store.Clusters.UpdateStatus(ctx, tx, cluster.ID, types.ClusterStatusDestroying); err != nil {
+			return fmt.Errorf("update cluster status: %w", err)
+		}
+
+		// Create deprovision job
+		if err := h.store.Jobs.Create(ctx, tx, job); err != nil {
+			return fmt.Errorf("create deprovision job: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to initiate cluster deletion: %w", err))
 	}
+
+	cluster.Status = types.ClusterStatusDestroying
 
 	// Log successful cluster deletion
 	LogInfo(c, "cluster deletion initiated",
@@ -1016,12 +1026,8 @@ func (h *ClusterHandler) Hibernate(c echo.Context) error {
 	// Get user ID for logging
 	userID, _ := auth.GetUserID(c)
 
-	// Update cluster status to HIBERNATING
-	if err := h.store.Clusters.UpdateStatus(ctx, nil, id, types.ClusterStatusHibernating); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
-	}
-
-	// Create HIBERNATE job
+	// Atomically update cluster status and create hibernate job within a transaction
+	// This prevents race conditions where status update succeeds but job creation fails
 	job := &types.Job{
 		ID:          uuid.New().String(),
 		ClusterID:   cluster.ID,
@@ -1034,8 +1040,22 @@ func (h *ClusterHandler) Hibernate(c echo.Context) error {
 		Metadata:    make(types.JobMetadata),
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to create hibernate job: %w", err))
+	err = h.store.WithTx(ctx, func(tx pgx.Tx) error {
+		// Update cluster status to HIBERNATING
+		if err := h.store.Clusters.UpdateStatus(ctx, tx, id, types.ClusterStatusHibernating); err != nil {
+			return fmt.Errorf("update cluster status: %w", err)
+		}
+
+		// Create HIBERNATE job
+		if err := h.store.Jobs.Create(ctx, tx, job); err != nil {
+			return fmt.Errorf("create hibernate job: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to initiate hibernation: %w", err))
 	}
 
 	// Log successful hibernation initiation
@@ -1200,12 +1220,8 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 	// Get user ID for logging
 	userID, _ := auth.GetUserID(c)
 
-	// Update cluster status to RESUMING
-	if err := h.store.Clusters.UpdateStatus(ctx, nil, id, types.ClusterStatusResuming); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to update cluster status: %w", err))
-	}
-
-	// Create RESUME job
+	// Atomically update cluster status and create resume job within a transaction
+	// This prevents race conditions where status update succeeds but job creation fails
 	job := &types.Job{
 		ID:          uuid.New().String(),
 		ClusterID:   cluster.ID,
@@ -1218,8 +1234,22 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 		Metadata:    make(types.JobMetadata),
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to create resume job: %w", err))
+	err = h.store.WithTx(ctx, func(tx pgx.Tx) error {
+		// Update cluster status to RESUMING
+		if err := h.store.Clusters.UpdateStatus(ctx, tx, id, types.ClusterStatusResuming); err != nil {
+			return fmt.Errorf("update cluster status: %w", err)
+		}
+
+		// Create RESUME job
+		if err := h.store.Jobs.Create(ctx, tx, job); err != nil {
+			return fmt.Errorf("create resume job: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to initiate resume: %w", err))
 	}
 
 	// Set grace period to prevent auto-hibernation until next scheduled hibernate time

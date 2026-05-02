@@ -19,6 +19,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/secrets"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/internal/tracing"
 	"github.com/tsanders-rh/ocpctl/internal/worker"
 )
 
@@ -200,6 +201,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize secrets manager: %v", err)
 	}
+
+	// Initialize OpenTelemetry tracing
+	tracingConfig := tracing.DefaultConfig(tracing.ServiceNameWorker)
+	shutdownTracer, err := tracing.InitTracer(ctx, tracingConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize tracing: %v", err)
+	}
+	defer func() {
+		if shutdownTracer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := shutdownTracer(shutdownCtx); err != nil {
+				log.Printf("Error shutting down tracer: %v", err)
+			}
+		}
+	}()
 
 	// Retrieve OPENSHIFT_PULL_SECRET from AWS Secrets Manager (or fallback sources in development)
 	var pullSecret string

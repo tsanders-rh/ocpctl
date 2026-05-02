@@ -17,7 +17,8 @@ type JobStore struct {
 
 // Create inserts a new job record into the database.
 // The job is initialized with PENDING status and attempt counter at 1.
-func (s *JobStore) Create(ctx context.Context, job *types.Job) error {
+// Can be called with or without a transaction (tx can be nil for non-transactional inserts).
+func (s *JobStore) Create(ctx context.Context, tx pgx.Tx, job *types.Job) error {
 	query := `
 		INSERT INTO jobs (
 			id, cluster_id, job_type, status, attempt, max_attempts, metadata
@@ -26,15 +27,28 @@ func (s *JobStore) Create(ctx context.Context, job *types.Job) error {
 		)
 	`
 
-	_, err := s.pool.Exec(ctx, query,
-		job.ID,
-		job.ClusterID,
-		job.JobType,
-		job.Status,
-		job.Attempt,
-		job.MaxAttempts,
-		job.Metadata,
-	)
+	var err error
+	if tx != nil {
+		_, err = tx.Exec(ctx, query,
+			job.ID,
+			job.ClusterID,
+			job.JobType,
+			job.Status,
+			job.Attempt,
+			job.MaxAttempts,
+			job.Metadata,
+		)
+	} else {
+		_, err = s.pool.Exec(ctx, query,
+			job.ID,
+			job.ClusterID,
+			job.JobType,
+			job.Status,
+			job.Attempt,
+			job.MaxAttempts,
+			job.Metadata,
+		)
+	}
 
 	if err != nil {
 		return fmt.Errorf("insert job: %w", err)

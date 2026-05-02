@@ -124,7 +124,7 @@ func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 		},
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("create retry job: %w", err))
 	}
 
@@ -195,7 +195,7 @@ func (h *ConfigurationHandler) TriggerPostConfiguration(c echo.Context) error {
 		},
 	}
 
-	if err := h.store.Jobs.Create(ctx, job); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("create post-configure job: %w", err))
 	}
 

@@ -23,8 +23,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -40,6 +38,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/secrets"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/internal/tracing"
 )
 
 // Version information (set via -ldflags at build time)
@@ -48,16 +47,6 @@ var (
 	Commit    = "unknown"
 	BuildTime = "unknown"
 )
-
-// generateDevelopmentSecret generates a random secret for development use only.
-// The actual secret value is not logged to prevent it from appearing in audit logs.
-func generateDevelopmentSecret() string {
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
-		panic("failed to generate development secret: " + err.Error())
-	}
-	return base64.StdEncoding.EncodeToString(secret)
-}
 
 func main() {
 	// Get environment for configuration validation
@@ -100,6 +89,22 @@ func main() {
 		log.Fatalf("Failed to initialize secrets manager: %v", err)
 	}
 
+	// Initialize OpenTelemetry tracing
+	tracingConfig := tracing.DefaultConfig(tracing.ServiceNameAPI)
+	shutdownTracer, err := tracing.InitTracer(ctx, tracingConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize tracing: %v", err)
+	}
+	defer func() {
+		if shutdownTracer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := shutdownTracer(shutdownCtx); err != nil {
+				log.Printf("Error shutting down tracer: %v", err)
+			}
+		}
+	}()
+
 	// JWT configuration - retrieve from AWS Secrets Manager (or env var in development)
 	jwtSecretName := os.Getenv("JWT_SECRET_NAME") // Name of secret in AWS Secrets Manager
 	jwtSecret, err := secretsManager.GetSecretWithFallback(ctx, jwtSecretName, "JWT_SECRET", true)
@@ -107,23 +112,18 @@ func main() {
 		log.Fatalf("CRITICAL: Failed to retrieve JWT_SECRET: %v", err)
 	}
 
-	// Use default for development if still empty
+	// SECURITY: Require explicit JWT_SECRET in ALL environments
+	// Random secret generation on startup breaks existing tokens on restart
 	if jwtSecret == "" {
-		if environment == "production" {
-			log.Fatalf("CRITICAL: JWT_SECRET must be set in production environment")
-		}
-		log.Println("WARNING: JWT_SECRET not set. Generating random development secret.")
-		log.Println("WARNING: This is INSECURE and must not be used in production!")
-		log.Println("         Set JWT_SECRET environment variable or JWT_SECRET_NAME for AWS Secrets Manager!")
-		jwtSecret = generateDevelopmentSecret()
+		log.Fatalf("CRITICAL: JWT_SECRET environment variable must be set\n" +
+			"  Set JWT_SECRET environment variable or JWT_SECRET_NAME for AWS Secrets Manager.\n" +
+			"  For development, generate a secret with: openssl rand -base64 32")
 	}
 
-	// Validate JWT secret length
+	// SECURITY: Validate JWT secret length (minimum 32 characters for cryptographic strength)
 	if len(jwtSecret) < 32 {
-		if environment == "production" {
-			log.Fatalf("CRITICAL: JWT_SECRET must be at least 32 characters (current: %d)", len(jwtSecret))
-		}
-		log.Printf("WARNING: JWT_SECRET should be at least 32 characters (current: %d)", len(jwtSecret))
+		log.Fatalf("CRITICAL: JWT_SECRET must be at least 32 characters (current: %d)\n"+
+			"  Generate a strong secret with: openssl rand -base64 32", len(jwtSecret))
 	}
 
 	// CORS configuration

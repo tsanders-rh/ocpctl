@@ -6,17 +6,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	echoSwagger "github.com/swaggo/echo-swagger"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	apimiddleware "github.com/tsanders-rh/ocpctl/internal/api/middleware"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/internal/tracing"
 )
 
 //go:embed swagger.json
@@ -143,6 +148,9 @@ func (s *Server) setupMiddleware() {
 
 	// Request ID for tracing
 	s.echo.Use(middleware.RequestID())
+
+	// OpenTelemetry distributed tracing
+	s.echo.Use(tracing.Middleware())
 
 	// Store in context middleware (for API key authentication)
 	s.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -334,28 +342,142 @@ func (s *Server) healthCheck(c echo.Context) error {
 // readyCheck checks if server is ready to handle requests
 //
 //	@Summary		Readiness check
-//	@Description	Checks if the server is ready to handle requests by verifying database connectivity
+//	@Description	Comprehensive health check validating all critical dependencies (database, S3, AWS credentials, JWT)
 //	@Tags			system
 //	@Produce		json
-//	@Success		200	{object}	map[string]string
-//	@Failure		503	{object}	map[string]string
+//	@Success		200	{object}	map[string]interface{}	"All dependencies healthy"
+//	@Failure		503	{object}	map[string]interface{}	"One or more dependencies unavailable"
 //	@Router			/ready [get]
 func (s *Server) readyCheck(c echo.Context) error {
-	// Check database connection
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 	defer cancel()
 
+	checks := make(map[string]interface{})
+	allHealthy := true
+
+	// 1. Check database connection
+	dbStart := time.Now()
 	if err := s.store.Ping(ctx); err != nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{
-			"status": "not ready",
-			"error":  "database unavailable",
-		})
+		checks["database"] = map[string]interface{}{
+			"status":       "unhealthy",
+			"error":        err.Error(),
+			"responseTime": time.Since(dbStart).Milliseconds(),
+		}
+		allHealthy = false
+	} else {
+		checks["database"] = map[string]interface{}{
+			"status":       "healthy",
+			"responseTime": time.Since(dbStart).Milliseconds(),
+		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{
+	// 2. Check S3 access (if configured)
+	s3BucketName := os.Getenv("S3_BUCKET_NAME")
+	if s3BucketName != "" {
+		s3Start := time.Now()
+		s3Client, err := s3.NewClient(ctx)
+		if err != nil {
+			checks["s3"] = map[string]interface{}{
+				"status":       "unhealthy",
+				"error":        "Failed to create S3 client: " + err.Error(),
+				"responseTime": time.Since(s3Start).Milliseconds(),
+			}
+			allHealthy = false
+		} else {
+			// Test S3 connectivity with a head-bucket call
+			if err := s3Client.CheckBucketExists(ctx, s3BucketName); err != nil {
+				checks["s3"] = map[string]interface{}{
+					"status":       "unhealthy",
+					"error":        "Bucket access failed: " + err.Error(),
+					"bucket":       s3BucketName,
+					"responseTime": time.Since(s3Start).Milliseconds(),
+				}
+				allHealthy = false
+			} else {
+				checks["s3"] = map[string]interface{}{
+					"status":       "healthy",
+					"bucket":       s3BucketName,
+					"responseTime": time.Since(s3Start).Milliseconds(),
+				}
+			}
+		}
+	} else {
+		checks["s3"] = map[string]interface{}{
+			"status": "not_configured",
+		}
+	}
+
+	// 3. Validate JWT secret is configured
+	if s.config.JWTSecret == "" {
+		checks["jwt"] = map[string]interface{}{
+			"status": "unhealthy",
+			"error":  "JWT secret not configured",
+		}
+		allHealthy = false
+	} else if len(s.config.JWTSecret) < 32 {
+		checks["jwt"] = map[string]interface{}{
+			"status": "unhealthy",
+			"error":  fmt.Sprintf("JWT secret too short (%d characters, minimum 32)", len(s.config.JWTSecret)),
+		}
+		allHealthy = false
+	} else {
+		checks["jwt"] = map[string]interface{}{
+			"status": "healthy",
+			"length": len(s.config.JWTSecret),
+		}
+	}
+
+	// 4. Check AWS credentials (if needed)
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion != "" {
+		awsStart := time.Now()
+		// Test AWS credentials by getting caller identity
+		cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(awsRegion))
+		if err != nil {
+			checks["aws"] = map[string]interface{}{
+				"status":       "unhealthy",
+				"error":        "Failed to load AWS config: " + err.Error(),
+				"responseTime": time.Since(awsStart).Milliseconds(),
+			}
+			allHealthy = false
+		} else {
+			stsClient := sts.NewFromConfig(cfg)
+			_, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+			if err != nil {
+				checks["aws"] = map[string]interface{}{
+					"status":       "unhealthy",
+					"error":        "AWS credentials invalid: " + err.Error(),
+					"region":       awsRegion,
+					"responseTime": time.Since(awsStart).Milliseconds(),
+				}
+				allHealthy = false
+			} else {
+				checks["aws"] = map[string]interface{}{
+					"status":       "healthy",
+					"region":       awsRegion,
+					"responseTime": time.Since(awsStart).Milliseconds(),
+				}
+			}
+		}
+	} else {
+		checks["aws"] = map[string]interface{}{
+			"status": "not_configured",
+		}
+	}
+
+	// Build response
+	response := map[string]interface{}{
 		"status": "ready",
 		"time":   time.Now().Format(time.RFC3339),
-	})
+		"checks": checks,
+	}
+
+	if !allHealthy {
+		response["status"] = "degraded"
+		return c.JSON(http.StatusServiceUnavailable, response)
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // versionCheck returns version information

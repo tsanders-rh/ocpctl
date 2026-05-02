@@ -573,6 +573,9 @@ func (s *ClusterStore) GetExpiredClusters(ctx context.Context) ([]*types.Cluster
 // 1. Implementing pagination for janitor operations
 // 2. Archiving DESTROYED clusters to a separate table
 // 3. Using a streaming approach for resource detection
+// ListAll returns all non-destroyed clusters.
+// DEPRECATED: For large cluster counts (100k+), use ListAllStreaming to prevent OOM.
+// This method loads all clusters into memory at once and may cause out-of-memory errors.
 func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, platform, cluster_type, version, profile, region, base_domain,
@@ -638,6 +641,77 @@ func (s *ClusterStore) ListAll(ctx context.Context) ([]*types.Cluster, error) {
 	}
 
 	return clusters, nil
+}
+
+// ListAllStreaming returns all non-destroyed clusters in batches via channels to prevent OOM.
+// This method is memory-efficient for large cluster counts (100k+) and is used by the janitor.
+// The batchSize parameter controls how many clusters are fetched and returned per batch.
+// Returns two channels: one for cluster batches, one for errors.
+// The channels are closed when iteration completes or an error occurs.
+//
+// Example usage:
+//
+//	clustersCh, errCh := store.Clusters.ListAllStreaming(ctx, 1000)
+//	for {
+//	    select {
+//	    case batch, ok := <-clustersCh:
+//	        if !ok {
+//	            // All batches received
+//	            goto Done
+//	        }
+//	        // Process batch...
+//	    case err := <-errCh:
+//	        if err != nil {
+//	            return err
+//	        }
+//	    case <-ctx.Done():
+//	        return ctx.Err()
+//	    }
+//	}
+//	Done:
+//	// Check for final error
+//	if err := <-errCh; err != nil {
+//	    return err
+//	}
+func (s *ClusterStore) ListAllStreaming(ctx context.Context, batchSize int) (<-chan []*types.Cluster, <-chan error) {
+	clustersCh := make(chan []*types.Cluster)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(clustersCh)
+		defer close(errCh)
+
+		offset := 0
+		for {
+			// Fetch a batch of clusters using the existing List method
+			clusters, _, err := s.List(ctx, ListFilters{
+				Limit:  batchSize,
+				Offset: offset,
+			})
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			// No more clusters to fetch
+			if len(clusters) == 0 {
+				return
+			}
+
+			// Send batch to channel
+			select {
+			case clustersCh <- clusters:
+				// Batch sent successfully
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			}
+
+			offset += batchSize
+		}
+	}()
+
+	return clustersCh, errCh
 }
 
 // UpdateLastWorkHoursCheck updates the last_work_hours_check timestamp to the current time.

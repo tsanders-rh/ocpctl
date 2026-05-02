@@ -16,7 +16,10 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/internal/tracing"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Config holds worker configuration
@@ -437,10 +440,31 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	// Unregister job when it completes (success or failure)
 	defer w.unregisterJob(job.ID)
 
+	// Start OpenTelemetry span for job processing
+	spanName := fmt.Sprintf("process_job:%s", job.JobType)
+	ctx, span := tracing.StartSpan(ctx, spanName)
+	defer span.End()
+
+	// Add job metadata to span
+	span.SetAttributes(
+		attribute.String("job.id", job.ID),
+		attribute.String("job.type", string(job.JobType)),
+		attribute.String("job.status", string(job.Status)),
+		attribute.Int("job.attempt", job.Attempt),
+		attribute.Int("job.max_attempts", job.MaxAttempts),
+		attribute.String("cluster.id", cluster.ID),
+		attribute.String("cluster.name", cluster.Name),
+		attribute.String("cluster.platform", cluster.Platform),
+		attribute.String("cluster.profile", cluster.Profile),
+		attribute.String("cluster.region", cluster.Region),
+	)
+
 	// Check if context is already cancelled (worker shutting down)
 	select {
 	case <-ctx.Done():
 		log.Printf("Job %s cancelled before processing (worker shutdown)", job.ID)
+		span.SetStatus(codes.Error, "job cancelled before processing")
+		span.RecordError(ctx.Err())
 		return
 	default:
 	}
@@ -493,16 +517,38 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 
 	log.Printf("Processing job %s (type=%s, cluster=%s)", job.ID, job.JobType, job.ClusterID)
 
+	// Track job start time for duration metrics
+	startTime := time.Now()
+
 	// Process the job
 	err = w.processor.Process(ctx, job)
 
+	// Calculate job duration
+	duration := time.Since(startTime)
+
 	// Update job status based on result
 	if err != nil {
-		log.Printf("Job %s failed: %v", job.ID, err)
-		w.handleJobFailure(ctx, job, err)
+		log.Printf("Job %s failed after %v: %v", job.ID, duration, err)
+
+		// Record error in tracing span
+		span.SetStatus(codes.Error, "job processing failed")
+		span.RecordError(err)
+		span.SetAttributes(
+			attribute.String("error.type", fmt.Sprintf("%T", err)),
+			attribute.Float64("job.duration_seconds", duration.Seconds()),
+		)
+
+		w.handleJobFailure(ctx, job, cluster, err, duration)
 	} else {
-		log.Printf("Job %s completed successfully", job.ID)
-		w.handleJobSuccess(ctx, job)
+		log.Printf("Job %s completed successfully in %v", job.ID, duration)
+
+		// Record success in tracing span
+		span.SetStatus(codes.Ok, "job completed successfully")
+		span.SetAttributes(
+			attribute.Float64("job.duration_seconds", duration.Seconds()),
+		)
+
+		w.handleJobSuccess(ctx, job, cluster, duration)
 	}
 }
 
@@ -555,14 +601,37 @@ func (w *Worker) releaseLock(ctx context.Context, clusterID, jobID string) {
 }
 
 // handleJobSuccess marks job as succeeded and saves metadata
-func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job) {
+func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job, cluster *types.Cluster, duration time.Duration) {
+	// Mark job as succeeded in database
 	if err := w.store.Jobs.MarkSucceeded(ctx, job.ID, job.Metadata); err != nil {
 		log.Printf("Failed to mark job %s as succeeded: %v", job.ID, err)
+	}
+
+	// Publish CloudWatch metrics for job success
+	if w.metrics != nil {
+		dimensions := map[string]string{
+			"JobType":  string(job.JobType),
+			"Platform": cluster.Platform,
+			"Profile":  cluster.Profile,
+		}
+
+		// Publish success count
+		if err := w.metrics.PublishCount(ctx, "JobSucceeded", 1, dimensions); err != nil {
+			log.Printf("Warning: Failed to publish JobSucceeded metric: %v", err)
+		}
+
+		// Publish job duration in milliseconds
+		if err := w.metrics.PublishDuration(ctx, "JobDuration", duration, dimensions); err != nil {
+			log.Printf("Warning: Failed to publish JobDuration metric: %v", err)
+		}
+
+		log.Printf("Published CloudWatch metrics: JobSucceeded=1, JobDuration=%v (type=%s, platform=%s)",
+			duration, job.JobType, cluster.Platform)
 	}
 }
 
 // handleJobFailure handles job failure with retry logic
-func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr error) {
+func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *types.Cluster, jobErr error, duration time.Duration) {
 	// Check if this is a "not ready" error - defer without incrementing attempts
 	if types.IsNotReadyError(jobErr) {
 		log.Printf("Job %s deferred: %v (will retry when ready)", job.ID, jobErr)
@@ -589,6 +658,9 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
 			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
 		}
+
+		// Publish CloudWatch metrics for job failure
+		w.publishJobFailureMetrics(ctx, job, cluster, duration, "PREFLIGHT_CHECK_FAILED")
 		return
 	}
 
@@ -608,6 +680,9 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
 			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
 		}
+
+		// Publish CloudWatch metrics for job failure
+		w.publishJobFailureMetrics(ctx, job, cluster, duration, "MAX_RETRIES_EXCEEDED")
 		return
 	}
 
@@ -638,6 +713,33 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, jobErr er
 	}
 
 	// TODO: Implement exponential backoff delay
+}
+
+// publishJobFailureMetrics publishes CloudWatch metrics for job failures
+func (w *Worker) publishJobFailureMetrics(ctx context.Context, job *types.Job, cluster *types.Cluster, duration time.Duration, failureReason string) {
+	if w.metrics == nil {
+		return
+	}
+
+	dimensions := map[string]string{
+		"JobType":       string(job.JobType),
+		"Platform":      cluster.Platform,
+		"Profile":       cluster.Profile,
+		"FailureReason": failureReason,
+	}
+
+	// Publish failure count
+	if err := w.metrics.PublishCount(ctx, "JobFailed", 1, dimensions); err != nil {
+		log.Printf("Warning: Failed to publish JobFailed metric: %v", err)
+	}
+
+	// Publish job duration even for failures (helps identify slow failures)
+	if err := w.metrics.PublishDuration(ctx, "JobDuration", duration, dimensions); err != nil {
+		log.Printf("Warning: Failed to publish JobDuration metric: %v", err)
+	}
+
+	log.Printf("Published CloudWatch metrics: JobFailed=1, JobDuration=%v (type=%s, reason=%s)",
+		duration, job.JobType, failureReason)
 }
 
 // cleanupPartialDeployment cleans up partial infrastructure from a failed CREATE job

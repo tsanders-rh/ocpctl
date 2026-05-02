@@ -973,7 +973,7 @@ func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types
 		MaxAttempts: 3,
 	}
 
-	if err := h.store.Jobs.Create(ctx, postConfigJob); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, postConfigJob); err != nil {
 		log.Printf("Warning: failed to create POST_CONFIGURE job: %v", err)
 	} else {
 		log.Printf("Created POST_CONFIGURE job for cluster %s", cluster.Name)
