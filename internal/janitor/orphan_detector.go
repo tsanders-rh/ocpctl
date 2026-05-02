@@ -1015,11 +1015,20 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 				}
 			}
 		}
+		// Mark as orphaned if cluster doesn't exist or is destroyed
+		// Note: Hibernated/hibernating clusters are not flagged as orphaned (resources are intentionally stopped)
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
 			eipName := getTagValue(address.Tags, "Name")
 			if eipName == "" {
 				eipName = aws.ToString(address.PublicIp)
 			}
+
+			log.Printf("[Orphan EIP] %s - cluster '%s' exists=%v status=%v", eipName, clusterName, exists, func() string {
+				if exists {
+					return string(cluster.Status)
+				}
+				return "N/A"
+			}())
 
 			orphans = append(orphans, OrphanedResource{
 				Type:         "ElasticIP",

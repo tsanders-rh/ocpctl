@@ -259,6 +259,36 @@ func (s *OrphanedResourceStore) MarkIgnored(ctx context.Context, id string, note
 	return nil
 }
 
+// DeleteByClusterName deletes all orphaned resources for a specific cluster
+func (s *OrphanedResourceStore) DeleteByClusterName(ctx context.Context, clusterName string) (int64, error) {
+	query := `DELETE FROM orphaned_resources WHERE cluster_name = $1`
+
+	result, err := s.pool.Exec(ctx, query, clusterName)
+	if err != nil {
+		return 0, fmt.Errorf("delete orphaned resources for cluster %s: %w", clusterName, err)
+	}
+
+	return result.RowsAffected(), nil
+}
+
+// MarkAllIgnoredByClusterName marks all orphaned resources for a cluster as ignored
+func (s *OrphanedResourceStore) MarkAllIgnoredByClusterName(ctx context.Context, clusterName string, notes string) (int64, error) {
+	query := `
+		UPDATE orphaned_resources
+		SET status = 'IGNORED',
+			notes = $2,
+			updated_at = NOW()
+		WHERE cluster_name = $1 AND status = 'ACTIVE'
+	`
+
+	result, err := s.pool.Exec(ctx, query, clusterName, notes)
+	if err != nil {
+		return 0, fmt.Errorf("mark orphaned resources ignored for cluster %s: %w", clusterName, err)
+	}
+
+	return result.RowsAffected(), nil
+}
+
 // GetStats returns summary statistics for orphaned resources
 func (s *OrphanedResourceStore) GetStats(ctx context.Context) (*types.OrphanedResourceStats, error) {
 	stats := &types.OrphanedResourceStats{
