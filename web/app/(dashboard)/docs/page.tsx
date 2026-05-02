@@ -201,6 +201,8 @@ Fill in the required fields:
   - **Work Hours Schedule** - Define when cluster should be running (e.g., Mon-Fri 9am-5pm ET)
 - **Off-hours Opt-in** - Allow cluster to run outside defined work hours
 - **Skip Post-Deployment** - Skip automated configuration (operators, scripts, etc.) for profiles that include it
+- **Addon Version Selection** - Override default addon versions for post-deployment operators
+- **Additional Registry Credentials** - Add custom pull secrets for private container registries
 
 **Cloud Credentials (AWS OpenShift only):**
 
@@ -250,6 +252,268 @@ OpenShift clusters need AWS credentials to manage cloud resources. OCPCTL suppor
 - OpenShift 4.22 pre-release requires Mint or Static mode (Auto will not work)
 - Profiles with credentials_mode set will pre-select the appropriate mode
 - For most users, leaving it on **Auto** is the best choice
+
+**Addon Version Selection:**
+
+By default, post-deployment operators are installed using the version specified in the cluster profile. However, you can override specific addon versions during cluster creation.
+
+**When to use:**
+- Test a newer operator version before updating the profile
+- Pin a specific operator version for compatibility
+- Install nightly/preview channels for testing unreleased features
+- Use different versions for dev vs. production clusters
+
+**How to configure:**
+
+1. In the cluster creation form, expand **Advanced Options**
+2. Scroll to **Addon Version Overrides** section
+3. Click **Add Override**
+4. Configure the override:
+   - **Addon Name** - Name of the operator (must match post-deployment config)
+   - **Channel** - Operator channel (e.g., stable, fast, candidate, nightly)
+   - **Version** (Optional) - Specific CSV version (e.g., v4.14.1)
+   - **Source** (Optional) - Catalog source (defaults to redhat-operators)
+
+**Example overrides:**
+
+\`\`\`json
+{
+  "addon_version_overrides": [
+    {
+      "addon_name": "openshift-virtualization",
+      "channel": "stable-4.14",
+      "version": "v4.14.2"
+    },
+    {
+      "addon_name": "openshift-serverless",
+      "channel": "stable"
+    },
+    {
+      "addon_name": "kubernetes-dashboard",
+      "channel": "alpha",
+      "source": "community-operators"
+    }
+  ]
+}
+\`\`\`
+
+**Channel Options:**
+- \`stable\` - Latest stable release (recommended for production)
+- \`fast\` - Newer features, may have minor issues
+- \`candidate\` - Pre-release testing
+- \`nightly\` - Daily builds (unstable, for development only)
+- \`stable-X.Y\` - Pin to specific minor version (e.g., stable-4.14)
+
+**Important Notes:**
+- Addon name must exactly match the name in your post-deployment configuration
+- Invalid channel names will cause addon installation to fail
+- Version is optional - if omitted, latest version in channel is used
+- Overrides only apply to operators defined in post-deployment config
+- Not all operators support all channels (check OperatorHub for availability)
+
+**Verification:**
+
+After cluster creation, check the **Post-Deployment Execution Order** card to verify:
+1. The operator was installed from the correct channel
+2. The CSV (ClusterServiceVersion) matches your specified version
+3. No errors occurred during installation
+
+**Additional Registry Credentials:**
+
+If your post-deployment configuration pulls images from private container registries, you need to provide pull secrets. OCPCTL supports multiple credential formats.
+
+**When to use:**
+- Pull images from private Docker Hub repositories
+- Access private Quay.io namespaces
+- Use custom internal registries
+- Pull Helm charts from authenticated registries
+- Access images from AWS ECR, GCP GCR, Azure ACR
+
+**How to configure:**
+
+1. In the cluster creation form, expand **Advanced Options**
+2. Scroll to **Additional Registry Credentials** section
+3. Click **Add Credential**
+4. Select credential type and provide details
+
+**Credential Types:**
+
+**Docker Hub / Generic Registry:**
+
+\`\`\`json
+{
+  "registry": "docker.io",
+  "username": "myusername",
+  "password": "mypassword",
+  "email": "user@example.com"
+}
+\`\`\`
+
+**Quay.io with Robot Account:**
+
+\`\`\`json
+{
+  "registry": "quay.io",
+  "username": "myorg+robotaccount",
+  "password": "ROBOT_TOKEN_HERE",
+  "email": "robot@example.com"
+}
+\`\`\`
+
+**AWS ECR (Elastic Container Registry):**
+
+\`\`\`json
+{
+  "registry": "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+  "username": "AWS",
+  "password": "eyJwYXlsb2FkIjoi...",
+  "email": "aws@example.com"
+}
+\`\`\`
+
+**Note:** For ECR, use \`aws ecr get-login-password\` to generate the password token.
+
+**Google Container Registry (GCR):**
+
+\`\`\`json
+{
+  "registry": "gcr.io",
+  "username": "_json_key",
+  "password": "{\"type\":\"service_account\",\"project_id\":\"...\"}",
+  "email": "gcr@example.com"
+}
+\`\`\`
+
+**Azure Container Registry (ACR):**
+
+\`\`\`json
+{
+  "registry": "myregistry.azurecr.io",
+  "username": "myregistry",
+  "password": "SERVICE_PRINCIPAL_PASSWORD",
+  "email": "acr@example.com"
+}
+\`\`\`
+
+**Harbor / GitLab Registry:**
+
+\`\`\`json
+{
+  "registry": "harbor.example.com",
+  "username": "admin",
+  "password": "Harbor12345",
+  "email": "admin@example.com"
+}
+\`\`\`
+
+**Multiple Registries:**
+
+You can add multiple credential sets for different registries:
+
+\`\`\`json
+{
+  "additional_registry_credentials": [
+    {
+      "registry": "docker.io",
+      "username": "dockeruser",
+      "password": "dockerpass",
+      "email": "docker@example.com"
+    },
+    {
+      "registry": "quay.io",
+      "username": "quayuser",
+      "password": "quaypass",
+      "email": "quay@example.com"
+    },
+    {
+      "registry": "harbor.internal.corp",
+      "username": "employee",
+      "password": "secretpass",
+      "email": "employee@corp.com"
+    }
+  ]
+}
+\`\`\`
+
+**How it works:**
+
+1. OCPCTL creates a Kubernetes Secret in the \`openshift-config\` namespace (OpenShift) or \`kube-system\` (Kubernetes)
+2. The secret is named \`ocpctl-registry-credentials-{index}\`
+3. For OpenShift, credentials are linked to the global pull secret
+4. For EKS/IKS, credentials are available for Pods to reference
+
+**Accessing from Pods (EKS/IKS):**
+
+\`\`\`yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+  imagePullSecrets:
+  - name: ocpctl-registry-credentials-0
+  containers:
+  - name: app
+    image: quay.io/myorg/myapp:latest
+\`\`\`
+
+**Security Best Practices:**
+
+- **Use robot accounts** instead of personal credentials
+- **Rotate credentials regularly** (every 90 days recommended)
+- **Limit scope** - Grant only pull permissions, not push
+- **Encrypt at rest** - Credentials are stored as Kubernetes Secrets (base64 encoded)
+- **Use short-lived tokens** when possible (e.g., AWS ECR tokens expire in 12 hours)
+- **Avoid hardcoding** - Consider using External Secrets Operator for production
+
+**Common Issues:**
+
+**"ImagePullBackOff" errors:**
+- Verify registry URL is correct (no http:// or https://)
+- Check username/password are valid
+- Ensure credentials have pull permissions
+- For private namespaces, include namespace in image path
+
+**"unauthorized: authentication required":**
+- Credentials may have expired (especially ECR)
+- Username format may be wrong (e.g., Quay requires orgname+robotname)
+- Password may contain special characters that need escaping
+
+**Secret not found:**
+- Check secret was created: \`oc get secrets -n openshift-config\` (OpenShift)
+- Verify secret is referenced in global pull secret (OpenShift only)
+- For EKS/IKS, ensure imagePullSecrets is set in Pod spec
+
+**Verification:**
+
+After cluster creation, verify credentials were applied:
+
+**OpenShift:**
+\`\`\`bash
+# Check global pull secret includes your registry
+oc get secret/pull-secret -n openshift-config -o jsonpath='{.data.\\.dockerconfigjson}' | base64 -d | jq .
+
+# Verify registry is listed
+oc get secret/pull-secret -n openshift-config -o jsonpath='{.data.\\.dockerconfigjson}' | base64 -d | jq '.auths | keys'
+\`\`\`
+
+**Kubernetes (EKS/IKS):**
+\`\`\`bash
+# List secrets in kube-system
+kubectl get secrets -n kube-system | grep ocpctl-registry
+
+# View secret contents
+kubectl get secret ocpctl-registry-credentials-0 -n kube-system -o jsonpath='{.data.\\.dockerconfigjson}' | base64 -d | jq .
+\`\`\`
+
+**Test pull:**
+\`\`\`bash
+# Create a test pod using your private image
+oc run test --image=quay.io/yourorg/yourimage:latest --restart=Never
+
+# Check if it pulled successfully
+oc describe pod test | grep -A 10 Events
+\`\`\`
 
 ### Step 4: Create Cluster
 
@@ -375,6 +639,178 @@ Post-deployment configuration can include:
 - Helm 3 chart installations
 - Deployed with custom values if needed
 
+### Task Dependencies and Execution Order
+
+**What are task dependencies?**
+
+Dependencies control the order in which post-deployment tasks execute. Use the \`dependsOn\` field to ensure tasks run in the correct sequence.
+
+**When to use dependencies:**
+- Operator must be installed before applying custom resources
+- Script needs operator to be ready before running
+- Manifest requires namespace created by earlier task
+- Helm chart depends on CRDs from operator installation
+
+**Example: Operator → Custom Resource dependency**
+\`\`\`json
+{
+  "operators": [
+    {
+      "name": "openshift-virtualization",
+      "namespace": "openshift-cnv",
+      "source": "redhat-operators",
+      "channel": "stable"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "setup-windows-irsa",
+      "content": "#!/bin/bash\\n...",
+      "dependsOn": ["openshift-virtualization"]
+    }
+  ]
+}
+\`\`\`
+
+**How it works:**
+- \`setup-windows-irsa\` script waits for \`openshift-virtualization\` operator to complete
+- Execution order automatically calculated based on dependencies
+- Tasks with no dependencies start immediately
+- Failed dependencies prevent dependent tasks from starting
+
+**Multiple dependencies:**
+\`\`\`json
+{
+  "name": "configure-monitoring",
+  "dependsOn": ["prometheus-operator", "create-namespace", "setup-rbac"]
+}
+\`\`\`
+Task waits for **all** listed dependencies to complete before starting.
+
+### Conditional Execution
+
+**What is conditional execution?**
+
+Use the \`condition\` field to run tasks only when specific criteria are met. This allows the same post-deployment configuration to work across different cluster types or platforms.
+
+**Available Conditions:**
+- \`clusterType == 'openshift'\` - Only on OpenShift clusters
+- \`clusterType == 'eks'\` - Only on EKS clusters
+- \`clusterType == 'iks'\` - Only on IKS clusters
+- \`platform == 'aws'\` - Only on AWS
+- \`platform == 'ibmcloud'\` - Only on IBM Cloud
+- \`region == 'us-east-1'\` - Only in specific region
+
+**Example: Platform-specific scripts**
+\`\`\`json
+{
+  "scripts": [
+    {
+      "name": "configure-aws-storage",
+      "content": "#!/bin/bash\\noc create storageclass gp3...",
+      "condition": "platform == 'aws'"
+    },
+    {
+      "name": "configure-ibm-storage",
+      "content": "#!/bin/bash\\noc create storageclass ibmc-file...",
+      "condition": "platform == 'ibmcloud'"
+    }
+  ]
+}
+\`\`\`
+
+**Example: Cluster type specific operators**
+\`\`\`json
+{
+  "operators": [
+    {
+      "name": "kubernetes-dashboard",
+      "namespace": "kubernetes-dashboard",
+      "source": "community-operators",
+      "channel": "stable",
+      "condition": "clusterType == 'eks'"
+    }
+  ]
+}
+\`\`\`
+
+**Combining conditions with dependencies:**
+\`\`\`json
+{
+  "name": "setup-windows-vm",
+  "dependsOn": ["openshift-virtualization"],
+  "condition": "platform == 'aws' && clusterType == 'openshift'"
+}
+\`\`\`
+
+### Template Variables in Scripts and Manifests
+
+**What are template variables?**
+
+Template variables provide dynamic cluster information to your scripts and manifests using \`{{.VariableName}}\` syntax.
+
+**Available Variables:**
+- \`{{.CLUSTER_NAME}}\` - Cluster name
+- \`{{.CLUSTER_ID}}\` - Cluster UUID
+- \`{{.REGION}}\` - AWS/IBM Cloud region
+- \`{{.INFRA_ID}}\` - OpenShift infrastructure ID
+- \`{{.PLATFORM}}\` - Platform (aws, ibmcloud)
+- \`{{.BASE_DOMAIN}}\` - Cluster base domain
+- \`{{.KUBECONFIG}}\` - Path to kubeconfig file
+- \`{{.NAMESPACE}}\` - Target namespace (for manifests)
+
+**Script example:**
+\`\`\`bash
+#!/bin/bash
+echo "Configuring cluster: {{.CLUSTER_NAME}}"
+echo "Region: {{.REGION}}"
+echo "Infrastructure ID: {{.INFRA_ID}}"
+
+# Create IAM role for cluster
+aws iam create-role \\
+  --role-name "{{.CLUSTER_NAME}}-windows-irsa" \\
+  --region {{.REGION}} \\
+  --tags Key=ClusterID,Value={{.CLUSTER_ID}}
+
+# Configure kubeconfig
+export KUBECONFIG={{.KUBECONFIG}}
+oc create namespace {{.CLUSTER_NAME}}-apps
+\`\`\`
+
+**Manifest example:**
+\`\`\`yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-metadata
+  namespace: {{.NAMESPACE}}
+data:
+  cluster_name: "{{.CLUSTER_NAME}}"
+  cluster_id: "{{.CLUSTER_ID}}"
+  region: "{{.REGION}}"
+  platform: "{{.PLATFORM}}"
+  base_domain: "{{.BASE_DOMAIN}}"
+  infrastructure_id: "{{.INFRA_ID}}"
+\`\`\`
+
+**Environment variables in scripts:**
+
+In addition to template variables, scripts support custom environment variables:
+
+\`\`\`json
+{
+  "name": "configure-backup",
+  "content": "#!/bin/bash\\naws s3 cp data.tar.gz s3://$BACKUP_BUCKET/{{.CLUSTER_NAME}}/",
+  "env": {
+    "BACKUP_BUCKET": "ocpctl-backups",
+    "BACKUP_REGION": "{{.REGION}}",
+    "RETENTION_DAYS": "30"
+  }
+}
+\`\`\`
+
+**Note:** Environment variables also support template variable substitution!
+
 ### Viewing Post-Deployment Details
 
 To see what will be installed automatically:
@@ -420,10 +856,52 @@ After cluster creation:
 
 1. Cluster reaches **Ready** status (provisioning complete)
 2. Post-deployment job starts automatically
-3. Check cluster details page for post-deployment status:
-   - **In Progress** - Configuration running
-   - **Completed** - All automation succeeded
-   - **Failed** - Configuration encountered errors
+3. Check cluster details page for detailed execution visualization
+
+**Post-Deployment Execution Order Visualization:**
+
+The cluster detail page shows a visual timeline of all post-deployment tasks:
+
+**Task Display:**
+- **Order Number** - Sequential execution order (1, 2, 3, etc.)
+- **Task Icon & Name** - Visual indicator and descriptive name
+- **Type Badge** - Color-coded badge (Script, Manifest, Operator, Helm Chart)
+- **Dependencies** - Shows which tasks must complete before this one starts
+- **Real-time Status** - Current state with icon:
+  - ⏱️ **Pending** - Waiting for dependencies
+  - ⚙️ **Installing** - Currently executing (animated spinner)
+  - ✅ **Completed** - Successfully finished
+  - ❌ **Failed** - Encountered error (click for details)
+- **Progress Bar** - Overall completion percentage at bottom
+
+**Viewing Task Details:**
+
+Click on any task card to open a detailed view showing:
+
+**For Scripts:**
+- Full script content (syntax highlighted)
+- Description and timeout
+- Environment variables
+- Template variables used
+
+**For Manifests:**
+- Complete YAML/JSON content
+- Description
+- Target namespace
+
+**For Operators:**
+- Operator namespace
+- Catalog source (e.g., redhat-operators)
+- Subscription channel
+- Custom Resource configuration (if any)
+
+**For Helm Charts:**
+- Chart repository URL
+- Chart name and version
+- Target namespace
+- Values configuration (full YAML)
+
+**Example:** Click on "setup-windows-vm-infrastructure" to see the complete bash script that configures IRSA for Windows image access.
 
 **Note:** The cluster is usable immediately when it reaches **Ready** status. Post-deployment runs in parallel and adds additional capabilities.
 
@@ -875,7 +1353,311 @@ Currently requires database queries. Web UI export planned for future release.
     icon: Sparkles,
     content: `# Advanced Features Guide
 
-This guide covers advanced features including post-deployment configurations, storage linking, and API usage.
+This guide covers advanced features including API keys, templates, post-deployment configurations, storage linking, and API usage.
+
+## API Keys Management
+
+**What are API Keys?**
+
+API keys provide programmatic access to OCPCTL without requiring username/password authentication. They're ideal for:
+- **CI/CD pipelines** - Automate cluster provisioning in your build pipelines
+- **Automation scripts** - Create/destroy clusters programmatically
+- **Third-party integrations** - Integrate OCPCTL with external tools
+- **Service accounts** - Long-lived credentials for services
+
+### Creating an API Key
+
+1. Navigate to your **Profile** page (click your email in sidebar)
+2. Scroll to **API Keys** section
+3. Click **Create API Key** button
+4. Configure the key:
+   - **Name** - Descriptive name (e.g., "CI Pipeline", "Terraform Integration")
+   - **Scope** - Access level:
+     - \`read_only\` - Can list and view clusters, but cannot create/modify/delete
+     - \`full_access\` - Can perform all operations including create/destroy clusters
+   - **Expiration** (Optional) - Auto-revoke after date
+
+5. Click **Create**
+6. **IMPORTANT:** Copy the API key immediately - it will only be shown once!
+
+**Example API Key:**
+\`\`\`
+ocpctl_ak_1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z
+\`\`\`
+
+### Using API Keys
+
+Include the API key in the \`Authorization\` header:
+
+\`\`\`bash
+# List clusters
+curl -X GET https://ocpctl.example.com/api/v1/clusters \\
+  -H "Authorization: Bearer ocpctl_ak_your_key_here"
+
+# Create cluster
+curl -X POST https://ocpctl.example.com/api/v1/clusters \\
+  -H "Authorization: Bearer ocpctl_ak_your_key_here" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "ci-test-cluster",
+    "profile": "aws-sno-test",
+    "platform": "aws",
+    "version": "4.20.3",
+    "region": "us-east-1",
+    "base_domain": "mg.dog8code.com"
+  }'
+\`\`\`
+
+**Python Example:**
+\`\`\`python
+import requests
+
+API_KEY = "ocpctl_ak_your_key_here"
+BASE_URL = "https://ocpctl.example.com/api/v1"
+
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+# List clusters
+response = requests.get(f"{BASE_URL}/clusters", headers=headers)
+clusters = response.json()
+
+# Create cluster
+cluster_config = {
+    "name": "python-test-cluster",
+    "profile": "aws-sno-test",
+    "platform": "aws",
+    "version": "4.20.3",
+    "region": "us-east-1",
+    "base_domain": "mg.dog8code.com"
+}
+response = requests.post(f"{BASE_URL}/clusters", json=cluster_config, headers=headers)
+\`\`\`
+
+### Managing API Keys
+
+**View your keys:**
+1. Go to **Profile** page
+2. Scroll to **API Keys** section
+3. See list of all your keys with:
+   - Name and scope
+   - Created date
+   - Last used date
+   - Expiration date (if set)
+
+**Update key name:**
+1. Find the key in the list
+2. Click **Edit** button
+3. Change the name
+4. Click **Save**
+
+**Revoke a key:**
+1. Find the key in the list
+2. Click **Revoke** button
+3. Confirm revocation
+
+**Effect:** Key is immediately invalidated and cannot be used for authentication.
+
+**Delete a key:**
+1. Find the key in the list
+2. Click **Delete** button
+3. Confirm deletion
+
+**Effect:** Key is permanently removed from the system (audit trail preserved).
+
+### Security Best Practices
+
+**Storage:**
+- Store API keys in environment variables, not in code
+- Use secret management systems (AWS Secrets Manager, HashiCorp Vault, etc.)
+- Never commit API keys to git repositories
+
+**Rotation:**
+- Rotate API keys regularly (every 90 days recommended)
+- Create new key before revoking old one to avoid downtime
+- Use expiration dates for temporary access
+
+**Scope:**
+- Use \`read_only\` scope unless write access is required
+- Create separate keys for different purposes (CI, monitoring, etc.)
+- Revoke keys immediately when no longer needed
+
+**Monitoring:**
+- Check "Last Used" date to identify unused keys
+- Review API key list monthly
+- Revoke keys not used in 90+ days
+
+## Templates for Post-Deployment Configuration
+
+**What are Templates?**
+
+Templates allow you to save post-deployment configurations as reusable blueprints. Instead of manually configuring operators, scripts, and manifests for every cluster, create a template once and apply it to multiple clusters.
+
+**Use Cases:**
+- **Standardized environments** - Same operators/config across dev/test/prod
+- **Team templates** - Share common configurations with your team
+- **Testing variations** - Quickly test different operator configurations
+- **Multi-cluster deployments** - Apply identical config to multiple clusters
+
+### Creating a Template
+
+**From the UI:**
+1. Navigate to **Templates** page (in sidebar)
+2. Click **Create Template** button
+3. Configure the template:
+   - **Name** - Descriptive name (e.g., "Standard Monitoring Stack")
+   - **Description** - What this template provides
+   - **Operators** - List of operators to install
+   - **Scripts** - Custom scripts to run
+   - **Manifests** - YAML manifests to apply
+   - **Helm Charts** - Helm charts to deploy
+
+4. Click **Create Template**
+
+**From existing cluster:**
+1. Go to cluster details page
+2. Navigate to **Configurations** tab
+3. Click **Save as Template** button
+4. Enter template name and description
+5. Click **Save**
+
+### Template Structure
+
+**Example template with all configuration types:**
+\`\`\`json
+{
+  "name": "monitoring-and-backup",
+  "description": "Prometheus monitoring + Velero backup",
+  "operators": [
+    {
+      "name": "prometheus",
+      "namespace": "openshift-monitoring",
+      "source": "redhat-operators",
+      "channel": "stable"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "configure-monitoring",
+      "content": "#!/bin/bash\\noc patch cluster-monitoring-config ...",
+      "timeout": "5m"
+    }
+  ],
+  "manifests": [
+    {
+      "name": "custom-serviceaccount",
+      "content": "apiVersion: v1\\nkind: ServiceAccount\\nmetadata:\\n  name: backup-sa"
+    }
+  ],
+  "helmCharts": [
+    {
+      "name": "velero",
+      "repo": "https://vmware-tanzu.github.io/helm-charts",
+      "chart": "velero",
+      "version": "5.0.0",
+      "namespace": "velero",
+      "values": {
+        "configuration": {
+          "provider": "aws"
+        }
+      }
+    }
+  ]
+}
+\`\`\`
+
+### Applying a Template to a Cluster
+
+**During cluster creation:**
+1. In cluster creation form
+2. Expand **Post-Deployment** section
+3. Select **Apply Template** checkbox
+4. Choose template from dropdown
+5. Create cluster
+
+**After cluster creation:**
+1. Go to cluster details page
+2. Click **Apply Template** button
+3. Select template from dropdown
+4. Click **Apply**
+5. Wait for configuration to complete (5-15 minutes)
+
+### Managing Templates
+
+**List templates:**
+- Navigate to **Templates** page in sidebar
+- View all available templates
+- Search and filter by name
+
+**Update template:**
+1. Find template in list
+2. Click **Edit** button
+3. Modify operators, scripts, manifests, or helm charts
+4. Click **Save**
+
+**Delete template:**
+1. Find template in list
+2. Click **Delete** button
+3. Confirm deletion
+
+**Note:** Deleting a template does not affect clusters that already used it.
+
+### Template Variables
+
+Templates support variable substitution for dynamic values:
+
+**Available Variables:**
+- \`{{.CLUSTER_NAME}}\` - Name of the cluster
+- \`{{.CLUSTER_ID}}\` - UUID of the cluster
+- \`{{.REGION}}\` - AWS/IBM Cloud region
+- \`{{.INFRA_ID}}\` - OpenShift infrastructure ID
+- \`{{.PLATFORM}}\` - Platform type (aws, ibmcloud)
+- \`{{.BASE_DOMAIN}}\` - Cluster base domain
+- \`{{.NAMESPACE}}\` - Target namespace (for manifests)
+
+**Example script with variables:**
+\`\`\`bash
+#!/bin/bash
+echo "Configuring cluster: {{.CLUSTER_NAME}}"
+echo "Region: {{.REGION}}"
+oc create namespace {{.CLUSTER_NAME}}-apps
+oc label namespace {{.CLUSTER_NAME}}-apps cluster-id={{.CLUSTER_ID}}
+\`\`\`
+
+**Example manifest with variables:**
+\`\`\`yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-info
+  namespace: {{.NAMESPACE}}
+data:
+  cluster_name: "{{.CLUSTER_NAME}}"
+  region: "{{.REGION}}"
+  infrastructure_id: "{{.INFRA_ID}}"
+\`\`\`
+
+### Sharing Templates
+
+**Export template:**
+1. Go to **Templates** page
+2. Find template to export
+3. Click **Export** button
+4. Save JSON file
+
+**Import template:**
+1. Go to **Templates** page
+2. Click **Import Template** button
+3. Upload JSON file or paste JSON
+4. Click **Import**
+
+**Share with team:**
+- Export template to JSON
+- Share via git repository
+- Import in other OCPCTL installations
+- Commit to infrastructure-as-code repo
 
 ## Post-Deployment Configurations
 
@@ -1219,29 +2001,184 @@ openapi-generator-cli generate \\
   -o ./ocpctl-ts-client
 \`\`\`
 
-## Cluster Logs
+## Deployment Logs
 
-View deployment logs for troubleshooting:
+**What are Deployment Logs?**
 
-1. Click on cluster card
-2. Navigate to **Logs** tab
-3. View real-time deployment logs
+Deployment logs provide real-time visibility into cluster creation, destruction, and post-deployment configuration processes. These logs are essential for troubleshooting failures, monitoring progress, and understanding what's happening during cluster lifecycle operations.
 
-**Log Details:**
-- **Timestamp** - When log line was written
-- **Level** - INFO, WARN, ERROR
-- **Message** - Log content
-- **Source** - openshift-install, ocpctl, etc.
+**Accessing Deployment Logs:**
 
-**Filtering:**
-- Search for keywords
-- Filter by log level
-- Jump to errors
+1. Navigate to cluster details page
+2. Click on the **Logs** tab
+3. View live-streaming deployment logs
+
+**When Logs Are Available:**
+
+Logs are accessible for clusters in the following states:
+- **CREATING** - Installation in progress
+- **READY** - Installation completed (logs retained for reference)
+- **FAILED** - Installation failed (critical for debugging)
+- **DESTROYING** - Cluster deletion in progress
+
+**Log Information:**
+
+Each log entry displays:
+- **Timestamp** - Exact time the log was written (in your timezone)
+- **Level** - Log severity:
+  - \`INFO\` - Normal operational messages
+  - \`WARN\` - Warnings that don't block progress
+  - \`ERROR\` - Errors that may cause failures
+  - \`DEBUG\` - Detailed diagnostic information
+- **Message** - The actual log content
+- **Source** - What generated the log:
+  - \`openshift-install\` - OpenShift installer binary
+  - \`eksctl\` - EKS cluster creation tool
+  - \`ibmcloud\` - IBM Cloud CLI
+  - \`ocpctl-worker\` - OCPCTL orchestration logic
+  - \`terraform\` - Infrastructure provisioning
+  - \`addon-installer\` - Post-deployment automation
+
+**Features:**
+
+**Real-time Updates:**
+- Logs automatically refresh every 2 seconds while jobs are active
+- No need to manually reload the page
+- Scroll to bottom to follow latest entries
+
+**Search and Filter:**
+- **Search Box** - Find specific keywords, error codes, or resource names
+- **Level Filter** - Show only ERROR logs to quickly identify failures
+- **Auto-scroll** - Toggle to stay at bottom (latest logs) or review earlier entries
+
+**Error Highlighting:**
+- ERROR level logs are displayed in red for easy identification
+- Failed job steps are clearly marked
+- Stack traces and error details are preserved
+
+**Log Retention:**
+- Logs are stored for the lifetime of the cluster
+- Destroyed clusters retain logs for 30 days (configurable)
+- Download logs via API for long-term archival
 
 **Use Cases:**
-- Troubleshoot failed cluster creation
-- Monitor installation progress
-- Debug configuration issues
+
+**Troubleshooting Failed Installations:**
+
+If cluster creation fails, check logs for:
+- AWS quota errors (e.g., "VPC limit exceeded")
+- DNS resolution failures
+- Invalid credentials or permissions
+- OpenShift installer errors
+
+Example search queries:
+- Search for \`"error"\` to find all error messages
+- Search for \`"quota"\` to check AWS service limits
+- Search for \`"timeout"\` to identify slow operations
+
+**Monitoring Installation Progress:**
+
+Track installation milestones:
+- Bootstrap VM creation
+- Control plane initialization
+- Worker node joining
+- Operator deployments
+- Post-deployment addon installation
+
+**Debugging Post-Deployment Issues:**
+
+If addons fail to install:
+- Filter by source: \`addon-installer\`
+- Search for addon name (e.g., \`"openshift-virtualization"\`)
+- Look for timeout errors or missing dependencies
+- Check if CRDs were applied successfully
+
+**Performance Analysis:**
+
+Identify slow steps:
+- Search for \`"Waiting for"\` to find blocking operations
+- Check timestamps to calculate step duration
+- Identify network-related delays
+
+**Downloading Logs:**
+
+To download logs for offline analysis or support tickets:
+
+\`\`\`bash
+# Using the API
+curl -X GET "https://ocpctl.example.com/api/v1/clusters/{cluster-id}/logs" \\
+  -H "Authorization: Bearer {your-token}" \\
+  -o cluster-logs.txt
+
+# With filtering
+curl -X GET "https://ocpctl.example.com/api/v1/clusters/{cluster-id}/logs?level=ERROR" \\
+  -H "Authorization: Bearer {your-token}" \\
+  -o errors.txt
+\`\`\`
+
+**Log Rotation:**
+
+- Logs are automatically rotated when they exceed 10MB
+- Up to 5 rotated log files are retained
+- Oldest logs are deleted automatically
+- Total log retention: ~50MB per cluster
+
+**Best Practices:**
+
+**During Creation:**
+- Keep logs tab open to monitor progress
+- Watch for warnings that might indicate future issues
+- Note any timeouts (may need TTL extension)
+
+**After Failure:**
+- Download full logs before destroying the cluster
+- Search for first ERROR occurrence (root cause usually appears first)
+- Check timestamps to identify when failure occurred
+- Share logs with support team if needed
+
+**For Production:**
+- Export logs to external logging system (CloudWatch, Splunk, etc.)
+- Set up alerting for ERROR-level logs
+- Archive logs for compliance requirements
+
+**Common Log Patterns:**
+
+**Successful Installation:**
+\`\`\`
+INFO: Cluster initialization complete
+INFO: Waiting for cluster operators to stabilize
+INFO: All cluster operators are ready
+INFO: Cluster is ready
+\`\`\`
+
+**AWS Quota Error:**
+\`\`\`
+ERROR: failed to create VPC: VpcLimitExceeded: You have reached the limit for VPCs in this region
+\`\`\`
+
+**DNS Resolution Failure:**
+\`\`\`
+ERROR: Failed to wait for bootstrap complete: API server not reachable
+WARN: DNS record api.{cluster-name}.{domain} not resolving
+\`\`\`
+
+**Addon Installation Success:**
+\`\`\`
+INFO: [addon-installer] Installing operator: openshift-virtualization
+INFO: [addon-installer] Waiting for CSV to reach Succeeded phase
+INFO: [addon-installer] Operator openshift-virtualization is ready
+\`\`\`
+
+**Integration with Jobs:**
+
+The logs are generated by background jobs. Each job type produces specific log patterns:
+
+- **CREATE** jobs - Full installation logs from openshift-install, eksctl, or ibmcloud CLI
+- **DESTROY** jobs - Cleanup logs showing resource deletion progress
+- **POST_CONFIGURE** jobs - Addon installation logs with task execution order
+- **HIBERNATE/RESUME** jobs - EC2 instance state change logs
+
+You can correlate logs with job status on the Jobs card to understand which operation is currently running.
 
 ## Advanced Cluster Options
 
