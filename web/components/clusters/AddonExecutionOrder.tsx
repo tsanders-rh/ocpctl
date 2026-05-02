@@ -1,6 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CheckCircle2, Clock, Loader2, XCircle, ArrowRight } from "lucide-react";
+import { useState } from "react";
+import type { CustomPostConfig, CustomScriptConfig, CustomManifestConfig, CustomOperatorConfig, CustomHelmChartConfig } from "@/types/api";
 
 interface TaskExecutionInfo {
   name: string;
@@ -22,6 +25,7 @@ interface Configuration {
 interface AddonExecutionOrderProps {
   executionOrder: TaskExecutionInfo[];
   configurations?: Configuration[];
+  customPostConfig?: CustomPostConfig;
 }
 
 const typeColors: Record<string, string> = {
@@ -77,10 +81,174 @@ function getTaskErrorMessage(taskName: string, configurations?: Configuration[])
   return config?.error_message;
 }
 
-export function AddonExecutionOrder({ executionOrder, configurations }: AddonExecutionOrderProps) {
+export function AddonExecutionOrder({ executionOrder, configurations, customPostConfig }: AddonExecutionOrderProps) {
+  const [selectedTask, setSelectedTask] = useState<TaskExecutionInfo | null>(null);
+
   if (!executionOrder || executionOrder.length === 0) {
     return null;
   }
+
+  // Get task details from customPostConfig
+  const getTaskDetails = (task: TaskExecutionInfo): any => {
+    if (!customPostConfig) return null;
+
+    switch (task.type) {
+      case "script":
+        return customPostConfig.scripts?.find((s) => s.name === task.name);
+      case "manifest":
+        return customPostConfig.manifests?.find((m) => m.name === task.name);
+      case "operator":
+        return customPostConfig.operators?.find((o) => o.name === task.name);
+      case "helmChart":
+        return customPostConfig.helmCharts?.find((h) => h.name === task.name);
+      default:
+        return null;
+    }
+  };
+
+  const renderTaskDetails = (task: TaskExecutionInfo) => {
+    const details = getTaskDetails(task);
+    if (!details) return <p className="text-muted-foreground">No details available</p>;
+
+    switch (task.type) {
+      case "script":
+        const script = details as CustomScriptConfig;
+        return (
+          <div className="space-y-3">
+            {script.description && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Description</h4>
+                <p className="text-sm text-muted-foreground">{script.description}</p>
+              </div>
+            )}
+            {script.content && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Script Content</h4>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                  {script.content}
+                </pre>
+              </div>
+            )}
+            {script.url && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Script URL</h4>
+                <a href={script.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                  {script.url}
+                </a>
+              </div>
+            )}
+            {script.timeout && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Timeout</h4>
+                <p className="text-sm text-muted-foreground">{script.timeout}</p>
+              </div>
+            )}
+            {script.env && Object.keys(script.env).length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Environment Variables</h4>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto">
+                  {JSON.stringify(script.env, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        );
+
+      case "manifest":
+        const manifest = details as CustomManifestConfig;
+        return (
+          <div className="space-y-3">
+            {manifest.description && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Description</h4>
+                <p className="text-sm text-muted-foreground">{manifest.description}</p>
+              </div>
+            )}
+            {manifest.content && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Manifest Content</h4>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                  {manifest.content}
+                </pre>
+              </div>
+            )}
+            {manifest.url && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Manifest URL</h4>
+                <a href={manifest.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                  {manifest.url}
+                </a>
+              </div>
+            )}
+          </div>
+        );
+
+      case "operator":
+        const operator = details as CustomOperatorConfig;
+        return (
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold mb-1">Namespace</h4>
+              <p className="text-sm text-muted-foreground font-mono">{operator.namespace}</p>
+            </div>
+            {operator.source && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Source</h4>
+                <p className="text-sm text-muted-foreground">{operator.source}</p>
+              </div>
+            )}
+            <div>
+              <h4 className="text-sm font-semibold mb-1">Channel</h4>
+              <p className="text-sm text-muted-foreground">{operator.channel}</p>
+            </div>
+            {operator.custom_resource && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Custom Resource</h4>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                  {JSON.stringify(operator.custom_resource, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        );
+
+      case "helmChart":
+        const helmChart = details as CustomHelmChartConfig;
+        return (
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold mb-1">Repository</h4>
+              <p className="text-sm text-muted-foreground font-mono">{helmChart.repo}</p>
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold mb-1">Chart</h4>
+              <p className="text-sm text-muted-foreground">{helmChart.chart}</p>
+            </div>
+            {helmChart.version && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Version</h4>
+                <p className="text-sm text-muted-foreground">{helmChart.version}</p>
+              </div>
+            )}
+            <div>
+              <h4 className="text-sm font-semibold mb-1">Namespace</h4>
+              <p className="text-sm text-muted-foreground font-mono">{helmChart.namespace}</p>
+            </div>
+            {helmChart.values && Object.keys(helmChart.values).length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Values</h4>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                  {JSON.stringify(helmChart.values, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <Card>
@@ -101,7 +269,8 @@ export function AddonExecutionOrder({ executionOrder, configurations }: AddonExe
             return (
               <div
                 key={`${task.name}-${index}`}
-                className="border rounded-lg p-4 hover:bg-accent/50 transition-colors"
+                className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
+                onClick={() => setSelectedTask(task)}
               >
                 <div className="flex items-start gap-4">
                   {/* Order Number */}
@@ -181,6 +350,29 @@ export function AddonExecutionOrder({ executionOrder, configurations }: AddonExe
           </div>
         )}
       </CardContent>
+
+      {/* Task Details Modal */}
+      <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">{selectedTask && typeIcons[selectedTask.type]}</span>
+              {selectedTask?.name}
+              {selectedTask && (
+                <Badge variant="outline" className={`${typeColors[selectedTask.type]} ml-2`}>
+                  {selectedTask.type}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedTask && `View details for this ${selectedTask.type}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {selectedTask && renderTaskDetails(selectedTask)}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

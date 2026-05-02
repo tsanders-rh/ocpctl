@@ -709,6 +709,7 @@ export default function ClusterDetailPage() {
         <AddonExecutionOrder
           executionOrder={executionOrder}
           configurations={configurations?.configurations}
+          customPostConfig={cluster?.custom_post_config}
         />
       )}
 
