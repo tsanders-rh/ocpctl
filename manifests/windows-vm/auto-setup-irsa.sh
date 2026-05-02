@@ -126,47 +126,13 @@ fi
 # Attach S3 read-only policy
 log_info "Attaching S3 read-only policy"
 
-# Define IAM policy inline
-IAM_POLICY=$(cat <<'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowListBucket",
-      "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::ocpctl-binaries"
-      ],
-      "Condition": {
-        "StringLike": {
-          "s3:prefix": [
-            "windows-images/*"
-          ]
-        }
-      }
-    },
-    {
-      "Sid": "AllowGetWindowsImage",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::ocpctl-binaries/windows-images/*"
-      ]
-    }
-  ]
-}
-EOF
-)
+# Get script directory to find iam-policy.json
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 aws iam put-role-policy \
     --role-name "$ROLE_NAME" \
     --policy-name S3WindowsImageReadOnly \
-    --policy-document "$IAM_POLICY"
+    --policy-document file://${SCRIPT_DIR}/iam-policy.json
 log_info "✓ Policy attached"
 
 # Get role ARN
@@ -249,48 +215,11 @@ else
 
     # Attach S3 read-only policy to user
     log_info "Attaching S3 read-only policy to IAM user"
-
-    # Define IAM policy inline
-    IAM_POLICY=$(cat <<'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowListBucket",
-      "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::ocpctl-binaries"
-      ],
-      "Condition": {
-        "StringLike": {
-          "s3:prefix": [
-            "windows-images/*"
-          ]
-        }
-      }
-    },
-    {
-      "Sid": "AllowGetWindowsImage",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::ocpctl-binaries/windows-images/*"
-      ]
-    }
-  ]
-}
-EOF
-)
-
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     aws iam put-user-policy \
         --user-name "$IAM_USER_NAME" \
         --policy-name S3WindowsImageReadOnly \
-        --policy-document "$IAM_POLICY"
+        --policy-document file://${SCRIPT_DIR}/iam-policy.json
     log_info "✓ Policy attached to IAM user"
 
     # Create access keys (delete old ones first if they exist)
