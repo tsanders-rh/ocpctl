@@ -18,3 +18,12 @@ export function useInfrastructure() {
     refetchInterval: 10 * 1000, // Refresh every 10 seconds
   });
 }
+
+export function useLongRunningClusters(minHours: number = 24) {
+  return useQuery({
+    queryKey: ["admin", "long-running-clusters", minHours],
+    queryFn: () => adminApi.getLongRunningClusters(minHours),
+    staleTime: 60 * 1000, // 1 minute
+    refetchInterval: 60 * 1000, // Refresh every minute
+  });
+}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1490,6 +1491,87 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 	}
 
 	return SuccessOK(c, stats)
+}
+
+// LongRunningClusterResponse represents a long-running cluster with cost information
+type LongRunningClusterResponse struct {
+	store.LongRunningCluster
+	HourlyCost  float64 `json:"hourly_cost"`
+	DailyCost   float64 `json:"daily_cost"`
+	MonthlyCost float64 `json:"monthly_cost"`
+}
+
+// GetLongRunningClusters handles GET /api/v1/admin/clusters/long-running
+//
+//	@Summary		Get long-running clusters
+//	@Description	Returns READY clusters running 24+ hours without hibernation (admin only)
+//	@Tags			admin
+//	@Produce		json
+//	@Param			min_hours	query		int	false	"Minimum running hours (default: 24)"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		401			{object}	ErrorResponse
+//	@Failure		403			{object}	ErrorResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/admin/clusters/long-running [get]
+func (h *ClusterHandler) GetLongRunningClusters(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Parse min_hours parameter (default: 24)
+	minHours := 24
+	if minHoursStr := c.QueryParam("min_hours"); minHoursStr != "" {
+		if parsed, err := strconv.Atoi(minHoursStr); err == nil && parsed > 0 {
+			minHours = parsed
+		}
+	}
+
+	// Fetch long-running clusters from database
+	clusters, err := h.store.Clusters.GetLongRunningClusters(ctx, minHours)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get long-running clusters: %w", err))
+	}
+
+	// Calculate costs for each cluster and build response array
+	responses := make([]LongRunningClusterResponse, 0, len(clusters))
+	for _, cluster := range clusters {
+		// Get profile for cost calculation
+		prof, err := h.registry.GetAny(cluster.Cluster.Profile)
+		if err != nil || prof == nil {
+			// Skip if profile not found (shouldn't happen for valid clusters)
+			log.Printf("Warning: profile %s not found for cluster %s", cluster.Cluster.Profile, cluster.Cluster.ID)
+			continue
+		}
+
+		// Calculate effective hourly cost based on cluster status
+		hourlyCost := h.calculateEffectiveCost(cluster.Cluster, prof)
+		dailyCost := hourlyCost * 24
+		monthlyCost := hourlyCost * 24 * 30
+
+		responses = append(responses, LongRunningClusterResponse{
+			LongRunningCluster: *cluster,
+			HourlyCost:         hourlyCost,
+			DailyCost:          dailyCost,
+			MonthlyCost:        monthlyCost,
+		})
+	}
+
+	// Calculate aggregate totals
+	var totalHourlyCost, totalDailyCost, totalMonthlyCost float64
+	for _, r := range responses {
+		totalHourlyCost += r.HourlyCost
+		totalDailyCost += r.DailyCost
+		totalMonthlyCost += r.MonthlyCost
+	}
+
+	// Return response with cluster array and totals
+	return SuccessOK(c, map[string]interface{}{
+		"clusters":           responses,
+		"total_count":        len(responses),
+		"min_hours":          minHours,
+		"total_hourly_cost":  totalHourlyCost,
+		"total_daily_cost":   totalDailyCost,
+		"total_monthly_cost": totalMonthlyCost,
+	})
 }
 
 // EC2Instance represents an EC2 instance with relevant details

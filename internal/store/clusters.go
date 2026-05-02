@@ -903,6 +903,14 @@ type ClusterStatsByProfile struct {
 	Count    int
 }
 
+// LongRunningCluster represents a cluster with running duration information
+// Used for admin dashboard to identify clusters that may need hibernation
+type LongRunningCluster struct {
+	*types.Cluster
+	RunningDurationHours float64    `json:"running_duration_hours"`
+	LastHibernatedAt     *time.Time `json:"last_hibernated_at,omitempty"`
+}
+
 // GetStatisticsByStatus returns aggregated cluster counts by status
 // Excludes DESTROYED and FAILED clusters by default
 func (s *ClusterStore) GetStatisticsByStatus(ctx context.Context) ([]*ClusterStatsByStatus, error) {
@@ -995,6 +1003,105 @@ func (s *ClusterStore) GetActiveClusterCount(ctx context.Context) (int, error) {
 	}
 
 	return count, nil
+}
+
+// GetLongRunningClusters returns READY clusters running for specified hours without hibernation
+// Excludes clusters that have successfully hibernated in the last minHours
+// Orders by running duration DESC (longest running first)
+func (s *ClusterStore) GetLongRunningClusters(ctx context.Context, minHours int) ([]*LongRunningCluster, error) {
+	query := `
+		SELECT
+			c.id, c.name, c.platform, c.cluster_type, c.version, c.profile,
+			c.region, c.base_domain, c.owner, c.owner_id, c.team, c.cost_center,
+			c.status, c.requested_by, c.ttl_hours, c.destroy_at, c.created_at,
+			c.updated_at, c.destroyed_at, c.request_tags, c.effective_tags,
+			c.ssh_public_key, c.offhours_opt_in, c.work_hours_enabled,
+			c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
+			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status,
+			c.preserve_on_failure, c.credentials_mode, c.custom_pull_secret,
+			EXTRACT(EPOCH FROM (NOW() - c.updated_at)) / 3600 as running_duration_hours,
+			(
+				SELECT MAX(j.ended_at)
+				FROM jobs j
+				WHERE j.cluster_id = c.id
+				  AND j.job_type = 'HIBERNATE'
+				  AND j.status = 'SUCCEEDED'
+			) as last_hibernated_at
+		FROM clusters c
+		WHERE c.status = 'READY'
+		  AND c.updated_at <= NOW() - ($1::text || ' hours')::interval
+		  AND c.id NOT IN (
+			  SELECT DISTINCT cluster_id
+			  FROM jobs
+			  WHERE job_type = 'HIBERNATE'
+				AND status = 'SUCCEEDED'
+				AND ended_at >= NOW() - ($1::text || ' hours')::interval
+		  )
+		ORDER BY running_duration_hours DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query, minHours)
+	if err != nil {
+		return nil, fmt.Errorf("query long-running clusters: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*LongRunningCluster{}
+	for rows.Next() {
+		lrc := &LongRunningCluster{
+			Cluster: &types.Cluster{},
+		}
+
+		err := rows.Scan(
+			&lrc.Cluster.ID,
+			&lrc.Cluster.Name,
+			&lrc.Cluster.Platform,
+			&lrc.Cluster.ClusterType,
+			&lrc.Cluster.Version,
+			&lrc.Cluster.Profile,
+			&lrc.Cluster.Region,
+			&lrc.Cluster.BaseDomain,
+			&lrc.Cluster.Owner,
+			&lrc.Cluster.OwnerID,
+			&lrc.Cluster.Team,
+			&lrc.Cluster.CostCenter,
+			&lrc.Cluster.Status,
+			&lrc.Cluster.RequestedBy,
+			&lrc.Cluster.TTLHours,
+			&lrc.Cluster.DestroyAt,
+			&lrc.Cluster.CreatedAt,
+			&lrc.Cluster.UpdatedAt,
+			&lrc.Cluster.DestroyedAt,
+			&lrc.Cluster.RequestTags,
+			&lrc.Cluster.EffectiveTags,
+			&lrc.Cluster.SSHPublicKey,
+			&lrc.Cluster.OffhoursOptIn,
+			&lrc.Cluster.WorkHoursEnabled,
+			&lrc.Cluster.WorkHoursStart,
+			&lrc.Cluster.WorkHoursEnd,
+			&lrc.Cluster.WorkDays,
+			&lrc.Cluster.LastWorkHoursCheck,
+			&lrc.Cluster.SkipPostDeployment,
+			&lrc.Cluster.CustomPostConfig,
+			&lrc.Cluster.PostDeployStatus,
+			&lrc.Cluster.PreserveOnFailure,
+			&lrc.Cluster.CredentialsMode,
+			&lrc.Cluster.CustomPullSecret,
+			&lrc.RunningDurationHours,
+			&lrc.LastHibernatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan long-running cluster: %w", err)
+		}
+
+		clusters = append(clusters, lrc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate long-running clusters: %w", err)
+	}
+
+	return clusters, nil
 }
 
 // CheckInfraIDCollision checks if a cluster name could collide with recently destroyed clusters

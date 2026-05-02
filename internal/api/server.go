@@ -250,6 +250,7 @@ func (s *Server) setupRoutes() {
 
 	// Cluster statistics (admin only)
 	adminGroup.GET("/clusters/statistics", clusterHandler.GetStatistics)
+	adminGroup.GET("/clusters/long-running", clusterHandler.GetLongRunningClusters)
 	clustersGroup := v1.Group("/clusters", auth.RequireAuthDual(s.auth, s.iamAuth))
 
 	// Stricter rate limit for cluster creation (resource intensive)

@@ -66,11 +66,44 @@ export interface InfrastructureInfo {
   timestamp: string;
 }
 
+export interface LongRunningCluster {
+  id: string;
+  name: string;
+  platform: string;
+  profile: string;
+  region: string;
+  owner: string;
+  owner_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  running_duration_hours: number;
+  last_hibernated_at?: string;
+  work_hours_enabled: boolean | null;
+  hourly_cost: number;
+  daily_cost: number;
+  monthly_cost: number;
+}
+
+export interface LongRunningClustersResponse {
+  clusters: LongRunningCluster[];
+  total_count: number;
+  min_hours: number;
+  total_hourly_cost: number;
+  total_daily_cost: number;
+  total_monthly_cost: number;
+}
+
 export const adminApi = {
   getClusterStatistics: async (): Promise<ClusterStatistics> => {
     return apiClient.get<ClusterStatistics>("/admin/clusters/statistics");
   },
   getInfrastructure: async (): Promise<InfrastructureInfo> => {
     return apiClient.get<InfrastructureInfo>("/admin/system/infrastructure");
+  },
+  getLongRunningClusters: async (minHours: number = 24): Promise<LongRunningClustersResponse> => {
+    return apiClient.get<LongRunningClustersResponse>(
+      `/admin/clusters/long-running?min_hours=${minHours}`
+    );
   },
 };
