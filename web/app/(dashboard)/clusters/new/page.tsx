@@ -698,7 +698,7 @@ export default function NewClusterPage() {
                       <Label htmlFor="custom_pull_secret">Additional Registry Credentials (Optional)</Label>
                       <Textarea
                         id="custom_pull_secret"
-                        placeholder='Paste your Docker config JSON here'
+                        placeholder='Paste your Docker config JSON here: i.e. {"auths": {"registry.example.com": {"auth": "base64-encoded-credentials"}}}'
                         value={watchedValues.custom_pull_secret || ""}
                         onChange={(e) => setValue("custom_pull_secret", e.target.value || undefined)}
                         className="font-mono text-xs min-h-[120px]"
