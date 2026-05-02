@@ -158,7 +158,7 @@ func (h *StorageHandler) LinkToCluster(c echo.Context) error {
 		UpdatedAt: time.Now(),
 	}
 
-	if err := h.store.Jobs.Create(c.Request().Context(), job); err != nil {
+	if err := h.store.Jobs.Create(c.Request().Context(), nil, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create provision job: %w", err))
 	}
 
@@ -273,7 +273,7 @@ func (h *StorageHandler) UnlinkStorage(c echo.Context) error {
 		UpdatedAt: time.Now(),
 	}
 
-	if err := h.store.Jobs.Create(c.Request().Context(), job); err != nil {
+	if err := h.store.Jobs.Create(c.Request().Context(), nil, job); err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create unlink job: %w", err))
 	}
 

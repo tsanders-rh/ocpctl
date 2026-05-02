@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/policy"

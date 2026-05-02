@@ -454,7 +454,7 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 		attribute.Int("job.max_attempts", job.MaxAttempts),
 		attribute.String("cluster.id", cluster.ID),
 		attribute.String("cluster.name", cluster.Name),
-		attribute.String("cluster.platform", cluster.Platform),
+		attribute.String("cluster.platform", string(cluster.Platform)),
 		attribute.String("cluster.profile", cluster.Profile),
 		attribute.String("cluster.region", cluster.Region),
 	)
@@ -611,7 +611,7 @@ func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job, cluster *
 	if w.metrics != nil {
 		dimensions := map[string]string{
 			"JobType":  string(job.JobType),
-			"Platform": cluster.Platform,
+			"Platform": string(cluster.Platform),
 			"Profile":  cluster.Profile,
 		}
 
@@ -723,7 +723,7 @@ func (w *Worker) publishJobFailureMetrics(ctx context.Context, job *types.Job, c
 
 	dimensions := map[string]string{
 		"JobType":       string(job.JobType),
-		"Platform":      cluster.Platform,
+		"Platform":      string(cluster.Platform),
 		"Profile":       cluster.Profile,
 		"FailureReason": failureReason,
 	}

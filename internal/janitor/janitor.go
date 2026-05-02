@@ -383,7 +383,7 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 			}
 
 			if clusterErr == nil {
-				dimensions["Platform"] = cluster.Platform
+				dimensions["Platform"] = string(cluster.Platform)
 				dimensions["Profile"] = cluster.Profile
 			}
 
@@ -392,13 +392,13 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 			}
 
 			// Publish stuck lock count (this can trigger CloudWatch alarms)
-			if err := j.metricsPublisher.PublishCount(ctx, "StuckLockDetected", 1, dimensions); err != nil {
+			if err := j.metricsPublisher.PublishCount(ctx, "StuckLockDetected", 1.0, dimensions); err != nil {
 				log.Printf("Warning: Failed to publish StuckLockDetected metric: %v", err)
 			}
 
-			// Publish lock age in seconds (for monitoring trends)
-			if err := j.metricsPublisher.PublishValue(ctx, "LockAgeSeconds", lockAge.Seconds(), dimensions); err != nil {
-				log.Printf("Warning: Failed to publish LockAgeSeconds metric: %v", err)
+			// Publish lock age as duration (for monitoring trends)
+			if err := j.metricsPublisher.PublishDuration(ctx, "LockAge", lockAge, dimensions); err != nil {
+				log.Printf("Warning: Failed to publish LockAge metric: %v", err)
 			}
 		}
 
@@ -412,7 +412,7 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 
 	// Publish aggregate metric for total stuck locks
 	if j.metricsPublisher != nil {
-		if err := j.metricsPublisher.PublishCount(ctx, "TotalStuckLocks", int64(len(locks)), nil); err != nil {
+		if err := j.metricsPublisher.PublishCount(ctx, "TotalStuckLocks", float64(len(locks)), nil); err != nil {
 			log.Printf("Warning: Failed to publish TotalStuckLocks metric: %v", err)
 		}
 	}
@@ -432,7 +432,7 @@ func (j *Janitor) cleanupExpiredLocks(ctx context.Context) error {
 
 		// Publish metric for expired locks cleaned up
 		if j.metricsPublisher != nil {
-			if err := j.metricsPublisher.PublishCount(ctx, "ExpiredLocksCleanedUp", count, nil); err != nil {
+			if err := j.metricsPublisher.PublishCount(ctx, "ExpiredLocksCleanedUp", float64(count), nil); err != nil {
 				log.Printf("Warning: Failed to publish ExpiredLocksCleanedUp metric: %v", err)
 			}
 		}
