@@ -1029,13 +1029,13 @@ func (s *ClusterStore) GetLongRunningClusters(ctx context.Context, minHours int)
 			) as last_hibernated_at
 		FROM clusters c
 		WHERE c.status = 'READY'
-		  AND c.updated_at <= NOW() - ($1::text || ' hours')::interval
+		  AND c.updated_at <= NOW() - ($1 * INTERVAL '1 hour')
 		  AND c.id NOT IN (
 			  SELECT DISTINCT cluster_id
 			  FROM jobs
 			  WHERE job_type = 'HIBERNATE'
 				AND status = 'SUCCEEDED'
-				AND ended_at >= NOW() - ($1::text || ' hours')::interval
+				AND ended_at >= NOW() - ($1 * INTERVAL '1 hour')
 		  )
 		ORDER BY running_duration_hours DESC
 	`
