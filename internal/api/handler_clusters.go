@@ -1744,25 +1744,44 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 			MachineType string            `json:"machineType"`
 			Labels      map[string]string `json:"labels"`
 		} `json:"config"`
-		Locations []string `json:"locations"`
+		Locations         []string `json:"locations"`
+		InstanceGroupUrls []string `json:"instanceGroupUrls"`
 	}
 
 	if err := json.Unmarshal(output, &nodePools); err != nil {
 		return nil, fmt.Errorf("failed to parse node pool information: %w", err)
 	}
 
-	// Get actual VM instances for each node pool
+	// For GKE, show node pools as "instances" rather than individual VMs
+	// GKE manages VMs automatically, so node pool info is more useful
 	var instances []ClusterInstance
 	for _, pool := range nodePools {
-		// Get instances in this node pool using instance group managers
-		poolInstances, err := h.getGKENodePoolInstances(ctx, cluster.Name, pool.Name, project, cluster.Region)
-		if err != nil {
-			log.Printf("Warning: failed to get instances for node pool %s: %v", pool.Name, err)
-			continue
+		// Use the first instance group URL to extract zone information
+		var zone string
+		if len(pool.InstanceGroupUrls) > 0 {
+			// Extract zone from URL like: https://www.googleapis.com/compute/v1/projects/.../zones/us-central1-a/instanceGroupManagers/...
+			parts := strings.Split(pool.InstanceGroupUrls[0], "/zones/")
+			if len(parts) > 1 {
+				zoneParts := strings.Split(parts[1], "/")
+				if len(zoneParts) > 0 {
+					zone = zoneParts[0]
+				}
+			}
 		}
-		instances = append(instances, poolInstances...)
+
+		instances = append(instances, ClusterInstance{
+			InstanceID:   fmt.Sprintf("%s-%s", cluster.Name, pool.Name),
+			Name:         pool.Name,
+			InstanceType: pool.Config.MachineType,
+			State:        strings.ToLower(pool.Status), // RUNNING → running
+			Platform:     "gcp",
+			// Store node count and zone info in the instance
+			PrivateIPAddress: fmt.Sprintf("%d nodes", pool.InitialNodeCount),
+			PublicIPAddress:  zone,
+		})
 	}
 
+	log.Printf("[DEBUG] Returning %d node pools as instances", len(instances))
 	return instances, nil
 }
 
