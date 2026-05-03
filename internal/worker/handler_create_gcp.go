@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
@@ -30,12 +31,38 @@ func (h *CreateHandler) HandleGKECreate(ctx context.Context, job *types.Job, clu
 	// Build GKE cluster configuration
 	config := h.buildGKEClusterConfig(cluster, prof)
 
-	// Create log file path
+	// Create log file path and ensure it exists before starting log streamer
 	logPath := filepath.Join(workDir, "gke-create.log")
+
+	// Create empty log file to ensure it exists before log streamer starts
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("create log file: %w", err)
+	}
+	logFile.Close()
+
+	// Start log streaming before running gcloud CLI
+	// This will tail gke-create.log and stream to database in real-time
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
 
 	// Create GKE cluster
 	log.Printf("Creating GKE cluster %s...", cluster.Name)
 	output, err := gkeInstaller.CreateCluster(ctx, config, logPath)
+
+	// Stop log streaming after gcloud completes
+	streamCancel()
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
 	if err != nil {
 		return fmt.Errorf("GKE cluster creation failed: %w\nOutput: %s", err, output)
 	}
