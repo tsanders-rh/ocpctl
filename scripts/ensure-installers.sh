@@ -255,6 +255,19 @@ ensure_gcloud() {
     # Check if gcloud CLI is installed
     if command -v gcloud &> /dev/null; then
         log "✓ gcloud CLI already installed"
+
+        # Ensure gke-gcloud-auth-plugin is installed
+        if command -v gke-gcloud-auth-plugin &> /dev/null; then
+            log "✓ gke-gcloud-auth-plugin already installed"
+        else
+            log "Installing gke-gcloud-auth-plugin..."
+            if gcloud components install gke-gcloud-auth-plugin --quiet 2>/dev/null; then
+                log "✓ Installed gke-gcloud-auth-plugin"
+            else
+                log "WARNING: Failed to install gke-gcloud-auth-plugin (non-fatal)"
+            fi
+        fi
+
         return 0
     fi
 
@@ -294,13 +307,22 @@ ensure_gcloud() {
         rm -rf "${tmp_dir}"
 
         log "✓ Installed gcloud CLI"
-        return 0
     else
         cd - > /dev/null
         rm -rf "${tmp_dir}"
         log "✗ Failed to download gcloud CLI"
         return 1
     fi
+
+    # Install gke-gcloud-auth-plugin (required for GKE kubectl authentication)
+    log "Installing gke-gcloud-auth-plugin..."
+    if gcloud components install gke-gcloud-auth-plugin --quiet 2>/dev/null; then
+        log "✓ Installed gke-gcloud-auth-plugin"
+    else
+        log "WARNING: Failed to install gke-gcloud-auth-plugin (non-fatal)"
+    fi
+
+    return 0
 }
 
 ensure_4_22_standard_binaries() {

@@ -67,6 +67,8 @@ func (h *PostConfigureHandler) Handle(ctx context.Context, job *types.Job) error
 		return h.handleEKSPostConfigure(ctx, job, cluster)
 	case types.ClusterTypeIKS:
 		return h.handleIKSPostConfigure(ctx, job, cluster)
+	case types.ClusterTypeGKE:
+		return h.handleGKEPostConfigure(ctx, job, cluster)
 	case types.ClusterTypeOpenShift:
 		return h.handleOpenShiftPostConfigure(ctx, job, cluster)
 	default:
@@ -912,6 +914,112 @@ func (h *PostConfigureHandler) waitForIKSIngressReady(ctx context.Context, clust
 	}
 
 	return fmt.Errorf("Ingress did not become ready after %d attempts (%v)", maxAttempts, time.Duration(maxAttempts)*retryDelay)
+}
+
+// handleGKEPostConfigure applies post-deployment manifests for GKE clusters
+func (h *PostConfigureHandler) handleGKEPostConfigure(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Running post-deployment for GKE cluster %s", cluster.Name)
+
+	// Get profile to read post-deployment configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Check if post-deployment is enabled
+	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
+		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+		return nil
+	}
+
+	// Create work directory with restrictive permissions (0700)
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
+	}
+
+	// Get GCP project from profile
+	gcpProject := ""
+	if prof.PlatformConfig.GCP != nil && prof.PlatformConfig.GCP.Project != "" {
+		gcpProject = prof.PlatformConfig.GCP.Project
+	} else {
+		return fmt.Errorf("GCP project not configured in profile")
+	}
+
+	// Authenticate gcloud CLI with service account for kubectl access
+	// The gke-gcloud-auth-plugin requires gcloud to be authenticated
+	serviceAccountKey := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	if serviceAccountKey != "" {
+		log.Printf("Authenticating gcloud CLI with service account...")
+		authCmd := exec.CommandContext(ctx, "gcloud", "auth", "activate-service-account",
+			"--key-file", serviceAccountKey,
+			"--project", gcpProject)
+		if output, err := authCmd.CombinedOutput(); err != nil {
+			log.Printf("Warning: gcloud auth failed (non-fatal): %v\nOutput: %s", err, output)
+			// Don't fail here - the GOOGLE_APPLICATION_CREDENTIALS might be enough for kubectl
+		} else {
+			log.Printf("gcloud authenticated successfully")
+		}
+	}
+
+	// Get kubeconfig using GKE installer
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
+		return fmt.Errorf("create auth directory: %w", err)
+	}
+
+	gkeInstaller := installer.NewGKEInstaller()
+	if err := gkeInstaller.GetKubeconfig(ctx, cluster.Name, gcpProject, cluster.Region, "", kubeconfigPath); err != nil {
+		return fmt.Errorf("get kubeconfig: %w", err)
+	}
+
+	// Apply all manifests from profile
+	hasDashboard := false
+	if len(prof.PostDeployment.Manifests) > 0 {
+		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
+		for _, manifest := range prof.PostDeployment.Manifests {
+			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
+			}
+			// Check if this is the kubernetes-dashboard
+			if manifest.Name == "kubernetes-dashboard" {
+				hasDashboard = true
+			}
+		}
+	}
+
+	// If Kubernetes Dashboard was installed, perform dashboard-specific setup
+	if hasDashboard {
+		log.Printf("Kubernetes Dashboard detected, configuring access...")
+
+		// Create admin service account
+		if err := h.createDashboardServiceAccount(ctx, kubeconfigPath); err != nil {
+			return fmt.Errorf("create dashboard service account: %w", err)
+		}
+
+		// Get service account token
+		token, err := h.getDashboardToken(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("get dashboard token: %w", err)
+		}
+
+		// Expose dashboard via LoadBalancer
+		dashboardURL, err := h.exposeDashboardLoadBalancer(ctx, kubeconfigPath)
+		if err != nil {
+			return fmt.Errorf("expose dashboard: %w", err)
+		}
+
+		log.Printf("Kubernetes Dashboard configured successfully at: %s", dashboardURL)
+		log.Printf("Dashboard token stored securely in cluster outputs")
+
+		// Update cluster outputs with dashboard URL and token
+		if err := h.updateClusterConsoleURL(ctx, cluster.ID, dashboardURL, token); err != nil {
+			return fmt.Errorf("update cluster console URL: %w", err)
+		}
+	}
+
+	log.Printf("Post-deployment completed for cluster %s", cluster.Name)
+	return nil
 }
 
 // handleOpenShiftPostConfigure handles profile-driven post-deployment for OpenShift clusters

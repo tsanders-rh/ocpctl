@@ -1180,6 +1180,9 @@ func (h *CreateHandler) handleGKECreate(ctx context.Context, job *types.Job, clu
 		// Don't fail cluster creation if output storage fails
 	}
 
+	// Handle post-deployment configuration if enabled
+	h.handlePostDeployment(ctx, cluster)
+
 	return nil
 }
 
