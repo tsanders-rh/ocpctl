@@ -135,6 +135,7 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 	args := []string{
 		"container", "clusters", "create", config.Name,
 		"--project", config.Project,
+		"--no-user-output-enabled", // Disable interactive progress that overwrites lines
 	}
 
 	// Add region or zone
