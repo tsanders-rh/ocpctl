@@ -59,22 +59,33 @@ func (h *CreateHandler) HandleGKECreate(ctx context.Context, job *types.Job, clu
 		log.Printf("Warning: failed to write initial message to log file: %v", err)
 	}
 
-	// Create GKE cluster
-	log.Printf("Creating GKE cluster %s...", cluster.Name)
-	output, err := gkeInstaller.CreateCluster(ctx, config, logPath)
+	// Check if cluster already exists (for idempotent retries)
+	existingCluster, err := gkeInstaller.GetClusterInfo(ctx, cluster.Name, getGCPProject(prof), cluster.Region, "")
+	if err == nil && existingCluster != nil {
+		log.Printf("GKE cluster %s already exists (likely from previous attempt), skipping creation", cluster.Name)
+		appendToLogFile(logPath, fmt.Sprintf("Cluster already exists in GCP, reusing existing cluster...\n"))
+	} else {
+		// Create GKE cluster
+		log.Printf("Creating GKE cluster %s...", cluster.Name)
+		output, err := gkeInstaller.CreateCluster(ctx, config, logPath)
 
-	// Stop log streaming after gcloud completes
+		if err != nil {
+			// Stop log streaming before returning error
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			streamer.Stop()
+			return fmt.Errorf("GKE cluster creation failed: %w\nOutput: %s", err, output)
+		}
+
+		log.Printf("GKE cluster %s created successfully", cluster.Name)
+	}
+
+	// Stop log streaming after cluster creation or verification
 	streamCancel()
 	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
-
-	if err != nil {
-		return fmt.Errorf("GKE cluster creation failed: %w\nOutput: %s", err, output)
-	}
-
-	log.Printf("GKE cluster %s created successfully", cluster.Name)
 
 	// Get cluster info to extract endpoint and other details
 	info, err := gkeInstaller.GetClusterInfo(ctx, cluster.Name, getGCPProject(prof), cluster.Region, "")
