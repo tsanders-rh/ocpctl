@@ -2291,6 +2291,34 @@ func (h *ClusterHandler) GetStorageClasses(c echo.Context) error {
 
 // getClusterStorageClasses fetches storage classes from a Kubernetes cluster
 func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *types.Cluster) ([]StorageClass, error) {
+	// GKE clusters use gcloud as auth provider in kubeconfig, which doesn't work from API server
+	// Return well-known GKE storage classes instead of calling kubectl
+	if cluster.ClusterType == types.ClusterTypeGKE {
+		return []StorageClass{
+			{
+				Name:              "standard",
+				Provisioner:       "kubernetes.io/gce-pd",
+				ReclaimPolicy:     "Delete",
+				VolumeBindingMode: "Immediate",
+				IsDefault:         false,
+			},
+			{
+				Name:              "standard-rwo",
+				Provisioner:       "pd.csi.storage.gke.io",
+				ReclaimPolicy:     "Delete",
+				VolumeBindingMode: "WaitForFirstConsumer",
+				IsDefault:         true,
+			},
+			{
+				Name:              "premium-rwo",
+				Provisioner:       "pd.csi.storage.gke.io",
+				ReclaimPolicy:     "Delete",
+				VolumeBindingMode: "WaitForFirstConsumer",
+				IsDefault:         false,
+			},
+		}, nil
+	}
+
 	// Construct kubeconfig path
 	workDir := os.Getenv("WORK_DIR")
 	if workDir == "" {
