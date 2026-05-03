@@ -78,7 +78,7 @@ platformConfig:
     enableWorkloadIdentity: true
     releaseChannel: regular  # stable, regular, or rapid
     nodePools:
-      - name: default-pool
+      - name: worker-pool
         machineType: e2-medium
         diskType: pd-standard
         diskSizeGB: 100
