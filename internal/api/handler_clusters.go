@@ -1710,7 +1710,8 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 	log.Printf("[DEBUG] Using GCP project: %s, region: %s", project, cluster.Region)
 
 	// Create a new context with longer timeout for gcloud command (independent of HTTP request timeout)
-	cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Increased to 60s to account for potential gcloud credential refresh or network latency
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Execute gcloud command to get node pool information
@@ -1726,10 +1727,13 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 		fmt.Sprintf("GCP_PROJECT=%s", project),
 	)
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list GKE node pools: %w", err)
+		log.Printf("[ERROR] gcloud node-pools list failed: %v, output: %s", err, string(output))
+		return nil, fmt.Errorf("failed to list GKE node pools: %w (output: %s)", err, string(output))
 	}
+
+	log.Printf("[DEBUG] gcloud node-pools list successful, output size: %d bytes", len(output))
 
 	// Parse node pool information
 	var nodePools []struct {
