@@ -1769,15 +1769,16 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 			}
 		}
 
+		nodeCount := fmt.Sprintf("%d nodes", pool.InitialNodeCount)
+		zoneInfo := zone
 		instances = append(instances, ClusterInstance{
-			InstanceID:   fmt.Sprintf("%s-%s", cluster.Name, pool.Name),
-			Name:         pool.Name,
-			InstanceType: pool.Config.MachineType,
-			State:        strings.ToLower(pool.Status), // RUNNING → running
-			Platform:     "gcp",
-			// Store node count and zone info in the instance
-			PrivateIPAddress: fmt.Sprintf("%d nodes", pool.InitialNodeCount),
-			PublicIPAddress:  zone,
+			InstanceID:       fmt.Sprintf("%s-%s", cluster.Name, pool.Name),
+			Name:             pool.Name,
+			InstanceType:     pool.Config.MachineType,
+			State:            strings.ToLower(pool.Status), // RUNNING → running
+			Platform:         "gcp",
+			PrivateIPAddress: &nodeCount, // Show node count in place of private IP
+			PublicIPAddress:  &zoneInfo,  // Show zone in place of public IP
 		})
 	}
 
