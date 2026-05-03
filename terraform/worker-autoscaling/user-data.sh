@@ -29,12 +29,33 @@ DNSEOF
 systemctl restart systemd-resolved
 echo "DNS configuration applied - using Google/Cloudflare DNS for faster Route53 propagation"
 
-# Install kubectl (required for IKS post-config)
+# Install kubectl (required for IKS/GKE post-config)
 echo "Installing kubectl..."
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 rm kubectl
 echo "kubectl version: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+
+# Install gcloud CLI and gke-gcloud-auth-plugin (required for GKE)
+echo "Installing gcloud CLI..."
+# Import Google Cloud public key
+rpm --import https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+
+# Add Google Cloud SDK repository
+cat > /etc/yum.repos.d/google-cloud-sdk.repo <<'GCLOUDEOF'
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+GCLOUDEOF
+
+# Install gcloud and auth plugin
+yum install -y google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin
+echo "gcloud version: $(gcloud version --format='value(version)' 2>/dev/null || echo 'error')"
+echo "gke-gcloud-auth-plugin version: $(gke-gcloud-auth-plugin --version 2>/dev/null || echo 'error')"
 
 # Create ocpctl user
 useradd -r -s /bin/false ocpctl || true
