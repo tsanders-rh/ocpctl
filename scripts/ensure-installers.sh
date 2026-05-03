@@ -251,6 +251,58 @@ ensure_ibmcloud() {
     return 0
 }
 
+ensure_gcloud() {
+    # Check if gcloud CLI is installed
+    if command -v gcloud &> /dev/null; then
+        log "✓ gcloud CLI already installed"
+        return 0
+    fi
+
+    log "Installing gcloud CLI..."
+
+    # Download and install gcloud SDK
+    local tmp_dir=$(mktemp -d)
+    cd "${tmp_dir}"
+
+    # Download the latest gcloud SDK
+    if curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz; then
+        tar -xf google-cloud-cli-linux-x86_64.tar.gz
+
+        # Install to /usr/local/google-cloud-sdk
+        if [ -d "/usr/local/google-cloud-sdk" ]; then
+            log "Removing existing gcloud installation..."
+            rm -rf /usr/local/google-cloud-sdk
+        fi
+
+        mv google-cloud-sdk /usr/local/
+
+        # Run the install script (non-interactive)
+        /usr/local/google-cloud-sdk/install.sh \
+            --quiet \
+            --usage-reporting false \
+            --path-update true \
+            --command-completion true
+
+        # Create symlink in /usr/local/bin
+        ln -sf /usr/local/google-cloud-sdk/bin/gcloud "${INSTALL_DIR}/gcloud"
+
+        # Also symlink other useful tools
+        ln -sf /usr/local/google-cloud-sdk/bin/gsutil "${INSTALL_DIR}/gsutil" 2>/dev/null || true
+        ln -sf /usr/local/google-cloud-sdk/bin/bq "${INSTALL_DIR}/bq" 2>/dev/null || true
+
+        cd - > /dev/null
+        rm -rf "${tmp_dir}"
+
+        log "✓ Installed gcloud CLI"
+        return 0
+    else
+        cd - > /dev/null
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to download gcloud CLI"
+        return 1
+    fi
+}
+
 ensure_4_22_standard_binaries() {
     # Download standard (non-RHEL9) binaries for 4.22.0-ec.5 testing
     # These are used when CCOCTL_BINARY_4_22 and OPENSHIFT_INSTALL_BINARY_4_22 env vars are set
@@ -353,6 +405,12 @@ main() {
     if ! ensure_ibmcloud; then
         log "WARNING: Failed to ensure ibmcloud CLI (non-fatal)"
         # Don't fail - only needed for IKS clusters
+    fi
+
+    # GKE installer (gcloud CLI)
+    if ! ensure_gcloud; then
+        log "WARNING: Failed to ensure gcloud CLI (non-fatal)"
+        # Don't fail - only needed for GKE clusters
     fi
 
     if [ $failed -eq 1 ]; then

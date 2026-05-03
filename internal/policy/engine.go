@@ -142,8 +142,8 @@ func (e *Engine) validateRegion(req *CreateClusterRequest, prof *profile.Profile
 // validateBaseDomain checks base domain is in profile allowlist
 func (e *Engine) validateBaseDomain(req *CreateClusterRequest, prof *profile.Profile, result *ValidationResult) {
 	// Base domain is only required for OpenShift clusters
-	// EKS and IKS clusters don't use base domain
-	if req.ClusterType == "eks" || req.ClusterType == "iks" {
+	// EKS, IKS, and GKE clusters don't use base domain
+	if req.ClusterType == "eks" || req.ClusterType == "iks" || req.ClusterType == "gke" {
 		return
 	}
 

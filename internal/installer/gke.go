@@ -76,7 +76,7 @@ type GKEClusterInfo struct {
 func NewGKEInstaller() *GKEInstaller {
 	binaryPath := os.Getenv("GCLOUD_BINARY")
 	if binaryPath == "" {
-		binaryPath = "/usr/local/bin/gcloud"
+		binaryPath = "gcloud" // Use PATH to find gcloud binary
 	}
 
 	return &GKEInstaller{
@@ -85,10 +85,51 @@ func NewGKEInstaller() *GKEInstaller {
 	}
 }
 
+// CreateNetwork creates a VPC network if it doesn't exist
+func (g *GKEInstaller) CreateNetwork(ctx context.Context, networkName, project string) error {
+	// Check if network already exists
+	checkCmd := exec.CommandContext(ctx, g.binaryPath,
+		"compute", "networks", "describe", networkName,
+		"--project", project,
+		"--format", "json",
+	)
+
+	if err := checkCmd.Run(); err == nil {
+		// Network already exists
+		return nil
+	}
+
+	// Create auto-mode VPC network
+	createCmd := exec.CommandContext(ctx, g.binaryPath,
+		"compute", "networks", "create", networkName,
+		"--project", project,
+		"--subnet-mode", "auto",
+		"--bgp-routing-mode", "regional",
+	)
+
+	var stderr bytes.Buffer
+	createCmd.Stderr = &stderr
+
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("create network failed: %w\nStderr: %s", err, stderr.String())
+	}
+
+	return nil
+}
+
 // CreateCluster creates a GKE cluster using gcloud
 func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConfig, logFile string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
+
+	// Create VPC network if not specified
+	if config.Network == "" {
+		networkName := config.Name + "-vpc"
+		if err := g.CreateNetwork(ctx, networkName, config.Project); err != nil {
+			return "", fmt.Errorf("create VPC network: %w", err)
+		}
+		config.Network = networkName
+	}
 
 	// Build gcloud command arguments
 	args := []string{
@@ -116,10 +157,13 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 	}
 
 	// Add network configuration
-	if config.Network != "" {
-		args = append(args, "--network", config.Network)
-	}
-	if config.Subnetwork != "" {
+	args = append(args, "--enable-ip-alias")
+	args = append(args, "--network", config.Network)
+
+	// Auto-create subnetwork within the VPC
+	if config.Subnetwork == "" {
+		args = append(args, "--create-subnetwork", "name="+config.Name+"-subnet")
+	} else {
 		args = append(args, "--subnetwork", config.Subnetwork)
 	}
 
@@ -166,16 +210,42 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 		args = append(args, "--tags", strings.Join(config.Tags, ","))
 	}
 
-	// Add logging
+	// Add logging (use modern --logging flag, default SYSTEM is enabled automatically)
+	// Skip deprecated --enable-cloud-logging flag
 	if len(config.EnableClusterLogging) > 0 {
-		args = append(args, "--enable-cloud-logging")
-		args = append(args, "--logging", strings.Join(config.EnableClusterLogging, ","))
+		// Map old values to new: SYSTEM_COMPONENTS -> SYSTEM, WORKLOADS -> WORKLOAD
+		modernValues := []string{}
+		for _, v := range config.EnableClusterLogging {
+			if v == "SYSTEM_COMPONENTS" {
+				modernValues = append(modernValues, "SYSTEM")
+			} else if v == "WORKLOADS" {
+				modernValues = append(modernValues, "WORKLOAD")
+			} else {
+				modernValues = append(modernValues, v)
+			}
+		}
+		if len(modernValues) > 0 {
+			args = append(args, "--logging="+strings.Join(modernValues, ","))
+		}
 	}
 
-	// Add monitoring
+	// Add monitoring (use modern --monitoring flag, default SYSTEM is enabled automatically)
+	// Skip deprecated --enable-cloud-monitoring flag
 	if len(config.EnableClusterMonitoring) > 0 {
-		args = append(args, "--enable-cloud-monitoring")
-		args = append(args, "--monitoring", strings.Join(config.EnableClusterMonitoring, ","))
+		// Map old values to new: SYSTEM_COMPONENTS -> SYSTEM, WORKLOADS -> WORKLOAD
+		modernValues := []string{}
+		for _, v := range config.EnableClusterMonitoring {
+			if v == "SYSTEM_COMPONENTS" {
+				modernValues = append(modernValues, "SYSTEM")
+			} else if v == "WORKLOADS" {
+				modernValues = append(modernValues, "WORKLOAD")
+			} else {
+				modernValues = append(modernValues, v)
+			}
+		}
+		if len(modernValues) > 0 {
+			args = append(args, "--monitoring="+strings.Join(modernValues, ","))
+		}
 	}
 
 	// Add access configuration
@@ -187,8 +257,9 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 
 	cmd := exec.CommandContext(ctx, g.binaryPath, args...)
 
-	// Open log file for writing
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	// Open log file for appending (not truncating)
+	// Using O_APPEND instead of O_TRUNC to preserve logs from log streamer
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return "", fmt.Errorf("open log file: %w", err)
 	}
