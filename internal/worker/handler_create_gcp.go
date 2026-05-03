@@ -182,10 +182,12 @@ func (h *CreateHandler) buildGKEClusterConfig(cluster *types.Cluster, prof *prof
 					Labels:            make(map[string]string),
 				}
 
-				// Add cluster tags to node pool labels
+				// Add cluster tags to node pool labels (sanitized for GCP)
 				if cluster.EffectiveTags != nil {
 					for k, v := range cluster.EffectiveTags {
-						config.NodePools[i].Labels[k] = v
+						labelKey := sanitizeGCPLabel(k)
+						labelValue := sanitizeGCPLabel(v)
+						config.NodePools[i].Labels[labelKey] = labelValue
 					}
 				}
 			}
