@@ -59,7 +59,11 @@ export function ClusterTopology({ cluster, outputs }: ClusterTopologyProps) {
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground">Platform:</span>
             <span className="text-sm text-muted-foreground">
-              {layout.platform === Platform.AWS ? "Amazon Web Services (AWS)" : "IBM Cloud"}
+              {layout.platform === Platform.AWS
+                ? "Amazon Web Services (AWS)"
+                : layout.platform === Platform.GCP
+                ? "Google Cloud Platform (GCP)"
+                : "IBM Cloud"}
             </span>
           </div>
           <div className="h-4 w-px bg-border" />
