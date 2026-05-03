@@ -105,7 +105,7 @@ export function DeploymentLogs({
   );
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -173,8 +173,8 @@ export function DeploymentLogs({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="bg-black text-green-400 p-4 rounded-md h-[500px] overflow-y-auto overflow-x-hidden font-mono text-sm">
+      <CardContent className="overflow-hidden">
+        <div className="bg-black text-green-400 p-4 rounded-md h-[500px] overflow-y-auto overflow-x-hidden font-mono text-sm max-w-full" style={{wordBreak: 'break-all'}}>
           {isLoading && (
             <div className="text-gray-500">Loading deployment logs...</div>
           )}
@@ -190,7 +190,7 @@ export function DeploymentLogs({
             </div>
           )}
           {filteredLogs.map((log) => (
-            <div key={log.sequence} className="mb-1 break-all overflow-hidden">
+            <div key={log.sequence} className="mb-1 max-w-full" style={{wordBreak: 'break-all', overflowWrap: 'anywhere'}}>
               <span className="text-gray-500">
                 [{new Date(log.timestamp).toLocaleTimeString()}]
               </span>{" "}
@@ -207,7 +207,7 @@ export function DeploymentLogs({
                   [{log.log_level}]
                 </span>
               )}{" "}
-              {log.message}
+              <span>{log.message}</span>
             </div>
           ))}
           <div ref={logsEndRef} />
