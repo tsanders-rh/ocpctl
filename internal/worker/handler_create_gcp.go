@@ -52,6 +52,13 @@ func (h *CreateHandler) HandleGKECreate(ctx context.Context, job *types.Job, clu
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
+	// Write initial progress message to log file for user feedback
+	// gcloud is very quiet during cluster creation, so we add manual progress updates
+	initialMsg := fmt.Sprintf("Starting GKE cluster creation for %s in region %s (this typically takes 5-10 minutes)...\n", cluster.Name, cluster.Region)
+	if err := appendToLogFile(logPath, initialMsg); err != nil {
+		log.Printf("Warning: failed to write initial message to log file: %v", err)
+	}
+
 	// Create GKE cluster
 	log.Printf("Creating GKE cluster %s...", cluster.Name)
 	output, err := gkeInstaller.CreateCluster(ctx, config, logPath)
@@ -294,4 +301,17 @@ func (h *CreateHandler) saveGKEMetadata(workDir string, info *installer.GKEClust
 
 	log.Printf("GKE metadata saved to %s", metadataPath)
 	return nil
+}
+
+// appendToLogFile writes a message to the log file
+// This is used to add manual progress updates that will be picked up by the LogStreamer
+func appendToLogFile(logPath string, message string) error {
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(message)
+	return err
 }

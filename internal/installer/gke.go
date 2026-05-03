@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,7 +136,8 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 	args := []string{
 		"container", "clusters", "create", config.Name,
 		"--project", config.Project,
-		"--no-user-output-enabled", // Disable interactive progress that overwrites lines
+		// Don't use --no-user-output-enabled as it suppresses ALL output
+		// gcloud is inherently quiet during cluster creation
 	}
 
 	// Add region or zone
@@ -266,9 +268,13 @@ func (g *GKEInstaller) CreateCluster(ctx context.Context, config *GKEClusterConf
 	}
 	defer f.Close()
 
-	// Write both stdout and stderr to log file
-	cmd.Stdout = f
-	cmd.Stderr = f
+	// Wrap file writer with carriage return filter
+	// This converts \r to \n so gcloud's progress updates become separate log lines
+	filteredWriter := &carriageReturnFilterWriter{writer: f}
+
+	// Write both stdout and stderr to filtered log file
+	cmd.Stdout = filteredWriter
+	cmd.Stderr = filteredWriter
 
 	if err := cmd.Run(); err != nil {
 		// Read log file for error context
@@ -604,4 +610,16 @@ func (g *GKEInstaller) VerifyAuthentication(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// carriageReturnFilterWriter wraps an io.Writer and converts carriage returns to newlines
+// This prevents gcloud from overwriting log lines with \r characters
+type carriageReturnFilterWriter struct {
+	writer io.Writer
+}
+
+func (w *carriageReturnFilterWriter) Write(p []byte) (n int, err error) {
+	// Replace all \r with \n so each progress update becomes a new line
+	filtered := bytes.ReplaceAll(p, []byte("\r"), []byte("\n"))
+	return w.writer.Write(filtered)
 }
