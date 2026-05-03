@@ -1621,6 +1621,8 @@ func (h *ClusterHandler) GetInstances(c echo.Context) error {
 	// Get cluster ID
 	id := c.Param("id")
 
+	log.Printf("[DEBUG] GetInstances called for cluster: %s", id)
+
 	// Get cluster
 	cluster, err := h.store.Clusters.GetByID(ctx, id)
 	if err != nil {
@@ -1629,6 +1631,8 @@ func (h *ClusterHandler) GetInstances(c echo.Context) error {
 		}
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
+
+	log.Printf("[DEBUG] Cluster found: name=%s, platform=%s, type=%s", cluster.Name, cluster.Platform, cluster.ClusterType)
 
 	// Check access
 	if err := h.checkClusterAccess(c, cluster); err != nil {
@@ -1639,10 +1643,13 @@ func (h *ClusterHandler) GetInstances(c echo.Context) error {
 	var instances []ClusterInstance
 	switch cluster.Platform {
 	case types.PlatformAWS:
+		log.Printf("[DEBUG] Routing to AWS instance handler")
 		instances, err = h.getAWSInstances(ctx, cluster)
 	case types.PlatformGCP:
+		log.Printf("[DEBUG] Routing to GCP instance handler")
 		instances, err = h.getGCPInstances(ctx, cluster)
 	default:
+		log.Printf("[DEBUG] Platform not supported: %s", cluster.Platform)
 		return ErrorBadRequest(c, fmt.Sprintf("Instance information not available for platform: %s", cluster.Platform))
 	}
 
@@ -1691,11 +1698,16 @@ func (h *ClusterHandler) getGCPInstances(ctx context.Context, cluster *types.Clu
 
 // getGKEInstances fetches GKE node pool instances
 func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Cluster) ([]ClusterInstance, error) {
+	log.Printf("[DEBUG] getGKEInstances: Starting for cluster %s", cluster.Name)
+
 	// Get GCP project from environment or cluster metadata
 	project := os.Getenv("GCP_PROJECT")
 	if project == "" {
+		log.Printf("[ERROR] GCP_PROJECT environment variable not set")
 		return nil, fmt.Errorf("GCP_PROJECT environment variable not set")
 	}
+
+	log.Printf("[DEBUG] Using GCP project: %s, region: %s", project, cluster.Region)
 
 	// Create a new context with longer timeout for gcloud command (independent of HTTP request timeout)
 	cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
