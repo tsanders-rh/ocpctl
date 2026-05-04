@@ -520,7 +520,12 @@ export default function ClusterDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => window.open(outputs.console_url, '_blank')}
+                    onClick={() => {
+                      const url = outputs.console_url?.trim();
+                      if (url) {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>
