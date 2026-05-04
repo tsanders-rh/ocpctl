@@ -1428,12 +1428,18 @@ func (h *PostConfigureHandler) executeScript(ctx context.Context, cluster *types
 	// Prevents path traversal attacks by ensuring paths are within allowed directories
 	var scriptPath string
 	if filepath.IsAbs(script.Path) {
-		// Validate absolute paths are within OcpctlBaseDir
+		// Validate absolute paths are within OcpctlBaseDir OR the cluster's work directory
+		// (Custom addon scripts write inline content to work dir)
+		workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 		validatedPath, err := validateSecurePath(script.Path, OcpctlBaseDir)
 		if err != nil {
-			errMsg := fmt.Sprintf("invalid script path: %v", err)
-			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-			return fmt.Errorf("%s", errMsg)
+			// If not in OcpctlBaseDir, try work directory
+			validatedPath, err = validateSecurePath(script.Path, workDir)
+			if err != nil {
+				errMsg := fmt.Sprintf("invalid script path: %v", err)
+				_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+				return fmt.Errorf("%s", errMsg)
+			}
 		}
 		scriptPath = validatedPath
 	} else {
@@ -1612,12 +1618,18 @@ func (h *PostConfigureHandler) applyOpenShiftManifest(ctx context.Context, clust
 	// Prevents path traversal attacks by validating paths are within allowed directories
 	var manifestPath string
 	if filepath.IsAbs(manifest.Path) {
-		// Validate absolute paths are within OcpctlBaseDir
+		// Validate absolute paths are within OcpctlBaseDir OR the cluster's work directory
+		// (Custom addon manifests write inline content to work dir)
+		workDir := filepath.Join(h.config.WorkDir, cluster.ID)
 		validatedPath, err := validateSecurePath(manifest.Path, OcpctlBaseDir)
 		if err != nil {
-			errMsg := fmt.Sprintf("invalid manifest path: %v", err)
-			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
-			return fmt.Errorf("%s", errMsg)
+			// If not in OcpctlBaseDir, try work directory
+			validatedPath, err = validateSecurePath(manifest.Path, workDir)
+			if err != nil {
+				errMsg := fmt.Sprintf("invalid manifest path: %v", err)
+				_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+				return fmt.Errorf("%s", errMsg)
+			}
 		}
 		manifestPath = validatedPath
 	} else {
