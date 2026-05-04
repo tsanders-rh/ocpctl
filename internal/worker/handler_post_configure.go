@@ -347,18 +347,34 @@ func (h *PostConfigureHandler) exposeDashboardLoadBalancer(ctx context.Context, 
 	log.Println("Waiting for LoadBalancer external IP (this may take a few minutes)...")
 	var externalIP string
 	for i := 0; i < 60; i++ {
+		// Try hostname first (AWS ELB)
 		cmd := exec.CommandContext(ctx, "kubectl", "get", "service", "kubernetes-dashboard",
 			"-n", "kubernetes-dashboard", "-o", "jsonpath={.status.loadBalancer.ingress[0].hostname}",
 			"--kubeconfig", kubeconfigPath)
 		output, err := cmd.CombinedOutput()
+		if err == nil {
+			externalIP = strings.TrimSpace(string(output))
+			if externalIP != "" {
+				log.Printf("Found LoadBalancer hostname: %s", externalIP)
+				break
+			}
+		}
+
+		// Try IP (GCP/GKE)
+		cmd = exec.CommandContext(ctx, "kubectl", "get", "service", "kubernetes-dashboard",
+			"-n", "kubernetes-dashboard", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}",
+			"--kubeconfig", kubeconfigPath)
+		output, err = cmd.CombinedOutput()
 		if err != nil {
 			log.Printf("Attempt %d/60: Error getting LoadBalancer IP: %v", i+1, err)
 		} else {
 			externalIP = strings.TrimSpace(string(output))
 			if externalIP != "" {
+				log.Printf("Found LoadBalancer IP: %s", externalIP)
 				break
 			}
 		}
+
 		time.Sleep(NodeReadyCheckInterval)
 	}
 
