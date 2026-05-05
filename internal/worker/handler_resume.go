@@ -1030,9 +1030,24 @@ func (h *ResumeHandler) resumeROSA(ctx context.Context, cluster *types.Cluster, 
 	}
 
 	// Get the hibernate job to retrieve original pool configurations
-	hibernateJob, err := h.store.Jobs.GetLatestByTypeAndCluster(ctx, cluster.ID, types.JobTypeHibernate)
+	hibernateJobs, err := h.store.Jobs.GetByClusterIDAndType(ctx, cluster.ID, types.JobTypeHibernate)
 	if err != nil {
-		return fmt.Errorf("get hibernate job: %w", err)
+		return fmt.Errorf("get hibernate jobs: %w", err)
+	}
+	if len(hibernateJobs) == 0 {
+		return fmt.Errorf("no hibernate job found for cluster")
+	}
+
+	// Get the most recent successful hibernate job
+	var hibernateJob *types.Job
+	for i := len(hibernateJobs) - 1; i >= 0; i-- {
+		if hibernateJobs[i].Status == types.JobStatusSucceeded {
+			hibernateJob = hibernateJobs[i]
+			break
+		}
+	}
+	if hibernateJob == nil {
+		return fmt.Errorf("no successful hibernate job found")
 	}
 
 	if hibernateJob.Metadata == nil {

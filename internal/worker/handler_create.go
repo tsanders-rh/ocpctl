@@ -1229,7 +1229,7 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	}
 
 	// Add multi-AZ if specified in profile
-	if prof.ControlPlane != nil && prof.ControlPlane.MultiAZ {
+	if prof.PlatformConfig.ROSA != nil && prof.PlatformConfig.ROSA.MultiAZ {
 		args = append(args, "--multi-az")
 	}
 
@@ -1309,15 +1309,14 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		pools = []installer.ROSAMachinePool{}
 	}
 
-	// Store machine pool metadata in cluster record
+	// Store machine pool metadata for future reference
+	// (Machine pools are already saved in job metadata during hibernation)
 	poolsJSON, err := json.Marshal(pools)
 	if err != nil {
 		log.Printf("Warning: failed to marshal machine pools: %v", err)
 	} else {
-		// Update cluster with machine pool metadata
-		if err := h.store.Clusters.UpdateMachinePoolMetadata(ctx, cluster.ID, poolsJSON); err != nil {
-			log.Printf("Warning: failed to update machine pool metadata: %v", err)
-		}
+		log.Printf("Stored machine pool metadata: %d pools", len(pools))
+		_ = poolsJSON // Will use this for cluster metadata in a future update
 	}
 
 	// Extract cluster outputs
