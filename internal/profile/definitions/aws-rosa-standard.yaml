@@ -43,9 +43,11 @@ regions:
 
 compute:
   controlPlane:
-    # ROSA control plane is fully managed by Red Hat
+    # ROSA control plane is fully managed by AWS/Red Hat
     # Multi-AZ for high availability
     replicas: 3
+    instanceType: m5.2xlarge  # AWS-managed (placeholder for validation)
+    schedulable: false
     multiAZ: true
   workers:
     replicas: 3
