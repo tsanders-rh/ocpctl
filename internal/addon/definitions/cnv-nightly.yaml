@@ -1,15 +1,182 @@
 id: cnv-nightly
 name: OpenShift Virtualization (Pre-Release)
-description: OpenShift Virtualization pre-release/nightly builds (4.99) for testing unreleased features. Includes KubeVirt for running VMs on OpenShift. Requires bare metal or nested virtualization support.
+description: OpenShift Virtualization pre-release builds including stable-stage (4.22) and nightly (4.99) for testing unreleased features. Includes KubeVirt for running VMs on OpenShift. Requires bare metal or nested virtualization support.
 category: virtualization
 enabled: true
 supportedPlatforms:
   - openshift
 
 versions:
+  - channel: stable-stage
+    displayName: "CNV Stable-Stage (4.22.0)"
+    isDefault: true
+    config:
+      scripts:
+        - name: verify-quay-credentials
+          description: Verify quay.io credentials are present in pull secret
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Verifying quay.io credentials in pull secret..."
+
+            # Get current pull secret
+            kubectl get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d > /tmp/pull-secret.json
+
+            # Check if quay.io credentials are present
+            if ! jq -e '.auths."quay.io"' /tmp/pull-secret.json > /dev/null 2>&1; then
+              echo "ERROR: General quay.io credentials not found in pull secret"
+              echo "The CNV stable-stage catalog requires general quay.io access."
+              echo ""
+              echo "Please ensure your cluster's pull secret includes credentials for 'quay.io'"
+              echo "This should be configured in your cluster profile or base pull secret."
+              rm -f /tmp/pull-secret.json
+              exit 1
+            fi
+
+            echo "✓ quay.io credentials verified"
+            rm -f /tmp/pull-secret.json
+          timeout: "60s"
+      manifests:
+        - name: cnv-stable-stage-catalogsource
+          description: CatalogSource for CNV stable-stage (4.22) builds
+          content: |
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: CatalogSource
+            metadata:
+              name: cnv-stable-stage
+              namespace: openshift-marketplace
+              labels:
+                cnv-source: stable-stage
+                cnv-version: "4.22.0"
+            spec:
+              sourceType: grpc
+              image: quay.io/openshift-cnv/nightly-catalog:4.22
+              displayName: OpenShift Virtualization Stable-Stage (4.22)
+              publisher: Red Hat
+              updateStrategy:
+                registryPoll:
+                  interval: 30m
+          namespace: openshift-marketplace
+          dependsOn:
+            - verify-quay-credentials
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: cnv-stable-stage
+          channel: nightly-4.22
+          dependsOn:
+            - verify-quay-credentials
+            - cnv-stable-stage-catalogsource
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+  # Windows VM Support for 4.22
+  - channel: stable-stage-windows
+    displayName: "CNV Stable-Stage (4.22.0) + Windows VM Support"
+    isDefault: false
+    config:
+      scripts:
+        - name: verify-quay-credentials
+          description: Verify quay.io credentials are present in pull secret
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Verifying quay.io credentials in pull secret..."
+
+            # Get current pull secret
+            kubectl get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d > /tmp/pull-secret.json
+
+            # Check if quay.io credentials are present
+            if ! jq -e '.auths."quay.io"' /tmp/pull-secret.json > /dev/null 2>&1; then
+              echo "ERROR: General quay.io credentials not found in pull secret"
+              echo "The CNV stable-stage catalog requires general quay.io access."
+              echo ""
+              echo "Please ensure your cluster's pull secret includes credentials for 'quay.io'"
+              echo "This should be configured in your cluster profile or base pull secret."
+              rm -f /tmp/pull-secret.json
+              exit 1
+            fi
+
+            echo "✓ quay.io credentials verified"
+            rm -f /tmp/pull-secret.json
+          timeout: "60s"
+
+        - name: setup-windows-vm-infrastructure
+          description: Setup Windows VM infrastructure with IRSA and S3 image import
+          path: windows-vm/auto-setup-irsa.sh
+          timeout: "5h"
+          dependsOn:
+            - kubevirt-hyperconverged
+
+      manifests:
+        - name: cnv-stable-stage-catalogsource
+          description: CatalogSource for CNV stable-stage (4.22) builds
+          content: |
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: CatalogSource
+            metadata:
+              name: cnv-stable-stage
+              namespace: openshift-marketplace
+              labels:
+                cnv-source: stable-stage
+                cnv-version: "4.22.0"
+            spec:
+              sourceType: grpc
+              image: quay.io/openshift-cnv/nightly-catalog:4.22
+              displayName: OpenShift Virtualization Stable-Stage (4.22)
+              publisher: Red Hat
+              updateStrategy:
+                registryPoll:
+                  interval: 30m
+          namespace: openshift-marketplace
+          dependsOn:
+            - verify-quay-credentials
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: cnv-stable-stage
+          channel: nightly-4.22
+          dependsOn:
+            - verify-quay-credentials
+            - cnv-stable-stage-catalogsource
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
   - channel: nightly
     displayName: "CNV Pre-Release (4.99.0)"
-    isDefault: true
+    isDefault: false
     config:
       scripts:
         - name: verify-quay-credentials
@@ -178,21 +345,25 @@ metadata:
   requiresBareMetal: true
   notes:
     - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
-    - "Pre-release/nightly builds (CNV 4.99) - not recommended for production"
-    - "Uses pre-release catalog from quay.io/openshift-cnv/nightly-catalog:4.99"
-    - "Equivalent to: CNV_VERSION=4.99.0 CNV_SOURCE=pre-release"
+    - "Stable-Stage (CNV 4.22): Pre-production stable builds for testing before GA release"
+    - "Nightly (CNV 4.99): Pre-release/nightly builds - not recommended for production"
+    - "Stable-Stage uses catalog from quay.io/openshift-cnv/nightly-catalog:4.22 with nightly-4.22 channel"
+    - "Nightly uses catalog from quay.io/openshift-cnv/nightly-catalog:4.99 with nightly-4.99 channel"
+    - "Equivalent to: CNV_VERSION=4.22.0 CNV_SOURCE=stable-stage (for 4.22)"
+    - "Equivalent to: CNV_VERSION=4.99.0 CNV_SOURCE=pre-release (for 4.99)"
     - "REQUIRES: General quay.io credentials in cluster pull secret (should be in profile)"
     - "Automatically creates openshift-cnv namespace"
     - "Includes HyperConverged CR with default configuration"
     - "Operator subscription polls for updates every 30 minutes"
-    - "Windows VM Support version: Adds automated Windows 10 VM infrastructure setup (2-4h for image import)"
-    - "Windows version creates IRSA role, imports 70GB Windows 10 image from S3, and provisions test VM"
+    - "Windows VM Support versions available for both 4.22 and 4.99"
+    - "Windows versions add automated Windows 10 VM infrastructure setup (2-4h for image import)"
+    - "Windows versions create IRSA role, import 70GB Windows 10 image from S3, and provision test VM"
     - "Windows VM ready after post-config completes - supports up to 25-30 concurrent Windows VMs on metal workers"
   warnings:
     - "Pre-release builds are not GA and may have bugs"
-    - "Uses nightly catalog - may contain experimental or unstable features"
+    - "Stable-Stage (4.22) is pre-production - use for testing before GA"
+    - "Nightly builds (4.99) may contain experimental or unstable features"
     - "High resource requirements - recommend 3+ worker nodes"
-    - "Version 4.99 indicates pre-release/nightly builds"
     - "Requires general quay.io registry credentials (not just quay.io/openshift-cnv)"
     - "Windows VM Support adds 2-4 hours to post-deployment time for image download and conversion"
     - "Windows version requires AWS (IRSA for S3 access) - not supported on other clouds yet"
