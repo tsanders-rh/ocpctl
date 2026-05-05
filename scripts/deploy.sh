@@ -204,6 +204,10 @@ for host in "${WORKER_HOSTS[@]}"; do
     scp -i "$SSH_KEY" scripts/ensure-installers.sh $SSH_USER@$host:/tmp/ensure-installers.sh
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && rm /tmp/ensure-installers.sh"
 
+    # Run ensure-installers to download/update all required CLIs (openshift-install, rosa, eksctl, etc.)
+    echo -e "${YELLOW}  Running ensure-installers to install/update CLIs...${NC}"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo ${REMOTE_BASE}/scripts/ensure-installers.sh"
+
     # Deploy manifests directory (for post-deployment scripts)
     echo -e "${YELLOW}  Deploying manifests directory...${NC}"
     ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/manifests && sudo mkdir -p ${REMOTE_BASE}/manifests"
