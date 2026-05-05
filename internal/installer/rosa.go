@@ -64,9 +64,45 @@ func NewROSAInstaller() *ROSAInstaller {
 	}
 }
 
+// ensureLoggedIn ensures rosa CLI is authenticated with OCM
+// Uses OCM_TOKEN environment variable for authentication
+func (r *ROSAInstaller) ensureLoggedIn(ctx context.Context) error {
+	// Check if already logged in
+	cmd := exec.CommandContext(ctx, r.binaryPath, "whoami")
+	if err := cmd.Run(); err == nil {
+		// Already logged in
+		return nil
+	}
+
+	// Get token from environment
+	token := os.Getenv("OCM_TOKEN")
+	if token == "" {
+		token = os.Getenv("ROSA_TOKEN")
+	}
+	if token == "" {
+		return fmt.Errorf("not logged in to OCM: set OCM_TOKEN or ROSA_TOKEN environment variable")
+	}
+
+	// Login using token
+	cmd = exec.CommandContext(ctx, r.binaryPath, "login", "--token="+token)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rosa login failed: %w: %s", err, stderr.String())
+	}
+
+	return nil
+}
+
 // CreateCluster creates a ROSA cluster using rosa CLI
 // Returns cluster ID and error
 func (r *ROSAInstaller) CreateCluster(ctx context.Context, args []string, logFile string) (string, string, error) {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return "", "", err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
@@ -105,6 +141,11 @@ func (r *ROSAInstaller) CreateCluster(ctx context.Context, args []string, logFil
 
 // DestroyCluster destroys a ROSA cluster using rosa CLI
 func (r *ROSAInstaller) DestroyCluster(ctx context.Context, clusterName string) (string, error) {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return "", err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
@@ -152,6 +193,11 @@ func (r *ROSAInstaller) WaitForClusterReady(ctx context.Context, clusterName str
 
 // DescribeCluster gets cluster information using rosa CLI
 func (r *ROSAInstaller) DescribeCluster(ctx context.Context, clusterName string) (*ROSAClusterInfo, error) {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return nil, err
+	}
+
 	// rosa describe cluster --cluster <name> -o json
 	cmd := exec.CommandContext(ctx, r.binaryPath, "describe", "cluster",
 		"--cluster", clusterName,
@@ -236,6 +282,11 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 
 // ListMachinePools lists all machine pools for a ROSA cluster
 func (r *ROSAInstaller) ListMachinePools(ctx context.Context, clusterName string) ([]ROSAMachinePool, error) {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return nil, err
+	}
+
 	// rosa list machinepools --cluster <name> -o json
 	cmd := exec.CommandContext(ctx, r.binaryPath, "list", "machinepools",
 		"--cluster", clusterName,
@@ -260,6 +311,11 @@ func (r *ROSAInstaller) ListMachinePools(ctx context.Context, clusterName string
 // ScaleMachinePool scales a ROSA machine pool to a specific replica count
 // Used for hibernation (scale to 0) and resume (scale back to original)
 func (r *ROSAInstaller) ScaleMachinePool(ctx context.Context, clusterName, poolID string, replicas int) error {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return err
+	}
+
 	// rosa edit machinepool --cluster <name> --replicas <count> <pool-id>
 	cmd := exec.CommandContext(ctx, r.binaryPath, "edit", "machinepool",
 		"--cluster", clusterName,
@@ -278,6 +334,11 @@ func (r *ROSAInstaller) ScaleMachinePool(ctx context.Context, clusterName, poolI
 
 // CreateMachinePool creates a new machine pool for a ROSA cluster
 func (r *ROSAInstaller) CreateMachinePool(ctx context.Context, clusterName, poolName, instanceType string, replicas int, labels map[string]string) error {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return err
+	}
+
 	// Build command: rosa create machinepool --cluster <name> --name <pool> --instance-type <type> --replicas <count>
 	args := []string{"create", "machinepool",
 		"--cluster", clusterName,
@@ -309,6 +370,11 @@ func (r *ROSAInstaller) CreateMachinePool(ctx context.Context, clusterName, pool
 
 // DeleteMachinePool deletes a machine pool from a ROSA cluster
 func (r *ROSAInstaller) DeleteMachinePool(ctx context.Context, clusterName, poolID string) error {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return err
+	}
+
 	// rosa delete machinepool --cluster <name> --yes <pool-id>
 	cmd := exec.CommandContext(ctx, r.binaryPath, "delete", "machinepool",
 		"--cluster", clusterName,
