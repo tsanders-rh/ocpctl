@@ -84,6 +84,11 @@ export function useClusterOutputs(id: string, clusterStatus?: string, hasActiveP
     queryFn: () => clustersApi.getOutputs(id),
     enabled: !!id && (clusterStatus === "READY" || clusterStatus === "HIBERNATED"),
     refetchInterval: (query) => {
+      // Stop polling if there's an error (prevents infinite retry loop on rate limit/auth errors)
+      if (query.state.error) {
+        return false;
+      }
+
       // Poll every 3 seconds if cluster is READY but outputs aren't loaded yet
       // This handles the case where cluster just became READY and outputs are being written
       const data = query.state.data;
