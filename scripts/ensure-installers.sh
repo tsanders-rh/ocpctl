@@ -251,6 +251,40 @@ ensure_ibmcloud() {
     return 0
 }
 
+ensure_rosa() {
+    local binary_path="${INSTALL_DIR}/rosa"
+
+    # Check if already installed
+    if [ -f "${binary_path}" ]; then
+        log "✓ rosa already installed"
+        return 0
+    fi
+
+    log "Installing rosa CLI..."
+    local tmp_dir=$(mktemp -d)
+
+    # Download from mirror.openshift.com
+    local download_url="https://mirror.openshift.com/pub/openshift-v4/clients/rosa/latest/rosa-linux.tar.gz"
+
+    if curl -sL "${download_url}" | tar xzf - -C "${tmp_dir}"; then
+        if [ -f "${tmp_dir}/rosa" ]; then
+            mv "${tmp_dir}/rosa" "${binary_path}"
+            chmod +x "${binary_path}"
+            rm -rf "${tmp_dir}"
+            log "✓ Installed rosa CLI"
+            return 0
+        else
+            log "✗ rosa binary not found in tarball"
+            rm -rf "${tmp_dir}"
+            return 1
+        fi
+    else
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to download rosa CLI"
+        return 1
+    fi
+}
+
 ensure_gcloud() {
     # Check if gcloud CLI is installed
     if command -v gcloud &> /dev/null; then
@@ -433,6 +467,12 @@ main() {
     if ! ensure_gcloud; then
         log "WARNING: Failed to ensure gcloud CLI (non-fatal)"
         # Don't fail - only needed for GKE clusters
+    fi
+
+    # ROSA installer (rosa CLI)
+    if ! ensure_rosa; then
+        log "WARNING: Failed to ensure rosa CLI (non-fatal)"
+        # Don't fail - only needed for ROSA clusters
     fi
 
     if [ $failed -eq 1 ]; then
