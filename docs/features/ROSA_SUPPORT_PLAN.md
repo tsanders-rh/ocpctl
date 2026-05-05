@@ -26,6 +26,91 @@ Add support for ROSA (Red Hat OpenShift Service on AWS) Classic clusters to ocpc
 
 ---
 
+## Prerequisites
+
+### OCM Token for ROSA Authentication
+
+ROSA clusters require authentication with OpenShift Cluster Manager (OCM). The `rosa` CLI uses an offline token for authentication.
+
+**How to obtain your OCM offline token:**
+
+1. **Login to Red Hat Console:**
+   - Navigate to https://console.redhat.com/openshift/token/rosa
+   - Login with your Red Hat account credentials
+
+2. **Copy the offline token:**
+   - Click "Load token"
+   - Copy the long token string (starts with `eyJhbGci...`)
+
+3. **Add to worker environment:**
+   ```bash
+   # On production server
+   ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+
+   # Edit worker.env
+   sudo nano /etc/ocpctl/worker.env
+
+   # Add at the end:
+   # ROSA/OCM Authentication
+   OCM_TOKEN=eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI0NzQzYTkzMC03YmJiLTRkZGQtOTgzMS00ODcxNGRlZDc0YjUifQ...
+
+   # Save and exit (Ctrl+X, Y, Enter)
+
+   # Restart worker to pick up new token
+   sudo systemctl restart ocpctl-worker
+   ```
+
+4. **For autoscale workers (production):**
+   ```bash
+   # On local machine
+   cd /path/to/ocpctl
+
+   # Edit config/worker.env (gitignored)
+   nano config/worker.env
+
+   # Add OCM_TOKEN at the end
+   OCM_TOKEN=your-token-here
+
+   # Deploy - this uploads worker.env to S3
+   ./scripts/deploy.sh
+
+   # Autoscale workers will download worker.env from S3 during bootstrap
+   ```
+
+**Security Notes:**
+- **NEVER commit OCM_TOKEN to git** - it's a sensitive credential
+- `config/worker.env` is in `.gitignore` to prevent accidental commits
+- Token is uploaded to S3 (private bucket) during deployment
+- Autoscale workers download from S3 during bootstrap
+- Tokens expire after ~90 days - you'll need to refresh periodically
+
+**Testing the token:**
+```bash
+# SSH to worker server
+ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+
+# Verify rosa CLI can authenticate
+rosa whoami
+
+# Expected output:
+# AWS Account ID:               123456789012
+# AWS ARN:                      arn:aws:iam::123456789012:user/youruser
+# OCM API:                      https://api.openshift.com
+# OCM Account Email:            your.email@redhat.com
+# OCM Account ID:               1a2b3c4d5e6f
+# OCM Account Name:             Your Name
+# OCM Organization External ID: 7890123
+# OCM Organization ID:          1AbCdEfG
+# OCM Organization Name:        Your Organization
+```
+
+**Troubleshooting:**
+- **"Not logged in" error**: Token is missing or invalid - refresh from console.redhat.com
+- **"Token expired" error**: Tokens expire after ~90 days - generate a new one
+- **Worker can't access token**: Ensure worker.env has correct permissions (600) and restart worker service
+
+---
+
 ## Phase 1: Type System & Database
 
 ### 1.1 Add ClusterTypeROSA Constant

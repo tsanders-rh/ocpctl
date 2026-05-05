@@ -48,7 +48,7 @@
 
 /etc/ocpctl/
 ├── api.env                     # API server config (DATABASE_URL, JWT_SECRET)
-└── worker.env                  # Worker config (WORK_DIR, CONCURRENCY)
+└── worker.env                  # Worker config (WORK_DIR, CONCURRENCY, OCM_TOKEN for ROSA)
 
 /var/lib/ocpctl/
 └── clusters/                   # Worker cluster work directories

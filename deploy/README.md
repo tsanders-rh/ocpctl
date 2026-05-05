@@ -93,8 +93,11 @@ After deployment, the EC2 instance will have:
 - `OPENSHIFT_PULL_SECRET` - OpenShift pull secret JSON
 - `OPENSHIFT_INSTALL_BINARY` - Path to openshift-install binary
 - `AWS_REGION` - AWS region for cluster deployment
+- `OCM_TOKEN` - OpenShift Cluster Manager offline token (required for ROSA clusters only)
 
 See `config/*.env.template` for complete list.
+
+**Note:** `OCM_TOKEN` is only required if you plan to provision ROSA (Red Hat OpenShift Service on AWS) clusters. For standard OpenShift IPI, EKS, IKS, or GKE clusters, this variable is not needed.
 
 ## Makefile Targets
 
