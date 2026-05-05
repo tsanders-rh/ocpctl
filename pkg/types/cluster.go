@@ -36,7 +36,8 @@ const (
 type ClusterType string
 
 const (
-	ClusterTypeOpenShift ClusterType = "openshift" // OpenShift (OCP/ROSA)
+	ClusterTypeOpenShift ClusterType = "openshift" // OpenShift IPI (self-managed)
+	ClusterTypeROSA      ClusterType = "rosa"      // Red Hat OpenShift Service on AWS (managed)
 	ClusterTypeEKS       ClusterType = "eks"       // AWS Elastic Kubernetes Service
 	ClusterTypeIKS       ClusterType = "iks"       // IBM Cloud Kubernetes Service
 	ClusterTypeGKE       ClusterType = "gke"       // Google Kubernetes Engine

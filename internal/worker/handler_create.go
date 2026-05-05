@@ -70,6 +70,8 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 	switch cluster.ClusterType {
 	case types.ClusterTypeOpenShift:
 		return h.handleOpenShiftCreate(ctx, job, cluster)
+	case types.ClusterTypeROSA:
+		return h.handleROSACreate(ctx, job, cluster)
 	case types.ClusterTypeEKS:
 		return h.handleEKSCreate(ctx, job, cluster)
 	case types.ClusterTypeIKS:
@@ -1179,6 +1181,179 @@ func (h *CreateHandler) handleGKECreate(ctx context.Context, job *types.Job, clu
 		log.Printf("Warning: failed to store cluster outputs: %v", err)
 		// Don't fail cluster creation if output storage fails
 	}
+
+	// Handle post-deployment configuration if enabled
+	h.handlePostDeployment(ctx, cluster)
+
+	return nil
+}
+
+// handleROSACreate handles ROSA (Red Hat OpenShift Service on AWS) cluster creation
+func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting ROSA cluster creation for %s", cluster.Name)
+
+	// Update cluster status to CREATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusCreating); err != nil {
+		return fmt.Errorf("update cluster status: %w", err)
+	}
+
+	// Create work directory for this cluster with secure permissions
+	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
+	if err != nil {
+		return err
+	}
+
+	// Create ROSA installer
+	rosaInstaller := installer.NewROSAInstaller()
+
+	// Get profile to extract configuration
+	prof, err := h.registry.Get(cluster.Profile)
+	if err != nil {
+		return fmt.Errorf("get profile: %w", err)
+	}
+
+	// Build rosa create cluster command arguments
+	args := []string{
+		"--cluster-name", cluster.Name,
+		"--region", cluster.Region,
+		"--version", cluster.Version,
+		"--yes", // Auto-approve
+	}
+
+	// Add compute configuration from profile
+	if prof.Compute.Workers.Replicas > 0 {
+		args = append(args, "--compute-nodes", fmt.Sprintf("%d", prof.Compute.Workers.Replicas))
+	}
+	if prof.Compute.Workers.InstanceType != "" {
+		args = append(args, "--compute-machine-type", prof.Compute.Workers.InstanceType)
+	}
+
+	// Add multi-AZ if specified in profile
+	if prof.ControlPlane != nil && prof.ControlPlane.MultiAZ {
+		args = append(args, "--multi-az")
+	}
+
+	// Add tags
+	if len(cluster.EffectiveTags) > 0 {
+		tagStrs := make([]string, 0, len(cluster.EffectiveTags))
+		for k, v := range cluster.EffectiveTags {
+			tagStrs = append(tagStrs, fmt.Sprintf("%s=%s", k, v))
+		}
+		args = append(args, "--tags", strings.Join(tagStrs, ","))
+	}
+
+	// Add STS mode (ROSA requires STS by default for new clusters)
+	args = append(args, "--sts")
+
+	log.Printf("Creating ROSA cluster with args: %v", args)
+
+	// Start log streaming before running rosa
+	logPath := filepath.Join(workDir, "rosa-create.log")
+	streamer := NewLogStreamer(h.store, cluster.ID, job.ID, logPath)
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
+	if err := streamer.Start(streamCtx); err != nil {
+		log.Printf("Warning: failed to start log streaming: %v", err)
+	}
+
+	// Run rosa create cluster
+	clusterID, output, err := rosaInstaller.CreateCluster(ctx, args, logPath)
+
+	// Stop log streaming after rosa completes
+	streamCancel()
+	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
+	if stopErr := streamer.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping log streamer: %v", stopErr)
+	}
+
+	if err != nil {
+		log.Printf("ROSA cluster creation failed: %v\nOutput: %s", err, output)
+		return fmt.Errorf("rosa create cluster: %w", err)
+	}
+
+	log.Printf("ROSA cluster %s created with ID: %s", cluster.Name, clusterID)
+
+	// Wait for cluster to be ready
+	log.Printf("Waiting for ROSA cluster %s to reach ready state...", cluster.Name)
+	waitCtx, waitCancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer waitCancel()
+
+	if err := rosaInstaller.WaitForClusterReady(waitCtx, cluster.Name, 30*time.Second); err != nil {
+		return fmt.Errorf("wait for cluster ready: %w", err)
+	}
+
+	log.Printf("ROSA cluster %s is ready", cluster.Name)
+
+	// Get cluster information
+	info, err := rosaInstaller.DescribeCluster(ctx, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("describe cluster: %w", err)
+	}
+
+	// Get kubeconfig
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
+		return fmt.Errorf("create auth directory: %w", err)
+	}
+
+	if err := rosaInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
+		log.Printf("Warning: failed to get kubeconfig: %v", err)
+	}
+
+	// Get machine pools to store in metadata
+	pools, err := rosaInstaller.ListMachinePools(ctx, cluster.Name)
+	if err != nil {
+		log.Printf("Warning: failed to list machine pools: %v", err)
+		pools = []installer.ROSAMachinePool{}
+	}
+
+	// Store machine pool metadata in cluster record
+	poolsJSON, err := json.Marshal(pools)
+	if err != nil {
+		log.Printf("Warning: failed to marshal machine pools: %v", err)
+	} else {
+		// Update cluster with machine pool metadata
+		if err := h.store.Clusters.UpdateMachinePoolMetadata(ctx, cluster.ID, poolsJSON); err != nil {
+			log.Printf("Warning: failed to update machine pool metadata: %v", err)
+		}
+	}
+
+	// Extract cluster outputs
+	outputs := &types.ClusterOutputs{
+		ID:        uuid.New().String(),
+		ClusterID: cluster.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if info.APIURL != "" {
+		outputs.APIURL = &info.APIURL
+	}
+	if info.ConsoleURL != "" {
+		outputs.ConsoleURL = &info.ConsoleURL
+	}
+
+	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
+	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Store cluster outputs
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		log.Printf("Warning: failed to store cluster outputs: %v", err)
+	}
+
+	// Store artifacts
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+		log.Printf("Warning: failed to store artifacts: %v", err)
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to ready: %w", err)
+	}
+
+	log.Printf("ROSA cluster %s is now READY", cluster.Name)
 
 	// Handle post-deployment configuration if enabled
 	h.handlePostDeployment(ctx, cluster)

@@ -72,7 +72,7 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 type CreateClusterRequest struct {
 	Name             string                    `json:"name" validate:"required,min=3,max=63,cluster_name"`
 	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud gcp"`
-	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift eks iks gke"`
+	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke"`
 	Version          string                    `json:"version" validate:"required"`
 	Profile          string                    `json:"profile" validate:"required"`
 	Region           string                    `json:"region" validate:"required"`
@@ -147,6 +147,11 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Custom validation: base_domain is required for OpenShift clusters
 	if req.ClusterType == "openshift" && req.BaseDomain == "" {
 		return ErrorBadRequest(c, "base_domain is required for OpenShift clusters")
+	}
+
+	// ROSA clusters don't use base_domain (AWS-managed DNS)
+	if req.ClusterType == "rosa" && req.BaseDomain != "" {
+		return ErrorBadRequest(c, "base_domain is not supported for ROSA clusters (AWS-managed DNS)")
 	}
 
 	// Check for duplicate cluster creation using idempotency key
@@ -2245,6 +2250,10 @@ func (h *ClusterHandler) calculateEffectiveCost(cluster *types.Cluster, prof *pr
 			// AWS: EBS volumes, GCP: Persistent Disks
 			// Estimate ~10% of running cost (storage only)
 			return baseCost * 0.10
+		case types.ClusterTypeROSA:
+			// ROSA: Machine pools scaled to 0, but AWS-managed control plane still runs
+			// Control plane cost is fixed at $0.03/hr and cannot be stopped
+			return 0.03
 		case types.ClusterTypeEKS:
 			// EKS: Node groups scaled to 0, but control plane still runs at $0.10/hr
 			return 0.10

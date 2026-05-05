@@ -91,8 +91,13 @@ export default function NewClusterPage() {
       // Filter by cluster type
       let clusterTypeMatch = false;
       // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-)
+      // but exclude ROSA profiles (aws-rosa-)
       if (selectedClusterType === ClusterType.OpenShift) {
-        clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`);
+        clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`) && !p.name.startsWith(`${selectedPlatform}-rosa-`);
+      }
+      // For ROSA clusters, show profiles that start with aws-rosa-
+      else if (selectedClusterType === ClusterType.ROSA) {
+        clusterTypeMatch = p.name.startsWith('aws-rosa-');
       }
       // For EKS/IKS/GKE clusters, show profiles that start with cluster type prefix (eks-, iks-, gke-)
       else if (selectedClusterType === ClusterType.EKS) {
@@ -143,7 +148,8 @@ export default function NewClusterPage() {
       // Use setTimeout to ensure Select components are rendered with options before setting values
       setTimeout(() => {
         // Set version based on cluster type
-        const defaultVersion = watchedValues.cluster_type === "openshift"
+        // ROSA uses OpenShift versions like OpenShift IPI
+        const defaultVersion = (watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa")
           ? selectedProfile.openshift_versions?.default
           : selectedProfile.kubernetes_versions?.default;
         if (defaultVersion) {
@@ -318,7 +324,10 @@ export default function NewClusterPage() {
                   <SelectContent>
                     <SelectItem value="openshift">OpenShift</SelectItem>
                     {selectedPlatform === Platform.AWS && (
-                      <SelectItem value="eks">Amazon EKS</SelectItem>
+                      <>
+                        <SelectItem value="rosa">ROSA (Red Hat OpenShift Service on AWS)</SelectItem>
+                        <SelectItem value="eks">Amazon EKS</SelectItem>
+                      </>
                     )}
                     {selectedPlatform === Platform.IBMCloud && (
                       <SelectItem value="iks">IBM Cloud IKS</SelectItem>
@@ -330,6 +339,7 @@ export default function NewClusterPage() {
                 </Select>
                 <p className="text-sm text-muted-foreground">
                   {watchedValues.cluster_type === "openshift" && "Red Hat OpenShift Container Platform"}
+                  {watchedValues.cluster_type === "rosa" && "AWS-managed OpenShift with dedicated control plane"}
                   {watchedValues.cluster_type === "eks" && "AWS Elastic Kubernetes Service (managed Kubernetes)"}
                   {watchedValues.cluster_type === "iks" && "IBM Cloud Kubernetes Service (managed Kubernetes)"}
                   {watchedValues.cluster_type === "gke" && "Google Kubernetes Engine (managed Kubernetes)"}
@@ -466,7 +476,7 @@ export default function NewClusterPage() {
               {selectedProfile && (selectedProfile.openshift_versions?.allowed || selectedProfile.kubernetes_versions?.allowed) && (
                 <div className="space-y-2">
                   <Label htmlFor="version">
-                    {watchedValues.cluster_type === "openshift" ? "OpenShift Version" : "Kubernetes Version"}
+                    {(watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa") ? "OpenShift Version" : "Kubernetes Version"}
                   </Label>
                   <Select
                     value={watchedValues.version || ""}
@@ -476,7 +486,7 @@ export default function NewClusterPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {(watchedValues.cluster_type === "openshift"
+                      {((watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa")
                         ? selectedProfile.openshift_versions?.allowed
                         : selectedProfile.kubernetes_versions?.allowed
                       )?.map((version) => (
@@ -535,6 +545,21 @@ export default function NewClusterPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                )}
+
+                {watchedValues.cluster_type === "rosa" && (
+                  <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                    <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm space-y-1">
+                      <p className="font-medium text-blue-900 dark:text-blue-100">
+                        ROSA Managed Cluster
+                      </p>
+                      <p className="text-blue-800 dark:text-blue-200">
+                        ROSA uses AWS-managed DNS and control plane. Base domain configuration is not required.
+                        Hibernation scales machine pools to 0 but control plane continues running at $0.03/hr.
+                      </p>
+                    </div>
                   </div>
                 )}
 

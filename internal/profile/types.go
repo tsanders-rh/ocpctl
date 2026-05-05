@@ -157,6 +157,7 @@ type PlatformConfig struct {
 	EKS      *EKSConfig      `yaml:"eks,omitempty"`
 	GCP      *GCPConfig      `yaml:"gcp,omitempty"`
 	GKE      *GKEConfig      `yaml:"gke,omitempty"`
+	ROSA     *ROSAConfig     `yaml:"rosa,omitempty"`
 }
 
 // AWSConfig contains AWS-specific settings
@@ -171,6 +172,14 @@ type AWSRootVolume struct {
 	Type string `yaml:"type"`
 	Size int    `yaml:"size"`
 	IOPS int    `yaml:"iops,omitempty"`
+}
+
+// ROSAConfig contains ROSA-specific settings
+type ROSAConfig struct {
+	STSEnabled   bool   `yaml:"stsEnabled" json:"sts_enabled"`               // STS authentication (required for ROSA)
+	ComputeNodes int    `yaml:"computeNodes" json:"compute_nodes"`           // Number of compute nodes
+	MachineType  string `yaml:"machineType" json:"machine_type"`             // Compute instance type
+	MultiAZ      bool   `yaml:"multiAZ,omitempty" json:"multi_az,omitempty"` // Multi-AZ deployment
 }
 
 // IBMCloudConfig contains IBM Cloud-specific settings

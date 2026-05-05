@@ -8,6 +8,7 @@ export enum Platform {
 
 export enum ClusterType {
   OpenShift = "openshift",
+  ROSA = "rosa",
   EKS = "eks",
   IKS = "iks",
   GKE = "gke",

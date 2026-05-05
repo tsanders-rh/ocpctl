@@ -67,6 +67,8 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 	switch cluster.ClusterType {
 	case types.ClusterTypeOpenShift:
 		return h.handleOpenShiftDestroy(ctx, job, cluster)
+	case types.ClusterTypeROSA:
+		return h.handleROSADestroy(ctx, job, cluster)
 	case types.ClusterTypeEKS:
 		return h.handleEKSDestroy(ctx, job, cluster)
 	case types.ClusterTypeIKS:
@@ -728,6 +730,71 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 	}
 
 	log.Printf("Cluster %s marked as DESTROYED", cluster.Name)
+	return nil
+}
+
+// handleROSADestroy handles ROSA (Red Hat OpenShift Service on AWS) cluster destruction
+func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	log.Printf("Starting ROSA cluster destruction for %s", cluster.Name)
+
+	// Create ROSA installer
+	rosaInstaller := installer.NewROSAInstaller()
+
+	// Run rosa delete cluster
+	log.Printf("Running rosa delete cluster for %s", cluster.Name)
+	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
+	defer destroyCancel()
+
+	output, err := rosaInstaller.DestroyCluster(destroyCtx, cluster.Name)
+	if err != nil {
+		// Check if this is a "cluster not found" error - treat as already destroyed
+		if strings.Contains(output, "not found") || strings.Contains(output, "does not exist") {
+			log.Printf("ROSA cluster %s does not exist - treating as already destroyed", cluster.Name)
+			log.Printf("ROSA response: %s", output)
+		} else {
+			log.Printf("ROSA cluster destruction failed: %v\nOutput: %s", err, output)
+			// Mark as DESTROY_FAILED - cluster resources may be partially destroyed and require manual cleanup
+			if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+				log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+			}
+			return fmt.Errorf("rosa delete cluster: %w", err)
+		}
+	} else {
+		log.Printf("ROSA cluster %s destroyed successfully", cluster.Name)
+	}
+
+	// Track cleanup results for job metadata
+	cleanupResults := make(map[string]interface{})
+	cleanupWarnings := []string{}
+
+	// Mark cluster as destroyed
+	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("mark cluster destroyed: %w", err)
+	}
+
+	// Clean up work directory (OPTIONAL: local disk cleanup)
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	if err := os.RemoveAll(workDir); err != nil {
+		errMsg := fmt.Sprintf("failed to remove work directory: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["work_dir_removed"] = false
+	} else {
+		cleanupResults["work_dir_removed"] = true
+	}
+
+	// Record cleanup results in job metadata for audit trail
+	if len(cleanupWarnings) > 0 {
+		log.Printf("Destroy completed with %d cleanup warnings - see job metadata for details", len(cleanupWarnings))
+		if job.Metadata == nil {
+			job.Metadata = make(types.JobMetadata)
+		}
+		job.Metadata["cleanup_results"] = cleanupResults
+		job.Metadata["cleanup_warnings"] = cleanupWarnings
+		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
+	}
+
+	log.Printf("ROSA cluster %s marked as DESTROYED", cluster.Name)
 	return nil
 }
 

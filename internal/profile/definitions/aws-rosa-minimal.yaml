@@ -1,0 +1,97 @@
+name: aws-rosa-minimal
+displayName: ROSA Minimal
+description: Minimal ROSA managed cluster with 2 compute nodes (managed control plane)
+platform: aws
+clusterType: rosa
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18.35"
+    - "4.19.23"
+    - "4.20.3"
+    - "4.20.4"
+    - "4.20.5"
+    - "4.21.8"
+    - "4.21.9"
+    - "4.21.10"
+  default: "4.21.10"
+
+regions:
+  allowlist:
+    - us-east-1
+    - us-east-2
+    - us-west-1
+    - us-west-2
+    - eu-west-1
+    - eu-west-2
+    - eu-west-3
+    - eu-central-1
+    - eu-north-1
+    - ap-southeast-1
+    - ap-southeast-2
+    - ap-northeast-1
+    - ap-northeast-2
+    - ap-south-1
+    - ca-central-1
+    - sa-east-1
+  default: us-east-1
+
+# ROSA manages its own base domain - not user-configurable
+# baseDomains section not required for ROSA
+
+compute:
+  controlPlane:
+    # ROSA control plane is fully managed by Red Hat
+    # Not user-configurable
+    replicas: 3
+    multiAZ: false
+  workers:
+    replicas: 2
+    minReplicas: 2
+    maxReplicas: 10
+    instanceType: m5.xlarge
+    autoscaling: false
+
+lifecycle:
+  maxTTLHours: 72
+  defaultTTLHours: 24
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+  offhoursBehavior: hibernate  # ROSA can hibernate by scaling to 0
+
+networking:
+  networkType: OVNKubernetes
+  # ROSA manages VPC creation automatically
+  # Cluster networks are configurable but have sensible defaults
+
+tags:
+  required:
+    Environment: production
+  defaults:
+    Purpose: stable-testing
+    ManagedBy: cluster-control-plane
+    Track: ga
+    ClusterType: rosa
+  allowUserTags: true
+
+features:
+  offHoursScaling: true  # ROSA supports scaling machine pools to 0
+  fipsMode: false        # ROSA can enable FIPS mode if needed
+  privateCluster: false  # ROSA supports private clusters
+
+costControls:
+  # ROSA costs: $0.03/hr control plane + compute instances
+  # Minimal: $0.03 + (2 * m5.xlarge ~$0.192/hr) = ~$0.414/hr
+  estimatedHourlyCost: 0.42
+  maxMonthlyCost: 310
+  budgetAlertThreshold: 0.8
+
+platformConfig:
+  aws:
+    # ROSA-specific configuration
+    rosa:
+      stsEnabled: true  # ROSA uses STS by default for new clusters
+      computeNodes: 2
+      machineType: m5.xlarge

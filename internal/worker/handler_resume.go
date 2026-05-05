@@ -68,6 +68,8 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 	switch cluster.ClusterType {
 	case types.ClusterTypeOpenShift:
 		return h.resumeOpenShift(ctx, cluster, job)
+	case types.ClusterTypeROSA:
+		return h.resumeROSA(ctx, cluster, job)
 	case types.ClusterTypeEKS:
 		return h.resumeEKS(ctx, cluster, job)
 	case types.ClusterTypeIKS:
@@ -1015,5 +1017,82 @@ func (h *ResumeHandler) resumeIKS(ctx context.Context, cluster *types.Cluster, j
 	}
 
 	log.Printf("IKS cluster %s resumed successfully (%d workers restored)", cluster.Name, totalWorkers)
+	return nil
+}
+
+// resumeROSA resumes a ROSA cluster by scaling machine pools back to their original sizes
+func (h *ResumeHandler) resumeROSA(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Resuming ROSA cluster %s by restoring machine pool sizes", cluster.Name)
+
+	// Update status to RESUMING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusResuming); err != nil {
+		return fmt.Errorf("update cluster status to RESUMING: %w", err)
+	}
+
+	// Get the hibernate job to retrieve original pool configurations
+	hibernateJob, err := h.store.Jobs.GetLatestByTypeAndCluster(ctx, cluster.ID, types.JobTypeHibernate)
+	if err != nil {
+		return fmt.Errorf("get hibernate job: %w", err)
+	}
+
+	if hibernateJob.Metadata == nil {
+		return fmt.Errorf("hibernate job missing metadata - cannot restore pool sizes")
+	}
+
+	// Parse original machine pool configurations from hibernate job metadata
+	configsJSON, ok := hibernateJob.Metadata["machine_pool_configs"].(string)
+	if !ok {
+		return fmt.Errorf("hibernate job metadata missing machine_pool_configs")
+	}
+
+	type poolConfig struct {
+		ID       string `json:"id"`
+		Replicas int    `json:"replicas"`
+	}
+
+	var originalConfigs []poolConfig
+	if err := json.Unmarshal([]byte(configsJSON), &originalConfigs); err != nil {
+		return fmt.Errorf("parse pool configurations: %w", err)
+	}
+
+	if len(originalConfigs) == 0 {
+		log.Printf("Warning: no machine pools to restore for cluster %s", cluster.Name)
+		// Update cluster status to READY anyway
+		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+			return fmt.Errorf("update cluster status: %w", err)
+		}
+		return nil
+	}
+
+	// Create ROSA installer
+	rosaInstaller := installer.NewROSAInstaller()
+
+	// Restore each pool to its original size
+	totalRestoredReplicas := 0
+	restoredPools := 0
+
+	for _, config := range originalConfigs {
+		log.Printf("Restoring machine pool %s to %d replicas", config.ID, config.Replicas)
+
+		if err := rosaInstaller.ScaleMachinePool(ctx, cluster.Name, config.ID, config.Replicas); err != nil {
+			return fmt.Errorf("scale machine pool %s to %d: %w", config.ID, config.Replicas, err)
+		}
+
+		totalRestoredReplicas += config.Replicas
+		restoredPools++
+
+		log.Printf("Successfully restored machine pool %s to %d replicas", config.ID, config.Replicas)
+	}
+
+	log.Printf("Restored %d machine pools with %d total replicas", restoredPools, totalRestoredReplicas)
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to READY: %w", err)
+	}
+
+	log.Printf("ROSA cluster %s resumed successfully (%d replicas restored across %d machine pools)",
+		cluster.Name, totalRestoredReplicas, restoredPools)
+
 	return nil
 }

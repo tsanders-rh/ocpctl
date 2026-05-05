@@ -62,6 +62,8 @@ func (h *HibernateHandler) Handle(ctx context.Context, job *types.Job) error {
 	switch cluster.ClusterType {
 	case types.ClusterTypeOpenShift:
 		return h.hibernateOpenShift(ctx, cluster, job)
+	case types.ClusterTypeROSA:
+		return h.hibernateROSA(ctx, cluster, job)
 	case types.ClusterTypeEKS:
 		return h.hibernateEKS(ctx, cluster, job)
 	case types.ClusterTypeIKS:
@@ -437,6 +439,91 @@ func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Clus
 	}
 
 	log.Printf("IKS cluster %s hibernated successfully (scaled %d workers to 0)", cluster.Name, totalOriginalCount)
+	return nil
+}
+
+// hibernateROSA hibernates a ROSA cluster by scaling all machine pools to 0
+func (h *HibernateHandler) hibernateROSA(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Hibernating ROSA cluster %s by scaling machine pools to 0", cluster.Name)
+
+	// Update status to HIBERNATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernating); err != nil {
+		return fmt.Errorf("update cluster status to HIBERNATING: %w", err)
+	}
+
+	// Create ROSA installer
+	rosaInstaller := installer.NewROSAInstaller()
+
+	// List all machine pools
+	pools, err := rosaInstaller.ListMachinePools(ctx, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("list machine pools: %w", err)
+	}
+
+	if len(pools) == 0 {
+		log.Printf("Warning: no machine pools found for cluster %s", cluster.Name)
+		// Update cluster status to HIBERNATED anyway
+		if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
+			return fmt.Errorf("update cluster status: %w", err)
+		}
+		return nil
+	}
+
+	// Store original pool configurations in job metadata for resume
+	type poolConfig struct {
+		ID       string `json:"id"`
+		Replicas int    `json:"replicas"`
+	}
+
+	originalConfigs := make([]poolConfig, 0, len(pools))
+	totalOriginalReplicas := 0
+
+	for _, pool := range pools {
+		// Skip pools that are already at 0 replicas
+		if pool.Replicas == 0 {
+			log.Printf("Skipping machine pool %s (already at 0 replicas)", pool.ID)
+			continue
+		}
+
+		// Store original configuration
+		originalConfigs = append(originalConfigs, poolConfig{
+			ID:       pool.ID,
+			Replicas: pool.Replicas,
+		})
+		totalOriginalReplicas += pool.Replicas
+
+		log.Printf("Scaling machine pool %s from %d to 0 replicas", pool.ID, pool.Replicas)
+
+		// Scale pool to 0
+		if err := rosaInstaller.ScaleMachinePool(ctx, cluster.Name, pool.ID, 0); err != nil {
+			return fmt.Errorf("scale machine pool %s to 0: %w", pool.ID, err)
+		}
+
+		log.Printf("Successfully scaled machine pool %s to 0 replicas", pool.ID)
+	}
+
+	// Store original pool configurations in job metadata for resume
+	configsJSON, err := json.Marshal(originalConfigs)
+	if err != nil {
+		return fmt.Errorf("marshal pool configurations: %w", err)
+	}
+
+	if job.Metadata == nil {
+		job.Metadata = make(types.JobMetadata)
+	}
+	job.Metadata["machine_pool_configs"] = string(configsJSON)
+	job.Metadata["total_original_replicas"] = fmt.Sprintf("%d", totalOriginalReplicas)
+
+	log.Printf("Stored original machine pool configurations in job metadata (total: %d replicas)", totalOriginalReplicas)
+
+	// Update cluster status to HIBERNATED
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
+		return fmt.Errorf("update cluster status to HIBERNATED: %w", err)
+	}
+
+	log.Printf("ROSA cluster %s hibernated successfully (scaled %d replicas to 0 across %d machine pools)",
+		cluster.Name, totalOriginalReplicas, len(originalConfigs))
+
 	return nil
 }
 
