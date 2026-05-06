@@ -42,13 +42,34 @@ type ROSATaint struct {
 
 // ROSAClusterInfo represents basic ROSA cluster information
 type ROSAClusterInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	State         string `json:"state"`
-	APIURL        string `json:"api_url"`
-	ConsoleURL    string `json:"console_url"`
-	Region        string `json:"region"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+	API   struct {
+		URL string `json:"url"`
+	} `json:"api"`
+	Console struct {
+		URL string `json:"url"`
+	} `json:"console"`
+	Region struct {
+		ID string `json:"id"`
+	} `json:"region"`
 	OpenshiftVersion string `json:"openshift_version"`
+}
+
+// APIURL returns the cluster API URL
+func (r *ROSAClusterInfo) APIURL() string {
+	return r.API.URL
+}
+
+// ConsoleURL returns the cluster console URL
+func (r *ROSAClusterInfo) ConsoleURL() string {
+	return r.Console.URL
+}
+
+// RegionID returns the cluster region ID
+func (r *ROSAClusterInfo) RegionID() string {
+	return r.Region.ID
 }
 
 // NewROSAInstaller creates a new ROSA installer instance
@@ -271,7 +292,7 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 		return fmt.Errorf("get cluster info: %w", err)
 	}
 
-	if info.APIURL == "" {
+	if info.APIURL() == "" {
 		return fmt.Errorf("cluster API URL not available")
 	}
 

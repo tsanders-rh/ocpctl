@@ -1327,11 +1327,11 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		UpdatedAt: time.Now(),
 	}
 
-	if info.APIURL != "" {
-		outputs.APIURL = &info.APIURL
+	if apiURL := info.APIURL(); apiURL != "" {
+		outputs.APIURL = &apiURL
 	}
-	if info.ConsoleURL != "" {
-		outputs.ConsoleURL = &info.ConsoleURL
+	if consoleURL := info.ConsoleURL(); consoleURL != "" {
+		outputs.ConsoleURL = &consoleURL
 	}
 
 	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
