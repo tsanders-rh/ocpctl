@@ -82,6 +82,6 @@ oc create secret generic "$SECRET_NAME" \
 echo "✓ Secret '$SECRET_NAME' created in namespace '$NAMESPACE'"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Next step: apply the DataVolume to start the import:"
-echo "  oc apply -f 2_windows-datavolume.yaml"
+echo "Next step: import the Windows image:"
+echo "  ./2_setup-storageclass.sh --watch"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
