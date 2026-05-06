@@ -140,15 +140,29 @@ The IAM role has minimal permissions:
 
 ## Troubleshooting
 
-### DataVolume Stuck in Pending
+### DataVolume Stuck in Pending or Importer Pod Unschedulable
+
+The most common cause is a StorageClass incompatibility: CDI needs an `Immediate`-binding StorageClass
+and both the main PVC and scratch PVC must land in the same AZ. Use `2_setup-storageclass.sh` to fix:
 
 ```bash
-# Check importer pod
-oc get pods -n openshift-virtualization-os-images
+# Auto-detect and apply the correct StorageClass, then re-apply the DataVolume
+cd manifests/windows-vm
+./2_setup-storageclass.sh --watch
+
+# Preview what it will do without changing anything
+./2_setup-storageclass.sh --dry-run
+```
+
+For deeper inspection:
+
+```bash
+# Check importer pod scheduling events
+oc describe pod -n openshift-virtualization-os-images \
+  $(oc get pods -n openshift-virtualization-os-images -o name | grep importer)
 
 # Check pod logs
-oc logs -f $(oc get pods -n openshift-virtualization-os-images \
-  -l cdi.kubevirt.io/dataVolume=windows -o name)
+oc logs -f -n openshift-virtualization-os-images -l app=containerized-data-importer
 
 # Check events
 oc get events -n openshift-virtualization-os-images --sort-by='.lastTimestamp'
@@ -227,7 +241,7 @@ oc login <your-cluster>
 ./get-cluster-info.sh
 ./setup-irsa.sh <infraID> <region>
 oc apply -f 1a_windows-image-serviceaccount.yaml
-oc apply -f 2_windows-datavolume-irsa.yaml
+./2_setup-storageclass.sh   # handles StorageClass + DataVolume apply
 oc apply -f 3_datasource-windows.yaml
 oc apply -f 4_windows10-template.yaml
 ```

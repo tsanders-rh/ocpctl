@@ -49,7 +49,7 @@ AWS IAM user access keys stored in a Kubernetes Secret
 ## Prerequisites
 
 1. **OpenShift Virtualization** installed on the cluster
-2. **ODF/OCS** storage with `ocs-storagecluster-ceph-rbd-virtualization` storage class
+2. **EBS CSI storage** with an `Immediate`-binding StorageClass available (script handles this automatically)
 3. **Windows qcow2 image** uploaded to S3 (see admin setup below)
 4. **AWS credentials** with S3 read access - either:
    - IRSA role (recommended) OR
@@ -137,29 +137,50 @@ Apply the manifests in order:
 # Ensure namespace exists
 oc create namespace openshift-virtualization-os-images --dry-run=client -o yaml | oc apply -f -
 
-# Apply manifests
+# Apply credentials secret
 oc apply -f 1_s3-credentials-secret.yaml
-oc apply -f 2_windows-datavolume.yaml
+
+# Apply DataVolume using the setup script (handles StorageClass automatically)
+./2_setup-storageclass.sh
+
+# Apply remaining manifests
 oc apply -f 3_datasource-windows.yaml
 oc apply -f 4_windows10-template.yaml
 ```
+
+> **Why use `2_setup-storageclass.sh` instead of `oc apply -f 2_windows-datavolume.yaml` directly?**
+>
+> CDI (Containerized Data Importer) creates two PVCs during import: the main image PVC and a scratch PVC.
+> Both must land in the **same availability zone** or the importer pod will never be schedulable.
+> The default `gp3-csi` StorageClass uses `WaitForFirstConsumer` binding, which additionally prevents
+> CDI from starting at all. The script detects worker node AZs, finds or creates a zone-pinned
+> `Immediate`-binding StorageClass (e.g. `gp3-csi-immediate-us-west-2c`), and applies the DataVolume
+> with the correct class injected.
 
 ### Monitor DataVolume Import
 
 The DataVolume will create an importer pod to download the Windows image from S3:
 
 ```bash
-# Watch DataVolume progress
+# Apply and watch in one step
+./2_setup-storageclass.sh --watch
+
+# Or watch separately
 oc get datavolume windows -n openshift-virtualization-os-images -w
 
 # Check importer pod logs
-oc logs -f $(oc get pods -n openshift-virtualization-os-images -l cdi.kubevirt.io/dataVolume=windows -o name)
+oc logs -f -n openshift-virtualization-os-images -l app=containerized-data-importer
+
+# Check scratch disk usage (proxy for download progress)
+oc exec -n openshift-virtualization-os-images \
+  $(oc get pods -n openshift-virtualization-os-images -o name | grep importer) \
+  -- df -h /scratch
 
 # Expected phases:
-# 1. Pending → Importer pod starting
-# 2. ImportScheduled → Download starting
-# 3. ImportInProgress → Downloading from S3 (5-10 minutes)
-# 4. Succeeded → Ready to use
+# 1. PendingPopulation → PVCs being provisioned
+# 2. ImportScheduled   → Importer pod scheduled
+# 3. ImportInProgress  → Downloading from S3 (TransferScratch phase, 5-10 min)
+# 4. Succeeded         → Ready to use
 ```
 
 ### Verify DataSource
@@ -197,26 +218,59 @@ virtctl console windows-vm1 -n default
 | File | Purpose |
 |------|---------|
 | `1_s3-credentials-secret.yaml` | AWS credentials for CDI to access S3 |
-| `2_windows-datavolume.yaml` | Downloads Windows image from S3 to PVC |
+| `2_windows-datavolume.yaml` | DataVolume spec (applied via `2_setup-storageclass.sh`) |
+| `2_setup-storageclass.sh` | Detects/creates a zone-pinned Immediate StorageClass and applies the DataVolume |
 | `3_datasource-windows.yaml` | Reusable reference to the Windows image |
 | `4_windows10-template.yaml` | VM template for creating Windows instances |
+| `5_launch_vm.sh` | Helper script to create and start a Windows VM from the template |
 
 ## Troubleshooting
 
-### DataVolume stuck in "Pending"
+### DataVolume stuck in "PendingPopulation" or importer pod unschedulable
+
+This is the most common failure mode and is caused by a StorageClass incompatibility.
+
+**Root cause:** The default `gp3-csi` StorageClass uses `WaitForFirstConsumer` binding, which prevents
+CDI from provisioning PVCs before a pod is scheduled — a chicken-and-egg problem. Even with an
+`Immediate`-binding class, if the main PVC and scratch PVC land in different AZs, the importer pod
+will report `0/N nodes available` because no single node can access both volumes.
+
+**Fix:** Use `2_setup-storageclass.sh` instead of applying the DataVolume manually:
 
 ```bash
-# Check importer pod status
-oc get pods -n openshift-virtualization-os-images
+# Auto-detects worker AZs, creates a zone-pinned Immediate StorageClass if needed,
+# and applies the DataVolume with the correct class
+./2_setup-storageclass.sh
 
-# Check events
-oc get events -n openshift-virtualization-os-images --sort-by='.lastTimestamp'
+# To preview what it will do without applying:
+./2_setup-storageclass.sh --dry-run
+
+# To force a specific AZ:
+./2_setup-storageclass.sh --zone us-west-2c
 ```
 
-**Common issues:**
+**Diagnosing manually:**
+
+```bash
+# Check importer pod scheduling events
+oc describe pod -n openshift-virtualization-os-images \
+  $(oc get pods -n openshift-virtualization-os-images -o name | grep importer)
+
+# Check which AZ each PVC was provisioned in
+oc get pvc -n openshift-virtualization-os-images -o json | python3 -c "
+import json,sys
+pvcs = json.load(sys.stdin)
+for p in pvcs['items']:
+    print(p['metadata']['name'], '->', p.get('spec',{}).get('storageClassName','?'))
+"
+
+# Check available StorageClasses and their binding modes
+oc get sc
+```
+
+**Other common issues:**
 - Incorrect AWS credentials → verify secret values
 - Network connectivity → check cluster egress
-- Storage class not found → verify ODF/OCS installed
 
 ### S3 Access Denied
 

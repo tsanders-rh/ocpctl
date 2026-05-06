@@ -36,5 +36,7 @@ spec:
       requests:
         # Must be at least as large as the QCOW2 image (23GB actual, 70GB allocated)
         storage: 70Gi
-    # gp3-csi-immediate uses Immediate binding mode required for CDI imports
-    storageClassName: gp3-csi-immediate-us-west-2a
+    # StorageClass is injected at apply-time by 2_setup-storageclass.sh
+    # A zone-pinned Immediate-binding class is required so both the CDI main PVC
+    # and scratch PVC land in the same AZ and the importer pod can be scheduled.
+    # Run: ./2_setup-storageclass.sh to auto-detect/create the right SC and apply this DV.
