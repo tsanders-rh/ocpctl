@@ -452,6 +452,42 @@ func (r *ROSAInstaller) DeleteMachinePool(ctx context.Context, clusterName, pool
 	return nil
 }
 
+// StreamInstallLogs streams ROSA installation logs to a file
+// This runs 'rosa logs install -c <cluster> --watch' and writes to logFile
+func (r *ROSAInstaller) StreamInstallLogs(ctx context.Context, clusterName, logFile string) error {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return err
+	}
+
+	// Open log file for writing
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	defer f.Close()
+
+	// rosa logs install -c <cluster> --watch
+	cmd := exec.CommandContext(ctx, r.binaryPath, "logs", "install",
+		"-c", clusterName,
+		"--watch")
+
+	// Write both stdout and stderr to log file
+	cmd.Stdout = f
+	cmd.Stderr = f
+
+	// Run command (blocks until context cancelled or logs complete)
+	if err := cmd.Run(); err != nil {
+		// Context cancellation is expected
+		if ctx.Err() == context.Canceled {
+			return nil
+		}
+		return fmt.Errorf("rosa logs install failed: %w", err)
+	}
+
+	return nil
+}
+
 // Version returns the rosa CLI version
 func (r *ROSAInstaller) Version() (string, error) {
 	cmd := exec.Command(r.binaryPath, "version")
