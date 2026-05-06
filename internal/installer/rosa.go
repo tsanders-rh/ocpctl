@@ -264,8 +264,13 @@ func (r *ROSAInstaller) DescribeCluster(ctx context.Context, clusterName string)
 		return nil, err
 	}
 
+	// Use a fresh context with timeout for the describe operation
+	// This prevents the command from failing when parent context is about to expire
+	describeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// rosa describe cluster --cluster <name> -o json
-	cmd := exec.CommandContext(ctx, r.binaryPath, "describe", "cluster",
+	cmd := exec.CommandContext(describeCtx, r.binaryPath, "describe", "cluster",
 		"--cluster", clusterName,
 		"-o", "json")
 
@@ -353,8 +358,12 @@ func (r *ROSAInstaller) ListMachinePools(ctx context.Context, clusterName string
 		return nil, err
 	}
 
+	// Use a fresh context with timeout for the list operation
+	listCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// rosa list machinepools --cluster <name> -o json
-	cmd := exec.CommandContext(ctx, r.binaryPath, "list", "machinepools",
+	cmd := exec.CommandContext(listCtx, r.binaryPath, "list", "machinepools",
 		"--cluster", clusterName,
 		"-o", "json")
 
