@@ -18,7 +18,7 @@ TEMPLATE_NAMESPACE="openshift-virtualization-os-images"
 
 VM_NAME="${1:-}"
 VM_NAMESPACE="${2:-windows-oadp-test}"
-STORAGE_CLASS="${3:-gp3-csi-wfc}"
+STORAGE_CLASS="${3:-gp3-csi-immediate-us-west-2c}"
 
 # Pre-flight: must be logged into the cluster
 if ! oc whoami &>/dev/null; then
