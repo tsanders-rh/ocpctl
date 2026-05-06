@@ -88,8 +88,13 @@ func NewROSAInstaller() *ROSAInstaller {
 // ensureLoggedIn ensures rosa CLI is authenticated with OCM
 // Uses OCM_TOKEN environment variable for authentication
 func (r *ROSAInstaller) ensureLoggedIn(ctx context.Context) error {
+	// Use a fresh context with short timeout for login operations
+	// This prevents login from failing when parent context is about to expire (e.g., during long WaitForClusterReady calls)
+	loginCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Check if already logged in
-	cmd := exec.CommandContext(ctx, r.binaryPath, "whoami")
+	cmd := exec.CommandContext(loginCtx, r.binaryPath, "whoami")
 	if err := cmd.Run(); err == nil {
 		// Already logged in
 		return nil
@@ -105,7 +110,7 @@ func (r *ROSAInstaller) ensureLoggedIn(ctx context.Context) error {
 	}
 
 	// Login using token
-	cmd = exec.CommandContext(ctx, r.binaryPath, "login", "--token="+token)
+	cmd = exec.CommandContext(loginCtx, r.binaryPath, "login", "--token="+token)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
