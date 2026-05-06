@@ -528,6 +528,52 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
+            {outputs.kubeadmin_secret_ref && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Console Credentials</Label>
+                  {cluster.cluster_type === 'rosa' && (
+                    <span className="text-xs text-muted-foreground">Expires in 72 hours</span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={outputs.kubeadmin_secret_ref.split(':')[0] || 'cluster-admin'}
+                      readOnly
+                      className="flex-1 font-mono text-sm"
+                      placeholder="Username"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigator.clipboard.writeText(outputs.kubeadmin_secret_ref!.split(':')[0] || 'cluster-admin')}
+                      title="Copy username"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={outputs.kubeadmin_secret_ref.split(':')[1] || outputs.kubeadmin_secret_ref}
+                      readOnly
+                      type="password"
+                      className="flex-1 font-mono text-sm"
+                      placeholder="Password"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigator.clipboard.writeText(outputs.kubeadmin_secret_ref!.split(':')[1] || outputs.kubeadmin_secret_ref!)}
+                      title="Copy password"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {outputs.dashboard_token && (
               <div className="space-y-2">
                 <Label>Dashboard Token</Label>
