@@ -494,29 +494,15 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 		})
 	}
 
-	// Install log - check for ROSA create log
-	rosaCreateLogPath := filepath.Join(workDir, "rosa-create.log")
-	if stat, err := os.Stat(rosaCreateLogPath); err == nil {
+	// Install log - check for ROSA log (contains both create and install logs)
+	rosaLogPath := filepath.Join(workDir, "rosa-create.log")
+	if stat, err := os.Stat(rosaLogPath); err == nil {
 		size := stat.Size()
 		artifacts = append(artifacts, types.ClusterArtifact{
 			ID:           uuid.New().String(),
 			ClusterID:    clusterID,
 			ArtifactType: types.ArtifactTypeLog,
-			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/rosa-create.log", h.config.S3BucketName, clusterID),
-			SizeBytes:    &size,
-			CreatedAt:    time.Now(),
-		})
-	}
-
-	// Install log - check for ROSA install log
-	rosaInstallLogPath := filepath.Join(workDir, "rosa-install.log")
-	if stat, err := os.Stat(rosaInstallLogPath); err == nil {
-		size := stat.Size()
-		artifacts = append(artifacts, types.ClusterArtifact{
-			ID:           uuid.New().String(),
-			ClusterID:    clusterID,
-			ArtifactType: types.ArtifactTypeLog,
-			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/rosa-install.log", h.config.S3BucketName, clusterID),
+			S3URI:        fmt.Sprintf("s3://%s/clusters/%s/artifacts/rosa.log", h.config.S3BucketName, clusterID),
 			SizeBytes:    &size,
 			CreatedAt:    time.Now(),
 		})
@@ -1304,19 +1290,13 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	log.Printf("ROSA cluster %s created with ID: %s", cluster.Name, clusterID)
 
 	// Start streaming installation logs in background
-	// This will run 'rosa logs install --watch' and append to the same log file
-	installLogPath := filepath.Join(workDir, "rosa-install.log")
+	// This will run 'rosa logs install --watch' and append to the same log file (rosa-create.log)
+	// so all logs appear in one continuous stream in the UI
 	go func() {
-		if err := rosaInstaller.StreamInstallLogs(streamCtx, cluster.Name, installLogPath); err != nil {
+		if err := rosaInstaller.StreamInstallLogs(streamCtx, cluster.Name, logPath); err != nil {
 			log.Printf("Warning: installation log streaming ended: %v", err)
 		}
 	}()
-
-	// Start streaming the installation log file (separate from create log)
-	installStreamer := NewLogStreamer(h.store, cluster.ID, job.ID, installLogPath)
-	if err := installStreamer.Start(streamCtx); err != nil {
-		log.Printf("Warning: failed to start install log streaming: %v", err)
-	}
 
 	// Wait for cluster to be ready
 	log.Printf("Waiting for ROSA cluster %s to reach ready state...", cluster.Name)
@@ -1334,9 +1314,6 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	time.Sleep(LogBatchFlushDelay) // Allow final batch to flush
 	if stopErr := streamer.Stop(); stopErr != nil {
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
-	}
-	if stopErr := installStreamer.Stop(); stopErr != nil {
-		log.Printf("Warning: error stopping install log streamer: %v", stopErr)
 	}
 
 	// Get cluster information
