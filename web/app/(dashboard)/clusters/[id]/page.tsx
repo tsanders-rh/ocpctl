@@ -532,7 +532,7 @@ export default function ClusterDetailPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Console Credentials</Label>
-                  {cluster.cluster_type === 'rosa' && (
+                  {(cluster as any).cluster_type === 'rosa' && (
                     <span className="text-xs text-muted-foreground">Expires in 72 hours</span>
                   )}
                 </div>
