@@ -290,8 +290,15 @@ func (r *ROSAInstaller) DescribeCluster(ctx context.Context, clusterName string)
 	return &info, nil
 }
 
-// GetKubeconfig retrieves the kubeconfig for a ROSA cluster
-func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPath string) error {
+// ROSAAdminCredentials holds the admin username and password for console access
+type ROSAAdminCredentials struct {
+	Username string
+	Password string
+}
+
+// GetKubeconfig retrieves the kubeconfig for a ROSA cluster and returns admin credentials
+// The admin credentials expire after 72 hours and can be used for console login
+func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPath string) (*ROSAAdminCredentials, error) {
 	// ROSA doesn't have a direct kubeconfig command, need to use 'oc login' approach
 	// or AWS credentials. For now, we'll use oc to get the kubeconfig.
 	// This requires the cluster to be ready and oc to be installed.
@@ -299,11 +306,11 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	// First get cluster API URL
 	info, err := r.DescribeCluster(ctx, clusterName)
 	if err != nil {
-		return fmt.Errorf("get cluster info: %w", err)
+		return nil, fmt.Errorf("get cluster info: %w", err)
 	}
 
 	if info.APIURL() == "" {
-		return fmt.Errorf("cluster API URL not available")
+		return nil, fmt.Errorf("cluster API URL not available")
 	}
 
 	// Create admin user and get login command
@@ -316,7 +323,7 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("rosa create admin failed: %w\nStderr: %s", err, stderr.String())
+		return nil, fmt.Errorf("rosa create admin failed: %w\nStderr: %s", err, stderr.String())
 	}
 
 	// Output contains: oc login https://api.xxx --username cluster-admin --password xxx
@@ -327,7 +334,7 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	// Format: "oc login <api-url> --username <user> --password <pass>"
 	parts := strings.Fields(loginCmd)
 	if len(parts) < 7 || parts[0] != "oc" || parts[1] != "login" {
-		return fmt.Errorf("unexpected admin create output format")
+		return nil, fmt.Errorf("unexpected admin create output format")
 	}
 
 	apiURL := parts[2]
@@ -345,10 +352,14 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	ocCmd.Stderr = &ocStderr
 
 	if err := ocCmd.Run(); err != nil {
-		return fmt.Errorf("oc login failed: %w\nStderr: %s", err, ocStderr.String())
+		return nil, fmt.Errorf("oc login failed: %w\nStderr: %s", err, ocStderr.String())
 	}
 
-	return nil
+	// Return admin credentials for storage
+	return &ROSAAdminCredentials{
+		Username: username,
+		Password: password,
+	}, nil
 }
 
 // ListMachinePools lists all machine pools for a ROSA cluster

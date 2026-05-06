@@ -1322,13 +1322,15 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		return fmt.Errorf("describe cluster: %w", err)
 	}
 
-	// Get kubeconfig
+	// Get kubeconfig and admin credentials
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
 		return fmt.Errorf("create auth directory: %w", err)
 	}
 
-	if err := rosaInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath); err != nil {
+	var adminCreds *installer.ROSAAdminCredentials
+	adminCreds, err = rosaInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath)
+	if err != nil {
 		log.Printf("Warning: failed to get kubeconfig: %v", err)
 	}
 
@@ -1366,6 +1368,15 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 
 	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
 	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Store admin credentials for console login (expires in 72 hours)
+	if adminCreds != nil {
+		// Store credentials in format: username:password
+		// Note: These credentials expire after 72 hours
+		adminSecret := fmt.Sprintf("%s:%s", adminCreds.Username, adminCreds.Password)
+		outputs.KubeadminSecretRef = &adminSecret
+		log.Printf("Stored ROSA admin credentials (expires in 72 hours)")
+	}
 
 	// Store cluster outputs
 	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
