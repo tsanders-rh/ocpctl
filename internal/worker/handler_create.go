@@ -1222,7 +1222,7 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 
 	// Add compute configuration from profile
 	if prof.Compute.Workers.Replicas > 0 {
-		args = append(args, "--compute-nodes", fmt.Sprintf("%d", prof.Compute.Workers.Replicas))
+		args = append(args, "--replicas", fmt.Sprintf("%d", prof.Compute.Workers.Replicas))
 	}
 	if prof.Compute.Workers.InstanceType != "" {
 		args = append(args, "--compute-machine-type", prof.Compute.Workers.InstanceType)
@@ -1242,8 +1242,8 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		args = append(args, "--tags", strings.Join(tagStrs, ","))
 	}
 
-	// Add STS mode (ROSA requires STS by default for new clusters)
-	args = append(args, "--sts")
+	// Add STS mode with auto mode (ROSA auto-creates operator roles)
+	args = append(args, "--sts", "--mode", "auto")
 
 	log.Printf("Creating ROSA cluster with args: %v", args)
 

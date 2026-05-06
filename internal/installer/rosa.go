@@ -95,12 +95,52 @@ func (r *ROSAInstaller) ensureLoggedIn(ctx context.Context) error {
 	return nil
 }
 
+// ensureAccountRoles ensures ROSA account-level IAM roles exist
+// These are one-time roles required for any ROSA cluster in the AWS account
+func (r *ROSAInstaller) ensureAccountRoles(ctx context.Context) error {
+	// Check if account roles exist
+	cmd := exec.CommandContext(ctx, r.binaryPath, "list", "account-roles")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("check account roles: %w: %s", err, stderr.String())
+	}
+
+	// If output contains role ARNs, roles exist
+	output := stdout.String()
+	if strings.Contains(output, "ManagedOpenShift-Installer-Role") &&
+		strings.Contains(output, "ManagedOpenShift-ControlPlane-Role") &&
+		strings.Contains(output, "ManagedOpenShift-Worker-Role") &&
+		strings.Contains(output, "ManagedOpenShift-Support-Role") {
+		// Account roles already exist
+		return nil
+	}
+
+	// Create account roles
+	cmd = exec.CommandContext(ctx, r.binaryPath, "create", "account-roles", "--mode", "auto", "--yes")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("create account roles: %w: %s", err, stderr.String())
+	}
+
+	return nil
+}
+
 // CreateCluster creates a ROSA cluster using rosa CLI
 // Returns cluster ID and error
 func (r *ROSAInstaller) CreateCluster(ctx context.Context, args []string, logFile string) (string, string, error) {
 	// Ensure rosa is authenticated
 	if err := r.ensureLoggedIn(ctx); err != nil {
 		return "", "", err
+	}
+
+	// Ensure account-level IAM roles exist (one-time setup)
+	if err := r.ensureAccountRoles(ctx); err != nil {
+		return "", "", fmt.Errorf("ensure account roles: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
