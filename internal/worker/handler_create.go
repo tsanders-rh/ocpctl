@@ -1298,9 +1298,9 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		}
 	}()
 
-	// Wait for cluster to be ready
+	// Wait for cluster to be ready (ROSA clusters can take 40-60 minutes)
 	log.Printf("Waiting for ROSA cluster %s to reach ready state...", cluster.Name)
-	waitCtx, waitCancel := context.WithTimeout(ctx, 45*time.Minute)
+	waitCtx, waitCancel := context.WithTimeout(ctx, 90*time.Minute)
 	defer waitCancel()
 
 	if err := rosaInstaller.WaitForClusterReady(waitCtx, cluster.Name, 30*time.Second); err != nil {
