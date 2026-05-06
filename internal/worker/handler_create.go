@@ -1233,13 +1233,13 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		args = append(args, "--multi-az")
 	}
 
-	// Add tags
+	// Add tags (ROSA format: 'key value, key2 value2')
 	if len(cluster.EffectiveTags) > 0 {
 		tagStrs := make([]string, 0, len(cluster.EffectiveTags))
 		for k, v := range cluster.EffectiveTags {
-			tagStrs = append(tagStrs, fmt.Sprintf("%s=%s", k, v))
+			tagStrs = append(tagStrs, fmt.Sprintf("%s %s", k, v))
 		}
-		args = append(args, "--tags", strings.Join(tagStrs, ","))
+		args = append(args, "--tags", strings.Join(tagStrs, ", "))
 	}
 
 	// Add STS mode with auto mode (ROSA auto-creates operator roles)
