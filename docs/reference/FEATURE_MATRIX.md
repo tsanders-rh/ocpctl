@@ -2,8 +2,32 @@
 
 Comprehensive overview of features, platform support, and version compatibility.
 
-**Last Updated:** March 17, 2024
-**Version:** ocpctl v0.20260317.bca1feb
+**Last Updated:** May 7, 2026
+**Version:** ocpctl v0.20260507.a07a92c
+
+## Cluster Types
+
+| Cluster Type | Platform | Description | Control Plane | Hibernation Method | Status |
+|--------------|----------|-------------|---------------|-------------------|--------|
+| **OpenShift (IPI)** | AWS, GCP, IBM Cloud | Self-managed OpenShift | User-managed | Stop all instances | ✅ |
+| **ROSA** | AWS | Red Hat OpenShift Service on AWS | AWS-managed | Scale workers to 0 | ✅ |
+| **EKS** | AWS | Amazon Elastic Kubernetes Service | AWS-managed | Scale node groups to 0 | ✅ |
+| **GKE** | GCP | Google Kubernetes Engine | Google-managed | Stop node pools | ✅ |
+| **IKS** | IBM Cloud | IBM Cloud Kubernetes Service | IBM-managed | Not supported | ✅ |
+
+### ROSA vs OpenShift IPI
+
+| Feature | OpenShift IPI | ROSA |
+|---------|--------------|------|
+| **Control Plane** | User-managed EC2 instances | AWS-managed (invisible) |
+| **Installation Tool** | `openshift-install` | `rosa` CLI |
+| **Provisioning Time** | 45-60 minutes | 30-40 minutes |
+| **Hibernation** | Stop all instances | Scale workers to 0 only |
+| **Hibernated Cost** | ~$0 (storage only) | $0.03/hr (control plane runs) |
+| **Full Control** | Yes | Limited (managed service) |
+| **SLA** | Self-managed | AWS-backed |
+| **IAM Setup** | CCO (Cloud Credential Operator) | STS auto-mode |
+| **Best For** | Full control, multi-cloud | Managed service, faster setup |
 
 ## Platform Support
 
@@ -97,7 +121,7 @@ All versions support:
 
 ## Cluster Profiles
 
-### AWS Profiles
+### AWS OpenShift (IPI) Profiles
 
 | Profile | Control Nodes | Worker Nodes | Max TTL | Default TTL | Cost/Hour | Status |
 |---------|--------------|--------------|---------|-------------|-----------|--------|
@@ -107,6 +131,18 @@ All versions support:
 | **aws-virtualization** | 3 (m6i.2xlarge) | 3 (m6i.metal) | 168h | 72h | ~$35.50 | ✅ |
 | **aws-sno-shared-vpc** | 1 | 0 | - | - | - | ⚠️ Template |
 | **aws-sno-shared-vpc-custom** | 1 | 0 | 168h | 72h | ~$0.80 | ✅ |
+
+### AWS ROSA Profiles
+
+| Profile | Control Plane | Worker Nodes | Multi-AZ | Max TTL | Default TTL | Cost/Hour | Hibernated Cost | Status |
+|---------|--------------|--------------|----------|---------|-------------|-----------|-----------------|--------|
+| **aws-rosa-minimal** | AWS-managed | 2 (m5.xlarge) | No | 168h | 72h | ~$0.41 | $0.03/hr | ✅ |
+| **aws-rosa-standard** | AWS-managed | 3 (m5.2xlarge) | Yes | 336h | 168h | ~$1.19 | $0.03/hr | ✅ |
+
+**ROSA Notes:**
+- Control plane costs $0.03/hr (always running, even when hibernated)
+- Hibernation scales workers to 0 (saves ~93% of running costs)
+- Multi-AZ adds NAT gateway costs (~$0.135/hr)
 
 ### IBM Cloud Profiles
 
@@ -346,11 +382,15 @@ Current API guarantees backward compatibility within v1.
 
 ## Version History
 
-### v0.20.x (Current - March 2024)
+### v0.20.x (Current - May 2026)
+- ✅ **ROSA Support** - Full lifecycle management for managed OpenShift on AWS
+- ✅ ROSA credentials with retry logic - Automatic admin credential capture
+- ✅ Password visibility toggle - Eye icon for cluster credentials
+- ✅ Windows VM management script - Bulk operations for CNV clusters
 - ✅ Comprehensive AWS resource tagging (Phase 2)
 - ✅ Hybrid orphan detection (tag + pattern)
 - ✅ Retroactive tagging tool
-- ✅ Multi-version OpenShift support (4.18, 4.19, 4.20)
+- ✅ Multi-version OpenShift support (4.18, 4.19, 4.20, 4.21, 4.22)
 - ✅ Work hours hibernation
 - ✅ Orphaned resource management
 

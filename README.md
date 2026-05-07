@@ -1,6 +1,6 @@
 # ocpctl
 
-**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, EKS, IKS, and GKE.**
+**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, ROSA, EKS, IKS, and GKE.**
 
 ocpctl is a production-ready platform that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters on AWS, Google Cloud Platform (GCP), and IBM Cloud with automated cost controls, comprehensive security, and enterprise-grade operations.
 
@@ -27,6 +27,7 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 ### Platform Support
 - ✅ **OpenShift 4.x** (AWS, GCP, IBM Cloud) - Full lifecycle including hibernation
+- ✅ **ROSA (Red Hat OpenShift Service on AWS)** - Fully-managed OpenShift with AWS-managed control plane
 - ✅ **Google Kubernetes Engine (GKE)** - Managed Kubernetes on Google Cloud
 - ✅ **AWS EKS** - Elastic Kubernetes Service with VPC management
 - ✅ **IBM Cloud IKS** - IBM Kubernetes Service
@@ -34,7 +35,7 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 ### Cost Management
 - **Automatic TTL-based destruction** - Clusters self-destruct after configured lifetime
-- **Work hours hibernation** - Stop instances outside business hours (OpenShift + GKE auto-scaling)
+- **Work hours hibernation** - Stop instances outside business hours (OpenShift, ROSA worker scaling, GKE auto-scaling)
 - **Comprehensive resource tagging** - Track costs by owner, team, cost center, and cluster
 - **Orphaned resource detection** - Identify and clean up resources from failed deployments (AWS, GCP)
 - **Cloud billing integration** - GCP BigQuery billing export for accurate cost tracking
@@ -220,14 +221,14 @@ See [API Documentation](docs/deployment/API_SUBDOMAIN_SETUP.md) for complete end
 
 ### Latest Release
 
-**Version:** v0.20260413.1346b69 (April 13, 2026)
+**Version:** v0.20260507.a07a92c (May 7, 2026)
 
 **Recent Updates:**
+- ✅ **ROSA Support** - Full lifecycle management for Red Hat OpenShift Service on AWS
+- ✅ ROSA credentials fix - Automatic credential capture with retry logic
+- ✅ Password visibility toggle - Eye icon to show/hide cluster credentials in UI
+- ✅ Windows VM management - Script for bulk Windows VM operations on CNV clusters
 - ✅ Security hardening - All critical/high/medium severity issues addressed
-- ✅ EKS destroy reconciler - Fixed infinite loop with AWS-managed ENIs
-- ✅ Password change feature - User-facing password management
-- ✅ API subdomain deployment - Dedicated subdomain with clean URLs
-- ✅ OpenShift 4.21+ support - Multi-version installer support
 
 See [CHANGELOG.md](CHANGELOG.md) for complete release history.
 
