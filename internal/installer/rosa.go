@@ -326,15 +326,35 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 		return nil, fmt.Errorf("rosa create admin failed: %w\nStderr: %s", err, stderr.String())
 	}
 
-	// Output contains: oc login https://api.xxx --username cluster-admin --password xxx
-	// Extract and execute the oc login command with --kubeconfig flag
-	loginCmd := strings.TrimSpace(stdout.String())
+	// Output contains multiple INFO lines, need to extract just the "oc login" command
+	// Example output:
+	//   INFO: Admin account has been added...
+	//   INFO: To login, run the following command:
+	//
+	//      oc login https://api.xxx --username cluster-admin --password xxx
+	//
+	//   INFO: It may take several minutes...
+	output := stdout.String()
+
+	// Find the line containing "oc login"
+	var loginCmd string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "oc login") {
+			loginCmd = trimmed
+			break
+		}
+	}
+
+	if loginCmd == "" {
+		return nil, fmt.Errorf("unexpected admin create output format: no 'oc login' command found")
+	}
 
 	// Parse oc login command to extract credentials
 	// Format: "oc login <api-url> --username <user> --password <pass>"
 	parts := strings.Fields(loginCmd)
 	if len(parts) < 7 || parts[0] != "oc" || parts[1] != "login" {
-		return nil, fmt.Errorf("unexpected admin create output format")
+		return nil, fmt.Errorf("unexpected admin create output format: %s", loginCmd)
 	}
 
 	apiURL := parts[2]

@@ -10,9 +10,10 @@ import { formatDistanceToNow } from "date-fns";
 interface EC2InstancesCardProps {
   clusterId: string;
   platform?: string;
+  clusterType?: string;
 }
 
-export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps) {
+export function EC2InstancesCard({ clusterId, platform, clusterType }: EC2InstancesCardProps) {
   const { data: instances, isLoading, error } = useClusterInstances(clusterId, platform);
 
   // Only show for AWS and GCP clusters
@@ -22,7 +23,12 @@ export function EC2InstancesCard({ clusterId, platform }: EC2InstancesCardProps)
 
   // Determine title based on platform
   const title = platform === "aws" ? "EC2 Instances" : platform === "gcp" ? "GCP Instances" : "Instances";
-  const emptyMessage = platform === "aws"
+
+  // For ROSA clusters, explain that worker nodes are managed by AWS/Red Hat
+  const isROSA = clusterType === "rosa";
+  const emptyMessage = isROSA
+    ? "ROSA is a managed service - worker nodes are managed by AWS and Red Hat, and control plane nodes are not visible in your account."
+    : platform === "aws"
     ? "No EC2 instances found for this cluster"
     : platform === "gcp"
     ? "No GCP instances found for this cluster"

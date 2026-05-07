@@ -736,7 +736,7 @@ export default function ClusterDetailPage() {
       )}
 
       {/* EC2 Instances Card */}
-      <EC2InstancesCard clusterId={cluster.id} platform={cluster.platform} />
+      <EC2InstancesCard clusterId={cluster.id} platform={cluster.platform} clusterType={(cluster as any).cluster_type} />
 
       {/* Storage Card */}
       {(cluster.status === "READY" || cluster.status === "HIBERNATED") && (
@@ -745,7 +745,7 @@ export default function ClusterDetailPage() {
             <CardTitle>Storage</CardTitle>
           </CardHeader>
           <CardContent>
-            <StorageTab clusterId={cluster.id} platform={cluster.platform} clusterStatus={cluster.status} />
+            <StorageTab clusterId={cluster.id} platform={cluster.platform} clusterStatus={cluster.status} clusterType={(cluster as any).cluster_type} />
           </CardContent>
         </Card>
       )}

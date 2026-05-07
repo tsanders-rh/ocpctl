@@ -20,18 +20,22 @@ interface StorageTabProps {
   clusterId: string;
   platform: string;
   clusterStatus: string;
+  clusterType?: string;
 }
 
-export function StorageTab({ clusterId, platform, clusterStatus }: StorageTabProps) {
+export function StorageTab({ clusterId, platform, clusterStatus, clusterType }: StorageTabProps) {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const { data: storageGroups, isLoading, error } = useClusterStorage(clusterId);
   const { data: storageClasses, isLoading: storageClassesLoading, error: storageClassesError } =
     useClusterStorageClasses(clusterId, clusterStatus);
   const unlinkMutation = useUnlinkStorage();
 
-  // Shared storage is AWS-only (uses EFS and S3)
+  // Shared storage is AWS-only (uses EFS and S3), but not available for ROSA managed clusters
   const isAWS = platform === "aws";
-  const disabledReason = !isAWS
+  const isROSA = clusterType === "rosa";
+  const disabledReason = isROSA
+    ? "Shared storage is not available for ROSA managed clusters. ROSA uses AWS-managed storage."
+    : !isAWS
     ? `Shared storage is only available for AWS clusters (uses EFS and S3). This cluster is ${platform.toUpperCase()}.`
     : "";
 
