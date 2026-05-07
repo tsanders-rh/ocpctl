@@ -76,6 +76,7 @@ type Server struct {
 	policy   *policy.Engine
 	auth     *auth.Auth
 	iamAuth  *auth.IAMAuthenticator
+	s3Client *s3.Client
 }
 
 // NewServer creates a new API server
@@ -118,6 +119,14 @@ func NewServer(
 		e.Logger.Warn("Failed to initialize IAM authenticator (IAM auth will be unavailable): ", err)
 	}
 
+	// Create S3 client for profile synchronization
+	s3Client, err := s3.NewClient(context.Background())
+	if err != nil {
+		// S3 client is optional - log warning but continue
+		// Profile updates will work locally but won't sync to S3
+		e.Logger.Warn("Failed to initialize S3 client (profile sync will be unavailable): ", err)
+	}
+
 	s := &Server{
 		echo:     e,
 		config:   config,
@@ -126,6 +135,7 @@ func NewServer(
 		policy:   policyEngine,
 		auth:     authService,
 		iamAuth:  iamAuthService,
+		s3Client: s3Client,
 	}
 
 	s.setupMiddleware()
@@ -250,7 +260,7 @@ func (s *Server) setupRoutes() {
 	if profilesDir == "" {
 		profilesDir = "/opt/ocpctl/profiles"
 	}
-	profileUpdateHandler := NewProfileUpdateHandler(s.registry, s.store, profilesDir)
+	profileUpdateHandler := NewProfileUpdateHandler(s.registry, s.store, s.s3Client, profilesDir)
 	adminGroup.GET("/profiles/version-check", profileUpdateHandler.HandleCheckVersions)
 	adminGroup.POST("/profiles/:name/update-versions", profileUpdateHandler.HandleUpdateVersions)
 	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)

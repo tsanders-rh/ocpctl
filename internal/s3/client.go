@@ -133,3 +133,18 @@ func DownloadFile(ctx context.Context, bucket, key string) ([]byte, error) {
 	}
 	return client.DownloadFileContent(ctx, bucket, key)
 }
+
+// UploadFile uploads file content to S3
+func (c *Client) UploadFile(ctx context.Context, bucket, key string, content []byte) error {
+	_, err := c.s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 strings.NewReader(string(content)),
+		ContentLength:        aws.Int64(int64(len(content))),
+		ServerSideEncryption: "AES256", // Encrypt at rest
+	})
+	if err != nil {
+		return fmt.Errorf("upload to S3: %w", err)
+	}
+	return nil
+}

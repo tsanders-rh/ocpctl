@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -17,16 +21,18 @@ type ProfileUpdateHandler struct {
 	versionChecker *profile.VersionChecker
 	updater        *profile.ProfileUpdater
 	store          *store.Store
+	s3Client       *s3.Client
 	profilesDir    string
 }
 
 // NewProfileUpdateHandler creates a new profile update handler
-func NewProfileUpdateHandler(registry *profile.Registry, store *store.Store, profilesDir string) *ProfileUpdateHandler {
+func NewProfileUpdateHandler(registry *profile.Registry, store *store.Store, s3Client *s3.Client, profilesDir string) *ProfileUpdateHandler {
 	return &ProfileUpdateHandler{
 		registry:       registry,
 		versionChecker: profile.NewVersionChecker(),
 		updater:        profile.NewProfileUpdater(profilesDir),
 		store:          store,
+		s3Client:       s3Client,
 		profilesDir:    profilesDir,
 	}
 }
@@ -315,8 +321,31 @@ func (h *ProfileUpdateHandler) getCurrentUser(c echo.Context) (*types.User, erro
 
 // syncProfileToS3 syncs a profile to S3 for multi-node deployment
 func (h *ProfileUpdateHandler) syncProfileToS3(profileName string) {
-	// TODO: Implement S3 sync
-	// This should upload the updated profile YAML to s3://ocpctl-binaries/profiles/
-	// For now, this is a placeholder that logs the intent
-	fmt.Printf("TODO: Sync profile %s to S3 for worker propagation\n", profileName)
+	ctx := context.Background()
+
+	// Check if S3 client is available
+	if h.s3Client == nil {
+		fmt.Printf("Warning: S3 client not initialized, skipping profile sync for %s\n", profileName)
+		return
+	}
+
+	// Read the updated profile file
+	profilePath := filepath.Join(h.profilesDir, profileName+".yaml")
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		fmt.Printf("Error reading profile %s for S3 sync: %v\n", profileName, err)
+		return
+	}
+
+	// Upload to S3 bucket (ocpctl-binaries/profiles/)
+	bucket := "ocpctl-binaries"
+	s3Key := fmt.Sprintf("profiles/%s.yaml", profileName)
+
+	err = h.s3Client.UploadFile(ctx, bucket, s3Key, data)
+	if err != nil {
+		fmt.Printf("Error syncing profile %s to S3: %v\n", profileName, err)
+		return
+	}
+
+	fmt.Printf("✓ Synced profile %s to s3://%s/%s\n", profileName, bucket, s3Key)
 }
