@@ -245,6 +245,17 @@ func (s *Server) setupRoutes() {
 	adminGroup.PATCH("/orphaned-resources/:id/ignore", orphanedHandler.MarkIgnored)
 	adminGroup.DELETE("/orphaned-resources/:id", orphanedHandler.Delete)
 
+	// Profile version update routes (admin only)
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "/opt/ocpctl/profiles"
+	}
+	profileUpdateHandler := NewProfileUpdateHandler(s.registry, s.store, profilesDir)
+	adminGroup.GET("/profiles/version-check", profileUpdateHandler.HandleCheckVersions)
+	adminGroup.POST("/profiles/:name/update-versions", profileUpdateHandler.HandleUpdateVersions)
+	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)
+	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
+
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)
 
