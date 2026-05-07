@@ -18,6 +18,23 @@ VM_NAMESPACE="default"
 TEMPLATE_NAME="windows10-oadp-vm"
 TEMPLATE_NAMESPACE="openshift-virtualization-os-images"
 STORAGE_CLASS="gp3-csi-wfc"
+SEPARATE_NAMESPACES=false
+
+# Parse command-line flags
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -s|--separate-namespaces)
+      SEPARATE_NAMESPACES=true
+      shift
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
 
 # Function to print colored messages
 log_info() {
@@ -36,25 +53,53 @@ log_error() {
     echo -e "${RED}✗ $1${NC}"
 }
 
+# Function to get namespace for a VM
+get_vm_namespace() {
+    local vm_index=$1
+    if [ "$SEPARATE_NAMESPACES" = true ]; then
+        echo "${VM_PREFIX}-${vm_index}-ns"
+    else
+        echo "$VM_NAMESPACE"
+    fi
+}
+
+# Function to ensure namespace exists
+ensure_namespace() {
+    local ns=$1
+    if ! oc get namespace "$ns" &>/dev/null; then
+        log_info "Creating namespace: $ns"
+        oc create namespace "$ns"
+        log_success "Created namespace: $ns"
+    fi
+}
+
 # Function to create VMs
 create_vms() {
-    log_info "Creating $VM_COUNT Windows VMs..."
+    if [ "$SEPARATE_NAMESPACES" = true ]; then
+        log_info "Creating $VM_COUNT Windows VMs in separate namespaces..."
+    else
+        log_info "Creating $VM_COUNT Windows VMs in namespace: $VM_NAMESPACE..."
+    fi
     echo ""
 
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
+        NS=$(get_vm_namespace $i)
 
-        log_info "Creating VM: $VM_NAME"
+        # Ensure namespace exists
+        ensure_namespace "$NS"
 
-        if oc get vm "$VM_NAME" -n "$VM_NAMESPACE" &>/dev/null; then
-            log_warning "VM $VM_NAME already exists, skipping"
+        log_info "Creating VM: $VM_NAME in namespace: $NS"
+
+        if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
+            log_warning "VM $VM_NAME already exists in namespace $NS, skipping"
         else
             oc process "$TEMPLATE_NAME" -n "$TEMPLATE_NAMESPACE" \
                 -p VM_NAME="$VM_NAME" \
-                -p VM_NAMESPACE="$VM_NAMESPACE" \
+                -p VM_NAMESPACE="$NS" \
                 -p STORAGE_CLASS="$STORAGE_CLASS" | oc apply -f -
 
-            log_success "Created VM: $VM_NAME"
+            log_success "Created VM: $VM_NAME in namespace: $NS"
         fi
     done
 
@@ -70,22 +115,23 @@ wait_for_provisioning() {
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
         DV_NAME="${VM_NAME}-disk"
+        NS=$(get_vm_namespace $i)
 
-        log_info "Waiting for $VM_NAME disk to provision..."
+        log_info "Waiting for $VM_NAME disk to provision in namespace: $NS..."
 
         TIMEOUT=3600  # 60 minutes
         ELAPSED=0
 
         while [ $ELAPSED -lt $TIMEOUT ]; do
-            PHASE=$(oc get datavolume "$DV_NAME" -n "$VM_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-            PROGRESS=$(oc get datavolume "$DV_NAME" -n "$VM_NAMESPACE" -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
+            PHASE=$(oc get datavolume "$DV_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+            PROGRESS=$(oc get datavolume "$DV_NAME" -n "$NS" -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
 
             if [ "$PHASE" = "Succeeded" ]; then
                 log_success "$VM_NAME disk provisioned"
                 break
             elif [ "$PHASE" = "Failed" ]; then
                 log_error "$VM_NAME disk provisioning failed"
-                oc get datavolume "$DV_NAME" -n "$VM_NAMESPACE" -o yaml | grep -A10 "conditions:" || true
+                oc get datavolume "$DV_NAME" -n "$NS" -o yaml | grep -A10 "conditions:" || true
                 exit 1
             fi
 
@@ -116,9 +162,10 @@ start_vms() {
 
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
+        NS=$(get_vm_namespace $i)
 
-        log_info "Starting VM: $VM_NAME"
-        oc patch vm "$VM_NAME" -n "$VM_NAMESPACE" --type=merge -p '{"spec":{"runStrategy":"RerunOnFailure"}}'
+        log_info "Starting VM: $VM_NAME in namespace: $NS"
+        oc patch vm "$VM_NAME" -n "$NS" --type=merge -p '{"spec":{"runStrategy":"RerunOnFailure"}}'
         log_success "Started VM: $VM_NAME"
     done
 
@@ -133,9 +180,10 @@ stop_vms() {
 
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
+        NS=$(get_vm_namespace $i)
 
-        log_info "Stopping VM: $VM_NAME"
-        oc patch vm "$VM_NAME" -n "$VM_NAMESPACE" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
+        log_info "Stopping VM: $VM_NAME in namespace: $NS"
+        oc patch vm "$VM_NAME" -n "$NS" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
         log_success "Stopped VM: $VM_NAME"
     done
 
@@ -145,7 +193,11 @@ stop_vms() {
 
 # Function to delete VMs
 delete_vms() {
-    log_warning "This will delete all $VM_COUNT VMs and their disks"
+    if [ "$SEPARATE_NAMESPACES" = true ]; then
+        log_warning "This will delete all $VM_COUNT VMs, their disks, and their namespaces"
+    else
+        log_warning "This will delete all $VM_COUNT VMs and their disks"
+    fi
     read -p "Are you sure? (yes/no): " CONFIRM
 
     if [ "$CONFIRM" != "yes" ]; then
@@ -158,13 +210,21 @@ delete_vms() {
 
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
+        NS=$(get_vm_namespace $i)
 
-        if oc get vm "$VM_NAME" -n "$VM_NAMESPACE" &>/dev/null; then
-            log_info "Deleting VM: $VM_NAME"
-            oc delete vm "$VM_NAME" -n "$VM_NAMESPACE"
+        if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
+            log_info "Deleting VM: $VM_NAME from namespace: $NS"
+            oc delete vm "$VM_NAME" -n "$NS"
             log_success "Deleted VM: $VM_NAME"
+
+            # Delete namespace if using separate namespaces
+            if [ "$SEPARATE_NAMESPACES" = true ]; then
+                log_info "Deleting namespace: $NS"
+                oc delete namespace "$NS" --wait=false
+                log_success "Deleted namespace: $NS"
+            fi
         else
-            log_warning "VM $VM_NAME not found, skipping"
+            log_warning "VM $VM_NAME not found in namespace $NS, skipping"
         fi
     done
 
@@ -177,21 +237,42 @@ status_vms() {
     log_info "VM Status:"
     echo ""
 
-    printf "%-20s %-15s %-10s %-15s\n" "NAME" "STATUS" "READY" "DISK PHASE"
-    printf "%-20s %-15s %-10s %-15s\n" "----" "------" "-----" "----------"
+    if [ "$SEPARATE_NAMESPACES" = true ]; then
+        printf "%-20s %-20s %-15s %-10s %-15s\n" "NAME" "NAMESPACE" "STATUS" "READY" "DISK PHASE"
+        printf "%-20s %-20s %-15s %-10s %-15s\n" "----" "---------" "------" "-----" "----------"
+    else
+        printf "%-20s %-15s %-10s %-15s\n" "NAME" "STATUS" "READY" "DISK PHASE"
+        printf "%-20s %-15s %-10s %-15s\n" "----" "------" "-----" "----------"
+    fi
+
+    RUNNING_VMS=0
 
     for i in $(seq 1 $VM_COUNT); do
         VM_NAME="${VM_PREFIX}-${i}"
         DV_NAME="${VM_NAME}-disk"
+        NS=$(get_vm_namespace $i)
 
-        if oc get vm "$VM_NAME" -n "$VM_NAMESPACE" &>/dev/null; then
-            VM_STATUS=$(oc get vm "$VM_NAME" -n "$VM_NAMESPACE" -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
-            VM_READY=$(oc get vm "$VM_NAME" -n "$VM_NAMESPACE" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
-            DV_PHASE=$(oc get datavolume "$DV_NAME" -n "$VM_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "N/A")
+        if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
+            VM_STATUS=$(oc get vm "$VM_NAME" -n "$NS" -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
+            VM_READY=$(oc get vm "$VM_NAME" -n "$NS" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+            DV_PHASE=$(oc get datavolume "$DV_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "N/A")
 
-            printf "%-20s %-15s %-10s %-15s\n" "$VM_NAME" "$VM_STATUS" "$VM_READY" "$DV_PHASE"
+            if [ "$SEPARATE_NAMESPACES" = true ]; then
+                printf "%-20s %-20s %-15s %-10s %-15s\n" "$VM_NAME" "$NS" "$VM_STATUS" "$VM_READY" "$DV_PHASE"
+            else
+                printf "%-20s %-15s %-10s %-15s\n" "$VM_NAME" "$VM_STATUS" "$VM_READY" "$DV_PHASE"
+            fi
+
+            # Count running VMs
+            if [ "$VM_STATUS" = "Running" ]; then
+                RUNNING_VMS=$((RUNNING_VMS + 1))
+            fi
         else
-            printf "%-20s %-15s %-10s %-15s\n" "$VM_NAME" "Not Found" "N/A" "N/A"
+            if [ "$SEPARATE_NAMESPACES" = true ]; then
+                printf "%-20s %-20s %-15s %-10s %-15s\n" "$VM_NAME" "$NS" "Not Found" "N/A" "N/A"
+            else
+                printf "%-20s %-15s %-10s %-15s\n" "$VM_NAME" "Not Found" "N/A" "N/A"
+            fi
         fi
     done
 
@@ -199,8 +280,6 @@ status_vms() {
 
     # Show resource usage
     log_info "Resource Usage (for running VMs):"
-    RUNNING_VMS=$(oc get vm -n "$VM_NAMESPACE" -l "vm.kubevirt.io/name" -o json | \
-        jq -r '.items[] | select(.status.printableStatus == "Running") | .metadata.name' | wc -l)
 
     TOTAL_CPU=$((RUNNING_VMS * 4))
     TOTAL_RAM=$((RUNNING_VMS * 8))
@@ -240,23 +319,28 @@ case "${1:-}" in
         status_vms
         ;;
     *)
-        echo "Usage: $0 {create|wait|start|stop|delete|status|deploy}"
+        echo "Usage: $0 [-s|--separate-namespaces] {create|wait|start|stop|delete|status|deploy}"
+        echo ""
+        echo "Flags:"
+        echo "  -s, --separate-namespaces  Create each VM in its own namespace (e.g., windows-test-1-ns)"
         echo ""
         echo "Commands:"
         echo "  create  - Create $VM_COUNT VMs (without starting them)"
         echo "  wait    - Wait for all VM disks to finish provisioning"
         echo "  start   - Start all VMs"
         echo "  stop    - Stop all VMs"
-        echo "  delete  - Delete all VMs and their disks"
+        echo "  delete  - Delete all VMs and their disks (and namespaces if -s used)"
         echo "  status  - Show status of all VMs"
         echo "  deploy  - Create, wait for provisioning, and start VMs (all-in-one)"
         echo ""
         echo "Examples:"
-        echo "  $0 deploy           # Full deployment (recommended)"
-        echo "  $0 create           # Just create VMs"
-        echo "  $0 status           # Check VM status"
-        echo "  $0 stop             # Stop all VMs"
-        echo "  $0 delete           # Delete all VMs"
+        echo "  $0 deploy                        # Full deployment in default namespace (recommended)"
+        echo "  $0 -s deploy                     # Full deployment with separate namespaces"
+        echo "  $0 --separate-namespaces create  # Create VMs in separate namespaces"
+        echo "  $0 status                        # Check VM status"
+        echo "  $0 -s status                     # Check VM status (separate namespaces)"
+        echo "  $0 stop                          # Stop all VMs"
+        echo "  $0 -s delete                     # Delete all VMs and their namespaces"
         exit 1
         ;;
 esac
