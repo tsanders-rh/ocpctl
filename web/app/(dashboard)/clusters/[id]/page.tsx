@@ -16,7 +16,7 @@ import { EC2InstancesCard } from "@/components/clusters/EC2InstancesCard";
 import { AddonExecutionOrder } from "@/components/clusters/AddonExecutionOrder";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CustomManifestConfig } from "@/types/api";
@@ -227,6 +227,7 @@ export default function ClusterDetailPage() {
 
   const [extendHours, setExtendHours] = useState<number>(24);
   const [selectedManifest, setSelectedManifest] = useState<CustomManifestConfig | null>(null);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   if (isLoading) {
     return <div>Loading cluster...</div>;
@@ -557,10 +558,18 @@ export default function ClusterDetailPage() {
                     <Input
                       value={outputs.kubeadmin_secret_ref.split(':')[1] || outputs.kubeadmin_secret_ref}
                       readOnly
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       className="flex-1 font-mono text-sm"
                       placeholder="Password"
                     />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowPassword(!showPassword)}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
