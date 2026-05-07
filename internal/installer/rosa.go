@@ -361,18 +361,35 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	username := parts[4]
 	password := parts[6]
 
-	// Run oc login with kubeconfig output
-	ocCmd := exec.CommandContext(ctx, "oc", "login", apiURL,
-		"--username", username,
-		"--password", password,
-		"--kubeconfig", outputPath,
-		"--insecure-skip-tls-verify")
+	// Run oc login with kubeconfig output (with retry logic)
+	// The cluster API may not be immediately accessible after cluster becomes ready
+	var lastErr error
+	maxRetries := 5
+	retryDelay := 10 * time.Second
 
-	var ocStderr bytes.Buffer
-	ocCmd.Stderr = &ocStderr
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		ocCmd := exec.CommandContext(ctx, "oc", "login", apiURL,
+			"--username", username,
+			"--password", password,
+			"--kubeconfig", outputPath,
+			"--insecure-skip-tls-verify")
 
-	if err := ocCmd.Run(); err != nil {
-		return nil, fmt.Errorf("oc login failed: %w\nStderr: %s", err, ocStderr.String())
+		var ocStderr bytes.Buffer
+		ocCmd.Stderr = &ocStderr
+
+		if err := ocCmd.Run(); err != nil {
+			lastErr = fmt.Errorf("oc login failed (attempt %d/%d): %w\nStderr: %s", attempt, maxRetries, err, ocStderr.String())
+			if attempt < maxRetries {
+				// Wait before retrying
+				time.Sleep(retryDelay)
+				continue
+			}
+			// Final attempt failed
+			return nil, lastErr
+		}
+
+		// Success
+		break
 	}
 
 	// Return admin credentials for storage
