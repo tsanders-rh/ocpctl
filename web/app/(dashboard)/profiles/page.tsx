@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils/formatters";
 import { Platform } from "@/types/api";
+import Link from "next/link";
 
 export default function ProfilesPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | undefined>();
@@ -120,8 +121,9 @@ export default function ProfilesPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {profiles.map((profile) => (
-          <Card key={profile.name} className="hover:shadow-lg transition-shadow">
-            <CardHeader>
+          <Link key={profile.name} href={`/profiles/${profile.name}`}>
+            <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
+              <CardHeader>
               <div className="flex justify-between items-start gap-2">
                 <CardTitle>{profile.display_name}</CardTitle>
                 <div className="flex gap-1 flex-wrap justify-end">
@@ -318,7 +320,8 @@ export default function ProfilesPage() {
                 </div>
               </div>
             </CardContent>
-          </Card>
+            </Card>
+          </Link>
         ))}
       </div>
     </div>
