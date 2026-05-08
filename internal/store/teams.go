@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -74,8 +76,9 @@ func (s *TeamStore) Create(ctx context.Context, team *types.Team) error {
 	).Scan(&team.ID, &team.CreatedAt, &team.UpdatedAt)
 
 	if err != nil {
-		// Check for unique constraint violation
-		if isUniqueViolation(err) {
+		// Check for unique constraint violation (PostgreSQL error code 23505)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return fmt.Errorf("team with name '%s' already exists", team.Name)
 		}
 		return fmt.Errorf("failed to create team: %w", err)
