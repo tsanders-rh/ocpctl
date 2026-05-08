@@ -30,4 +30,7 @@ const (
 	NodeReadyCheckInterval  = 5 * time.Second        // Interval between node readiness checks
 	CleanupRetryDelay       = 2 * time.Second        // Delay between cleanup retry attempts
 	EKSCleanupWaitDelay     = 60 * time.Second       // Delay to allow EKS resources to clean up
+
+	// Work hours enforcement
+	WorkHoursGracePeriod = 2 * time.Hour // Grace period after cluster becomes READY before work hours hibernation can occur
 )

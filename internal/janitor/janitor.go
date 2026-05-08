@@ -683,6 +683,16 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		var newStatus types.ClusterStatus
 
 		if cluster.Status == types.ClusterStatusReady && !withinWorkHours {
+			// Check if grace period is still active (prevents immediate hibernation after installation)
+			// Grace period is set when cluster becomes READY to allow time for user configuration
+			if cluster.LastWorkHoursCheck != nil && cluster.LastWorkHoursCheck.After(nowInTZ) {
+				gracePeriodRemaining := time.Until(*cluster.LastWorkHoursCheck)
+				log.Printf("[Work Hours Action] SKIPPING HIBERNATION for %s: grace period active (expires in %v at %s)",
+					cluster.Name, gracePeriodRemaining.Round(time.Minute), cluster.LastWorkHoursCheck.In(location).Format("2006-01-02 15:04 MST"))
+				// Don't update check timestamp - preserve the grace period expiration time
+				continue
+			}
+
 			// Don't hibernate if post-deployment is actively pending or in progress
 			// Allow hibernation if: NULL (legacy), 'skipped', 'completed', or 'failed'
 			if cluster.PostDeployStatus != nil &&

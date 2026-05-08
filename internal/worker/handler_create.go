@@ -336,6 +336,13 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("update cluster status to ready: %w", err)
 	}
 
+	// Set grace period to prevent immediate hibernation after installation
+	// This gives users time to configure work hours or other settings
+	gracePeriodExpiry := time.Now().Add(WorkHoursGracePeriod)
+	if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodExpiry); err != nil {
+		log.Printf("Warning: failed to set work hours grace period for cluster %s: %v", cluster.Name, err)
+	}
+
 	log.Printf("Cluster %s is now READY", cluster.Name)
 
 	// Handle post-deployment configuration if enabled
@@ -716,6 +723,13 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("update cluster status to ready: %w", err)
 	}
 
+	// Set grace period to prevent immediate hibernation after installation
+	// This gives users time to configure work hours or other settings
+	gracePeriodExpiry := time.Now().Add(WorkHoursGracePeriod)
+	if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodExpiry); err != nil {
+		log.Printf("Warning: failed to set work hours grace period for cluster %s: %v", cluster.Name, err)
+	}
+
 	log.Printf("EKS cluster %s is now READY", cluster.Name)
 
 	// Handle post-deployment configuration if enabled
@@ -918,6 +932,13 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	// Update cluster status to READY
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
 		return fmt.Errorf("update cluster status to ready: %w", err)
+	}
+
+	// Set grace period to prevent immediate hibernation after installation
+	// This gives users time to configure work hours or other settings
+	gracePeriodExpiry := time.Now().Add(WorkHoursGracePeriod)
+	if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodExpiry); err != nil {
+		log.Printf("Warning: failed to set work hours grace period for cluster %s: %v", cluster.Name, err)
 	}
 
 	log.Printf("IKS cluster %s is now READY", cluster.Name)
@@ -1188,6 +1209,13 @@ func (h *CreateHandler) handleGKECreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("update cluster status to READY: %w", err)
 	}
 
+	// Set grace period to prevent immediate hibernation after installation
+	// This gives users time to configure work hours or other settings
+	gracePeriodExpiry := time.Now().Add(WorkHoursGracePeriod)
+	if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodExpiry); err != nil {
+		log.Printf("Warning: failed to set work hours grace period for cluster %s: %v", cluster.Name, err)
+	}
+
 	log.Printf("GKE cluster %s is now READY", cluster.Name)
 
 	// Store cluster outputs (API URL, kubeconfig path, etc.)
@@ -1391,6 +1419,13 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	// Update cluster status to READY
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
 		return fmt.Errorf("update cluster status to ready: %w", err)
+	}
+
+	// Set grace period to prevent immediate hibernation after installation
+	// This gives users time to configure work hours or other settings
+	gracePeriodExpiry := time.Now().Add(WorkHoursGracePeriod)
+	if err := h.store.Clusters.SetLastWorkHoursCheck(ctx, cluster.ID, gracePeriodExpiry); err != nil {
+		log.Printf("Warning: failed to set work hours grace period for cluster %s: %v", cluster.Name, err)
 	}
 
 	log.Printf("ROSA cluster %s is now READY", cluster.Name)
