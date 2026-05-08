@@ -42,5 +42,6 @@ type GrantTeamAdminRequest struct {
 // TeamAdminResponse represents a team admin with additional user information
 type TeamAdminResponse struct {
 	TeamAdminMapping
-	UserEmail string `json:"user_email"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }

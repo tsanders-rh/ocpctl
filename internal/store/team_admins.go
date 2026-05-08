@@ -110,7 +110,8 @@ func (s *TeamAdminStore) ListTeamAdmins(ctx context.Context, team string) ([]*ty
 			tam.granted_by,
 			tam.granted_at,
 			tam.notes,
-			u.email as user_email
+			u.username,
+			u.email
 		FROM user_team_admin_mappings tam
 		JOIN users u ON tam.user_id = u.id
 		WHERE tam.team = $1
@@ -133,7 +134,8 @@ func (s *TeamAdminStore) ListTeamAdmins(ctx context.Context, team string) ([]*ty
 			&admin.GrantedBy,
 			&admin.GrantedAt,
 			&admin.Notes,
-			&admin.UserEmail,
+			&admin.Username,
+			&admin.Email,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan team admin: %w", err)
