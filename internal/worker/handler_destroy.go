@@ -767,7 +767,13 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 	clusterNotFound := false
 	if err != nil {
 		// Check if this is a "cluster not found" error - treat as already destroyed
-		if strings.Contains(output, "not found") || strings.Contains(output, "does not exist") {
+		// ROSA can return various "not found" error messages:
+		// - "not found"
+		// - "does not exist"
+		// - "There is no cluster with identifier or name"
+		if strings.Contains(output, "not found") ||
+		   strings.Contains(output, "does not exist") ||
+		   strings.Contains(output, "There is no cluster") {
 			log.Printf("ROSA cluster %s does not exist - treating as already destroyed", cluster.Name)
 			log.Printf("ROSA response: %s", output)
 			clusterNotFound = true
