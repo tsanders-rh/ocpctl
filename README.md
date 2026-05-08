@@ -55,25 +55,71 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 ---
 
-## Quick Start
+## Getting Started
 
-### 🚀 Deploy to AWS
-
-Complete AWS deployment in 45-60 minutes:
-
-```bash
-# See comprehensive deployment guide
-docs/deployment/AWS_QUICKSTART.md
-
-# Quick summary:
-# 1. Create RDS PostgreSQL database
-# 2. Launch EC2 instance (t3.medium recommended)
-# 3. Deploy binaries (API, Worker, Web UI)
-# 4. Configure nginx reverse proxy with HTTPS
-# 5. Access web UI and create your first cluster
+**Deployment Path:**
+```
+Prerequisites → Choose Method → Deploy → Verify
+     ↓              ↓               ↓        ↓
+  (Step 1)      (Step 2)        (Guide)  (Step 3)
 ```
 
-**Estimated cost:** ~$50/month for test instance
+### 📋 Step 1: Prerequisites
+
+**Before deploying, verify you have everything needed:**
+
+👉 **[Complete Prerequisites Guide](docs/deployment/PREREQUISITES.md)**
+
+Quick checklist:
+- ✅ AWS account with appropriate permissions
+- ✅ Route53 hosted zone for cluster domains
+- ✅ OpenShift pull secret from Red Hat
+- ✅ AWS CLI, Git, and build tools installed
+- ✅ ~$150-500/month budget (varies by usage)
+
+### 🚀 Step 2: Choose Deployment Method
+
+**Option A: Manual Deployment (Recommended for First-Time Users)**
+
+Complete AWS deployment in 60 minutes:
+
+👉 **[AWS Quick Start Guide](docs/deployment/AWS_QUICKSTART.md)**
+
+1. Create PostgreSQL database (RDS or EC2)
+2. Launch EC2 instance (t3.large recommended)
+3. Deploy binaries (API, Worker, Web UI)
+4. Configure nginx with HTTPS
+5. Verify deployment
+
+**Estimated cost:** ~$73-94/month for platform + cluster costs
+
+**Option B: Terraform Deployment (For Teams & Production)**
+
+Infrastructure as Code deployment:
+
+👉 **[Terraform Deployment Guide](docs/deployment/TERRAFORM.md)**
+
+- Version-controlled infrastructure
+- Autoscaling worker pool
+- CloudWatch monitoring included
+- Ideal for multi-environment setups
+
+### ✅ Step 3: Verify Deployment
+
+After deployment, use the verification checklist:
+
+👉 **[Deployment Verification Checklist](docs/deployment/DEPLOYMENT_CHECKLIST.md)**
+
+- 100+ verification checks
+- Pre-deployment, deployment, and post-deployment phases
+- Troubleshooting decision trees
+- Test cluster creation
+
+### 📚 Additional Resources
+
+- **[Cost Estimation Guide](docs/operations/COST_ESTIMATION.md)** - Detailed cost breakdown and optimization
+- **[Troubleshooting Guide](docs/operations/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[IAM Policies Guide](deploy/IAM_POLICIES.md)** - Ready-to-use IAM policies
 
 ### 🌐 Access Web UI
 
