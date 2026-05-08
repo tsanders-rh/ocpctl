@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useProfiles } from "@/lib/hooks/useProfiles";
 import { useCreateCluster } from "@/lib/hooks/useClusters";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { createClusterSchema, type CreateClusterFormData } from "@/lib/schemas/cluster";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export default function NewClusterPage() {
   const [selectedClusterType, setSelectedClusterType] = useState<ClusterType>(ClusterType.OpenShift);
   const [selectedTrack, setSelectedTrack] = useState<string | undefined>(undefined);
   const { data: profiles } = useProfiles(selectedPlatform);
+  const { data: teamsData } = useTeams();
   const createCluster = useCreateCluster();
   const [apiValidationErrors, setApiValidationErrors] = useState<ValidationError[]>([]);
   const [generalError, setGeneralError] = useState<string>("");
@@ -584,12 +586,17 @@ export default function NewClusterPage() {
                       <SelectValue placeholder="Select team" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Migration Feature Team">Migration Feature Team</SelectItem>
-                      <SelectItem value="Application Inventory Management">Application Inventory Management</SelectItem>
-                      <SelectItem value="Insights Discovery">Insights Discovery</SelectItem>
-                      <SelectItem value="Application Modification">Application Modification</SelectItem>
-                      <SelectItem value="OADP Team">OADP Team</SelectItem>
-                      <SelectItem value="Staff">Staff</SelectItem>
+                      {teamsData?.teams && teamsData.teams.length > 0 ? (
+                        teamsData.teams.map((team) => (
+                          <SelectItem key={team.id} value={team.name}>
+                            {team.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="p-2 text-sm text-muted-foreground">
+                          No teams available
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
                   {errors.team && (
