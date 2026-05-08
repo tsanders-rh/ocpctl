@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -308,17 +310,36 @@ func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc 
 			if user.Role == types.RoleTeamAdmin {
 				storeVal := c.Get("store")
 				if storeVal != nil {
-					// Type assertion to access Users.GetByID
-					if st, ok := storeVal.(interface {
-						Users interface {
-							GetByID(ctx context.Context, id string) (*types.User, error)
+					// Type assertion to *store.Store - using reflection to avoid import cycle
+					type userStoreGetter interface {
+						GetByID(ctx context.Context, id string) (*types.User, error)
+					}
+					type storeWithUsers interface {
+						Users() userStoreGetter
+					}
+
+					// Try direct field access via reflection
+					v := reflect.ValueOf(storeVal)
+					if v.Kind() == reflect.Ptr {
+						v = v.Elem()
+					}
+					if v.Kind() == reflect.Struct {
+						usersField := v.FieldByName("Users")
+						if usersField.IsValid() && !usersField.IsNil() {
+							// Call GetByID via reflection
+							method := usersField.MethodByName("GetByID")
+							if method.IsValid() {
+								results := method.Call([]reflect.Value{
+									reflect.ValueOf(c.Request().Context()),
+									reflect.ValueOf(user.ID),
+								})
+								if len(results) == 2 && results[1].IsNil() {
+									if fullUser, ok := results[0].Interface().(*types.User); ok && fullUser != nil {
+										user = fullUser
+									}
+								}
+							}
 						}
-					}); ok {
-						fullUser, err := st.Users.GetByID(c.Request().Context(), user.ID)
-						if err == nil && fullUser != nil {
-							user = fullUser
-						}
-						// If error, continue with minimal user object (graceful degradation)
 					}
 				}
 			}
