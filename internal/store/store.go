@@ -56,6 +56,8 @@ type Store struct {
 	ProfileDeploymentMetrics  *ProfileDeploymentMetricsStore
 	PostConfigAddons          *PostConfigAddonStore
 	PostConfigTemplates       *PostConfigTemplateStore
+	Teams                     *TeamStore
+	TeamAdmins                *TeamAdminStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -91,6 +93,8 @@ func New(pool *pgxpool.Pool) *Store {
 	s.ProfileDeploymentMetrics = &ProfileDeploymentMetricsStore{pool: pool}
 	s.PostConfigAddons = &PostConfigAddonStore{pool: pool}
 	s.PostConfigTemplates = &PostConfigTemplateStore{pool: pool}
+	s.Teams = &TeamStore{db: pool}
+	s.TeamAdmins = &TeamAdminStore{db: pool}
 
 	return s
 }

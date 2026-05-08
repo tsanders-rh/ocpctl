@@ -29,6 +29,7 @@ export default function ClustersPage() {
   const router = useRouter();
   const { user } = useAuthStore();
   const isAdmin = user?.role === UserRole.ADMIN;
+  const isTeamAdmin = user?.role === UserRole.TEAM_ADMIN;
 
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
@@ -163,7 +164,11 @@ export default function ClustersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            {isAdmin ? "All Clusters" : "My Clusters"}
+            {isAdmin
+              ? "All Clusters"
+              : isTeamAdmin
+              ? "Team Clusters"
+              : "My Clusters"}
             {data.pagination && (
               <Badge variant="secondary" className="text-base font-normal">
                 {data.pagination.total}
@@ -173,6 +178,12 @@ export default function ClustersPage() {
           <p className="text-muted-foreground">
             {isAdmin
               ? "View and manage all clusters across users"
+              : isTeamAdmin
+              ? `Manage your clusters and clusters in your teams${
+                  user?.managed_teams && user.managed_teams.length > 0
+                    ? ` (${user.managed_teams.join(", ")})`
+                    : ""
+                }`
               : "Manage your OpenShift clusters"}
           </p>
         </div>

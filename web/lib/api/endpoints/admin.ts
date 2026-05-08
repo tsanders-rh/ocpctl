@@ -1,4 +1,12 @@
 import { apiClient } from "../client";
+import type {
+  ListTeamsResponse,
+  Team,
+  CreateTeamRequest,
+  UpdateTeamRequest,
+  ListTeamAdminsResponse,
+  GrantTeamAdminRequest,
+} from "@/types/api";
 
 export interface ClusterStatistics {
   total_clusters: number;
@@ -108,6 +116,41 @@ export const adminApi = {
   getLongRunningClusters: async (minHours: number = 24): Promise<LongRunningClustersResponse> => {
     return apiClient.get<LongRunningClustersResponse>(
       `/admin/clusters/long-running?min_hours=${minHours}`
+    );
+  },
+
+  // Team Management
+  listTeams: async (): Promise<ListTeamsResponse> => {
+    return apiClient.get<ListTeamsResponse>("/admin/teams");
+  },
+  getTeam: async (name: string): Promise<Team> => {
+    return apiClient.get<Team>(`/admin/teams/${encodeURIComponent(name)}`);
+  },
+  createTeam: async (data: CreateTeamRequest): Promise<Team> => {
+    return apiClient.post<Team>("/admin/teams", data);
+  },
+  updateTeam: async (name: string, data: UpdateTeamRequest): Promise<Team> => {
+    return apiClient.patch<Team>(`/admin/teams/${encodeURIComponent(name)}`, data);
+  },
+  deleteTeam: async (name: string): Promise<void> => {
+    return apiClient.delete<void>(`/admin/teams/${encodeURIComponent(name)}`);
+  },
+
+  // Team Admin Management
+  listTeamAdmins: async (teamName: string): Promise<ListTeamAdminsResponse> => {
+    return apiClient.get<ListTeamAdminsResponse>(
+      `/admin/teams/${encodeURIComponent(teamName)}/admins`
+    );
+  },
+  grantTeamAdmin: async (teamName: string, data: GrantTeamAdminRequest): Promise<void> => {
+    return apiClient.post<void>(
+      `/admin/teams/${encodeURIComponent(teamName)}/admins`,
+      data
+    );
+  },
+  revokeTeamAdmin: async (teamName: string, userId: string): Promise<void> => {
+    return apiClient.delete<void>(
+      `/admin/teams/${encodeURIComponent(teamName)}/admins/${userId}`
     );
   },
 };

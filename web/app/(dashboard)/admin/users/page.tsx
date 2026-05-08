@@ -35,6 +35,8 @@ export default function UsersPage() {
     switch (role) {
       case UserRole.ADMIN:
         return "destructive";
+      case UserRole.TEAM_ADMIN:
+        return "default";
       case UserRole.USER:
         return "default";
       case UserRole.VIEWER:

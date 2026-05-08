@@ -154,12 +154,14 @@ export default function EditUserPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ADMIN">Admin (Full access)</SelectItem>
+                  <SelectItem value="TEAM_ADMIN">Team Admin (Team management)</SelectItem>
                   <SelectItem value="USER">User (Standard access)</SelectItem>
                   <SelectItem value="VIEWER">Viewer (Read-only)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
                 {(watchedRole === UserRole.ADMIN || user.role === UserRole.ADMIN) && "Full system access including user management"}
+                {(watchedRole === UserRole.TEAM_ADMIN || user.role === UserRole.TEAM_ADMIN) && "Can manage own clusters and assigned team clusters"}
                 {(watchedRole === UserRole.USER || user.role === UserRole.USER) && "Can create and manage own clusters"}
                 {(watchedRole === UserRole.VIEWER || user.role === UserRole.VIEWER) && "Read-only access to own clusters"}
               </p>

@@ -1,0 +1,317 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
+	"github.com/tsanders-rh/ocpctl/internal/store"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
+)
+
+// TeamHandler handles team management endpoints (admin only)
+type TeamHandler struct {
+	store *store.Store
+}
+
+// NewTeamHandler creates a new team handler
+func NewTeamHandler(st *store.Store) *TeamHandler {
+	return &TeamHandler{
+		store: st,
+	}
+}
+
+// ListTeams returns all teams
+//
+//	@Summary		List teams
+//	@Description	Returns a list of all teams (admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"Returns teams array"
+//	@Failure		500	{object}	map[string]string		"Failed to list teams"
+//	@Security		BearerAuth
+//	@Router			/admin/teams [get]
+func (h *TeamHandler) ListTeams(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	teams, err := h.store.Teams.List(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"teams": teams,
+	})
+}
+
+// CreateTeam creates a new team
+//
+//	@Summary		Create team
+//	@Description	Creates a new team (admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		types.CreateTeamRequest	true	"Team creation request"
+//	@Success		201		{object}	types.Team
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		409		{object}	map[string]string	"Team name already exists"
+//	@Failure		500		{object}	map[string]string	"Failed to create team"
+//	@Security		BearerAuth
+//	@Router			/admin/teams [post]
+func (h *TeamHandler) CreateTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var req types.CreateTeamRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "invalid request body")
+	}
+
+	// Validate request
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Get current user ID for created_by field
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	team := &types.Team{
+		Name:        req.Name,
+		Description: req.Description,
+		CreatedBy:   &userID,
+	}
+
+	if err := h.store.Teams.Create(ctx, team); err != nil {
+		if err.Error() == "team with name '"+req.Name+"' already exists" {
+			return ErrorConflict(c, err.Error())
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusCreated, team)
+}
+
+// GetTeam retrieves a team by name
+//
+//	@Summary		Get team
+//	@Description	Retrieves team details by name (admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	types.Team
+//	@Failure		404		{object}	map[string]string	"Team not found"
+//	@Failure		500		{object}	map[string]string	"Failed to get team"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name} [get]
+func (h *TeamHandler) GetTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	team, err := h.store.Teams.Get(ctx, teamName)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, team)
+}
+
+// UpdateTeam updates team metadata
+//
+//	@Summary		Update team
+//	@Description	Updates team description (admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string						true	"Team name"
+//	@Param			body	body		types.UpdateTeamRequest		true	"Team update fields"
+//	@Success		200		{object}	types.Team
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		404		{object}	map[string]string	"Team not found"
+//	@Failure		500		{object}	map[string]string	"Failed to update team"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name} [patch]
+func (h *TeamHandler) UpdateTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	var req types.UpdateTeamRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "invalid request body")
+	}
+
+	// Build updates map
+	updates := make(map[string]interface{})
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+
+	if len(updates) == 0 {
+		return ErrorBadRequest(c, "no fields to update")
+	}
+
+	// Update team
+	if err := h.store.Teams.Update(ctx, teamName, updates); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Get updated team
+	team, err := h.store.Teams.Get(ctx, teamName)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, team)
+}
+
+// DeleteTeam deletes a team
+//
+//	@Summary		Delete team
+//	@Description	Deletes a team (admin only). Only allowed if no clusters reference it.
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	map[string]string	"Team has clusters"
+//	@Failure		404		{object}	map[string]string	"Team not found"
+//	@Failure		500		{object}	map[string]string	"Failed to delete team"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name} [delete]
+func (h *TeamHandler) DeleteTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	if err := h.store.Teams.Delete(ctx, teamName); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		// Check if error is about clusters referencing this team
+		if err.Error() == "cannot delete team '"+teamName+"': 1 cluster(s) still reference it" {
+			return ErrorBadRequest(c, err.Error())
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "team deleted successfully",
+	})
+}
+
+// ListTeamAdmins returns all team admins for a specific team
+//
+//	@Summary		List team admins
+//	@Description	Returns all users who can administer a given team (admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	map[string]interface{}	"Returns team and admins array"
+//	@Failure		500		{object}	map[string]string		"Failed to list team admins"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/admins [get]
+func (h *TeamHandler) ListTeamAdmins(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	admins, err := h.store.TeamAdmins.ListTeamAdmins(ctx, teamName)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"team":   teamName,
+		"admins": admins,
+	})
+}
+
+// GrantTeamAdmin grants team admin privilege to a user
+//
+//	@Summary		Grant team admin privilege
+//	@Description	Grants team admin privilege to a user for a specific team (platform admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string							true	"Team name"
+//	@Param			body	body		types.GrantTeamAdminRequest		true	"Grant request"
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	map[string]string	"Invalid request or user doesn't have TEAM_ADMIN role"
+//	@Failure		404		{object}	map[string]string	"User not found"
+//	@Failure		500		{object}	map[string]string	"Failed to grant privilege"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/admins [post]
+func (h *TeamHandler) GrantTeamAdmin(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	var req types.GrantTeamAdminRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "invalid request body")
+	}
+
+	// Validate request
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Get current user ID (who is granting the privilege)
+	grantedBy, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Grant team admin privilege
+	if err := h.store.TeamAdmins.GrantTeamAdmin(ctx, req.UserID, teamName, grantedBy, req.Notes); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "user not found")
+		}
+		if err.Error() == "user must have TEAM_ADMIN or ADMIN role to be granted team admin privileges" {
+			return ErrorBadRequest(c, err.Error())
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "team admin privilege granted successfully",
+	})
+}
+
+// RevokeTeamAdmin revokes team admin privilege from a user
+//
+//	@Summary		Revoke team admin privilege
+//	@Description	Revokes team admin privilege from a user for a specific team (platform admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string	true	"Team name"
+//	@Param			user_id		path		string	true	"User ID"
+//	@Success		200			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string	"Mapping not found"
+//	@Failure		500			{object}	map[string]string	"Failed to revoke privilege"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/admins/{user_id} [delete]
+func (h *TeamHandler) RevokeTeamAdmin(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+	userID := c.Param("user_id")
+
+	if err := h.store.TeamAdmins.RevokeTeamAdmin(ctx, userID, teamName); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team admin mapping not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "team admin privilege revoked successfully",
+	})
+}

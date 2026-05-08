@@ -29,6 +29,7 @@ export enum ClusterStatus {
 
 export enum UserRole {
   ADMIN = "ADMIN",
+  TEAM_ADMIN = "TEAM_ADMIN",
   USER = "USER",
   VIEWER = "VIEWER",
 }
@@ -73,6 +74,7 @@ export interface User {
   active: boolean;
   created_at: string;
   updated_at: string;
+  managed_teams?: string[];
 }
 
 export interface LoginRequest {
@@ -617,4 +619,60 @@ export interface ValidatePostConfigResponse {
   valid: boolean;
   errors?: string[];
   dag?: DAGInfo;
+}
+
+// Team Types
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export interface TeamWithCount extends Team {
+  cluster_count: number;
+}
+
+export interface TeamAdminMapping {
+  id: string;
+  user_id: string;
+  team: string;
+  granted_by?: string;
+  granted_at: string;
+  notes?: string;
+}
+
+export interface TeamAdminResponse {
+  user_id: string;
+  username: string;
+  email: string;
+  role: UserRole;
+  team: string;
+  granted_by?: string;
+  granted_at: string;
+  notes?: string;
+}
+
+export interface CreateTeamRequest {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateTeamRequest {
+  description?: string;
+}
+
+export interface GrantTeamAdminRequest {
+  user_id: string;
+  notes?: string;
+}
+
+export interface ListTeamsResponse {
+  teams: TeamWithCount[];
+}
+
+export interface ListTeamAdminsResponse {
+  admins: TeamAdminResponse[];
 }

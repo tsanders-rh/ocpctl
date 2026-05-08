@@ -9,6 +9,7 @@ import { authApi } from "@/lib/api/endpoints/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -405,6 +406,21 @@ export default function ProfilePage() {
                   )}
                 </p>
               </div>
+              {user.managed_teams && user.managed_teams.length > 0 && (
+                <div>
+                  <p className="text-muted-foreground">Managed Teams</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {user.managed_teams.map((team) => (
+                      <Badge key={team} variant="secondary">
+                        {team}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    You can manage all clusters in these teams
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -48,24 +48,35 @@ func NewClusterHandler(s *store.Store, p *policy.Engine, r *profile.Registry) *C
 }
 
 // checkClusterAccess verifies the user has access to the cluster
-// Returns true if user is owner or admin
+// Returns nil if user is owner, team admin for cluster's team, or platform admin
 func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Cluster) error {
-	// Admins can access all clusters
+	// Platform admins can access all clusters
 	if auth.IsAdmin(c) {
 		return nil
 	}
 
-	// Check if user owns this cluster
+	// Get current user
 	userID, err := auth.GetUserID(c)
 	if err != nil {
 		return err
 	}
 
-	if cluster.OwnerID != userID {
-		return ErrorForbidden(c, "You do not have access to this cluster")
+	// Check if user owns this cluster
+	if cluster.OwnerID == userID {
+		return nil
 	}
 
-	return nil
+	// Check if user is team admin for this cluster's team
+	user, err := auth.GetUser(c)
+	if err == nil && user.Role == types.RoleTeamAdmin {
+		for _, managedTeam := range user.ManagedTeams {
+			if managedTeam == cluster.Team {
+				return nil
+			}
+		}
+	}
+
+	return ErrorForbidden(c, "You do not have access to this cluster")
 }
 
 // CreateClusterRequest represents the API request to create a cluster
@@ -516,8 +527,10 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		return err
 	}
 
-	// Check if user is admin
-	isAdmin := auth.IsAdmin(c)
+	user, err := auth.GetUser(c)
+	if err != nil {
+		return err
+	}
 
 	// Parse pagination
 	pagination := ParsePaginationParams(c)
@@ -532,11 +545,6 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		Status:     c.QueryParam("status"),
 	}
 
-	// Non-admin users can only see their own clusters
-	if !isAdmin {
-		filters.Owner = "" // Clear any owner filter for non-admins
-	}
-
 	// Build filter map for response
 	filterMap := make(map[string]interface{})
 	if filters.Platform != "" {
@@ -545,7 +553,7 @@ func (h *ClusterHandler) List(c echo.Context) error {
 	if filters.Profile != "" {
 		filterMap["profile"] = filters.Profile
 	}
-	if filters.Owner != "" {
+	if filters.Owner != "" && user.Role == types.RoleAdmin {
 		filterMap["owner"] = filters.Owner
 	}
 	if filters.Team != "" {
@@ -564,21 +572,54 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		Offset: pagination.Offset,
 	}
 
-	// Non-admin users can only see their own clusters
-	if !isAdmin {
+	// Apply role-based filtering
+	switch user.Role {
+	case types.RoleAdmin:
+		// Platform admins see all clusters, respect all filters
+		if filters.Owner != "" {
+			listFilters.Owner = &filters.Owner
+		}
+		if filters.Team != "" {
+			listFilters.Team = &filters.Team
+		}
+
+	case types.RoleTeamAdmin:
+		// Team admins see:
+		// 1. Clusters they own
+		// 2. Clusters from teams they manage
+		if filters.Team != "" {
+			// If filtering by team, ensure it's one they manage
+			canAccessTeam := false
+			for _, managedTeam := range user.ManagedTeams {
+				if managedTeam == filters.Team {
+					canAccessTeam = true
+					break
+				}
+			}
+			if canAccessTeam {
+				// Filter by the requested team (they can access it)
+				listFilters.Team = &filters.Team
+			} else {
+				// Can't filter by team they don't manage, show only owned clusters
+				listFilters.OwnerID = &userID
+			}
+		} else {
+			// No team filter: show owned clusters OR managed team clusters
+			listFilters.OwnerIDOrTeams = &store.OwnerIDOrTeamsFilter{
+				OwnerID: userID,
+				Teams:   user.ManagedTeams,
+			}
+		}
+
+	default:
+		// Regular users and viewers see only their own clusters
 		listFilters.OwnerID = &userID
 	}
 
+	// Apply platform/profile/status filters (all roles)
 	if filters.Platform != "" {
 		platform := types.Platform(filters.Platform)
 		listFilters.Platform = &platform
-	}
-	// Only admins can filter by owner email
-	if filters.Owner != "" && isAdmin {
-		listFilters.Owner = &filters.Owner
-	}
-	if filters.Team != "" {
-		listFilters.Team = &filters.Team
 	}
 	if filters.Profile != "" {
 		listFilters.Profile = &filters.Profile

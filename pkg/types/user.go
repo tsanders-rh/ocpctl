@@ -6,15 +6,16 @@ import "time"
 type UserRole string
 
 const (
-	RoleAdmin  UserRole = "ADMIN"
-	RoleUser   UserRole = "USER"
-	RoleViewer UserRole = "VIEWER"
+	RoleAdmin     UserRole = "ADMIN"
+	RoleUser      UserRole = "USER"
+	RoleViewer    UserRole = "VIEWER"
+	RoleTeamAdmin UserRole = "TEAM_ADMIN"
 )
 
 // IsValid checks if the role is valid
 func (r UserRole) IsValid() bool {
 	switch r {
-	case RoleAdmin, RoleUser, RoleViewer:
+	case RoleAdmin, RoleUser, RoleViewer, RoleTeamAdmin:
 		return true
 	default:
 		return false
@@ -28,6 +29,7 @@ type User struct {
 	Username         string    `json:"username"`
 	PasswordHash     string    `json:"-"` // Never expose in JSON
 	Role             UserRole  `json:"role"`
+	ManagedTeams     []string  `json:"managed_teams,omitempty"` // Teams user can administer (for TEAM_ADMIN role)
 	Timezone         string    `json:"timezone"`
 	WorkHoursEnabled bool      `json:"work_hours_enabled"`
 	WorkHoursStart   time.Time `json:"work_hours_start"` // Only time component used

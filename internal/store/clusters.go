@@ -274,16 +274,24 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 	return &cluster, nil
 }
 
+// OwnerIDOrTeamsFilter allows filtering by owner ID OR team membership
+// Used for team admin role to show clusters they own or manage
+type OwnerIDOrTeamsFilter struct {
+	OwnerID string
+	Teams   []string
+}
+
 // ListFilters contains filter options for listing clusters
 type ListFilters struct {
-	Status   *types.ClusterStatus
-	Platform *types.Platform
-	Owner    *string  // Filter by owner email
-	OwnerID  *string  // Filter by owner user ID
-	Team     *string
-	Profile  *string
-	Limit    int
-	Offset   int
+	Status          *types.ClusterStatus
+	Platform        *types.Platform
+	Owner           *string                   // Filter by owner email
+	OwnerID         *string                   // Filter by owner user ID
+	Team            *string                   // Filter by specific team
+	OwnerIDOrTeams  *OwnerIDOrTeamsFilter     // Filter by owner ID OR team membership (for team admins)
+	Profile         *string
+	Limit           int
+	Offset          int
 }
 
 // List retrieves clusters with optional filtering and pagination.
@@ -334,6 +342,14 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 		countQuery += fmt.Sprintf(" AND owner_id = $%d", argPos)
 		args = append(args, *filters.OwnerID)
 		argPos++
+	}
+
+	// Team admin filtering: owner_id = X OR team IN (...)
+	if filters.OwnerIDOrTeams != nil {
+		query += fmt.Sprintf(" AND (c.owner_id = $%d OR c.team = ANY($%d))", argPos, argPos+1)
+		countQuery += fmt.Sprintf(" AND (owner_id = $%d OR team = ANY($%d))", argPos, argPos+1)
+		args = append(args, filters.OwnerIDOrTeams.OwnerID, filters.OwnerIDOrTeams.Teams)
+		argPos += 2
 	}
 
 	if filters.Team != nil {

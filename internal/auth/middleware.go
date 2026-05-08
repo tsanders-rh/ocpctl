@@ -179,6 +179,57 @@ func IsAdmin(c echo.Context) bool {
 	return role == types.RoleAdmin
 }
 
+// IsTeamAdmin checks if the current user is a team admin (or platform admin)
+func IsTeamAdmin(c echo.Context) bool {
+	role, err := GetUserRole(c)
+	if err != nil {
+		return false
+	}
+	return role == types.RoleTeamAdmin || role == types.RoleAdmin
+}
+
+// GetManagedTeams retrieves teams the current user can administer
+// Returns empty slice if user is not a team admin or if error occurs
+func GetManagedTeams(c echo.Context) []string {
+	user, err := GetUser(c)
+	if err != nil {
+		return []string{}
+	}
+	return user.ManagedTeams
+}
+
+// CanManageTeam checks if the current user can manage a specific team
+// Platform admins can manage all teams, team admins only their assigned teams
+func CanManageTeam(c echo.Context, team string) bool {
+	// Platform admins can manage all teams
+	if IsAdmin(c) {
+		return true
+	}
+
+	// Check if user is team admin for this team
+	user, err := GetUser(c)
+	if err != nil {
+		return false
+	}
+
+	if user.Role != types.RoleTeamAdmin {
+		return false
+	}
+
+	for _, managedTeam := range user.ManagedTeams {
+		if managedTeam == team {
+			return true
+		}
+	}
+
+	return false
+}
+
+// RequireTeamAdmin is middleware that requires team admin or platform admin role
+func RequireTeamAdmin() echo.MiddlewareFunc {
+	return RequireRole(types.RoleTeamAdmin, types.RoleAdmin)
+}
+
 // RequireAuthDual is middleware that supports JWT, IAM, and API key authentication
 // The storeGetter is a function that returns the store from the context
 func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc {
@@ -245,12 +296,33 @@ func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc 
 			// Store claims in context (for backward compatibility)
 			c.Set(string(ClaimsContextKey), claims)
 
-			// Also create a user object from claims for consistency
+			// Create a user object from claims
 			user := &types.User{
 				ID:       claims.UserID,
 				Email:    claims.Email,
 				Role:     types.UserRole(claims.Role),
 			}
+
+			// For team admins, load managed teams from database
+			// JWT tokens don't contain team memberships, so we query for real-time accuracy
+			if user.Role == types.RoleTeamAdmin {
+				storeVal := c.Get("store")
+				if storeVal != nil {
+					// Type assertion to access Users.GetByID
+					if st, ok := storeVal.(interface {
+						Users interface {
+							GetByID(ctx context.Context, id string) (*types.User, error)
+						}
+					}); ok {
+						fullUser, err := st.Users.GetByID(c.Request().Context(), user.ID)
+						if err == nil && fullUser != nil {
+							user = fullUser
+						}
+						// If error, continue with minimal user object (graceful degradation)
+					}
+				}
+			}
+
 			c.Set(string(UserContextKey), user)
 
 			return next(c)

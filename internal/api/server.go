@@ -266,6 +266,17 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)
 	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
 
+	// Team management routes (admin only)
+	teamHandler := NewTeamHandler(s.store)
+	adminGroup.GET("/teams", teamHandler.ListTeams)
+	adminGroup.POST("/teams", teamHandler.CreateTeam)
+	adminGroup.GET("/teams/:name", teamHandler.GetTeam)
+	adminGroup.PATCH("/teams/:name", teamHandler.UpdateTeam)
+	adminGroup.DELETE("/teams/:name", teamHandler.DeleteTeam)
+	adminGroup.GET("/teams/:name/admins", teamHandler.ListTeamAdmins)
+	adminGroup.POST("/teams/:name/admins", teamHandler.GrantTeamAdmin)
+	adminGroup.DELETE("/teams/:name/admins/:user_id", teamHandler.RevokeTeamAdmin)
+
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)
 
