@@ -14,8 +14,10 @@ import (
 
 // VersionUpdate represents requested version updates for a profile
 type VersionUpdate struct {
-	OpenshiftVersions   []string `json:"openshift_versions,omitempty"`
-	KubernetesVersions  []string `json:"kubernetes_versions,omitempty"`
+	OpenshiftVersions        []string `json:"openshift_versions,omitempty"`
+	KubernetesVersions       []string `json:"kubernetes_versions,omitempty"`
+	OpenshiftDefaultVersion  string   `json:"openshift_default_version,omitempty"`
+	KubernetesDefaultVersion string   `json:"kubernetes_default_version,omitempty"`
 }
 
 // ProfileUpdater updates profile YAML files
@@ -122,11 +124,11 @@ func (pu *ProfileUpdater) updateYAMLNode(node *yaml.Node, updates *VersionUpdate
 		valueNode := rootMap.Content[i+1]
 
 		if keyNode.Value == "openshiftVersions" && len(updates.OpenshiftVersions) > 0 {
-			if err := pu.updateVersionsNode(valueNode, updates.OpenshiftVersions); err != nil {
+			if err := pu.updateVersionsNode(valueNode, updates.OpenshiftVersions, updates.OpenshiftDefaultVersion); err != nil {
 				return fmt.Errorf("failed to update openshiftVersions: %w", err)
 			}
 		} else if keyNode.Value == "kubernetesVersions" && len(updates.KubernetesVersions) > 0 {
-			if err := pu.updateVersionsNode(valueNode, updates.KubernetesVersions); err != nil {
+			if err := pu.updateVersionsNode(valueNode, updates.KubernetesVersions, updates.KubernetesDefaultVersion); err != nil {
 				return fmt.Errorf("failed to update kubernetesVersions: %w", err)
 			}
 		}
@@ -135,8 +137,8 @@ func (pu *ProfileUpdater) updateYAMLNode(node *yaml.Node, updates *VersionUpdate
 	return nil
 }
 
-// updateVersionsNode updates the allowlist array in a versions node
-func (pu *ProfileUpdater) updateVersionsNode(versionsNode *yaml.Node, newVersions []string) error {
+// updateVersionsNode updates the allowlist array and default in a versions node
+func (pu *ProfileUpdater) updateVersionsNode(versionsNode *yaml.Node, newVersions []string, defaultVersion string) error {
 	if versionsNode.Kind != yaml.MappingNode {
 		return fmt.Errorf("expected mapping node for versions, got %v", versionsNode.Kind)
 	}
@@ -146,7 +148,23 @@ func (pu *ProfileUpdater) updateVersionsNode(versionsNode *yaml.Node, newVersion
 	copy(sortedVersions, newVersions)
 	sort.Strings(sortedVersions)
 
-	// Find allowlist node
+	// Validate default version is in allowlist if specified
+	if defaultVersion != "" {
+		found := false
+		for _, v := range newVersions {
+			if v == defaultVersion {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("default version %s must be in allowlist", defaultVersion)
+		}
+	}
+
+	// Update both allowlist and default
+	allowlistFound := false
+
 	for i := 0; i < len(versionsNode.Content); i += 2 {
 		keyNode := versionsNode.Content[i]
 		valueNode := versionsNode.Content[i+1]
@@ -168,12 +186,23 @@ func (pu *ProfileUpdater) updateVersionsNode(versionsNode *yaml.Node, newVersion
 				}
 				valueNode.Content = append(valueNode.Content, versionNode)
 			}
-
-			return nil
+			allowlistFound = true
+		} else if keyNode.Value == "default" && defaultVersion != "" {
+			// Update default version
+			if valueNode.Kind != yaml.ScalarNode {
+				return fmt.Errorf("expected scalar node for default, got %v", valueNode.Kind)
+			}
+			valueNode.Value = defaultVersion
 		}
 	}
 
-	return fmt.Errorf("allowlist field not found in versions node")
+	if !allowlistFound {
+		return fmt.Errorf("allowlist field not found in versions node")
+	}
+
+	// If default version specified but not found in YAML, that's okay - some profiles may not have it set
+
+	return nil
 }
 
 // CreateBackup creates a timestamped backup of the profile file

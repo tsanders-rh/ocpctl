@@ -1292,6 +1292,7 @@ type ClusterStatistics struct {
 	TotalClusters      int                       `json:"total_clusters"`
 	ClustersByStatus   []ClusterStatusCount      `json:"clusters_by_status"`
 	ClustersByProfile  []ClusterProfileCount     `json:"clusters_by_profile"`
+	ClustersByPlatform []ClusterPlatformCount    `json:"clusters_by_platform"`
 	ActiveClusters     int                       `json:"active_clusters"`
 	TotalHourlyCost    float64                   `json:"total_hourly_cost"`
 	TotalDailyCost     float64                   `json:"total_daily_cost"`
@@ -1310,6 +1311,12 @@ type ClusterStatusCount struct {
 type ClusterProfileCount struct {
 	Profile string `json:"profile"`
 	Count   int    `json:"count"`
+}
+
+// ClusterPlatformCount represents cluster count per platform
+type ClusterPlatformCount struct {
+	Platform string `json:"platform"`
+	Count    int    `json:"count"`
 }
 
 // ProfileCostBreakdown represents cost breakdown by profile
@@ -1372,6 +1379,12 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to get statistics by profile: %w", err))
 	}
 
+	// Get aggregated statistics by platform
+	platformStats, err := h.store.Clusters.GetStatisticsByPlatform(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get statistics by platform: %w", err))
+	}
+
 	// Collect unique owner IDs for batch user lookup
 	ownerIDSet := make(map[string]bool)
 	for _, stat := range profileStats {
@@ -1403,12 +1416,13 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 
 	// Initialize statistics response
 	stats := ClusterStatistics{
-		TotalClusters:     totalClusters,
-		ActiveClusters:    activeClusters,
-		ClustersByStatus:  make([]ClusterStatusCount, 0),
-		ClustersByProfile: make([]ClusterProfileCount, 0),
-		CostByProfile:     make([]ProfileCostBreakdown, 0),
-		CostByUser:        make([]UserCostBreakdown, 0),
+		TotalClusters:      totalClusters,
+		ActiveClusters:     activeClusters,
+		ClustersByStatus:   make([]ClusterStatusCount, 0),
+		ClustersByProfile:  make([]ClusterProfileCount, 0),
+		ClustersByPlatform: make([]ClusterPlatformCount, 0),
+		CostByProfile:      make([]ProfileCostBreakdown, 0),
+		CostByUser:         make([]UserCostBreakdown, 0),
 	}
 
 	// Convert status stats to response format
@@ -1416,6 +1430,14 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 		stats.ClustersByStatus = append(stats.ClustersByStatus, ClusterStatusCount{
 			Status: stat.Status,
 			Count:  stat.Count,
+		})
+	}
+
+	// Convert platform stats to response format
+	for _, stat := range platformStats {
+		stats.ClustersByPlatform = append(stats.ClustersByPlatform, ClusterPlatformCount{
+			Platform: stat.Platform,
+			Count:    stat.Count,
 		})
 	}
 

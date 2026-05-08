@@ -9,6 +9,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   RefreshCw,
   Check,
@@ -18,12 +28,34 @@ import {
   Package,
   ArrowUpCircle,
   Clock,
-  Undo2
+  Undo2,
+  Search,
+  Filter,
+  Star,
+  XCircle
 } from 'lucide-react'
+
+// Semantic version comparison helper
+function compareVersions(a: string, b: string): number {
+  const aParts = a.split('.').map(Number)
+  const bParts = b.split('.').map(Number)
+
+  for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+    const aNum = aParts[i] || 0
+    const bNum = bParts[i] || 0
+
+    if (aNum !== bNum) {
+      return aNum - bNum
+    }
+  }
+
+  return 0
+}
 
 interface ProfileVersionStatus {
   profile_name: string
   current_versions: string[]
+  default_version: string
   available_versions: string[]
   new_versions: string[]
   update_count: number
@@ -41,19 +73,33 @@ interface CheckVersionsResponse {
 interface UpdateVersionsRequest {
   openshift_versions?: string[]
   kubernetes_versions?: string[]
+  openshift_default_version?: string
+  kubernetes_default_version?: string
   dry_run?: boolean
 }
 
 export default function ProfileUpdatesPage() {
   const queryClient = useQueryClient()
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string[]>>({})
+  const [removedVersions, setRemovedVersions] = useState<Record<string, string[]>>({})
+  const [newDefaults, setNewDefaults] = useState<Record<string, string>>({})
   const [dryRunMode, setDryRunMode] = useState(false)
+  const [searchFilter, setSearchFilter] = useState('')
+  const [clusterTypeFilter, setClusterTypeFilter] = useState<string>('all')
+  const [showOnlyWithUpdates, setShowOnlyWithUpdates] = useState(true)
 
   // Fetch version check data
   const { data, isLoading, refetch } = useQuery<CheckVersionsResponse>({
     queryKey: ['admin', 'profile-updates'],
     queryFn: async () => {
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
       const response = await fetch('/api/v1/admin/profiles/version-check', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         credentials: 'include',
       })
       if (!response.ok) {
@@ -66,10 +112,15 @@ export default function ProfileUpdatesPage() {
   // Mutation for updating profile versions
   const updateMutation = useMutation({
     mutationFn: async ({ profileName, versions }: { profileName: string; versions: UpdateVersionsRequest }) => {
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
       const response = await fetch(`/api/v1/admin/profiles/${profileName}/update-versions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         credentials: 'include',
         body: JSON.stringify(versions),
@@ -86,8 +137,18 @@ export default function ProfileUpdatesPage() {
       } else {
         toast.success(`Profile ${variables.profileName} updated successfully`)
         queryClient.invalidateQueries({ queryKey: ['admin', 'profile-updates'] })
-        // Clear selected versions for this profile
+        // Clear all changes for this profile
         setSelectedVersions(prev => {
+          const newState = { ...prev }
+          delete newState[variables.profileName]
+          return newState
+        })
+        setRemovedVersions(prev => {
+          const newState = { ...prev }
+          delete newState[variables.profileName]
+          return newState
+        })
+        setNewDefaults(prev => {
           const newState = { ...prev }
           delete newState[variables.profileName]
           return newState
@@ -102,8 +163,15 @@ export default function ProfileUpdatesPage() {
   // Mutation for rollback
   const rollbackMutation = useMutation({
     mutationFn: async (profileName: string) => {
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
       const response = await fetch(`/api/v1/admin/profiles/${profileName}/rollback`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         credentials: 'include',
       })
       if (!response.ok) {
@@ -123,8 +191,15 @@ export default function ProfileUpdatesPage() {
   // Mutation for registry reload
   const reloadMutation = useMutation({
     mutationFn: async () => {
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
       const response = await fetch('/api/v1/admin/profiles/reload', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         credentials: 'include',
       })
       if (!response.ok) {
@@ -169,10 +244,35 @@ export default function ProfileUpdatesPage() {
     })
   }
 
+  const handleRemoveVersion = (profileName: string, version: string) => {
+    setRemovedVersions(prev => {
+      const current = prev[profileName] || []
+      if (current.includes(version)) {
+        return prev
+      }
+      return { ...prev, [profileName]: [...current, version] }
+    })
+  }
+
+  const handleUndoRemove = (profileName: string, version: string) => {
+    setRemovedVersions(prev => {
+      const current = prev[profileName] || []
+      return { ...prev, [profileName]: current.filter(v => v !== version) }
+    })
+  }
+
+  const handleSetDefault = (profileName: string, version: string) => {
+    setNewDefaults(prev => ({ ...prev, [profileName]: version }))
+  }
+
   const handleUpdateProfile = (profile: ProfileVersionStatus) => {
     const selected = selectedVersions[profile.profile_name] || []
-    if (selected.length === 0) {
-      toast.error('Please select at least one version to add')
+    const removed = removedVersions[profile.profile_name] || []
+    const newDefault = newDefaults[profile.profile_name]
+
+    // Check if any changes were made
+    if (selected.length === 0 && removed.length === 0 && !newDefault) {
+      toast.error('Please make at least one change (add, remove, or change default)')
       return
     }
 
@@ -186,16 +286,49 @@ export default function ProfileUpdatesPage() {
     }
 
     if (isOpenShift) {
-      // Merge current versions with selected new versions
-      const mergedVersions = [...profile.current_versions, ...selected]
+      // Start with current versions, remove the ones marked for removal, add selected
+      let versions = profile.current_versions.filter(v => !removed.includes(v))
+      versions = [...versions, ...selected]
       // Remove duplicates and sort
-      const uniqueVersions = Array.from(new Set(mergedVersions)).sort()
+      const uniqueVersions = Array.from(new Set(versions)).sort(compareVersions)
+
+      // Validate we're not removing all versions
+      if (uniqueVersions.length === 0) {
+        toast.error('Cannot remove all versions from profile')
+        return
+      }
+
       updateRequest.openshift_versions = uniqueVersions
+
+      // Set default version if changed
+      if (newDefault) {
+        // Validate default is in the final list
+        if (!uniqueVersions.includes(newDefault)) {
+          toast.error('Cannot set default to a version that is being removed')
+          return
+        }
+        updateRequest.openshift_default_version = newDefault
+      }
     } else {
       // Kubernetes versions (EKS, GKE)
-      const mergedVersions = [...profile.current_versions, ...selected]
-      const uniqueVersions = Array.from(new Set(mergedVersions)).sort()
+      let versions = profile.current_versions.filter(v => !removed.includes(v))
+      versions = [...versions, ...selected]
+      const uniqueVersions = Array.from(new Set(versions)).sort(compareVersions)
+
+      if (uniqueVersions.length === 0) {
+        toast.error('Cannot remove all versions from profile')
+        return
+      }
+
       updateRequest.kubernetes_versions = uniqueVersions
+
+      if (newDefault) {
+        if (!uniqueVersions.includes(newDefault)) {
+          toast.error('Cannot set default to a version that is being removed')
+          return
+        }
+        updateRequest.kubernetes_default_version = newDefault
+      }
     }
 
     updateMutation.mutate({
@@ -203,6 +336,38 @@ export default function ProfileUpdatesPage() {
       versions: updateRequest,
     })
   }
+
+  // Filter profiles based on search and filters
+  const filteredProfiles = (data?.profiles_with_updates || []).filter(profile => {
+    // Search filter
+    if (searchFilter && !profile.profile_name.toLowerCase().includes(searchFilter.toLowerCase())) {
+      return false
+    }
+
+    // Cluster type filter
+    if (clusterTypeFilter !== 'all') {
+      const profileName = profile.profile_name.toLowerCase()
+      if (clusterTypeFilter === 'openshift' && !profileName.includes('openshift') && !profileName.includes('rosa') && !profileName.includes('sno') && !profileName.includes('gcp-standard')) {
+        return false
+      }
+      if (clusterTypeFilter === 'eks' && !profileName.includes('eks')) {
+        return false
+      }
+      if (clusterTypeFilter === 'gke' && !profileName.includes('gke')) {
+        return false
+      }
+      if (clusterTypeFilter === 'iks' && !profileName.includes('iks')) {
+        return false
+      }
+    }
+
+    // Show only with updates filter
+    if (showOnlyWithUpdates && profile.update_count === 0) {
+      return false
+    }
+
+    return true
+  })
 
   if (isLoading) {
     return (
@@ -294,21 +459,99 @@ export default function ProfileUpdatesPage() {
         </CardContent>
       </Card>
 
-      {/* No Updates Available */}
-      {data?.profiles_with_updates && data.profiles_with_updates.length === 0 && (
+      {/* Filter Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filter Profiles
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Search Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="search">Search by Name</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Filter profiles..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+
+            {/* Cluster Type Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="cluster-type">Cluster Type</Label>
+              <Select value={clusterTypeFilter} onValueChange={setClusterTypeFilter}>
+                <SelectTrigger id="cluster-type">
+                  <SelectValue placeholder="All cluster types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="openshift">OpenShift</SelectItem>
+                  <SelectItem value="eks">EKS</SelectItem>
+                  <SelectItem value="gke">GKE</SelectItem>
+                  <SelectItem value="iks">IKS</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Show Only With Updates */}
+            <div className="space-y-2">
+              <Label htmlFor="updates-only">Display Options</Label>
+              <div className="flex items-center space-x-2 h-10">
+                <Checkbox
+                  id="updates-only"
+                  checked={showOnlyWithUpdates}
+                  onCheckedChange={(checked) => setShowOnlyWithUpdates(checked as boolean)}
+                />
+                <label
+                  htmlFor="updates-only"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Show only profiles with updates
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Results Summary */}
+          {data?.profiles_with_updates && (
+            <div className="mt-4 text-sm text-muted-foreground">
+              Showing {filteredProfiles.length} of {data.profiles_with_updates.length} profile{data.profiles_with_updates.length !== 1 ? 's' : ''}
+              {showOnlyWithUpdates && data.updates_available > 0 && (
+                <span> • {data.updates_available} with updates</span>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* No Results */}
+      {filteredProfiles.length === 0 && !isLoading && (
         <Alert>
-          <Check className="h-4 w-4" />
-          <AlertTitle>All profiles are up to date!</AlertTitle>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>No profiles match your filters</AlertTitle>
           <AlertDescription>
-            No new versions are available for any of your cluster profiles.
+            {searchFilter || clusterTypeFilter !== 'all'
+              ? 'Try adjusting your search or filter criteria.'
+              : 'No new versions are available for any of your cluster profiles.'}
           </AlertDescription>
         </Alert>
       )}
 
       {/* Profile Update Cards */}
-      {data?.profiles_with_updates?.map((profile) => {
+      {filteredProfiles.map((profile) => {
         const selected = selectedVersions[profile.profile_name] || []
-        const hasSelection = selected.length > 0
+        const removed = removedVersions[profile.profile_name] || []
+        const newDefault = newDefaults[profile.profile_name]
+        const currentDefault = newDefault || profile.default_version
+        const hasChanges = selected.length > 0 || removed.length > 0 || newDefault !== undefined
 
         return (
           <Card key={profile.profile_name}>
@@ -328,13 +571,71 @@ export default function ProfileUpdatesPage() {
             <CardContent className="space-y-4">
               {/* Current Versions */}
               <div>
-                <h4 className="text-sm font-semibold mb-2">Current Versions</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">Current Versions</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Click star to set default • Click X to remove
+                  </p>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {profile.current_versions.map((version) => (
-                    <Badge key={version} variant="outline">
-                      {version}
-                    </Badge>
-                  ))}
+                  {[...profile.current_versions].sort(compareVersions).map((version) => {
+                    const isRemoved = removed.includes(version)
+                    const isDefault = version === currentDefault
+                    const isNewDefault = version === newDefault
+
+                    return (
+                      <div
+                        key={version}
+                        className={`group relative px-3 py-1 border rounded-md transition-all ${
+                          isRemoved
+                            ? 'bg-destructive/10 border-destructive/50 line-through opacity-50'
+                            : isNewDefault
+                            ? 'bg-yellow-500/20 border-yellow-500'
+                            : isDefault
+                            ? 'bg-primary/10 border-primary'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() =>
+                              isRemoved
+                                ? handleUndoRemove(profile.profile_name, version)
+                                : handleSetDefault(profile.profile_name, version)
+                            }
+                            className="flex items-center"
+                            title={isRemoved ? 'Undo remove' : isDefault ? 'Current default' : 'Set as default'}
+                          >
+                            <Star
+                              className={`h-3.5 w-3.5 ${
+                                isDefault || isNewDefault
+                                  ? 'fill-yellow-500 text-yellow-500'
+                                  : 'text-muted-foreground hover:text-yellow-500'
+                              }`}
+                            />
+                          </button>
+                          <span className="text-sm font-medium">{version}</span>
+                          {!isRemoved ? (
+                            <button
+                              onClick={() => handleRemoveVersion(profile.profile_name, version)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove version"
+                            >
+                              <XCircle className="h-3.5 w-3.5 text-destructive hover:text-destructive/80" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUndoRemove(profile.profile_name, version)}
+                              className="opacity-100"
+                              title="Undo remove"
+                            >
+                              <Undo2 className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -362,7 +663,7 @@ export default function ProfileUpdatesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {profile.new_versions.map((version) => {
+                  {[...profile.new_versions].sort(compareVersions).map((version) => {
                     const isSelected = selected.includes(version)
                     return (
                       <div
@@ -374,14 +675,17 @@ export default function ProfileUpdatesPage() {
                         }`}
                         onClick={() => handleVersionToggle(profile.profile_name, version, !isSelected)}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={(checked) =>
                               handleVersionToggle(profile.profile_name, version, checked as boolean)
                             }
                           />
-                          <span className="text-sm font-medium">{version}</span>
+                          <span className="text-sm font-medium" onClick={(e) => {
+                            e.stopPropagation()
+                            handleVersionToggle(profile.profile_name, version, !isSelected)
+                          }}>{version}</span>
                         </div>
                       </div>
                     )
@@ -389,13 +693,30 @@ export default function ProfileUpdatesPage() {
                 </div>
               </div>
 
-              {/* Selected Versions Summary */}
-              {hasSelection && (
+              {/* Changes Summary */}
+              {hasChanges && (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Selected for addition</AlertTitle>
-                  <AlertDescription>
-                    {selected.length} version{selected.length > 1 ? 's' : ''} will be added to the allowlist: {selected.join(', ')}
+                  <AlertTitle>Pending Changes</AlertTitle>
+                  <AlertDescription className="space-y-1">
+                    {selected.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Add:</span> {selected.join(', ')}
+                      </div>
+                    )}
+                    {removed.length > 0 && (
+                      <div>
+                        <span className="font-semibold text-destructive">Remove:</span> {removed.join(', ')}
+                      </div>
+                    )}
+                    {newDefault && (
+                      <div>
+                        <span className="font-semibold text-yellow-600">New Default:</span> {newDefault}
+                        {profile.default_version && profile.default_version !== newDefault && (
+                          <span className="text-muted-foreground"> (was {profile.default_version})</span>
+                        )}
+                      </div>
+                    )}
                   </AlertDescription>
                 </Alert>
               )}
@@ -404,7 +725,7 @@ export default function ProfileUpdatesPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={() => handleUpdateProfile(profile)}
-                  disabled={!hasSelection || updateMutation.isPending}
+                  disabled={!hasChanges || updateMutation.isPending}
                   className="flex-1"
                 >
                   {updateMutation.isPending ? (

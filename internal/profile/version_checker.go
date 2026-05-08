@@ -28,11 +28,12 @@ type VersionCache struct {
 
 // ProfileVersionStatus represents version update availability for a profile
 type ProfileVersionStatus struct {
-	ProfileName        string   `json:"profile_name"`
-	CurrentVersions    []string `json:"current_versions"`
-	AvailableVersions  []string `json:"available_versions"`
-	NewVersions        []string `json:"new_versions"`        // Versions not in current list
-	UpdateCount        int      `json:"update_count"`
+	ProfileName        string    `json:"profile_name"`
+	CurrentVersions    []string  `json:"current_versions"`
+	DefaultVersion     string    `json:"default_version"`
+	AvailableVersions  []string  `json:"available_versions"`
+	NewVersions        []string  `json:"new_versions"`        // Versions not in current list
+	UpdateCount        int       `json:"update_count"`
 	LastChecked        time.Time `json:"last_checked"`
 }
 
@@ -57,11 +58,21 @@ func NewVersionChecker() *VersionChecker {
 // CheckProfileUpdates checks if a profile has available version updates
 func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile) (*ProfileVersionStatus, error) {
 	status := &ProfileVersionStatus{
-		ProfileName:    prof.Name,
-		CurrentVersions: []string{},
+		ProfileName:       prof.Name,
+		CurrentVersions:   []string{},
 		AvailableVersions: []string{},
-		NewVersions:    []string{},
-		LastChecked:    time.Now(),
+		NewVersions:       []string{},
+		LastChecked:       time.Now(),
+	}
+
+	// Always populate current versions and default from profile first
+	// This ensures they're available even if version checking fails
+	if prof.OpenshiftVersions != nil && len(prof.OpenshiftVersions.Allowlist) > 0 {
+		status.CurrentVersions = prof.OpenshiftVersions.Allowlist
+		status.DefaultVersion = prof.OpenshiftVersions.Default
+	} else if prof.KubernetesVersions != nil && len(prof.KubernetesVersions.Allowlist) > 0 {
+		status.CurrentVersions = prof.KubernetesVersions.Allowlist
+		status.DefaultVersion = prof.KubernetesVersions.Default
 	}
 
 	// Determine which version source to use based on cluster type
@@ -73,49 +84,38 @@ func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile
 		// Get OpenShift versions
 		availableVersions, err = vc.GetOpenShiftVersions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get OpenShift versions: %w", err)
-		}
-
-		// Extract current versions from profile
-		if prof.OpenshiftVersions != nil && len(prof.OpenshiftVersions.Allowlist) > 0 {
-			status.CurrentVersions = prof.OpenshiftVersions.Allowlist
+			// Return status with current versions populated, but log error
+			fmt.Printf("Warning: failed to get OpenShift versions for %s: %v\n", prof.Name, err)
+			return status, nil
 		}
 
 	case "rosa":
 		// Get ROSA versions
 		availableVersions, err = vc.GetROSAVersions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get ROSA versions: %w", err)
-		}
-
-		if prof.OpenshiftVersions != nil && len(prof.OpenshiftVersions.Allowlist) > 0 {
-			status.CurrentVersions = prof.OpenshiftVersions.Allowlist
+			fmt.Printf("Warning: failed to get ROSA versions for %s: %v\n", prof.Name, err)
+			return status, nil
 		}
 
 	case types.ClusterTypeEKS:
 		// Get EKS/Kubernetes versions
 		availableVersions, err = vc.GetKubernetesVersions(ctx, "eks")
 		if err != nil {
-			return nil, fmt.Errorf("failed to get EKS versions: %w", err)
-		}
-
-		if prof.KubernetesVersions != nil && len(prof.KubernetesVersions.Allowlist) > 0 {
-			status.CurrentVersions = prof.KubernetesVersions.Allowlist
+			fmt.Printf("Warning: failed to get EKS versions for %s: %v\n", prof.Name, err)
+			return status, nil
 		}
 
 	case types.ClusterTypeGKE:
 		// Get GKE/Kubernetes versions
 		availableVersions, err = vc.GetKubernetesVersions(ctx, "gke")
 		if err != nil {
-			return nil, fmt.Errorf("failed to get GKE versions: %w", err)
-		}
-
-		if prof.KubernetesVersions != nil && len(prof.KubernetesVersions.Allowlist) > 0 {
-			status.CurrentVersions = prof.KubernetesVersions.Allowlist
+			fmt.Printf("Warning: failed to get GKE versions for %s: %v\n", prof.Name, err)
+			return status, nil
 		}
 
 	default:
-		return status, nil // No version checking for other cluster types
+		// No version checking for other cluster types, but current versions are populated
+		return status, nil
 	}
 
 	status.AvailableVersions = availableVersions
@@ -132,6 +132,8 @@ func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile
 		}
 	}
 
+	// Smart filter: Only show relevant new versions
+	status.NewVersions = filterRelevantVersions(status.CurrentVersions, status.NewVersions)
 	status.UpdateCount = len(status.NewVersions)
 
 	return status, nil
@@ -382,4 +384,114 @@ func (vc *VersionChecker) GetCacheAge() time.Duration {
 	vc.cache.mu.RLock()
 	defer vc.cache.mu.RUnlock()
 	return time.Since(vc.cache.LastUpdated)
+}
+
+// filterRelevantVersions filters new versions to only show relevant updates
+// Strategy:
+// 1. Show all versions newer than the highest current version
+// 2. For minor versions already in use, show only the latest patch
+// 3. Hide ancient/irrelevant versions
+func filterRelevantVersions(currentVersions []string, newVersions []string) []string {
+	if len(currentVersions) == 0 {
+		// No current versions, show latest 20 new versions
+		if len(newVersions) > 20 {
+			return newVersions[len(newVersions)-20:]
+		}
+		return newVersions
+	}
+
+	// Parse current versions to find highest and minor versions in use
+	var highestVersion *version.Version
+	minorVersionsInUse := make(map[string]bool) // e.g., "4.20", "4.21"
+
+	for _, v := range currentVersions {
+		ver, err := version.NewVersion(v)
+		if err != nil {
+			continue
+		}
+
+		// Track highest version
+		if highestVersion == nil || ver.GreaterThan(highestVersion) {
+			highestVersion = ver
+		}
+
+		// Track minor versions in use (e.g., "4.20" from "4.20.3")
+		segments := ver.Segments()
+		if len(segments) >= 2 {
+			minorKey := fmt.Sprintf("%d.%d", segments[0], segments[1])
+			minorVersionsInUse[minorKey] = true
+		}
+	}
+
+	if highestVersion == nil {
+		// Fallback if version parsing failed
+		if len(newVersions) > 20 {
+			return newVersions[len(newVersions)-20:]
+		}
+		return newVersions
+	}
+
+	// Group new versions by minor version
+	latestPatchPerMinor := make(map[string]*version.Version)
+	latestPatchPerMinorString := make(map[string]string)
+
+	for _, v := range newVersions {
+		ver, err := version.NewVersion(v)
+		if err != nil {
+			continue
+		}
+
+		segments := ver.Segments()
+		if len(segments) >= 2 {
+			minorKey := fmt.Sprintf("%d.%d", segments[0], segments[1])
+
+			// Track latest patch for this minor version
+			if existing, ok := latestPatchPerMinor[minorKey]; !ok || ver.GreaterThan(existing) {
+				latestPatchPerMinor[minorKey] = ver
+				latestPatchPerMinorString[minorKey] = v
+			}
+		}
+	}
+
+	// Build filtered list
+	relevant := make([]string, 0)
+	seen := make(map[string]bool)
+
+	for _, v := range newVersions {
+		ver, err := version.NewVersion(v)
+		if err != nil {
+			continue
+		}
+
+		segments := ver.Segments()
+		if len(segments) < 2 {
+			continue
+		}
+
+		minorKey := fmt.Sprintf("%d.%d", segments[0], segments[1])
+
+		// Include if version is newer than highest current
+		if ver.GreaterThan(highestVersion) {
+			if !seen[v] {
+				relevant = append(relevant, v)
+				seen[v] = true
+			}
+			continue
+		}
+
+		// Include if this is the latest patch for a minor version we're using
+		if minorVersionsInUse[minorKey] {
+			if latestPatch := latestPatchPerMinorString[minorKey]; latestPatch == v {
+				if !seen[v] {
+					relevant = append(relevant, v)
+					seen[v] = true
+				}
+			}
+		}
+	}
+
+	// Sort the relevant versions
+	sortVersions(relevant)
+
+	return relevant
 }

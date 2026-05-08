@@ -903,6 +903,12 @@ type ClusterStatsByProfile struct {
 	Count    int
 }
 
+// ClusterStatsByPlatform represents cluster count by platform
+type ClusterStatsByPlatform struct {
+	Platform string
+	Count    int
+}
+
 // LongRunningCluster represents a cluster with running duration information
 // Used for admin dashboard to identify clusters that may need hibernation
 type LongRunningCluster struct {
@@ -966,6 +972,39 @@ func (s *ClusterStore) GetStatisticsByProfile(ctx context.Context) ([]*ClusterSt
 	for rows.Next() {
 		var stat ClusterStatsByProfile
 		err := rows.Scan(&stat.Profile, &stat.Status, &stat.OwnerID, &stat.Count)
+		if err != nil {
+			return nil, fmt.Errorf("scan statistics: %w", err)
+		}
+		stats = append(stats, &stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate statistics: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetStatisticsByPlatform returns aggregated cluster counts grouped by platform
+func (s *ClusterStore) GetStatisticsByPlatform(ctx context.Context) ([]*ClusterStatsByPlatform, error) {
+	query := `
+		SELECT platform, COUNT(*) as count
+		FROM clusters
+		WHERE status NOT IN ('DESTROYED', 'FAILED')
+		GROUP BY platform
+		ORDER BY count DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query statistics by platform: %w", err)
+	}
+	defer rows.Close()
+
+	stats := []*ClusterStatsByPlatform{}
+	for rows.Next() {
+		var stat ClusterStatsByPlatform
+		err := rows.Scan(&stat.Platform, &stat.Count)
 		if err != nil {
 			return nil, fmt.Errorf("scan statistics: %w", err)
 		}

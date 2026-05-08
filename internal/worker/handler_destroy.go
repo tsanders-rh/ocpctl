@@ -734,23 +734,43 @@ func (h *DestroyHandler) handleIKSDestroy(ctx context.Context, job *types.Job, c
 }
 
 // handleROSADestroy handles ROSA (Red Hat OpenShift Service on AWS) cluster destruction
+// Implements comprehensive cleanup:
+// 1. Delete ROSA cluster (rosa delete cluster)
+// 2. Delete operator IAM roles (rosa delete operator-roles)
+// 3. Delete OIDC provider (rosa delete oidc-provider)
 func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
 	log.Printf("Starting ROSA cluster destruction for %s", cluster.Name)
 
 	// Create ROSA installer
 	rosaInstaller := installer.NewROSAInstaller()
 
+	// Get cluster ID before deletion (needed for cleanup of operator roles and OIDC provider)
+	// ROSA cluster ID is required for operator role and OIDC provider deletion
+	var clusterID string
+	log.Printf("Getting cluster ID for %s", cluster.Name)
+	clusterInfo, err := rosaInstaller.DescribeCluster(ctx, cluster.Name)
+	if err != nil {
+		log.Printf("Warning: failed to get cluster ID (cluster may already be deleted): %v", err)
+		// Continue with deletion attempt using cluster name
+		clusterID = cluster.Name
+	} else {
+		clusterID = clusterInfo.ID
+		log.Printf("ROSA cluster ID: %s", clusterID)
+	}
+
 	// Run rosa delete cluster
-	log.Printf("Running rosa delete cluster for %s", cluster.Name)
+	log.Printf("Running rosa delete cluster for %s (ID: %s)", cluster.Name, clusterID)
 	destroyCtx, destroyCancel := context.WithTimeout(ctx, DestroyOperationTimeout)
 	defer destroyCancel()
 
 	output, err := rosaInstaller.DestroyCluster(destroyCtx, cluster.Name)
+	clusterNotFound := false
 	if err != nil {
 		// Check if this is a "cluster not found" error - treat as already destroyed
 		if strings.Contains(output, "not found") || strings.Contains(output, "does not exist") {
 			log.Printf("ROSA cluster %s does not exist - treating as already destroyed", cluster.Name)
 			log.Printf("ROSA response: %s", output)
+			clusterNotFound = true
 		} else {
 			log.Printf("ROSA cluster destruction failed: %v\nOutput: %s", err, output)
 			// Mark as DESTROY_FAILED - cluster resources may be partially destroyed and require manual cleanup
@@ -766,6 +786,37 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 	// Track cleanup results for job metadata
 	cleanupResults := make(map[string]interface{})
 	cleanupWarnings := []string{}
+
+	// Delete operator IAM roles
+	// These are created by ROSA with --sts --mode auto and are not automatically deleted
+	log.Printf("Deleting ROSA operator IAM roles for cluster %s", clusterID)
+	deletedRoles, err := rosaInstaller.DeleteOperatorRoles(ctx, clusterID)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to delete operator roles: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["operator_roles_deleted"] = false
+	} else {
+		log.Printf("Successfully deleted %d operator IAM roles for cluster %s", len(deletedRoles), clusterID)
+		cleanupResults["operator_roles_deleted"] = true
+		cleanupResults["operator_roles_count"] = len(deletedRoles)
+		if len(deletedRoles) > 0 {
+			cleanupResults["operator_role_arns"] = deletedRoles
+			log.Printf("Deleted operator roles: %v", deletedRoles)
+		}
+	}
+
+	// Delete OIDC provider
+	log.Printf("Deleting OIDC provider for cluster %s", clusterID)
+	if err := rosaInstaller.DeleteOIDCProvider(ctx, clusterID); err != nil {
+		errMsg := fmt.Sprintf("failed to delete OIDC provider: %v", err)
+		log.Printf("Warning: %s", errMsg)
+		cleanupWarnings = append(cleanupWarnings, errMsg)
+		cleanupResults["oidc_provider_deleted"] = false
+	} else {
+		log.Printf("Successfully deleted OIDC provider for cluster %s", clusterID)
+		cleanupResults["oidc_provider_deleted"] = true
+	}
 
 	// Mark cluster as destroyed
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
@@ -784,17 +835,20 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 	}
 
 	// Record cleanup results in job metadata for audit trail
+	// Always record cleanup results, even if no warnings
+	if job.Metadata == nil {
+		job.Metadata = make(types.JobMetadata)
+	}
+	job.Metadata["cleanup_results"] = cleanupResults
 	if len(cleanupWarnings) > 0 {
 		log.Printf("Destroy completed with %d cleanup warnings - see job metadata for details", len(cleanupWarnings))
-		if job.Metadata == nil {
-			job.Metadata = make(types.JobMetadata)
-		}
-		job.Metadata["cleanup_results"] = cleanupResults
 		job.Metadata["cleanup_warnings"] = cleanupWarnings
 		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
+	} else {
+		log.Printf("Destroy completed successfully with full cleanup")
 	}
 
-	log.Printf("ROSA cluster %s marked as DESTROYED", cluster.Name)
+	log.Printf("ROSA cluster %s marked as DESTROYED (cluster_not_found=%v)", cluster.Name, clusterNotFound)
 	return nil
 }
 

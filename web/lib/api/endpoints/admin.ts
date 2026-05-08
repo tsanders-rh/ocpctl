@@ -11,6 +11,10 @@ export interface ClusterStatistics {
     profile: string;
     count: number;
   }>;
+  clusters_by_platform: Array<{
+    platform: string;
+    count: number;
+  }>;
   total_hourly_cost: number;
   total_daily_cost: number;
   total_monthly_cost: number;

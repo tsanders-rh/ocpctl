@@ -48,9 +48,11 @@ type CheckVersionsResponse struct {
 
 // UpdateVersionsRequest represents the request to update profile versions
 type UpdateVersionsRequest struct {
-	OpenshiftVersions  []string `json:"openshift_versions,omitempty"`
-	KubernetesVersions []string `json:"kubernetes_versions,omitempty"`
-	DryRun             bool     `json:"dry_run,omitempty"`
+	OpenshiftVersions       []string `json:"openshift_versions,omitempty"`
+	KubernetesVersions      []string `json:"kubernetes_versions,omitempty"`
+	OpenshiftDefaultVersion string   `json:"openshift_default_version,omitempty"`
+	KubernetesDefaultVersion string   `json:"kubernetes_default_version,omitempty"`
+	DryRun                  bool     `json:"dry_run,omitempty"`
 }
 
 // UpdateVersionsResponse represents the response after updating versions
@@ -103,7 +105,7 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 	}
 
 	// Collect results
-	profilesWithUpdates := []profile.ProfileVersionStatus{}
+	allProfiles := []profile.ProfileVersionStatus{}
 	totalProfiles := len(profiles)
 	updatesAvailable := 0
 
@@ -115,14 +117,16 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 			continue
 		}
 
-		if res.status != nil && res.status.UpdateCount > 0 {
-			profilesWithUpdates = append(profilesWithUpdates, *res.status)
-			updatesAvailable++
+		if res.status != nil {
+			allProfiles = append(allProfiles, *res.status)
+			if res.status.UpdateCount > 0 {
+				updatesAvailable++
+			}
 		}
 	}
 
 	response := CheckVersionsResponse{
-		ProfilesWithUpdates: profilesWithUpdates,
+		ProfilesWithUpdates: allProfiles,
 		TotalProfiles:       totalProfiles,
 		UpdatesAvailable:    updatesAvailable,
 		CacheAge:            h.versionChecker.GetCacheAge().String(),
@@ -157,8 +161,10 @@ func (h *ProfileUpdateHandler) HandleUpdateVersions(c echo.Context) error {
 
 	// Prepare version update
 	updates := &profile.VersionUpdate{
-		OpenshiftVersions:  req.OpenshiftVersions,
-		KubernetesVersions: req.KubernetesVersions,
+		OpenshiftVersions:        req.OpenshiftVersions,
+		KubernetesVersions:       req.KubernetesVersions,
+		OpenshiftDefaultVersion:  req.OpenshiftDefaultVersion,
+		KubernetesDefaultVersion: req.KubernetesDefaultVersion,
 	}
 
 	// Dry run mode - validate without writing

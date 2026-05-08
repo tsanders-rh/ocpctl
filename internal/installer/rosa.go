@@ -565,6 +565,89 @@ func (r *ROSAInstaller) Version() (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+// ROSAOperatorRole represents a ROSA operator IAM role
+type ROSAOperatorRole struct {
+	ID          string `json:"id"`
+	RoleName    string `json:"role_name"`
+	RoleARN     string `json:"role_arn"`
+	ServiceAccount string `json:"service_account"`
+}
+
+// DeleteOperatorRoles deletes operator IAM roles for a ROSA cluster
+// Returns the list of deleted role ARNs and any error encountered
+func (r *ROSAInstaller) DeleteOperatorRoles(ctx context.Context, clusterID string) ([]string, error) {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return nil, err
+	}
+
+	// rosa delete operator-roles --cluster <id> --yes --mode auto
+	cmd := exec.CommandContext(ctx, r.binaryPath, "delete", "operator-roles",
+		"--cluster", clusterID,
+		"--yes",
+		"--mode", "auto")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("rosa delete operator-roles failed: %w\nStderr: %s", err, stderr.String())
+	}
+
+	// Parse output to extract deleted role ARNs
+	deletedRoles := []string{}
+	output := stdout.String()
+	for _, line := range strings.Split(output, "\n") {
+		// Look for lines containing role ARNs
+		if strings.Contains(line, "arn:aws:iam::") && strings.Contains(line, ":role/") {
+			// Extract ARN from line
+			start := strings.Index(line, "arn:aws:iam::")
+			if start != -1 {
+				// Find end of ARN (usually ends with whitespace or newline)
+				end := strings.IndexAny(line[start:], " \t\n")
+				if end == -1 {
+					deletedRoles = append(deletedRoles, strings.TrimSpace(line[start:]))
+				} else {
+					deletedRoles = append(deletedRoles, strings.TrimSpace(line[start:start+end]))
+				}
+			}
+		}
+	}
+
+	return deletedRoles, nil
+}
+
+// DeleteOIDCProvider deletes the OIDC provider for a ROSA cluster
+func (r *ROSAInstaller) DeleteOIDCProvider(ctx context.Context, clusterID string) error {
+	// Ensure rosa is authenticated
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return err
+	}
+
+	// rosa delete oidc-provider --cluster <id> --yes --mode auto
+	cmd := exec.CommandContext(ctx, r.binaryPath, "delete", "oidc-provider",
+		"--cluster", clusterID,
+		"--yes",
+		"--mode", "auto")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// OIDC provider may not exist (cluster created before STS, or already deleted)
+		// Don't fail if it's just a "not found" error
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "not found") || strings.Contains(stderrStr, "does not exist") {
+			return nil
+		}
+		return fmt.Errorf("rosa delete oidc-provider failed: %w\nStderr: %s", err, stderrStr)
+	}
+
+	return nil
+}
+
 // extractClusterID extracts the cluster ID from rosa create cluster output
 func extractClusterID(output string) string {
 	// Look for pattern: "Cluster '<id>' is now creating"

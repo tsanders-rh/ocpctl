@@ -82,6 +82,26 @@ export default function AdminDashboardPage() {
       value: item.count,
     })) || [];
 
+  // Platform color mapping
+  const platformConfig = {
+    aws: { chart: "blue", legend: "bg-blue-500" },
+    gcp: { chart: "green", legend: "bg-green-500" },
+    ibmcloud: { chart: "purple", legend: "bg-purple-500" },
+    azure: { chart: "cyan", legend: "bg-cyan-500" },
+  } as const;
+
+  // Format data for platform donut chart
+  const platformChartData = clusterStats?.clusters_by_platform
+    ?.map((item) => ({
+      name: item.platform.toUpperCase(),
+      value: item.count,
+    }))
+    .sort((a, b) => b.value - a.value) || [];
+
+  const platformChartColors = platformChartData.map((item) =>
+    platformConfig[item.name.toLowerCase() as keyof typeof platformConfig]?.chart || "slate"
+  );
+
   // Format cost data for displays
   const costByProfileData = clusterStats?.cost_by_profile
     ?.sort((a, b) => b.hourly_cost - a.hourly_cost)
@@ -140,7 +160,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Cluster Statistics Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Cluster Status Donut Chart */}
         <TremorCard>
           <Title>Active Clusters by Status</Title>
@@ -193,6 +213,62 @@ export default function AdminDashboardPage() {
           ) : (
             <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
               No cluster data available
+            </div>
+          )}
+        </TremorCard>
+
+        {/* Cluster Platform Donut Chart */}
+        <TremorCard>
+          <Title>Active Clusters by Platform</Title>
+          {statsLoading ? (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              Loading statistics...
+            </div>
+          ) : platformChartData.length > 0 ? (
+            <>
+              <div className="relative">
+                <DonutChart
+                  className="mt-6 h-44"
+                  data={platformChartData}
+                  category="value"
+                  index="name"
+                  valueFormatter={(value: number) => `${value}`}
+                  colors={platformChartColors as any}
+                  showAnimation={true}
+                  showTooltip={false}
+                  showLabel={false}
+                  variant="donut"
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                    {platformChartData.reduce((sum: number, item: { value: number }) => sum + item.value, 0)}
+                  </div>
+                  <div className="text-sm text-slate-600 dark:text-slate-400">
+                    Platforms
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 space-y-3">
+                {platformChartData.map((item: { name: string; value: number }) => {
+                  const totalCount = platformChartData.reduce((sum: number, i: { value: number }) => sum + i.value, 0);
+                  const percentage = totalCount > 0 ? Math.round((item.value / totalCount) * 100) : 0;
+                  return (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-3 w-3 rounded-full ${platformConfig[item.name.toLowerCase() as keyof typeof platformConfig]?.legend || 'bg-slate-500'}`} />
+                        <span className="text-slate-600 dark:text-slate-400">{item.name}</span>
+                      </div>
+                      <span className="font-medium text-slate-900 dark:text-slate-100">
+                        {item.value} ({percentage}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
+              No platform data available
             </div>
           )}
         </TremorCard>
