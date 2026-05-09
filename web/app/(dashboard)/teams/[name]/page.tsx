@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
 import { profilesApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,8 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatDate } from "@/lib/utils/formatters";
-import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save } from "lucide-react";
+import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight } from "lucide-react";
 import type { User, Profile } from "@/types/api";
 
 export default function TeamDetailPage() {
@@ -40,6 +42,12 @@ export default function TeamDetailPage() {
   const [profileSuccess, setProfileSuccess] = useState("");
   const [profileError, setProfileError] = useState("");
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [openPlatforms, setOpenPlatforms] = useState<Record<string, boolean>>({
+    aws: true,
+    gcp: true,
+    ibmcloud: true,
+  });
 
   // Check if current user is a team admin for this team
   const isTeamAdmin = currentUser?.managed_teams?.includes(teamName);
@@ -150,6 +158,56 @@ export default function TeamDetailPage() {
     setProfileError("");
     updateAllowedProfilesMutation.mutate(selectedProfiles);
   };
+
+  const handleSelectAll = () => {
+    if (!profilesData) return;
+    setSelectedProfiles(profilesData.map((p: Profile) => p.name));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedProfiles([]);
+  };
+
+  const togglePlatform = (platform: string) => {
+    setOpenPlatforms(prev => ({ ...prev, [platform]: !prev[platform] }));
+  };
+
+  // Group and filter profiles
+  const { groupedProfiles, totalCount, selectedCount } = useMemo(() => {
+    if (!profilesData) return { groupedProfiles: {}, totalCount: 0, selectedCount: 0 };
+
+    // Filter by search query
+    const filtered = profilesData.filter((p: Profile) => {
+      const query = searchQuery.toLowerCase();
+      return (
+        p.name.toLowerCase().includes(query) ||
+        p.display_name.toLowerCase().includes(query) ||
+        p.description?.toLowerCase().includes(query) ||
+        p.platform.toLowerCase().includes(query)
+      );
+    });
+
+    // Group by platform
+    const grouped: Record<string, Profile[]> = {};
+    filtered.forEach((profile: Profile) => {
+      const platform = profile.platform.toLowerCase();
+      if (!grouped[platform]) {
+        grouped[platform] = [];
+      }
+      grouped[platform].push(profile);
+    });
+
+    // Sort profiles within each platform
+    Object.keys(grouped).forEach(platform => {
+      grouped[platform].sort((a, b) => a.display_name.localeCompare(b.display_name));
+    });
+
+    return {
+      groupedProfiles: grouped,
+      totalCount: profilesData.length,
+      selectedCount: selectedProfiles.length,
+    };
+  }, [profilesData, searchQuery, selectedProfiles]);
 
   if (teamLoading) {
     return <div className="p-8">Loading team...</div>;
@@ -332,44 +390,119 @@ export default function TeamDetailPage() {
             <p className="text-muted-foreground">Loading profiles...</p>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {profilesData.map((profile: Profile) => (
-                  <div key={profile.name} className="flex items-start space-x-2 border rounded-lg p-3">
-                    <Checkbox
-                      id={`profile-${profile.name}`}
-                      checked={selectedProfiles.includes(profile.name)}
-                      onCheckedChange={() => handleToggleProfile(profile.name)}
+              {/* Search and Quick Actions */}
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search profiles by name, platform, or description..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
                     />
-                    <div className="flex-1">
-                      <label
-                        htmlFor={`profile-${profile.name}`}
-                        className="text-sm font-medium leading-none cursor-pointer"
-                      >
-                        {profile.display_name}
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {profile.description}
-                      </p>
-                      <div className="flex gap-1 mt-2">
-                        <Badge variant="outline" className="text-xs">
-                          {profile.platform}
-                        </Badge>
-                        {profile.track && (
-                          <Badge variant="secondary" className="text-xs">
-                            {profile.track}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
                   </div>
-                ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSelectAll}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeselectAll}
+                  >
+                    Deselect All
+                  </Button>
+                  <div className="flex-1" />
+                  <p className="text-sm text-muted-foreground flex items-center">
+                    {selectedCount === 0
+                      ? "No restrictions (all profiles allowed)"
+                      : `${selectedCount} of ${totalCount} selected`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Grouped Profiles by Platform */}
+              <div className="space-y-3">
+                {Object.keys(groupedProfiles).length === 0 ? (
+                  <div className="text-center py-8 border rounded-lg">
+                    <p className="text-muted-foreground">No profiles found matching "{searchQuery}"</p>
+                  </div>
+                ) : (
+                  Object.entries(groupedProfiles).map(([platform, profiles]) => (
+                    <Collapsible
+                      key={platform}
+                      open={openPlatforms[platform]}
+                      onOpenChange={() => togglePlatform(platform)}
+                    >
+                      <div className="border rounded-lg">
+                        <CollapsibleTrigger className="w-full">
+                          <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                              {openPlatforms[platform] ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                              <h3 className="text-sm font-semibold uppercase">
+                                {platform}
+                              </h3>
+                              <Badge variant="secondary">
+                                {profiles.length} {profiles.length === 1 ? 'profile' : 'profiles'}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {profiles.filter(p => selectedProfiles.includes(p.name)).length} selected
+                            </div>
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4 pt-0">
+                            {profiles.map((profile: Profile) => (
+                              <div key={profile.name} className="flex items-start space-x-2 border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                                <Checkbox
+                                  id={`profile-${profile.name}`}
+                                  checked={selectedProfiles.includes(profile.name)}
+                                  onCheckedChange={() => handleToggleProfile(profile.name)}
+                                />
+                                <div className="flex-1">
+                                  <label
+                                    htmlFor={`profile-${profile.name}`}
+                                    className="text-sm font-medium leading-none cursor-pointer"
+                                  >
+                                    {profile.display_name}
+                                  </label>
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {profile.description}
+                                  </p>
+                                  {profile.track && (
+                                    <div className="mt-2">
+                                      <Badge variant="secondary" className="text-xs">
+                                        {profile.track}
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </div>
+                    </Collapsible>
+                  ))
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <p className="text-sm text-muted-foreground">
                   {selectedProfiles.length === 0
                     ? "All profiles allowed (no restrictions)"
-                    : `${selectedProfiles.length} profile(s) selected`}
+                    : `${selectedProfiles.length} profile(s) will be allowed for this team`}
                 </p>
                 <Button
                   onClick={handleSaveAllowedProfiles}
