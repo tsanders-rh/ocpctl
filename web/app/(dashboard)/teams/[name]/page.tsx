@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
-import { useUsers } from "@/lib/hooks/useUsers";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -50,8 +49,6 @@ export default function TeamDetailPage() {
     queryFn: () => adminApi.listTeamMembers(teamName),
   });
 
-  const { data: usersData } = useUsers();
-
   const addMemberMutation = useMutation({
     mutationFn: (userId: string) => adminApi.addUserToTeam(teamName, { user_id: userId }),
     onSuccess: () => {
@@ -90,16 +87,6 @@ export default function TeamDetailPage() {
   };
 
   const handleRemoveMember = (userId: string, userEmail: string) => {
-    // Check if this is the user's last team (admins don't need any teams)
-    const user = usersData?.users?.find((u: User) => u.id === userId);
-    const userTeams = user?.teams || [];
-
-    // Only prevent removal if user is not admin and this is their last team
-    if (user?.role !== "ADMIN" && userTeams.length <= 1) {
-      alert(`Cannot remove ${userEmail} from this team. Non-admin users must belong to at least one team. This is their only team.`);
-      return;
-    }
-
     if (!confirm(`Are you sure you want to remove ${userEmail} from this team?`)) {
       return;
     }
@@ -131,12 +118,9 @@ export default function TeamDetailPage() {
   }
 
   const members = membersData?.members || [];
-  const memberUserIds = new Set(members.map(m => m.user_id));
 
-  // Filter users who are not already members of this team
-  const eligibleMembers = (usersData?.users || []).filter(
-    (user: User) => !memberUserIds.has(user.id)
-  );
+  // TODO: Implement eligible users endpoint for team admins
+  const eligibleMembers: any[] = [];
 
   return (
     <div className="space-y-6">
@@ -233,16 +217,15 @@ export default function TeamDetailPage() {
                 </thead>
                 <tbody>
                   {members.map((member) => {
-                    const user = usersData?.users?.find((u: User) => u.id === member.user_id);
                     return (
                       <tr key={member.user_id} className="border-b last:border-0">
-                        <td className="p-3">{user?.username || "Unknown"}</td>
+                        <td className="p-3">{member.user?.username || "Unknown"}</td>
                         <td className="p-3 text-sm text-muted-foreground">
-                          {user?.email || "Unknown"}
+                          {member.user?.email || "Unknown"}
                         </td>
                         <td className="p-3">
-                          <Badge variant={user?.role === "ADMIN" ? "destructive" : "default"}>
-                            {user?.role || "Unknown"}
+                          <Badge variant={member.user?.role === "ADMIN" ? "destructive" : "default"}>
+                            {member.user?.role || "Unknown"}
                           </Badge>
                         </td>
                         <td className="p-3 text-sm">{formatDate(member.added_at)}</td>
@@ -250,7 +233,7 @@ export default function TeamDetailPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleRemoveMember(member.user_id, user?.email || "Unknown")}
+                            onClick={() => handleRemoveMember(member.user_id, member.user?.email || "Unknown")}
                             disabled={removeMemberMutation.isPending}
                           >
                             <Trash2 className="h-4 w-4 text-red-600" />

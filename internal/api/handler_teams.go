@@ -337,9 +337,38 @@ func (h *TeamHandler) ListTeamMembers(c echo.Context) error {
 		return LogAndReturnGenericError(c, err)
 	}
 
+	// Collect user IDs from members
+	userIDs := make([]string, len(members))
+	for i, member := range members {
+		userIDs[i] = member.UserID
+	}
+
+	// Fetch all users in batch
+	usersMap, err := h.store.Users.GetByIDs(ctx, userIDs)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Enrich member data with user details
+	type MemberWithUser struct {
+		*types.UserTeamMembership
+		User *types.UserResponse `json:"user"`
+	}
+
+	enrichedMembers := make([]MemberWithUser, 0, len(members))
+	for _, member := range members {
+		enriched := MemberWithUser{
+			UserTeamMembership: member,
+		}
+		if user, ok := usersMap[member.UserID]; ok {
+			enriched.User = user.ToResponse()
+		}
+		enrichedMembers = append(enrichedMembers, enriched)
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"team":    teamName,
-		"members": members,
+		"members": enrichedMembers,
 	})
 }
 
