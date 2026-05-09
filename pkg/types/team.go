@@ -45,3 +45,19 @@ type TeamAdminResponse struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 }
+
+// UserTeamMembership represents a user's membership in a team
+type UserTeamMembership struct {
+	ID      string  `json:"id" db:"id"`
+	UserID  string  `json:"user_id" db:"user_id"`
+	Team    string  `json:"team" db:"team"`
+	AddedBy *string `json:"added_by,omitempty" db:"added_by"`
+	AddedAt string  `json:"added_at" db:"added_at"`
+	Notes   *string `json:"notes,omitempty" db:"notes"`
+}
+
+// AddUserToTeamRequest represents a request to add a user to a team
+type AddUserToTeamRequest struct {
+	UserID string  `json:"user_id" validate:"required,uuid"`
+	Notes  *string `json:"notes,omitempty"`
+}

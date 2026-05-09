@@ -315,3 +315,106 @@ func (h *TeamHandler) RevokeTeamAdmin(c echo.Context) error {
 		"message": "team admin privilege revoked successfully",
 	})
 }
+
+// ListTeamMembers returns all users who are members of a given team
+//
+//	@Summary		List team members
+//	@Description	Returns all users who belong to a given team (platform admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	map[string]interface{}	"Returns team and members array"
+//	@Failure		500		{object}	map[string]string		"Failed to list team members"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/members [get]
+func (h *TeamHandler) ListTeamMembers(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	members, err := h.store.TeamMemberships.GetTeamMembers(ctx, teamName)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"team":    teamName,
+		"members": members,
+	})
+}
+
+// AddUserToTeam adds a user to a team
+//
+//	@Summary		Add user to team
+//	@Description	Adds a user to a team for general membership (platform admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string							true	"Team name"
+//	@Param			body	body		types.AddUserToTeamRequest		true	"Add user request"
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	map[string]string	"Invalid request"
+//	@Failure		404		{object}	map[string]string	"User not found"
+//	@Failure		500		{object}	map[string]string	"Failed to add user"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/members [post]
+func (h *TeamHandler) AddUserToTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	var req types.AddUserToTeamRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "invalid request body")
+	}
+
+	// Validate request
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Get current user ID (who is adding the user to team)
+	addedBy, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Add user to team
+	if err := h.store.TeamMemberships.AddUserToTeam(ctx, req.UserID, teamName, addedBy, req.Notes); err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "user added to team successfully",
+	})
+}
+
+// RemoveUserFromTeam removes a user from a team
+//
+//	@Summary		Remove user from team
+//	@Description	Removes a user from a team (platform admin only)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string	true	"Team name"
+//	@Param			user_id		path		string	true	"User ID"
+//	@Success		200			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string	"Membership not found"
+//	@Failure		500			{object}	map[string]string	"Failed to remove user"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/members/{user_id} [delete]
+func (h *TeamHandler) RemoveUserFromTeam(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+	userID := c.Param("user_id")
+
+	if err := h.store.TeamMemberships.RemoveUserFromTeam(ctx, userID, teamName); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team membership not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "user removed from team successfully",
+	})
+}

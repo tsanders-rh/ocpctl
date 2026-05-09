@@ -6,6 +6,8 @@ import type {
   UpdateTeamRequest,
   ListTeamAdminsResponse,
   GrantTeamAdminRequest,
+  ListTeamMembersResponse,
+  AddUserToTeamRequest,
 } from "@/types/api";
 
 export interface ClusterStatistics {
@@ -151,6 +153,24 @@ export const adminApi = {
   revokeTeamAdmin: async (teamName: string, userId: string): Promise<void> => {
     return apiClient.delete<void>(
       `/admin/teams/${encodeURIComponent(teamName)}/admins/${userId}`
+    );
+  },
+
+  // Team Membership Management
+  listTeamMembers: async (teamName: string): Promise<ListTeamMembersResponse> => {
+    return apiClient.get<ListTeamMembersResponse>(
+      `/admin/teams/${encodeURIComponent(teamName)}/members`
+    );
+  },
+  addUserToTeam: async (teamName: string, data: AddUserToTeamRequest): Promise<void> => {
+    return apiClient.post<void>(
+      `/admin/teams/${encodeURIComponent(teamName)}/members`,
+      data
+    );
+  },
+  removeUserFromTeam: async (teamName: string, userId: string): Promise<void> => {
+    return apiClient.delete<void>(
+      `/admin/teams/${encodeURIComponent(teamName)}/members/${userId}`
     );
   },
 };

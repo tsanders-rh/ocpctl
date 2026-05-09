@@ -29,6 +29,7 @@ type User struct {
 	Username         string    `json:"username"`
 	PasswordHash     string    `json:"-"` // Never expose in JSON
 	Role             UserRole  `json:"role"`
+	Teams            []string  `json:"teams,omitempty"`         // Teams user belongs to (general membership)
 	ManagedTeams     []string  `json:"managed_teams,omitempty"` // Teams user can administer (for TEAM_ADMIN role)
 	Timezone         string    `json:"timezone"`
 	WorkHoursEnabled bool      `json:"work_hours_enabled"`

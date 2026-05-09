@@ -77,6 +77,13 @@ func (s *UserStore) GetByID(ctx context.Context, id string) (*types.User, error)
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 
+	// Load team memberships
+	teams, err := s.getTeamsForUser(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load teams: %w", err)
+	}
+	user.Teams = teams
+
 	// If user is team admin, load managed teams
 	if user.Role == types.RoleTeamAdmin {
 		managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
@@ -121,6 +128,13 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*types.User, 
 		return nil, fmt.Errorf("get user by email: %w", err)
 	}
 
+	// Load team memberships
+	teams, err := s.getTeamsForUser(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load teams: %w", err)
+	}
+	user.Teams = teams
+
 	// If user is team admin, load managed teams
 	if user.Role == types.RoleTeamAdmin {
 		managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
@@ -131,6 +145,37 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*types.User, 
 	}
 
 	return &user, nil
+}
+
+// getTeamsForUser retrieves teams a user belongs to (general membership)
+func (s *UserStore) getTeamsForUser(ctx context.Context, userID string) ([]string, error) {
+	query := `
+		SELECT team
+		FROM user_team_memberships
+		WHERE user_id = $1
+		ORDER BY team
+	`
+
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user teams: %w", err)
+	}
+	defer rows.Close()
+
+	teams := []string{}
+	for rows.Next() {
+		var team string
+		if err := rows.Scan(&team); err != nil {
+			return nil, fmt.Errorf("failed to scan team: %w", err)
+		}
+		teams = append(teams, team)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating teams: %w", err)
+	}
+
+	return teams, nil
 }
 
 // getManagedTeamsForUser retrieves teams a user can administer

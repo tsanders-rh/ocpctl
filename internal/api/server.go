@@ -276,6 +276,9 @@ func (s *Server) setupRoutes() {
 	adminGroup.GET("/teams/:name/admins", teamHandler.ListTeamAdmins)
 	adminGroup.POST("/teams/:name/admins", teamHandler.GrantTeamAdmin)
 	adminGroup.DELETE("/teams/:name/admins/:user_id", teamHandler.RevokeTeamAdmin)
+	adminGroup.GET("/teams/:name/members", teamHandler.ListTeamMembers)
+	adminGroup.POST("/teams/:name/members", teamHandler.AddUserToTeam)
+	adminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
 
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)

@@ -74,6 +74,7 @@ export interface User {
   active: boolean;
   created_at: string;
   updated_at: string;
+  teams?: string[];
   managed_teams?: string[];
 }
 
@@ -669,10 +670,29 @@ export interface GrantTeamAdminRequest {
   notes?: string;
 }
 
+export interface AddUserToTeamRequest {
+  user_id: string;
+  notes?: string;
+}
+
+export interface UserTeamMembership {
+  id: string;
+  user_id: string;
+  team: string;
+  added_by?: string;
+  added_at: string;
+  notes?: string;
+}
+
 export interface ListTeamsResponse {
   teams: TeamWithCount[];
 }
 
 export interface ListTeamAdminsResponse {
   admins: TeamAdminResponse[];
+}
+
+export interface ListTeamMembersResponse {
+  team: string;
+  members: UserTeamMembership[];
 }

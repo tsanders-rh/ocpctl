@@ -58,6 +58,7 @@ type Store struct {
 	PostConfigTemplates       *PostConfigTemplateStore
 	Teams                     *TeamStore
 	TeamAdmins                *TeamAdminStore
+	TeamMemberships           *TeamMembershipStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -95,6 +96,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.PostConfigTemplates = &PostConfigTemplateStore{pool: pool}
 	s.Teams = &TeamStore{db: pool}
 	s.TeamAdmins = &TeamAdminStore{db: pool}
+	s.TeamMemberships = &TeamMembershipStore{db: pool}
 
 	return s
 }
