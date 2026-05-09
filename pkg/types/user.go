@@ -102,6 +102,7 @@ type UpdateUserRequest struct {
 	Role        *UserRole `json:"role,omitempty"`
 	Active      *bool     `json:"active,omitempty"`
 	NewPassword *string   `json:"new_password,omitempty" validate:"omitempty,min=8"`
+	Teams       *[]string `json:"teams,omitempty"` // Update user's team memberships
 }
 
 // UpdateMeRequest represents a request for a user to update their own profile

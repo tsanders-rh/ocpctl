@@ -113,6 +113,7 @@ export interface UpdateUserRequest {
   role?: UserRole;
   active?: boolean;
   new_password?: string;
+  teams?: string[];
 }
 
 // API Key Types

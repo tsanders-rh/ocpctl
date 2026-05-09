@@ -3,10 +3,12 @@
 import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useUser, useUpdateUser } from "@/lib/hooks/useUsers";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -15,16 +17,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { UserRole, type UpdateUserRequest } from "@/types/api";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function EditUserPage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.id as string;
   const { data: user, isLoading } = useUser(userId);
+  const { data: teamsData } = useTeams();
   const updateUser = useUpdateUser();
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
 
   const {
     register,
@@ -48,6 +52,7 @@ export default function EditUserPage() {
         role: user.role,
         active: user.active,
       });
+      setSelectedTeams(user.teams || []);
     }
   }, [user, reset]);
 
@@ -74,6 +79,7 @@ export default function EditUserPage() {
       if (updateData.role) cleanData.role = updateData.role;
       if (updateData.active !== undefined) cleanData.active = updateData.active;
       if (updateData.new_password) cleanData.new_password = updateData.new_password;
+      cleanData.teams = selectedTeams; // Always include teams
 
       await updateUser.mutateAsync({ id: userId, data: cleanData });
       router.push("/admin/users");
@@ -165,6 +171,58 @@ export default function EditUserPage() {
                 {(watchedRole === UserRole.USER || user.role === UserRole.USER) && "Can create and manage own clusters"}
                 {(watchedRole === UserRole.VIEWER || user.role === UserRole.VIEWER) && "Read-only access to own clusters"}
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Team Memberships</Label>
+              <div className="space-y-2">
+                <Select
+                  value=""
+                  onValueChange={(value) => {
+                    if (value && !selectedTeams.includes(value)) {
+                      setSelectedTeams([...selectedTeams, value]);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamsData?.teams && teamsData.teams.length > 0 ? (
+                      teamsData.teams
+                        .filter((team) => !selectedTeams.includes(team.name))
+                        .map((team) => (
+                          <SelectItem key={team.id} value={team.name}>
+                            {team.name}
+                          </SelectItem>
+                        ))
+                    ) : (
+                      <div className="p-2 text-sm text-muted-foreground">
+                        No teams available
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedTeams.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {selectedTeams.map((team) => (
+                      <Badge key={team} variant="secondary" className="gap-1">
+                        {team}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTeams(selectedTeams.filter((t) => t !== team))}
+                          className="ml-1 hover:bg-muted rounded-full"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Teams this user belongs to (for team-based access control)
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center space-x-2">

@@ -143,3 +143,38 @@ func (s *TeamMembershipStore) RemoveAllForUser(ctx context.Context, userID strin
 
 	return nil
 }
+
+// UpdateUserTeams updates a user's team memberships to match the provided list
+// This replaces all existing memberships with the new ones
+func (s *TeamMembershipStore) UpdateUserTeams(ctx context.Context, userID, updatedBy string, teams []string) error {
+	// Start a transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Remove all existing memberships
+	_, err = tx.Exec(ctx, `DELETE FROM user_team_memberships WHERE user_id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to remove existing teams: %w", err)
+	}
+
+	// Add new memberships
+	for _, team := range teams {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO user_team_memberships (user_id, team, added_by, added_at)
+			VALUES ($1, $2, $3, NOW())
+		`, userID, team, updatedBy)
+		if err != nil {
+			return fmt.Errorf("failed to add team %s: %w", team, err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}

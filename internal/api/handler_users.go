@@ -303,20 +303,43 @@ func (h *UserHandler) Update(c echo.Context) error {
 		updates["password_hash"] = passwordHash
 	}
 
-	if len(updates) == 0 {
+	if len(updates) == 0 && req.Teams == nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
 	}
 
-	// Update user
-	if err := h.store.Users.UpdatePartial(c.Request().Context(), userID, updates); err != nil {
-		if err == store.ErrNotFound {
-			h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, map[string]interface{}{
-				"error": "user not found",
-			})
-			return echo.NewHTTPError(http.StatusNotFound, "user not found")
+	// Update user fields if any
+	if len(updates) > 0 {
+		if err := h.store.Users.UpdatePartial(c.Request().Context(), userID, updates); err != nil {
+			if err == store.ErrNotFound {
+				h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, map[string]interface{}{
+					"error": "user not found",
+				})
+				return echo.NewHTTPError(http.StatusNotFound, "user not found")
+			}
+			h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, updates)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update user")
 		}
-		h.logAudit(c, "user.update", userID, types.AuditEventStatusFailure, updates)
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update user")
+	}
+
+	// Update team memberships if provided
+	if req.Teams != nil {
+		// Get current user ID for audit trail
+		currentUserID, err := auth.GetUserID(c)
+		if err != nil {
+			return err
+		}
+
+		if err := h.store.TeamMemberships.UpdateUserTeams(c.Request().Context(), userID, currentUserID, *req.Teams); err != nil {
+			h.logAudit(c, "user.update.teams", userID, types.AuditEventStatusFailure, map[string]interface{}{
+				"teams": *req.Teams,
+				"error": err.Error(),
+			})
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update user teams")
+		}
+
+		h.logAudit(c, "user.update.teams", userID, types.AuditEventStatusSuccess, map[string]interface{}{
+			"teams": *req.Teams,
+		})
 	}
 
 	// Get updated user
