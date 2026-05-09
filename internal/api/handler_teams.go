@@ -375,7 +375,7 @@ func (h *TeamHandler) ListTeamMembers(c echo.Context) error {
 // GetEligibleUsers returns users who can be added to a team
 //
 //	@Summary		Get eligible users for team
-//	@Description	Returns users who are not yet members of the specified team
+//	@Description	Returns users who are not yet members of the specified team (excludes ADMIN role users who have access to all teams)
 //	@Tags			Teams
 //	@Accept			json
 //	@Produce		json
@@ -406,10 +406,10 @@ func (h *TeamHandler) GetEligibleUsers(c echo.Context) error {
 		memberIDs[member.UserID] = true
 	}
 
-	// Filter out users who are already members
+	// Filter out users who are already members or are admins (admins have access to all teams)
 	eligibleUsers := make([]*types.UserResponse, 0)
 	for _, user := range allUsers {
-		if !memberIDs[user.ID] {
+		if !memberIDs[user.ID] && user.Role != types.RoleAdmin {
 			eligibleUsers = append(eligibleUsers, user.ToResponse())
 		}
 	}
