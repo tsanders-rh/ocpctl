@@ -369,10 +369,21 @@ func (s *UserStore) Delete(ctx context.Context, id string) error {
 // List retrieves all users
 // DEPRECATED: Use ListPaginated for better performance with large user counts
 func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
+	// Use optimized query with JOINs to avoid N+1 problem
 	query := `
-		SELECT id, email, username, password_hash, role, timezone, work_hours_enabled, work_hours_start, work_hours_end, work_days, active, created_at, updated_at
-		FROM users
-		ORDER BY created_at DESC
+		SELECT
+			u.id, u.email, u.username, u.password_hash, u.role, u.timezone,
+			u.work_hours_enabled, u.work_hours_start, u.work_hours_end, u.work_days,
+			u.active, u.created_at, u.updated_at,
+			COALESCE(array_agg(DISTINCT utm.team) FILTER (WHERE utm.team IS NOT NULL), '{}') as teams,
+			COALESCE(array_agg(DISTINCT utam.team) FILTER (WHERE utam.team IS NOT NULL), '{}') as managed_teams
+		FROM users u
+		LEFT JOIN user_team_memberships utm ON u.id = utm.user_id
+		LEFT JOIN user_team_admin_mappings utam ON u.id = utam.user_id
+		GROUP BY u.id, u.email, u.username, u.password_hash, u.role, u.timezone,
+			u.work_hours_enabled, u.work_hours_start, u.work_hours_end, u.work_days,
+			u.active, u.created_at, u.updated_at
+		ORDER BY u.created_at DESC
 	`
 
 	rows, err := s.pool.Query(ctx, query)
@@ -381,7 +392,7 @@ func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 	}
 	defer rows.Close()
 
-	users := []*types.User{}
+	users := make([]*types.User, 0, 50) // Pre-allocate for typical page size
 	for rows.Next() {
 		var user types.User
 		err := rows.Scan(
@@ -398,25 +409,11 @@ func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 			&user.Active,
 			&user.CreatedAt,
 			&user.UpdatedAt,
+			&user.Teams,
+			&user.ManagedTeams,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
-		}
-
-		// Load team memberships
-		teams, err := s.getTeamsForUser(ctx, user.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load teams for user %s: %w", user.ID, err)
-		}
-		user.Teams = teams
-
-		// If user is team admin, load managed teams
-		if user.Role == types.RoleTeamAdmin {
-			managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load managed teams for user %s: %w", user.ID, err)
-			}
-			user.ManagedTeams = managedTeams
 		}
 
 		users = append(users, &user)
@@ -450,11 +447,21 @@ func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*ty
 		return nil, 0, fmt.Errorf("count users: %w", err)
 	}
 
-	// Fetch paginated results
+	// Fetch paginated results with JOINs to avoid N+1 problem
 	query := `
-		SELECT id, email, username, password_hash, role, timezone, work_hours_enabled, work_hours_start, work_hours_end, work_days, active, created_at, updated_at
-		FROM users
-		ORDER BY created_at DESC
+		SELECT
+			u.id, u.email, u.username, u.password_hash, u.role, u.timezone,
+			u.work_hours_enabled, u.work_hours_start, u.work_hours_end, u.work_days,
+			u.active, u.created_at, u.updated_at,
+			COALESCE(array_agg(DISTINCT utm.team) FILTER (WHERE utm.team IS NOT NULL), '{}') as teams,
+			COALESCE(array_agg(DISTINCT utam.team) FILTER (WHERE utam.team IS NOT NULL), '{}') as managed_teams
+		FROM users u
+		LEFT JOIN user_team_memberships utm ON u.id = utm.user_id
+		LEFT JOIN user_team_admin_mappings utam ON u.id = utam.user_id
+		GROUP BY u.id, u.email, u.username, u.password_hash, u.role, u.timezone,
+			u.work_hours_enabled, u.work_hours_start, u.work_hours_end, u.work_days,
+			u.active, u.created_at, u.updated_at
+		ORDER BY u.created_at DESC
 		LIMIT $1 OFFSET $2
 	`
 
@@ -464,7 +471,7 @@ func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*ty
 	}
 	defer rows.Close()
 
-	users := []*types.User{}
+	users := make([]*types.User, 0, limit) // Pre-allocate with limit size
 	for rows.Next() {
 		var user types.User
 		err := rows.Scan(
@@ -481,25 +488,11 @@ func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*ty
 			&user.Active,
 			&user.CreatedAt,
 			&user.UpdatedAt,
+			&user.Teams,
+			&user.ManagedTeams,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)
-		}
-
-		// Load team memberships
-		teams, err := s.getTeamsForUser(ctx, user.ID)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to load teams for user %s: %w", user.ID, err)
-		}
-		user.Teams = teams
-
-		// If user is team admin, load managed teams
-		if user.Role == types.RoleTeamAdmin {
-			managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to load managed teams for user %s: %w", user.ID, err)
-			}
-			user.ManagedTeams = managedTeams
 		}
 
 		users = append(users, &user)

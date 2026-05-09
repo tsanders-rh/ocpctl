@@ -79,27 +79,14 @@ func (h *JobHandler) List(c echo.Context) error {
 	var total int
 	var err error
 
-	// If cluster_id filter is provided, use ListByClusterID
+	// If cluster_id filter is provided, use ListByClusterIDPaginated
 	if filters.ClusterID != "" {
-		log.Printf("[DEBUG] Using filtered query for cluster_id: %s", filters.ClusterID)
-		jobs, err = h.store.Jobs.ListByClusterID(ctx, filters.ClusterID)
+		log.Printf("[DEBUG] Using filtered paginated query for cluster_id: %s", filters.ClusterID)
+		jobs, total, err = h.store.Jobs.ListByClusterIDPaginated(ctx, filters.ClusterID, pagination.PerPage, pagination.Offset)
 		if err != nil {
 			return LogAndReturnGenericError(c, fmt.Errorf("failed to list jobs: %w", err))
 		}
-		total = len(jobs)
-		log.Printf("[DEBUG] Filtered query returned %d jobs", total)
-
-		// Apply manual pagination to filtered results
-		start := pagination.Offset
-		end := start + pagination.PerPage
-		if start > len(jobs) {
-			jobs = []*types.Job{}
-		} else {
-			if end > len(jobs) {
-				end = len(jobs)
-			}
-			jobs = jobs[start:end]
-		}
+		log.Printf("[DEBUG] Filtered query returned %d jobs (total: %d)", len(jobs), total)
 	} else {
 		log.Printf("[DEBUG] Using unfiltered query (no cluster_id)")
 		jobs, total, err = h.store.Jobs.List(ctx, pagination.Offset, pagination.PerPage)

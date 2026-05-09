@@ -159,7 +159,7 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 	}
 	defer rows.Close()
 
-	clusters := []*types.Cluster{}
+	clusters := make([]*types.Cluster, 0, len(ids)) // Pre-allocate with exact size
 	for rows.Next() {
 		var cluster types.Cluster
 		err := rows.Scan(
@@ -385,7 +385,7 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	}
 	defer rows.Close()
 
-	clusters := []*types.Cluster{}
+	clusters := make([]*types.Cluster, 0, filters.Limit) // Pre-allocate with limit
 	for rows.Next() {
 		var cluster types.Cluster
 		err := rows.Scan(

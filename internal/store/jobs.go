@@ -97,6 +97,7 @@ func (s *JobStore) GetByID(ctx context.Context, id string) (*types.Job, error) {
 
 // ListByClusterID retrieves all jobs for a specific cluster.
 // Jobs are ordered by creation time in descending order (newest first).
+// DEPRECATED: Use ListByClusterIDPaginated for better performance
 func (s *JobStore) ListByClusterID(ctx context.Context, clusterID string) ([]*types.Job, error) {
 	query := `
 		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
@@ -113,7 +114,7 @@ func (s *JobStore) ListByClusterID(ctx context.Context, clusterID string) ([]*ty
 	}
 	defer rows.Close()
 
-	jobs := []*types.Job{}
+	jobs := make([]*types.Job, 0, 50) // Pre-allocate for typical job count
 	for rows.Next() {
 		var job types.Job
 		err := rows.Scan(
@@ -142,6 +143,72 @@ func (s *JobStore) ListByClusterID(ctx context.Context, clusterID string) ([]*ty
 	}
 
 	return jobs, nil
+}
+
+// ListByClusterIDPaginated retrieves jobs for a cluster with pagination
+// Returns: (jobs, totalCount, error)
+func (s *JobStore) ListByClusterIDPaginated(ctx context.Context, clusterID string, limit, offset int) ([]*types.Job, int, error) {
+	// Validate pagination parameters
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("limit must be greater than 0, got: %d", limit)
+	}
+	if offset < 0 {
+		return nil, 0, fmt.Errorf("offset must be non-negative, got: %d", offset)
+	}
+
+	// Get total count for cluster
+	countQuery := `SELECT COUNT(*) FROM jobs WHERE cluster_id = $1`
+	var totalCount int
+	if err := s.pool.QueryRow(ctx, countQuery, clusterID).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("count jobs for cluster: %w", err)
+	}
+
+	// Fetch paginated results
+	query := `
+		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
+			error_code, error_message, started_at, ended_at,
+			created_at, updated_at, metadata
+		FROM jobs
+		WHERE cluster_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.pool.Query(ctx, query, clusterID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query jobs by cluster paginated: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := make([]*types.Job, 0, limit) // Pre-allocate with limit size
+	for rows.Next() {
+		var job types.Job
+		err := rows.Scan(
+			&job.ID,
+			&job.ClusterID,
+			&job.JobType,
+			&job.Status,
+			&job.Attempt,
+			&job.MaxAttempts,
+			&job.ErrorCode,
+			&job.ErrorMessage,
+			&job.StartedAt,
+			&job.EndedAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+			&job.Metadata,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan job: %w", err)
+		}
+		jobs = append(jobs, &job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate jobs: %w", err)
+	}
+
+	return jobs, totalCount, nil
 }
 
 // GetByClusterIDAndType retrieves all jobs for a cluster with a specific job type

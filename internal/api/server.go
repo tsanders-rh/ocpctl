@@ -173,6 +173,15 @@ func (s *Server) setupMiddleware() {
 	// Logging middleware
 	s.echo.Use(apimiddleware.Logger())
 
+	// Gzip compression for responses > 1KB
+	s.echo.Use(middleware.GzipWithConfig(middleware.GzipConfig{
+		Level: 5, // Balance between compression ratio and CPU usage
+		Skipper: func(c echo.Context) bool {
+			// Skip compression for health checks and small responses
+			return c.Path() == "/health" || c.Path() == "/ready"
+		},
+	}))
+
 	// CORS if enabled
 	if s.config.EnableCORS {
 		s.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
@@ -328,10 +337,11 @@ func (s *Server) setupRoutes() {
 	clustersGroup.PATCH("/:id/configurations/:config_id/retry", configHandler.RetryConfiguration)
 
 	// Profile routes (require authentication)
+	// Profiles change infrequently, cache for 1 hour
 	profileHandler := NewProfileHandler(s.registry, s.store)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))
-	profilesGroup.GET("", profileHandler.List)
-	profilesGroup.GET("/:name", profileHandler.Get)
+	profilesGroup.GET("", profileHandler.List, apimiddleware.CachePublic(1*time.Hour))
+	profilesGroup.GET("/:name", profileHandler.Get, apimiddleware.CachePublic(1*time.Hour))
 
 	// Post-config add-ons routes (require authentication)
 	addonsHandler := NewAddonsHandler(s.store, s.registry)
