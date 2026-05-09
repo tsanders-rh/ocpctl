@@ -30,6 +30,7 @@ const (
 	PlatformAWS      Platform = "aws"
 	PlatformIBMCloud Platform = "ibmcloud"
 	PlatformGCP      Platform = "gcp"
+	PlatformAzure    Platform = "azure"
 )
 
 // ClusterType represents the type of Kubernetes cluster
@@ -41,6 +42,8 @@ const (
 	ClusterTypeEKS       ClusterType = "eks"       // AWS Elastic Kubernetes Service
 	ClusterTypeIKS       ClusterType = "iks"       // IBM Cloud Kubernetes Service
 	ClusterTypeGKE       ClusterType = "gke"       // Google Kubernetes Engine
+	ClusterTypeARO       ClusterType = "aro"       // Azure Red Hat OpenShift (managed)
+	ClusterTypeAKS       ClusterType = "aks"       // Azure Kubernetes Service
 )
 
 // Tags is a map of key-value pairs stored as JSONB

@@ -1,0 +1,87 @@
+name: azure-standard
+displayName: Azure OpenShift Standard Cluster
+description: Standard 3-master, 3-worker OpenShift cluster on Azure VMs
+platform: azure
+clusterType: openshift
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18"
+    - "4.19"
+    - "4.20"
+    - "4.21"
+    - "4.22"
+  default: "4.20"
+
+regions:
+  allowlist:
+    - eastus
+    - eastus2
+    - westus
+    - westus2
+    - centralus
+    - northeurope
+    - westeurope
+  default: eastus
+
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: Standard_D8s_v3  # 8 vCPU, 32 GB RAM
+  workers:
+    replicas: 3
+    instanceType: Standard_D4s_v3  # 4 vCPU, 16 GB RAM
+
+lifecycle:
+  maxTTLHours: 168        # 1 week max
+  defaultTTLHours: 72     # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: ocpctl
+    ClusterType: openshift
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+
+costControls:
+  estimatedHourlyCost: 3.50  # 3 masters + 3 workers + storage + networking
+  maxMonthlyCost: 2520       # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+  warningMessage: "Azure VMs billed per minute. Stop VMs to reduce costs."
+
+platformConfig:
+  azure:
+    subscriptionId: ""  # Set via environment variable AZURE_SUBSCRIPTION_ID
+    controlPlane:
+      vmSize: Standard_D8s_v3
+      osDiskSizeGB: 128
+      osDiskType: Premium_LRS
+    compute:
+      vmSize: Standard_D4s_v3
+      osDiskSizeGB: 128
+      osDiskType: Premium_LRS
+
+metadata:
+  capabilities:
+    - OpenShift IPI on Azure VMs
+    - Full control plane access
+    - Hibernation via VM stop/start
+    - Cost savings up to 91% when hibernated
+  capacity:
+    nodes: "6 nodes (3 masters + 3 workers)"
+    vcpu: "40 vCPU total (24 master + 16 worker)"
+    memory: "160 GB RAM total (96 master + 64 worker)"
+  notes:
+    - "Masters: 3x Standard_D8s_v3 @ $0.672/hr = $2.02/hr"
+    - "Workers: 3x Standard_D4s_v3 @ $0.336/hr = $1.01/hr"
+    - "Total: ~$3.50/hr or $2,520/month always-on"
+    - "Hibernated cost: ~$0.30/hr (storage only) = 91% savings"

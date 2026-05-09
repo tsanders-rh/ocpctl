@@ -75,6 +75,10 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.handleIKSDestroy(ctx, job, cluster)
 	case types.ClusterTypeGKE:
 		return h.handleGKEDestroy(ctx, job, cluster)
+	case types.ClusterTypeARO:
+		return h.handleARODestroy(ctx, job, cluster)
+	case types.ClusterTypeAKS:
+		return h.handleAKSDestroy(ctx, job, cluster)
 	default:
 		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}

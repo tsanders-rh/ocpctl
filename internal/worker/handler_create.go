@@ -78,6 +78,10 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.handleIKSCreate(ctx, job, cluster)
 	case types.ClusterTypeGKE:
 		return h.handleGKECreate(ctx, job, cluster)
+	case types.ClusterTypeARO:
+		return h.handleAROCreate(ctx, job, cluster)
+	case types.ClusterTypeAKS:
+		return h.handleAKSCreate(ctx, job, cluster)
 	default:
 		return fmt.Errorf("unsupported cluster type: %s", cluster.ClusterType)
 	}

@@ -76,6 +76,10 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.resumeIKS(ctx, cluster, job)
 	case types.ClusterTypeGKE:
 		return h.resumeGKE(ctx, cluster, job)
+	case types.ClusterTypeARO:
+		return h.resumeARO(ctx, cluster, job)
+	case types.ClusterTypeAKS:
+		return h.resumeAKS(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported cluster type for resume: %s", cluster.ClusterType)
 	}

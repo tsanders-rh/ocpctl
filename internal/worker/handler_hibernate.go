@@ -70,6 +70,10 @@ func (h *HibernateHandler) Handle(ctx context.Context, job *types.Job) error {
 		return h.hibernateIKS(ctx, cluster, job)
 	case types.ClusterTypeGKE:
 		return h.hibernateGKE(ctx, cluster, job)
+	case types.ClusterTypeARO:
+		return h.hibernateARO(ctx, cluster, job)
+	case types.ClusterTypeAKS:
+		return h.hibernateAKS(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported cluster type for hibernation: %s", cluster.ClusterType)
 	}

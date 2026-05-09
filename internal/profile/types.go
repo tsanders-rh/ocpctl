@@ -7,7 +7,7 @@ type Profile struct {
 	Name               string                 `yaml:"name" validate:"required"`
 	DisplayName        string                 `yaml:"displayName" validate:"required"`
 	Description        string                 `yaml:"description" validate:"required"`
-	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp"`
+	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
 	ClusterType        types.ClusterType      `yaml:"clusterType,omitempty"`
 	Track              string                 `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
 	Enabled            bool                   `yaml:"enabled"`
@@ -158,6 +158,9 @@ type PlatformConfig struct {
 	GCP      *GCPConfig      `yaml:"gcp,omitempty"`
 	GKE      *GKEConfig      `yaml:"gke,omitempty"`
 	ROSA     *ROSAConfig     `yaml:"rosa,omitempty"`
+	Azure    *AzureConfig    `yaml:"azure,omitempty"`
+	ARO      *AROConfig      `yaml:"aro,omitempty"`
+	AKS      *AKSConfig      `yaml:"aks,omitempty"`
 }
 
 // AWSConfig contains AWS-specific settings
@@ -235,6 +238,51 @@ type GKENodePoolConfig struct {
 	MinNodeCount   int    `yaml:"minNodeCount,omitempty" json:"min_node_count,omitempty"`
 	MaxNodeCount   int    `yaml:"maxNodeCount,omitempty" json:"max_node_count,omitempty"`
 	EnableAutoScale bool  `yaml:"enableAutoScale,omitempty" json:"enable_auto_scale,omitempty"`
+}
+
+// AzureConfig contains Azure-specific settings for self-managed OpenShift
+type AzureConfig struct {
+	SubscriptionID       string              `yaml:"subscriptionId" json:"subscription_id"`
+	ResourceGroupPrefix  string              `yaml:"resourceGroupPrefix,omitempty" json:"resource_group_prefix,omitempty"`
+	Network              string              `yaml:"network,omitempty" json:"network,omitempty"`
+	Subnetwork           string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
+	ControlPlane         *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Compute              *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
+}
+
+// AzureMachineConfig defines Azure VM configuration
+type AzureMachineConfig struct {
+	VMSize       string `yaml:"vmSize" json:"vm_size"`                                      // e.g., "Standard_D8s_v3"
+	OSDiskSizeGB int    `yaml:"osDiskSizeGB" json:"os_disk_size_gb"`
+	OSDiskType   string `yaml:"osDiskType,omitempty" json:"os_disk_type,omitempty"` // StandardSSD_LRS, Premium_LRS
+}
+
+// AROConfig contains ARO-specific settings
+type AROConfig struct {
+	MasterVMSize     string `yaml:"masterVMSize" json:"master_vm_size"`              // e.g., "Standard_D8s_v3"
+	WorkerVMSize     string `yaml:"workerVMSize" json:"worker_vm_size"`              // e.g., "Standard_D4s_v3"
+	WorkerCount      int    `yaml:"workerCount" json:"worker_count"`
+	OpenShiftVersion string `yaml:"openshiftVersion,omitempty" json:"openshift_version,omitempty"`
+	PullSecretPath   string `yaml:"pullSecretPath,omitempty" json:"pull_secret_path,omitempty"`
+}
+
+// AKSConfig contains AKS-specific settings
+type AKSConfig struct {
+	KubernetesVersion string              `yaml:"kubernetesVersion" json:"kubernetes_version"`
+	NetworkPlugin     string              `yaml:"networkPlugin,omitempty" json:"network_plugin,omitempty"` // azure, kubenet
+	NetworkPolicy     string              `yaml:"networkPolicy,omitempty" json:"network_policy,omitempty"` // azure, calico
+	NodePools         []AKSNodePoolConfig `yaml:"nodePools,omitempty" json:"node_pools,omitempty"`
+}
+
+// AKSNodePoolConfig defines an AKS node pool configuration
+type AKSNodePoolConfig struct {
+	Name            string `yaml:"name" json:"name"`
+	VMSize          string `yaml:"vmSize" json:"vm_size"`                                    // e.g., "Standard_D4s_v3"
+	Count           int    `yaml:"count" json:"count"`
+	MinCount        int    `yaml:"minCount,omitempty" json:"min_count,omitempty"`
+	MaxCount        int    `yaml:"maxCount,omitempty" json:"max_count,omitempty"`
+	EnableAutoScale bool   `yaml:"enableAutoScale,omitempty" json:"enable_auto_scale,omitempty"`
+	OSDiskSizeGB    int    `yaml:"osDiskSizeGB,omitempty" json:"os_disk_size_gb,omitempty"`
 }
 
 // PostDeploymentConfig defines automated post-deployment configuration

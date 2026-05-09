@@ -1,0 +1,77 @@
+name: azure-aro-standard
+displayName: Azure Red Hat OpenShift Standard
+description: Managed OpenShift service on Azure (ARO)
+platform: azure
+clusterType: aro
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18"
+    - "4.19"
+    - "4.20"
+    - "4.21"
+  default: "4.20"
+
+regions:
+  allowlist:
+    - eastus
+    - eastus2
+    - westus
+    - westus2
+    - centralus
+    - northeurope
+    - westeurope
+  default: eastus
+
+compute:
+  workers:
+    replicas: 3
+    instanceType: Standard_D4s_v3
+
+lifecycle:
+  maxTTLHours: 168        # 1 week max
+  defaultTTLHours: 72     # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: ocpctl
+    ClusterType: aro
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+
+costControls:
+  estimatedHourlyCost: 3.70  # Managed service premium
+  maxMonthlyCost: 2664       # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+  warningMessage: "ARO is a managed service with higher costs than self-managed."
+
+platformConfig:
+  aro:
+    masterVMSize: Standard_D8s_v3
+    workerVMSize: Standard_D4s_v3
+    workerCount: 3
+
+metadata:
+  capabilities:
+    - Managed OpenShift control plane
+    - Microsoft and Red Hat support
+    - Automatic updates and patching
+    - Hibernation via MachineSet scaling
+  capacity:
+    nodes: "3 worker nodes (control plane managed by Microsoft)"
+    vcpu: "12 vCPU worker capacity"
+    memory: "48 GB RAM worker capacity"
+  notes:
+    - "Control plane managed by Microsoft (~$2.50/hr)"
+    - "Workers: 3x Standard_D4s_v3 @ $0.336/hr = $1.01/hr"
+    - "Total: ~$3.70/hr or $2,664/month"
+    - "Hibernated cost: ~$0.20/hr (storage only) = 95% savings"

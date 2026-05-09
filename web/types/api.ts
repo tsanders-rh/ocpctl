@@ -4,6 +4,7 @@ export enum Platform {
   AWS = "aws",
   IBMCloud = "ibmcloud",
   GCP = "gcp",
+  Azure = "azure",
 }
 
 export enum ClusterType {
@@ -12,6 +13,8 @@ export enum ClusterType {
   EKS = "eks",
   IKS = "iks",
   GKE = "gke",
+  ARO = "aro",
+  AKS = "aks",
 }
 
 export enum ClusterStatus {

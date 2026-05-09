@@ -82,8 +82,8 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
 	Name             string                    `json:"name" validate:"required,min=3,max=63,cluster_name"`
-	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud gcp"`
-	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke"`
+	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
+	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke aro aks"`
 	Version          string                    `json:"version" validate:"required"`
 	Profile          string                    `json:"profile" validate:"required"`
 	Region           string                    `json:"region" validate:"required"`
@@ -163,6 +163,37 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// ROSA clusters don't use base_domain (AWS-managed DNS)
 	if req.ClusterType == "rosa" && req.BaseDomain != "" {
 		return ErrorBadRequest(c, "base_domain is not supported for ROSA clusters (AWS-managed DNS)")
+	}
+
+	// ARO and AKS clusters don't use base_domain (Azure-managed DNS)
+	if (req.ClusterType == "aro" || req.ClusterType == "aks") && req.BaseDomain != "" {
+		return ErrorBadRequest(c, "base_domain is not supported for ARO/AKS clusters (Azure-managed DNS)")
+	}
+
+	// Validate platform and cluster type combinations
+	validCombinations := map[types.Platform][]types.ClusterType{
+		types.PlatformAWS:      {types.ClusterTypeOpenShift, types.ClusterTypeROSA, types.ClusterTypeEKS},
+		types.PlatformGCP:      {types.ClusterTypeOpenShift, types.ClusterTypeGKE},
+		types.PlatformIBMCloud: {types.ClusterTypeOpenShift, types.ClusterTypeIKS},
+		types.PlatformAzure:    {types.ClusterTypeOpenShift, types.ClusterTypeARO, types.ClusterTypeAKS},
+	}
+
+	platform := types.Platform(req.Platform)
+	clusterType := types.ClusterType(req.ClusterType)
+
+	if validTypes, ok := validCombinations[platform]; ok {
+		valid := false
+		for _, vt := range validTypes {
+			if vt == clusterType {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return ErrorBadRequest(c, fmt.Sprintf("Invalid cluster_type %s for platform %s", req.ClusterType, req.Platform))
+		}
+	} else {
+		return ErrorBadRequest(c, fmt.Sprintf("Unsupported platform: %s", req.Platform))
 	}
 
 	// Check for duplicate cluster creation using idempotency key
