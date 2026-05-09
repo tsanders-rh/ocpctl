@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
-import { useUsers } from "@/lib/hooks/useUsers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,7 +53,10 @@ export default function TeamDetailsPage() {
     queryFn: () => adminApi.listTeamMembers(teamName),
   });
 
-  const { data: usersData } = useUsers();
+  const { data: eligibleUsersData } = useQuery({
+    queryKey: ["eligible-users", teamName],
+    queryFn: () => adminApi.getEligibleUsers(teamName),
+  });
 
   const {
     register,
@@ -174,7 +176,8 @@ export default function TeamDetailsPage() {
 
   const handleRemoveMember = (userId: string, userEmail: string) => {
     // Check if this is the user's last team (admins don't need any teams)
-    const user = usersData?.users?.find((u: User) => u.id === userId);
+    const member = membersData?.members?.find((m) => m.user_id === userId);
+    const user = member?.user;
     const userTeams = user?.teams || [];
 
     // Only prevent removal if user is not admin and this is their last team
@@ -201,17 +204,17 @@ export default function TeamDetailsPage() {
   const adminUserIds = new Set(admins.map(a => a.user_id));
 
   const members = membersData?.members || [];
-  const memberUserIds = new Set(members.map(m => m.user_id));
+
+  // Get all eligible users (not in team) from the API
+  const allEligibleUsers = eligibleUsersData?.users || [];
 
   // Filter users to only show TEAM_ADMIN role users who are not already admins of this team
-  const eligibleUsers = (usersData?.users || []).filter(
+  const eligibleUsers = allEligibleUsers.filter(
     (user: User) => user.role === "TEAM_ADMIN" && !adminUserIds.has(user.id)
   );
 
-  // Filter users who are not already members of this team
-  const eligibleMembers = (usersData?.users || []).filter(
-    (user: User) => !memberUserIds.has(user.id)
-  );
+  // Use all eligible users for the members dropdown
+  const eligibleMembers = allEligibleUsers;
 
   return (
     <div className="space-y-6">
@@ -495,10 +498,10 @@ export default function TeamDetailsPage() {
                   {members.map((member) => (
                     <tr key={member.user_id} className="border-b last:border-0">
                       <td className="p-3">
-                        {usersData?.users?.find((u: User) => u.id === member.user_id)?.username || "Unknown"}
+                        {member.user?.username || "Unknown"}
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
-                        {usersData?.users?.find((u: User) => u.id === member.user_id)?.email || "Unknown"}
+                        {member.user?.email || "Unknown"}
                       </td>
                       <td className="p-3 text-sm">{formatDate(member.added_at)}</td>
                       <td className="p-3">
@@ -506,8 +509,7 @@ export default function TeamDetailsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            const user = usersData?.users?.find((u: User) => u.id === member.user_id);
-                            handleRemoveMember(member.user_id, user?.email || "Unknown");
+                            handleRemoveMember(member.user_id, member.user?.email || "Unknown");
                           }}
                           disabled={removeMemberMutation.isPending}
                         >
