@@ -1,3 +1,4 @@
+-- +goose Up
 -- Add allowed_profiles column to teams table to enable team admins to restrict which profiles their team members can use
 -- NULL or empty array = no restrictions (all profiles allowed)
 -- Non-empty array = only listed profiles allowed for team members
@@ -9,3 +10,7 @@ COMMENT ON COLUMN teams.allowed_profiles IS 'List of profile names allowed for t
 
 -- Add index for faster lookups when filtering profiles
 CREATE INDEX idx_teams_allowed_profiles ON teams USING GIN (allowed_profiles);
+
+-- +goose Down
+DROP INDEX IF EXISTS idx_teams_allowed_profiles;
+ALTER TABLE teams DROP COLUMN IF EXISTS allowed_profiles;
