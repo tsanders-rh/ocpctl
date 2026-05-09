@@ -266,19 +266,24 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)
 	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
 
-	// Team management routes (admin only)
+	// Team management routes
 	teamHandler := NewTeamHandler(s.store)
-	adminGroup.GET("/teams", teamHandler.ListTeams)
+
+	// Team admin routes (accessible by TEAM_ADMIN and ADMIN)
+	teamAdminGroup := v1.Group("/admin", auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireTeamAdmin())
+	teamAdminGroup.GET("/teams", teamHandler.ListTeams)
+	teamAdminGroup.GET("/teams/:name", teamHandler.GetTeam)
+	teamAdminGroup.GET("/teams/:name/members", teamHandler.ListTeamMembers)
+	teamAdminGroup.POST("/teams/:name/members", teamHandler.AddUserToTeam)
+	teamAdminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
+
+	// Admin-only team routes
 	adminGroup.POST("/teams", teamHandler.CreateTeam)
-	adminGroup.GET("/teams/:name", teamHandler.GetTeam)
 	adminGroup.PATCH("/teams/:name", teamHandler.UpdateTeam)
 	adminGroup.DELETE("/teams/:name", teamHandler.DeleteTeam)
 	adminGroup.GET("/teams/:name/admins", teamHandler.ListTeamAdmins)
 	adminGroup.POST("/teams/:name/admins", teamHandler.GrantTeamAdmin)
 	adminGroup.DELETE("/teams/:name/admins/:user_id", teamHandler.RevokeTeamAdmin)
-	adminGroup.GET("/teams/:name/members", teamHandler.ListTeamMembers)
-	adminGroup.POST("/teams/:name/members", teamHandler.AddUserToTeam)
-	adminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
 
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)
