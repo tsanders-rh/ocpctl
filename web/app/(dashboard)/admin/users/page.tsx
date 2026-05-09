@@ -31,12 +31,12 @@ export default function UsersPage() {
     }
   };
 
-  const getRoleBadgeVariant = (role: UserRole): "default" | "destructive" | "outline" | "secondary" => {
+  const getRoleBadgeVariant = (role: UserRole): "default" | "destructive" | "outline" | "secondary" | "info" => {
     switch (role) {
       case UserRole.ADMIN:
         return "destructive";
       case UserRole.TEAM_ADMIN:
-        return "default";
+        return "info";
       case UserRole.USER:
         return "default";
       case UserRole.VIEWER:
