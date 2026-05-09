@@ -34,6 +34,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuthStore();
   const isAdmin = user?.role === UserRole.ADMIN;
+  const isTeamAdmin = user?.role === UserRole.TEAM_ADMIN && (user?.managed_teams?.length || 0) > 0;
 
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-card">
@@ -45,7 +46,7 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
-          const isActive = pathname.startsWith(item.href) && !pathname.startsWith("/admin");
+          const isActive = pathname.startsWith(item.href) && !pathname.startsWith("/admin") && !pathname.startsWith("/teams");
           return (
             <Link
               key={item.name}
@@ -67,6 +68,26 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {isTeamAdmin && (
+          <Link
+            href="/teams"
+            className={cn(
+              "group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
+              pathname.startsWith("/teams")
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            )}
+          >
+            <UsersRound
+              className={cn(
+                "mr-3 h-5 w-5 flex-shrink-0",
+                pathname.startsWith("/teams") ? "text-primary-foreground" : "text-muted-foreground"
+              )}
+            />
+            My Teams
+          </Link>
+        )}
 
         {externalNavigation.map((item) => (
           <a
