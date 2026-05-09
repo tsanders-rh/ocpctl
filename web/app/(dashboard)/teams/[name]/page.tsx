@@ -28,9 +28,9 @@ export default function TeamDetailPage() {
   const { user: currentUser } = useAuthStore();
   const teamName = decodeURIComponent(params.name as string);
 
-  // Invalidate auth cache when page loads to ensure we have fresh managed_teams data
+  // Refetch user data when page loads to ensure we have fresh managed_teams data
   useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    queryClient.refetchQueries({ queryKey: ["auth", "me"] });
   }, [queryClient]);
 
   const [memberSuccess, setMemberSuccess] = useState("");

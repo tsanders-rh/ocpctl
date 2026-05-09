@@ -15,9 +15,9 @@ export default function MyTeamsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
 
-  // Invalidate auth cache when page loads to ensure we have fresh managed_teams data
+  // Refetch user data when page loads to ensure we have fresh managed_teams data
   useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    queryClient.refetchQueries({ queryKey: ["auth", "me"] });
   }, [queryClient]);
 
   const { data: teamsData, isLoading } = useQuery({
