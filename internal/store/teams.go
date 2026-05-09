@@ -123,9 +123,10 @@ func (s *TeamStore) Update(ctx context.Context, name string, updates map[string]
 		return fmt.Errorf("no fields to update")
 	}
 
-	// Only allow updating description
+	// Only allow updating description and allowed_profiles
 	allowedFields := map[string]bool{
-		"description": true,
+		"description":      true,
+		"allowed_profiles": true,
 	}
 
 	setClauses := []string{}
