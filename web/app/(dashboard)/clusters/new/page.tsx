@@ -587,11 +587,13 @@ export default function NewClusterPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {teamsData?.teams && teamsData.teams.length > 0 ? (
-                        teamsData.teams.map((team) => (
-                          <SelectItem key={team.id} value={team.name}>
-                            {team.name}
-                          </SelectItem>
-                        ))
+                        teamsData.teams
+                          .filter((team) => user?.teams?.includes(team.name))
+                          .map((team) => (
+                            <SelectItem key={team.id} value={team.name}>
+                              {team.name}
+                            </SelectItem>
+                          ))
                       ) : (
                         <div className="p-2 text-sm text-muted-foreground">
                           No teams available
@@ -601,6 +603,11 @@ export default function NewClusterPage() {
                   </Select>
                   {errors.team && (
                     <p className="text-sm text-red-600">{errors.team.message}</p>
+                  )}
+                  {user?.teams && user.teams.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      You can only create clusters for teams you belong to ({user.teams.length} team{user.teams.length !== 1 ? 's' : ''})
+                    </p>
                   )}
                 </div>
 
