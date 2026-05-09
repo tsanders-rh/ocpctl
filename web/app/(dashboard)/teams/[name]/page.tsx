@@ -119,8 +119,12 @@ export default function TeamDetailPage() {
 
   const members = membersData?.members || [];
 
-  // TODO: Implement eligible users endpoint for team admins
-  const eligibleMembers: any[] = [];
+  const { data: eligibleUsersData } = useQuery({
+    queryKey: ["eligible-users", teamName],
+    queryFn: () => adminApi.getEligibleUsers(teamName),
+  });
+
+  const eligibleMembers = eligibleUsersData?.users || [];
 
   return (
     <div className="space-y-6">

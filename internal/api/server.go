@@ -274,6 +274,7 @@ func (s *Server) setupRoutes() {
 	teamAdminGroup.GET("/teams", teamHandler.ListTeams)
 	teamAdminGroup.GET("/teams/:name", teamHandler.GetTeam)
 	teamAdminGroup.GET("/teams/:name/members", teamHandler.ListTeamMembers)
+	teamAdminGroup.GET("/teams/:name/eligible-users", teamHandler.GetEligibleUsers)
 	teamAdminGroup.POST("/teams/:name/members", teamHandler.AddUserToTeam)
 	teamAdminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
 

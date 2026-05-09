@@ -372,6 +372,53 @@ func (h *TeamHandler) ListTeamMembers(c echo.Context) error {
 	})
 }
 
+// GetEligibleUsers returns users who can be added to a team
+//
+//	@Summary		Get eligible users for team
+//	@Description	Returns users who are not yet members of the specified team
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	map[string]interface{}	"Returns eligible users array"
+//	@Failure		500		{object}	map[string]string		"Failed to get eligible users"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/eligible-users [get]
+func (h *TeamHandler) GetEligibleUsers(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	// Get all users
+	allUsers, err := h.store.Users.List(ctx)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Get current team members
+	members, err := h.store.TeamMemberships.GetTeamMembers(ctx, teamName)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Build set of existing member user IDs
+	memberIDs := make(map[string]bool)
+	for _, member := range members {
+		memberIDs[member.UserID] = true
+	}
+
+	// Filter out users who are already members
+	eligibleUsers := make([]*types.UserResponse, 0)
+	for _, user := range allUsers {
+		if !memberIDs[user.ID] {
+			eligibleUsers = append(eligibleUsers, user.ToResponse())
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"users": eligibleUsers,
+	})
+}
+
 // AddUserToTeam adds a user to a team
 //
 //	@Summary		Add user to team

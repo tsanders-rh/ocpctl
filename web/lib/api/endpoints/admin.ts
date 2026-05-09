@@ -162,6 +162,11 @@ export const adminApi = {
       `/admin/teams/${encodeURIComponent(teamName)}/members`
     );
   },
+  getEligibleUsers: async (teamName: string): Promise<{ users: User[] }> => {
+    return apiClient.get<{ users: User[] }>(
+      `/admin/teams/${encodeURIComponent(teamName)}/eligible-users`
+    );
+  },
   addUserToTeam: async (teamName: string, data: AddUserToTeamRequest): Promise<void> => {
     return apiClient.post<void>(
       `/admin/teams/${encodeURIComponent(teamName)}/members`,
