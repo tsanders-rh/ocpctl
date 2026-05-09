@@ -35,6 +35,9 @@ export default function TeamDetailsPage() {
   const [grantError, setGrantError] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [notes, setNotes] = useState("");
+  const [memberSuccess, setMemberSuccess] = useState("");
+  const [memberError, setMemberError] = useState("");
+  const [selectedMemberUserId, setSelectedMemberUserId] = useState("");
 
   const { data: team, isLoading: teamLoading } = useQuery({
     queryKey: ["team", teamName],
@@ -44,6 +47,11 @@ export default function TeamDetailsPage() {
   const { data: adminsData, isLoading: adminsLoading } = useQuery({
     queryKey: ["team-admins", teamName],
     queryFn: () => adminApi.listTeamAdmins(teamName),
+  });
+
+  const { data: membersData, isLoading: membersLoading } = useQuery({
+    queryKey: ["team-members", teamName],
+    queryFn: () => adminApi.listTeamMembers(teamName),
   });
 
   const { data: usersData } = useUsers();
@@ -104,6 +112,33 @@ export default function TeamDetailsPage() {
     },
   });
 
+  const addMemberMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.addUserToTeam(teamName, { user_id: userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["team-members", teamName] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setMemberSuccess("Team member added successfully!");
+      setMemberError("");
+      setSelectedMemberUserId("");
+      setTimeout(() => setMemberSuccess(""), 3000);
+    },
+    onError: (error: any) => {
+      setMemberError(error.message || "Failed to add member");
+      setMemberSuccess("");
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.removeUserFromTeam(teamName, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["team-members", teamName] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (error: any) => {
+      alert(`Failed to remove member: ${error.message || 'Unknown error'}`);
+    },
+  });
+
   const onUpdateSubmit = async (data: UpdateTeamRequest) => {
     setUpdateSuccess("");
     setUpdateError("");
@@ -127,6 +162,23 @@ export default function TeamDetailsPage() {
     revokeMutation.mutate(userId);
   };
 
+  const handleAddMember = () => {
+    if (!selectedMemberUserId) {
+      setMemberError("Please select a user");
+      return;
+    }
+    setMemberSuccess("");
+    setMemberError("");
+    addMemberMutation.mutate(selectedMemberUserId);
+  };
+
+  const handleRemoveMember = (userId: string, userEmail: string) => {
+    if (!confirm(`Are you sure you want to remove ${userEmail} from this team?`)) {
+      return;
+    }
+    removeMemberMutation.mutate(userId);
+  };
+
   if (teamLoading) {
     return <div className="p-8">Loading team...</div>;
   }
@@ -138,9 +190,17 @@ export default function TeamDetailsPage() {
   const admins = adminsData?.admins || [];
   const adminUserIds = new Set(admins.map(a => a.user_id));
 
+  const members = membersData?.members || [];
+  const memberUserIds = new Set(members.map(m => m.user_id));
+
   // Filter users to only show TEAM_ADMIN role users who are not already admins of this team
   const eligibleUsers = (usersData?.users || []).filter(
     (user: User) => user.role === "TEAM_ADMIN" && !adminUserIds.has(user.id)
+  );
+
+  // Filter users who are not already members of this team
+  const eligibleMembers = (usersData?.users || []).filter(
+    (user: User) => !memberUserIds.has(user.id)
   );
 
   return (
@@ -331,6 +391,115 @@ export default function TeamDetailsPage() {
                           size="sm"
                           onClick={() => handleRevoke(admin.user_id, admin.email)}
                           disabled={revokeMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Team Members Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Team Members</CardTitle>
+          <CardDescription>
+            Add or remove users who belong to this team
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="member-user">Add Member</Label>
+            <div className="flex gap-2">
+              <Select value={selectedMemberUserId} onValueChange={setSelectedMemberUserId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Choose a user to add..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {eligibleMembers.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground">
+                      No users available to add
+                    </div>
+                  ) : (
+                    eligibleMembers.map((user: User) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.email} ({user.username})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleAddMember}
+                disabled={!selectedMemberUserId || addMemberMutation.isPending}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                {addMemberMutation.isPending ? "Adding..." : "Add"}
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Team members can create clusters for this team
+            </p>
+          </div>
+
+          {memberSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-3 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <p className="text-sm text-green-800">{memberSuccess}</p>
+            </div>
+          )}
+
+          {memberError && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+              <p className="text-sm text-red-800">{memberError}</p>
+            </div>
+          )}
+
+          {membersLoading ? (
+            <p className="text-muted-foreground">Loading members...</p>
+          ) : members.length === 0 ? (
+            <div className="text-center py-8 border rounded-lg">
+              <p className="text-muted-foreground">No members yet</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Add users to this team above
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="p-3 text-left text-sm font-medium">User</th>
+                    <th className="p-3 text-left text-sm font-medium">Email</th>
+                    <th className="p-3 text-left text-sm font-medium">Added</th>
+                    <th className="p-3 text-left text-sm font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((member) => (
+                    <tr key={member.user_id} className="border-b last:border-0">
+                      <td className="p-3">
+                        {usersData?.users?.find((u: User) => u.id === member.user_id)?.username || "Unknown"}
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {usersData?.users?.find((u: User) => u.id === member.user_id)?.email || "Unknown"}
+                      </td>
+                      <td className="p-3 text-sm">{formatDate(member.added_at)}</td>
+                      <td className="p-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const user = usersData?.users?.find((u: User) => u.id === member.user_id);
+                            handleRemoveMember(member.user_id, user?.email || "Unknown");
+                          }}
+                          disabled={removeMemberMutation.isPending}
                         >
                           <Trash2 className="h-4 w-4 text-red-600" />
                         </Button>
