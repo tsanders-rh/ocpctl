@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
