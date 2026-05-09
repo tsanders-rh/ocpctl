@@ -173,12 +173,13 @@ export default function TeamDetailsPage() {
   };
 
   const handleRemoveMember = (userId: string, userEmail: string) => {
-    // Check if this is the user's last team
+    // Check if this is the user's last team (admins don't need any teams)
     const user = usersData?.users?.find((u: User) => u.id === userId);
     const userTeams = user?.teams || [];
 
-    if (userTeams.length <= 1) {
-      alert(`Cannot remove ${userEmail} from this team. Users must belong to at least one team. This is their only team.`);
+    // Only prevent removal if user is not admin and this is their last team
+    if (user?.role !== "ADMIN" && userTeams.length <= 1) {
+      alert(`Cannot remove ${userEmail} from this team. Non-admin users must belong to at least one team. This is their only team.`);
       return;
     }
 

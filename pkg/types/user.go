@@ -94,7 +94,7 @@ type CreateUserRequest struct {
 	Username string   `json:"username" validate:"required,min=2,max=100"`
 	Password string   `json:"password" validate:"required,min=8"`
 	Role     UserRole `json:"role" validate:"required"`
-	Teams    []string `json:"teams" validate:"required,min=1"` // User must belong to at least one team
+	Teams    []string `json:"teams"` // Non-admin users must belong to at least one team (validated in handler)
 }
 
 // UpdateUserRequest represents a request to update a user

@@ -106,7 +106,7 @@ export interface CreateUserRequest {
   username: string;
   password: string;
   role: UserRole;
-  teams: string[]; // User must belong to at least one team
+  teams: string[]; // Non-admin users must belong to at least one team
 }
 
 export interface UpdateUserRequest {

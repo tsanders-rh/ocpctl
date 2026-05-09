@@ -58,9 +58,10 @@ export default function EditUserPage() {
 
   const onSubmit = async (data: UpdateUserRequest & { confirm_password?: string }) => {
     try {
-      // Validate that user belongs to at least one team
-      if (selectedTeams.length === 0) {
-        alert("Users must belong to at least one team");
+      // Validate that non-admin users belong to at least one team
+      const effectiveRole = data.role || user?.role;
+      if (effectiveRole !== "ADMIN" && selectedTeams.length === 0) {
+        alert("Non-admin users must belong to at least one team");
         return;
       }
 
@@ -179,67 +180,77 @@ export default function EditUserPage() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Team Memberships</Label>
+            {(watchedRole !== UserRole.ADMIN && user.role !== UserRole.ADMIN) && (
               <div className="space-y-2">
-                <Select
-                  value=""
-                  onValueChange={(value) => {
-                    if (value && !selectedTeams.includes(value)) {
-                      setSelectedTeams([...selectedTeams, value]);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add team..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teamsData?.teams && teamsData.teams.length > 0 ? (
-                      teamsData.teams
-                        .filter((team) => !selectedTeams.includes(team.name))
-                        .map((team) => (
-                          <SelectItem key={team.id} value={team.name}>
-                            {team.name}
-                          </SelectItem>
-                        ))
-                    ) : (
-                      <div className="p-2 text-sm text-muted-foreground">
-                        No teams available
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-                {selectedTeams.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedTeams.map((team) => (
-                      <Badge key={team} variant="secondary" className="gap-1">
-                        {team}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (selectedTeams.length === 1) {
-                              alert("Cannot remove the last team. Users must belong to at least one team.");
-                              return;
-                            }
-                            setSelectedTeams(selectedTeams.filter((t) => t !== team));
-                          }}
-                          className="ml-1 hover:bg-muted rounded-full"
-                          title={selectedTeams.length === 1 ? "Cannot remove the last team" : "Remove team"}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  Teams this user belongs to (for team-based access control)
-                  {selectedTeams.length === 0 && (
-                    <span className="text-amber-600 font-medium"> - At least one team is required</span>
+                <Label>Team Memberships</Label>
+                <div className="space-y-2">
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value && !selectedTeams.includes(value)) {
+                        setSelectedTeams([...selectedTeams, value]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Add team..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teamsData?.teams && teamsData.teams.length > 0 ? (
+                        teamsData.teams
+                          .filter((team) => !selectedTeams.includes(team.name))
+                          .map((team) => (
+                            <SelectItem key={team.id} value={team.name}>
+                              {team.name}
+                            </SelectItem>
+                          ))
+                      ) : (
+                        <div className="p-2 text-sm text-muted-foreground">
+                          No teams available
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {selectedTeams.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {selectedTeams.map((team) => (
+                        <Badge key={team} variant="secondary" className="gap-1">
+                          {team}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedTeams.length === 1) {
+                                alert("Cannot remove the last team. Non-admin users must belong to at least one team.");
+                                return;
+                              }
+                              setSelectedTeams(selectedTeams.filter((t) => t !== team));
+                            }}
+                            className="ml-1 hover:bg-muted rounded-full"
+                            title={selectedTeams.length === 1 ? "Cannot remove the last team" : "Remove team"}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
                   )}
+                  <p className="text-sm text-muted-foreground">
+                    Teams this user belongs to (for team-based access control)
+                    {selectedTeams.length === 0 && (
+                      <span className="text-amber-600 font-medium"> - At least one team is required</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {(watchedRole === UserRole.ADMIN || user.role === UserRole.ADMIN) && (
+              <div className="rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Admin users</strong> have inherent access to all teams and do not need explicit team memberships.
                 </p>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center space-x-2">
               <Checkbox

@@ -161,6 +161,11 @@ func (h *UserHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid role")
 	}
 
+	// Validate team membership (non-admin users must belong to at least one team)
+	if req.Role != types.UserRoleAdmin && len(req.Teams) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "non-admin users must belong to at least one team")
+	}
+
 	// Validate password strength
 	if err := auth.ValidatePasswordStrength(req.Password); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -342,6 +347,23 @@ func (h *UserHandler) Update(c echo.Context) error {
 
 	// Update team memberships if provided
 	if req.Teams != nil {
+		// Get the user to check their role
+		user, err := h.store.Users.GetByID(c.Request().Context(), userID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user")
+		}
+
+		// Validate team membership (non-admin users must belong to at least one team)
+		// If role is being updated, use the new role; otherwise use current role
+		effectiveRole := user.Role
+		if req.Role != nil {
+			effectiveRole = *req.Role
+		}
+
+		if effectiveRole != types.UserRoleAdmin && len(*req.Teams) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "non-admin users must belong to at least one team")
+		}
+
 		// Get current user ID for audit trail
 		currentUserID, err := auth.GetUserID(c)
 		if err != nil {
