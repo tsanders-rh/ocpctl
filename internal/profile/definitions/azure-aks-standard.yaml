@@ -29,9 +29,9 @@ regions:
 compute:
   workers:
     replicas: 3
-    instanceType: Standard_D4s_v3
     minReplicas: 1
     maxReplicas: 10
+    instanceType: Standard_D4s_v3
     autoscaling: true
 
 lifecycle:

@@ -28,7 +28,10 @@ regions:
 compute:
   workers:
     replicas: 3
+    minReplicas: 2
+    maxReplicas: 20
     instanceType: Standard_D4s_v3
+    autoscaling: false
 
 lifecycle:
   maxTTLHours: 168        # 1 week max
