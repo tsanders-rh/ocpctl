@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ExecutionPanel } from "@/components/clusters/ClusterForm/ExecutionPanel";
-import { Platform, ClusterType, type ValidationError } from "@/types/api";
+import { Platform, ClusterType, UserRole, type ValidationError } from "@/types/api";
 import { ApiError } from "@/lib/api/client";
 import { AlertCircle, Clock } from "lucide-react";
 
@@ -124,6 +124,28 @@ export default function NewClusterPage() {
   }, [profiles, selectedClusterType, selectedPlatform, selectedTrack]);
 
   const selectedProfile = sortedProfiles?.find((p) => p.name === watchedValues.profile);
+
+  // Filter teams based on user role
+  const accessibleTeams = useMemo(() => {
+    if (!teamsData?.teams || !user) return [];
+
+    // Admins can see all teams
+    if (user.role === UserRole.ADMIN) {
+      return teamsData.teams;
+    }
+
+    // Team admins can see teams they manage + teams they belong to
+    if (user.role === UserRole.TEAM_ADMIN) {
+      const managedTeams = user.managed_teams || [];
+      const memberTeams = user.teams || [];
+      const allAccessibleTeamNames = [...new Set([...managedTeams, ...memberTeams])];
+      return teamsData.teams.filter(team => allAccessibleTeamNames.includes(team.name));
+    }
+
+    // Regular users can only see teams they belong to
+    const memberTeams = user.teams || [];
+    return teamsData.teams.filter(team => memberTeams.includes(team.name));
+  }, [teamsData?.teams, user]);
 
   // Helper to get field-specific validation error
   const getFieldError = (fieldName: string): string | undefined => {
@@ -586,17 +608,15 @@ export default function NewClusterPage() {
                       <SelectValue placeholder="Select team" />
                     </SelectTrigger>
                     <SelectContent>
-                      {teamsData?.teams && teamsData.teams.length > 0 ? (
-                        teamsData.teams
-                          .filter((team) => user?.teams?.includes(team.name))
-                          .map((team) => (
-                            <SelectItem key={team.id} value={team.name}>
-                              {team.name}
-                            </SelectItem>
-                          ))
+                      {accessibleTeams.length > 0 ? (
+                        accessibleTeams.map((team) => (
+                          <SelectItem key={team.id} value={team.name}>
+                            {team.name}
+                          </SelectItem>
+                        ))
                       ) : (
                         <div className="p-2 text-sm text-muted-foreground">
-                          No teams available
+                          No accessible teams
                         </div>
                       )}
                     </SelectContent>
@@ -604,9 +624,17 @@ export default function NewClusterPage() {
                   {errors.team && (
                     <p className="text-sm text-red-600">{errors.team.message}</p>
                   )}
-                  {user?.teams && user.teams.length > 0 && (
+                  {user && (
                     <p className="text-sm text-muted-foreground">
-                      You can only create clusters for teams you belong to ({user.teams.length} team{user.teams.length !== 1 ? 's' : ''})
+                      {user.role === UserRole.ADMIN ? (
+                        `You can create clusters for any team (${accessibleTeams.length} team${accessibleTeams.length !== 1 ? 's' : ''} available)`
+                      ) : user.role === UserRole.TEAM_ADMIN ? (
+                        `You can create clusters for teams you manage or belong to (${accessibleTeams.length} team${accessibleTeams.length !== 1 ? 's' : ''})`
+                      ) : accessibleTeams.length > 0 ? (
+                        `You can only create clusters for teams you belong to (${accessibleTeams.length} team${accessibleTeams.length !== 1 ? 's' : ''})`
+                      ) : (
+                        <span className="text-amber-600">You are not a member of any teams. Contact an admin to be added to a team.</span>
+                      )}
                     </p>
                   )}
                 </div>
