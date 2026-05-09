@@ -473,12 +473,25 @@ export default function TeamDetailPage() {
                                   onCheckedChange={() => handleToggleProfile(profile.name)}
                                 />
                                 <div className="flex-1">
-                                  <label
-                                    htmlFor={`profile-${profile.name}`}
-                                    className="text-sm font-medium leading-none cursor-pointer"
-                                  >
-                                    {profile.display_name}
-                                  </label>
+                                  <div className="flex items-start gap-2">
+                                    <label
+                                      htmlFor={`profile-${profile.name}`}
+                                      className="text-sm font-medium leading-none cursor-pointer flex-1"
+                                    >
+                                      {profile.display_name}
+                                    </label>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-xs"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        router.push(`/profiles/${profile.name}`);
+                                      }}
+                                    >
+                                      View
+                                    </Button>
+                                  </div>
                                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                     {profile.description}
                                   </p>
