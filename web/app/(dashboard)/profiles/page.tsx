@@ -81,6 +81,13 @@ export default function ProfilesPage() {
             >
               IBM Cloud
             </Button>
+            <Button
+              variant={selectedPlatform === Platform.Azure ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(Platform.Azure)}
+            >
+              Azure
+            </Button>
           </div>
         </div>
 
