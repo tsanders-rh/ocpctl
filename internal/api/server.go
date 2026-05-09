@@ -277,6 +277,8 @@ func (s *Server) setupRoutes() {
 	teamAdminGroup.GET("/teams/:name/eligible-users", teamHandler.GetEligibleUsers)
 	teamAdminGroup.POST("/teams/:name/members", teamHandler.AddUserToTeam)
 	teamAdminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
+	teamAdminGroup.GET("/teams/:name/allowed-profiles", teamHandler.GetAllowedProfiles)
+	teamAdminGroup.PATCH("/teams/:name/allowed-profiles", teamHandler.UpdateAllowedProfiles)
 
 	// Admin-only team routes
 	adminGroup.POST("/teams", teamHandler.CreateTeam)

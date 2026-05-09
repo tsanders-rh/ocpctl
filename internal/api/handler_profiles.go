@@ -129,6 +129,48 @@ func (h *ProfileHandler) List(c echo.Context) error {
 		profiles = filtered
 	}
 
+	// Apply team-based filtering (non-admin users only)
+	user, err := auth.GetUser(c)
+	if err == nil && user.Role != types.RoleAdmin {
+		// Get user's teams
+		userTeams := user.Teams
+		if len(userTeams) > 0 {
+			// Collect allowed profiles from all teams
+			allowedProfilesSet := make(map[string]bool)
+			hasUnrestrictedTeam := false
+
+			for _, teamName := range userTeams {
+				team, err := h.store.Teams.Get(ctx, teamName)
+				if err != nil {
+					// Skip team if we can't fetch it
+					continue
+				}
+
+				// If any team has no restrictions (null or empty), user sees all profiles
+				if team.AllowedProfiles == nil || len(team.AllowedProfiles) == 0 {
+					hasUnrestrictedTeam = true
+					break
+				}
+
+				// Add this team's allowed profiles to the set
+				for _, profileName := range team.AllowedProfiles {
+					allowedProfilesSet[profileName] = true
+				}
+			}
+
+			// Filter profiles if there are restrictions
+			if !hasUnrestrictedTeam && len(allowedProfilesSet) > 0 {
+				var filtered []*profile.Profile
+				for _, p := range profiles {
+					if allowedProfilesSet[p.Name] {
+						filtered = append(filtered, p)
+					}
+				}
+				profiles = filtered
+			}
+		}
+	}
+
 	// Load deployment metrics for all profiles
 	metrics, err := h.store.ProfileDeploymentMetrics.GetAll(ctx)
 	if err != nil {

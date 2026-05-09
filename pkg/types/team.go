@@ -4,12 +4,13 @@ import "time"
 
 // Team represents an organizational team for cluster grouping and access control
 type Team struct {
-	ID          string     `json:"id" db:"id"`
-	Name        string     `json:"name" db:"name"`
-	Description *string    `json:"description,omitempty" db:"description"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-	CreatedBy   *string    `json:"created_by,omitempty" db:"created_by"`
+	ID              string   `json:"id" db:"id"`
+	Name            string   `json:"name" db:"name"`
+	Description     *string  `json:"description,omitempty" db:"description"`
+	AllowedProfiles []string `json:"allowed_profiles,omitempty" db:"allowed_profiles"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	CreatedBy       *string  `json:"created_by,omitempty" db:"created_by"`
 }
 
 // TeamAdminMapping represents the assignment of team admin privileges to a user for a specific team
@@ -31,6 +32,11 @@ type CreateTeamRequest struct {
 // UpdateTeamRequest represents a request to update team metadata
 type UpdateTeamRequest struct {
 	Description *string `json:"description,omitempty"`
+}
+
+// UpdateAllowedProfilesRequest represents a request to update team's allowed profiles
+type UpdateAllowedProfilesRequest struct {
+	AllowedProfiles []string `json:"allowed_profiles" validate:"required"`
 }
 
 // GrantTeamAdminRequest represents a request to grant team admin privileges

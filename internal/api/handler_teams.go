@@ -494,3 +494,84 @@ func (h *TeamHandler) RemoveUserFromTeam(c echo.Context) error {
 		"message": "user removed from team successfully",
 	})
 }
+
+// GetAllowedProfiles returns the allowed profiles for a team
+//
+//	@Summary		Get team allowed profiles
+//	@Description	Returns the list of profiles allowed for this team (null/empty = all profiles allowed)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	map[string]interface{}	"Returns allowed_profiles array"
+//	@Failure		404		{object}	map[string]string		"Team not found"
+//	@Failure		500		{object}	map[string]string		"Failed to get allowed profiles"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/allowed-profiles [get]
+func (h *TeamHandler) GetAllowedProfiles(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	team, err := h.store.Teams.Get(ctx, teamName)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"team":             teamName,
+		"allowed_profiles": team.AllowedProfiles,
+	})
+}
+
+// UpdateAllowedProfiles updates the allowed profiles for a team
+//
+//	@Summary		Update team allowed profiles
+//	@Description	Updates the list of profiles allowed for this team. Empty array = no profiles allowed. Null = all profiles allowed.
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string							true	"Team name"
+//	@Param			body	body		types.UpdateAllowedProfilesRequest	true	"Allowed profiles list"
+//	@Success		200		{object}	types.Team
+//	@Failure		400		{object}	map[string]string	"Invalid request or validation error"
+//	@Failure		404		{object}	map[string]string	"Team not found"
+//	@Failure		500		{object}	map[string]string	"Failed to update allowed profiles"
+//	@Security		BearerAuth
+//	@Router			/admin/teams/{name}/allowed-profiles [patch]
+func (h *TeamHandler) UpdateAllowedProfiles(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	var req types.UpdateAllowedProfilesRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "invalid request body")
+	}
+
+	// Validate request
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Build updates map
+	updates := make(map[string]interface{})
+	updates["allowed_profiles"] = req.AllowedProfiles
+
+	// Update team
+	if err := h.store.Teams.Update(ctx, teamName, updates); err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Get updated team
+	team, err := h.store.Teams.Get(ctx, teamName)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, team)
+}

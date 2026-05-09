@@ -225,6 +225,27 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		return ErrorValidation(c, validation)
 	}
 
+	// Validate profile is allowed for the team (non-admin users only)
+	user, err := auth.GetUser(c)
+	if err == nil && user.Role != types.RoleAdmin {
+		team, err := h.store.Teams.Get(ctx, req.Team)
+		if err == nil {
+			// Check if team has profile restrictions
+			if team.AllowedProfiles != nil && len(team.AllowedProfiles) > 0 {
+				profileAllowed := false
+				for _, allowedProfile := range team.AllowedProfiles {
+					if allowedProfile == req.Profile {
+						profileAllowed = true
+						break
+					}
+				}
+				if !profileAllowed {
+					return ErrorBadRequest(c, fmt.Sprintf("Profile '%s' is not allowed for team '%s'", req.Profile, req.Team))
+				}
+			}
+		}
+	}
+
 	// Validate custom post-config if provided
 	if req.CustomPostConfig != nil {
 		if errs := validation2.ValidateCustomPostConfig(req.CustomPostConfig); len(errs) > 0 {

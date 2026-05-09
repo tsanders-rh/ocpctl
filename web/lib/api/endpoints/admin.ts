@@ -4,6 +4,7 @@ import type {
   Team,
   CreateTeamRequest,
   UpdateTeamRequest,
+  UpdateAllowedProfilesRequest,
   ListTeamAdminsResponse,
   GrantTeamAdminRequest,
   ListTeamMembersResponse,
@@ -177,6 +178,19 @@ export const adminApi = {
   removeUserFromTeam: async (teamName: string, userId: string): Promise<void> => {
     return apiClient.delete<void>(
       `/admin/teams/${encodeURIComponent(teamName)}/members/${userId}`
+    );
+  },
+
+  // Team Allowed Profiles Management
+  getAllowedProfiles: async (teamName: string): Promise<{ team: string; allowed_profiles: string[] | null }> => {
+    return apiClient.get<{ team: string; allowed_profiles: string[] | null }>(
+      `/admin/teams/${encodeURIComponent(teamName)}/allowed-profiles`
+    );
+  },
+  updateAllowedProfiles: async (teamName: string, data: UpdateAllowedProfilesRequest): Promise<Team> => {
+    return apiClient.patch<Team>(
+      `/admin/teams/${encodeURIComponent(teamName)}/allowed-profiles`,
+      data
     );
   },
 };

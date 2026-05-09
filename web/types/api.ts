@@ -629,6 +629,7 @@ export interface Team {
   id: string;
   name: string;
   description?: string;
+  allowed_profiles?: string[];
   created_at: string;
   updated_at: string;
   created_by?: string;
@@ -665,6 +666,10 @@ export interface CreateTeamRequest {
 
 export interface UpdateTeamRequest {
   description?: string;
+}
+
+export interface UpdateAllowedProfilesRequest {
+  allowed_profiles: string[];
 }
 
 export interface GrantTeamAdminRequest {
