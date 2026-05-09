@@ -385,6 +385,23 @@ func (s *UserStore) List(ctx context.Context) ([]*types.User, error) {
 		if err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
+
+		// Load team memberships
+		teams, err := s.getTeamsForUser(ctx, user.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load teams for user %s: %w", user.ID, err)
+		}
+		user.Teams = teams
+
+		// If user is team admin, load managed teams
+		if user.Role == types.RoleTeamAdmin {
+			managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load managed teams for user %s: %w", user.ID, err)
+			}
+			user.ManagedTeams = managedTeams
+		}
+
 		users = append(users, &user)
 	}
 
@@ -451,6 +468,23 @@ func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*ty
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)
 		}
+
+		// Load team memberships
+		teams, err := s.getTeamsForUser(ctx, user.ID)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to load teams for user %s: %w", user.ID, err)
+		}
+		user.Teams = teams
+
+		// If user is team admin, load managed teams
+		if user.Role == types.RoleTeamAdmin {
+			managedTeams, err := s.getManagedTeamsForUser(ctx, user.ID)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to load managed teams for user %s: %w", user.ID, err)
+			}
+			user.ManagedTeams = managedTeams
+		}
+
 		users = append(users, &user)
 	}
 
