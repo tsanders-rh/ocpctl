@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuthStore } from "@/lib/stores/authStore";
 import { useQuery } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import type { TeamWithCount } from "@/types/api";
 
 export default function MyTeamsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user } = useAuthStore();
 
   const { data: teamsData, isLoading } = useQuery({
     queryKey: ["teams"],

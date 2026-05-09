@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,7 @@ export default function TeamDetailPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser } = useAuthStore();
   const teamName = decodeURIComponent(params.name as string);
 
   const [memberSuccess, setMemberSuccess] = useState("");
