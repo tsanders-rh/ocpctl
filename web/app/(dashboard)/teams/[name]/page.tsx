@@ -49,6 +49,11 @@ export default function TeamDetailPage() {
     queryFn: () => adminApi.listTeamMembers(teamName),
   });
 
+  const { data: eligibleUsersData } = useQuery({
+    queryKey: ["eligible-users", teamName],
+    queryFn: () => adminApi.getEligibleUsers(teamName),
+  });
+
   const addMemberMutation = useMutation({
     mutationFn: (userId: string) => adminApi.addUserToTeam(teamName, { user_id: userId }),
     onSuccess: () => {
@@ -118,12 +123,6 @@ export default function TeamDetailPage() {
   }
 
   const members = membersData?.members || [];
-
-  const { data: eligibleUsersData } = useQuery({
-    queryKey: ["eligible-users", teamName],
-    queryFn: () => adminApi.getEligibleUsers(teamName),
-  });
-
   const eligibleMembers = eligibleUsersData?.users || [];
 
   return (
