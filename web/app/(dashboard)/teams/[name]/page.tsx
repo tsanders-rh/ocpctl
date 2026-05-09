@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
+import { profilesApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -17,8 +19,8 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils/formatters";
-import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle } from "lucide-react";
-import type { User } from "@/types/api";
+import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save } from "lucide-react";
+import type { User, Profile } from "@/types/api";
 
 export default function TeamDetailPage() {
   const params = useParams();
@@ -35,6 +37,9 @@ export default function TeamDetailPage() {
   const [memberSuccess, setMemberSuccess] = useState("");
   const [memberError, setMemberError] = useState("");
   const [selectedMemberUserId, setSelectedMemberUserId] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
 
   // Check if current user is a team admin for this team
   const isTeamAdmin = currentUser?.managed_teams?.includes(teamName);
@@ -53,6 +58,23 @@ export default function TeamDetailPage() {
     queryKey: ["eligible-users", teamName],
     queryFn: () => adminApi.getEligibleUsers(teamName),
   });
+
+  const { data: profilesData } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: () => profilesApi.list(),
+  });
+
+  const { data: allowedProfilesData } = useQuery({
+    queryKey: ["allowed-profiles", teamName],
+    queryFn: () => adminApi.getAllowedProfiles(teamName),
+  });
+
+  // Initialize selected profiles when allowed profiles data loads
+  useEffect(() => {
+    if (allowedProfilesData?.allowed_profiles) {
+      setSelectedProfiles(allowedProfilesData.allowed_profiles);
+    }
+  }, [allowedProfilesData]);
 
   const addMemberMutation = useMutation({
     mutationFn: (userId: string) => adminApi.addUserToTeam(teamName, { user_id: userId }),
@@ -81,6 +103,21 @@ export default function TeamDetailPage() {
     },
   });
 
+  const updateAllowedProfilesMutation = useMutation({
+    mutationFn: (profiles: string[]) => adminApi.updateAllowedProfiles(teamName, { allowed_profiles: profiles }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allowed-profiles", teamName] });
+      queryClient.invalidateQueries({ queryKey: ["team", teamName] });
+      setProfileSuccess("Allowed profiles updated successfully!");
+      setProfileError("");
+      setTimeout(() => setProfileSuccess(""), 3000);
+    },
+    onError: (error: any) => {
+      setProfileError(error.message || "Failed to update allowed profiles");
+      setProfileSuccess("");
+    },
+  });
+
   const handleAddMember = () => {
     if (!selectedMemberUserId) {
       setMemberError("Please select a user");
@@ -96,6 +133,22 @@ export default function TeamDetailPage() {
       return;
     }
     removeMemberMutation.mutate(userId);
+  };
+
+  const handleToggleProfile = (profileName: string) => {
+    setSelectedProfiles((prev) => {
+      if (prev.includes(profileName)) {
+        return prev.filter((p) => p !== profileName);
+      } else {
+        return [...prev, profileName];
+      }
+    });
+  };
+
+  const handleSaveAllowedProfiles = () => {
+    setProfileSuccess("");
+    setProfileError("");
+    updateAllowedProfilesMutation.mutate(selectedProfiles);
   };
 
   if (teamLoading) {
@@ -248,6 +301,85 @@ export default function TeamDetailPage() {
                 </tbody>
               </table>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Allowed Profiles Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Allowed Profiles</CardTitle>
+          <CardDescription>
+            Control which cluster profiles team members can use. Uncheck all to allow all profiles.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {profileSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-3 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <p className="text-sm text-green-800">{profileSuccess}</p>
+            </div>
+          )}
+
+          {profileError && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+              <p className="text-sm text-red-800">{profileError}</p>
+            </div>
+          )}
+
+          {!profilesData ? (
+            <p className="text-muted-foreground">Loading profiles...</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {profilesData.map((profile: Profile) => (
+                  <div key={profile.name} className="flex items-start space-x-2 border rounded-lg p-3">
+                    <Checkbox
+                      id={`profile-${profile.name}`}
+                      checked={selectedProfiles.includes(profile.name)}
+                      onCheckedChange={() => handleToggleProfile(profile.name)}
+                    />
+                    <div className="flex-1">
+                      <label
+                        htmlFor={`profile-${profile.name}`}
+                        className="text-sm font-medium leading-none cursor-pointer"
+                      >
+                        {profile.display_name}
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {profile.description}
+                      </p>
+                      <div className="flex gap-1 mt-2">
+                        <Badge variant="outline" className="text-xs">
+                          {profile.platform}
+                        </Badge>
+                        {profile.track && (
+                          <Badge variant="secondary" className="text-xs">
+                            {profile.track}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t">
+                <p className="text-sm text-muted-foreground">
+                  {selectedProfiles.length === 0
+                    ? "All profiles allowed (no restrictions)"
+                    : `${selectedProfiles.length} profile(s) selected`}
+                </p>
+                <Button
+                  onClick={handleSaveAllowedProfiles}
+                  disabled={updateAllowedProfilesMutation.isPending}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {updateAllowedProfilesMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
