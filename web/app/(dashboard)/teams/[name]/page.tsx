@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
@@ -27,6 +27,11 @@ export default function TeamDetailPage() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuthStore();
   const teamName = decodeURIComponent(params.name as string);
+
+  // Invalidate auth cache when page loads to ensure we have fresh managed_teams data
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  }, [queryClient]);
 
   const [memberSuccess, setMemberSuccess] = useState("");
   const [memberError, setMemberError] = useState("");

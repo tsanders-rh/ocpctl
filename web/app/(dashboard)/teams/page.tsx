@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/stores/authStore";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,13 @@ import type { TeamWithCount } from "@/types/api";
 
 export default function MyTeamsPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user } = useAuthStore();
+
+  // Invalidate auth cache when page loads to ensure we have fresh managed_teams data
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  }, [queryClient]);
 
   const { data: teamsData, isLoading } = useQuery({
     queryKey: ["teams"],
