@@ -8,6 +8,7 @@ import type {
   GrantTeamAdminRequest,
   ListTeamMembersResponse,
   AddUserToTeamRequest,
+  User,
 } from "@/types/api";
 
 export interface ClusterStatistics {
