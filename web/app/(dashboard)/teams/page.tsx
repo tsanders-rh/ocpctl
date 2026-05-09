@@ -29,10 +29,18 @@ export default function MyTeamsPage() {
     return <div className="p-8">Loading teams...</div>;
   }
 
+  // Debug logging
+  console.log('[Teams Page] User object:', user);
+  console.log('[Teams Page] managed_teams:', user?.managed_teams);
+  console.log('[Teams Page] All teams data:', teamsData);
+
   const managedTeams = user?.managed_teams || [];
   const myTeams = (teamsData?.teams || []).filter((team: TeamWithCount) =>
     managedTeams.includes(team.name)
   );
+
+  console.log('[Teams Page] managedTeams array:', managedTeams);
+  console.log('[Teams Page] myTeams filtered:', myTeams);
 
   return (
     <div className="space-y-6">
