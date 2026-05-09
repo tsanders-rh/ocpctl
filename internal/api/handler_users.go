@@ -201,10 +201,29 @@ func (h *UserHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create user")
 	}
 
+	// Assign teams to the user
+	if len(req.Teams) > 0 {
+		currentUserID, err := auth.GetUserID(c)
+		if err != nil {
+			return err
+		}
+
+		if err := h.store.TeamMemberships.UpdateUserTeams(c.Request().Context(), user.ID, currentUserID, req.Teams); err != nil {
+			h.logAudit(c, "user.create", user.ID, types.AuditEventStatusFailure, map[string]interface{}{
+				"email": user.Email,
+				"role":  user.Role,
+				"teams": req.Teams,
+				"error": "failed to assign teams",
+			})
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to assign teams to user")
+		}
+	}
+
 	// Log successful user creation
 	h.logAudit(c, "user.create", user.ID, types.AuditEventStatusSuccess, map[string]interface{}{
 		"email": user.Email,
 		"role":  user.Role,
+		"teams": req.Teams,
 	})
 
 	return c.JSON(http.StatusCreated, user.ToResponse())

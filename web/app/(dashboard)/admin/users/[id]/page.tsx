@@ -58,6 +58,12 @@ export default function EditUserPage() {
 
   const onSubmit = async (data: UpdateUserRequest & { confirm_password?: string }) => {
     try {
+      // Validate that user belongs to at least one team
+      if (selectedTeams.length === 0) {
+        alert("Users must belong to at least one team");
+        return;
+      }
+
       // Validate password confirmation if password is being changed
       if (data.new_password) {
         if (data.new_password !== data.confirm_password) {
@@ -210,8 +216,15 @@ export default function EditUserPage() {
                         {team}
                         <button
                           type="button"
-                          onClick={() => setSelectedTeams(selectedTeams.filter((t) => t !== team))}
+                          onClick={() => {
+                            if (selectedTeams.length === 1) {
+                              alert("Cannot remove the last team. Users must belong to at least one team.");
+                              return;
+                            }
+                            setSelectedTeams(selectedTeams.filter((t) => t !== team));
+                          }}
                           className="ml-1 hover:bg-muted rounded-full"
+                          title={selectedTeams.length === 1 ? "Cannot remove the last team" : "Remove team"}
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -221,6 +234,9 @@ export default function EditUserPage() {
                 )}
                 <p className="text-sm text-muted-foreground">
                   Teams this user belongs to (for team-based access control)
+                  {selectedTeams.length === 0 && (
+                    <span className="text-amber-600 font-medium"> - At least one team is required</span>
+                  )}
                 </p>
               </div>
             </div>

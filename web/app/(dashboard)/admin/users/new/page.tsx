@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useCreateUser } from "@/lib/hooks/useUsers";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -15,12 +17,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { UserRole, type CreateUserRequest } from "@/types/api";
 
 export default function NewUserPage() {
   const router = useRouter();
   const createUser = useCreateUser();
+  const { data: teamsData } = useTeams();
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+
   const {
     register,
     handleSubmit,
@@ -30,6 +35,7 @@ export default function NewUserPage() {
   } = useForm<CreateUserRequest>({
     defaultValues: {
       role: UserRole.USER,
+      teams: [],
     },
   });
 
@@ -40,7 +46,17 @@ export default function NewUserPage() {
   const onSubmit = async (data: CreateUserRequest) => {
     try {
       setErrorMessage(""); // Clear previous errors
-      await createUser.mutateAsync(data);
+
+      // Validate that at least one team is selected
+      if (selectedTeams.length === 0) {
+        setErrorMessage("Users must belong to at least one team");
+        return;
+      }
+
+      // Add teams to the request
+      const requestData = { ...data, teams: selectedTeams };
+
+      await createUser.mutateAsync(requestData);
       router.push("/admin/users");
     } catch (error) {
       console.error("Failed to create user:", error);
@@ -152,6 +168,61 @@ export default function NewUserPage() {
                 {watchedRole === UserRole.USER && "Can create and manage own clusters"}
                 {watchedRole === UserRole.VIEWER && "Read-only access to own clusters"}
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Team Memberships *</Label>
+              <div className="space-y-2">
+                <Select
+                  value=""
+                  onValueChange={(value) => {
+                    if (value && !selectedTeams.includes(value)) {
+                      setSelectedTeams([...selectedTeams, value]);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamsData?.teams && teamsData.teams.length > 0 ? (
+                      teamsData.teams
+                        .filter((team) => !selectedTeams.includes(team.name))
+                        .map((team) => (
+                          <SelectItem key={team.id} value={team.name}>
+                            {team.name}
+                          </SelectItem>
+                        ))
+                    ) : (
+                      <div className="p-2 text-sm text-muted-foreground">
+                        No teams available
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedTeams.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {selectedTeams.map((team) => (
+                      <Badge key={team} variant="secondary" className="gap-1">
+                        {team}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTeams(selectedTeams.filter((t) => t !== team))}
+                          className="ml-1 hover:bg-muted rounded-full"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Teams this user belongs to (for team-based access control)
+                  {selectedTeams.length === 0 && (
+                    <span className="text-amber-600 font-medium"> - At least one team is required</span>
+                  )}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

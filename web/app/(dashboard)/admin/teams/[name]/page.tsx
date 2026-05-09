@@ -173,6 +173,15 @@ export default function TeamDetailsPage() {
   };
 
   const handleRemoveMember = (userId: string, userEmail: string) => {
+    // Check if this is the user's last team
+    const user = usersData?.users?.find((u: User) => u.id === userId);
+    const userTeams = user?.teams || [];
+
+    if (userTeams.length <= 1) {
+      alert(`Cannot remove ${userEmail} from this team. Users must belong to at least one team. This is their only team.`);
+      return;
+    }
+
     if (!confirm(`Are you sure you want to remove ${userEmail} from this team?`)) {
       return;
     }
