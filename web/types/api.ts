@@ -684,6 +684,7 @@ export interface UserTeamMembership {
   added_by?: string;
   added_at: string;
   notes?: string;
+  user?: User; // Enriched user details (included when fetching team members)
 }
 
 export interface ListTeamsResponse {
