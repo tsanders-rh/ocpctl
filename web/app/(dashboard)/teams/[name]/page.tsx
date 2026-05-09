@@ -79,8 +79,10 @@ export default function TeamDetailPage() {
 
   // Initialize selected profiles when allowed profiles data loads
   useEffect(() => {
-    if (allowedProfilesData?.allowed_profiles) {
-      setSelectedProfiles(allowedProfilesData.allowed_profiles);
+    if (allowedProfilesData) {
+      // null or undefined = all profiles allowed (empty array in UI)
+      // [] or ["profile1", ...] = specific restrictions
+      setSelectedProfiles(allowedProfilesData.allowed_profiles || []);
     }
   }, [allowedProfilesData]);
 
