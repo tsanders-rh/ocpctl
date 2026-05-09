@@ -104,8 +104,10 @@ func (h *ProfileHandler) List(c echo.Context) error {
 			platform = types.PlatformIBMCloud
 		case "gcp":
 			platform = types.PlatformGCP
+		case "azure":
+			platform = types.PlatformAzure
 		default:
-			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', or 'gcp'")
+			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', 'gcp', or 'azure'")
 		}
 
 		profiles = h.registry.ListByPlatform(platform)
