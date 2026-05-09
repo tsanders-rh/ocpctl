@@ -162,7 +162,7 @@ func (h *UserHandler) Create(c echo.Context) error {
 	}
 
 	// Validate team membership (non-admin users must belong to at least one team)
-	if req.Role != types.UserRoleAdmin && len(req.Teams) == 0 {
+	if req.Role != types.RoleAdmin && len(req.Teams) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "non-admin users must belong to at least one team")
 	}
 
@@ -360,7 +360,7 @@ func (h *UserHandler) Update(c echo.Context) error {
 			effectiveRole = *req.Role
 		}
 
-		if effectiveRole != types.UserRoleAdmin && len(*req.Teams) == 0 {
+		if effectiveRole != types.RoleAdmin && len(*req.Teams) == 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "non-admin users must belong to at least one team")
 		}
 
