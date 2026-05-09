@@ -24,7 +24,7 @@ func NewTeamStore(db *pgxpool.Pool) *TeamStore {
 // List returns all teams
 func (s *TeamStore) List(ctx context.Context) ([]*types.Team, error) {
 	query := `
-		SELECT id, name, description, created_at, updated_at, created_by
+		SELECT id, name, description, allowed_profiles, created_at, updated_at, created_by
 		FROM teams
 		ORDER BY name
 	`
@@ -42,6 +42,7 @@ func (s *TeamStore) List(ctx context.Context) ([]*types.Team, error) {
 			&team.ID,
 			&team.Name,
 			&team.Description,
+			&team.AllowedProfiles,
 			&team.CreatedAt,
 			&team.UpdatedAt,
 			&team.CreatedBy,
@@ -92,7 +93,7 @@ func (s *TeamStore) Get(ctx context.Context, name string) (*types.Team, error) {
 	team := &types.Team{}
 
 	query := `
-		SELECT id, name, description, created_at, updated_at, created_by
+		SELECT id, name, description, allowed_profiles, created_at, updated_at, created_by
 		FROM teams
 		WHERE name = $1
 	`
@@ -101,6 +102,7 @@ func (s *TeamStore) Get(ctx context.Context, name string) (*types.Team, error) {
 		&team.ID,
 		&team.Name,
 		&team.Description,
+		&team.AllowedProfiles,
 		&team.CreatedAt,
 		&team.UpdatedAt,
 		&team.CreatedBy,
