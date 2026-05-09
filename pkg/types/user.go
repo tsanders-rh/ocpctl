@@ -54,6 +54,8 @@ type UserResponse struct {
 	Email            string             `json:"email"`
 	Username         string             `json:"username"`
 	Role             UserRole           `json:"role"`
+	Teams            []string           `json:"teams,omitempty"`
+	ManagedTeams     []string           `json:"managed_teams,omitempty"`
 	Timezone         string             `json:"timezone"`
 	WorkHoursEnabled bool               `json:"work_hours_enabled"`
 	WorkHours        *WorkHoursSchedule `json:"work_hours,omitempty"`
@@ -69,6 +71,8 @@ func (u *User) ToResponse() *UserResponse {
 		Email:            u.Email,
 		Username:         u.Username,
 		Role:             u.Role,
+		Teams:            u.Teams,
+		ManagedTeams:     u.ManagedTeams,
 		Timezone:         u.Timezone,
 		WorkHoursEnabled: u.WorkHoursEnabled,
 		Active:           u.Active,
