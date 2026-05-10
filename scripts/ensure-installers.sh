@@ -505,6 +505,22 @@ main() {
         exit 1
     fi
 
+    # Create Azure credentials file if Azure environment variables are set
+    if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ]; then
+        log "Creating Azure credentials file for openshift-install..."
+        mkdir -p ~/.azure
+        cat > ~/.azure/osServicePrincipal.json <<EOF
+{
+  "subscriptionId": "$AZURE_SUBSCRIPTION_ID",
+  "clientId": "$AZURE_CLIENT_ID",
+  "clientSecret": "$AZURE_CLIENT_SECRET",
+  "tenantId": "$AZURE_TENANT_ID"
+}
+EOF
+        chmod 600 ~/.azure/osServicePrincipal.json
+        log "✓ Created Azure credentials file at ~/.azure/osServicePrincipal.json"
+    fi
+
     log "✓ All required installer binaries are available"
 }
 
