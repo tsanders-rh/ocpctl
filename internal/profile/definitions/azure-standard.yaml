@@ -69,6 +69,7 @@ costControls:
 platformConfig:
   azure:
     subscriptionId: ""  # Set via environment variable AZURE_SUBSCRIPTION_ID
+    baseDomainResourceGroup: azure-mg-dog8code-com-dns  # Azure DNS zone resource group
     controlPlane:
       vmSize: Standard_D8s_v3
       osDiskSizeGB: 128

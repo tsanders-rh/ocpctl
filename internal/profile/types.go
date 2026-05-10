@@ -242,12 +242,13 @@ type GKENodePoolConfig struct {
 
 // AzureConfig contains Azure-specific settings for self-managed OpenShift
 type AzureConfig struct {
-	SubscriptionID       string              `yaml:"subscriptionId" json:"subscription_id"`
-	ResourceGroupPrefix  string              `yaml:"resourceGroupPrefix,omitempty" json:"resource_group_prefix,omitempty"`
-	Network              string              `yaml:"network,omitempty" json:"network,omitempty"`
-	Subnetwork           string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
-	ControlPlane         *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Compute              *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
+	SubscriptionID            string              `yaml:"subscriptionId" json:"subscription_id"`
+	BaseDomainResourceGroup   string              `yaml:"baseDomainResourceGroup" json:"base_domain_resource_group"`
+	ResourceGroupPrefix       string              `yaml:"resourceGroupPrefix,omitempty" json:"resource_group_prefix,omitempty"`
+	Network                   string              `yaml:"network,omitempty" json:"network,omitempty"`
+	Subnetwork                string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
+	ControlPlane              *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Compute                   *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
 }
 
 // AzureMachineConfig defines Azure VM configuration

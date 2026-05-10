@@ -62,6 +62,9 @@ type InstallConfigData struct {
 	GCPProject    string
 	GCPNetwork    string
 	GCPSubnetwork string
+
+	// Azure-specific
+	AzureBaseDomainResourceGroup string
 }
 
 // RenderInstallConfig generates an install-config.yaml file
@@ -149,6 +152,10 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		data.GCPProject = prof.PlatformConfig.GCP.Project
 		data.GCPNetwork = prof.PlatformConfig.GCP.Network
 		data.GCPSubnetwork = prof.PlatformConfig.GCP.Subnetwork
+	}
+
+	if prof.Platform == "azure" && prof.PlatformConfig.Azure != nil {
+		data.AzureBaseDomainResourceGroup = prof.PlatformConfig.Azure.BaseDomainResourceGroup
 	}
 
 	// Select appropriate template
@@ -456,7 +463,7 @@ publish: {{.PublishStrategy}}
 platform:
   azure:
     region: {{.Region}}
-    baseDomainResourceGroupName: {{.ClusterName}}-rg
+    baseDomainResourceGroupName: {{.AzureBaseDomainResourceGroup}}
 {{- if .UserTags}}
     userTags:
 {{- range $key, $value := .UserTags}}
