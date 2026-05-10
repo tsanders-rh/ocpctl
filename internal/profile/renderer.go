@@ -464,6 +464,9 @@ platform:
   azure:
     region: {{.Region}}
     baseDomainResourceGroupName: {{.AzureBaseDomainResourceGroup}}
+    defaultMachinePlatform:
+      identity:
+        type: None
 {{- if .UserTags}}
     userTags:
 {{- range $key, $value := .UserTags}}
