@@ -285,6 +285,25 @@ ensure_rosa() {
     fi
 }
 
+ensure_azure_cli() {
+    # Check if Azure CLI is installed
+    if command -v az &> /dev/null; then
+        log "✓ Azure CLI already installed"
+        return 0
+    fi
+
+    log "Installing Azure CLI..."
+
+    # Install Azure CLI using Microsoft's official script
+    if curl -sL https://aka.ms/InstallAzureCLIDeb | bash > /dev/null 2>&1; then
+        log "✓ Installed Azure CLI"
+        return 0
+    else
+        log "ERROR: Failed to install Azure CLI"
+        return 1
+    fi
+}
+
 ensure_gcloud() {
     # Check if gcloud CLI is installed
     if command -v gcloud &> /dev/null; then
@@ -473,6 +492,12 @@ main() {
     if ! ensure_rosa; then
         log "WARNING: Failed to ensure rosa CLI (non-fatal)"
         # Don't fail - only needed for ROSA clusters
+    fi
+
+    # Azure CLI (az)
+    if ! ensure_azure_cli; then
+        log "WARNING: Failed to ensure Azure CLI (non-fatal)"
+        # Don't fail - only needed for Azure clusters
     fi
 
     if [ $failed -eq 1 ]; then
