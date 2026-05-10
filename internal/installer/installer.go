@@ -285,6 +285,20 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 		}
 	}
 
+	// Ensure Azure credentials are explicitly set if present
+	// OpenShift installer for Azure uses these environment variables for authentication
+	azureEnvVars := []string{
+		"AZURE_SUBSCRIPTION_ID",
+		"AZURE_TENANT_ID",
+		"AZURE_CLIENT_ID",
+		"AZURE_CLIENT_SECRET",
+	}
+	for _, envVar := range azureEnvVars {
+		if val := os.Getenv(envVar); val != "" {
+			envVars = append(envVars, fmt.Sprintf("%s=%s", envVar, val))
+		}
+	}
+
 	cmd.Env = append(envVars,
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
 	)
@@ -377,6 +391,20 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 			)
 		} else {
 			log.Printf("Not running on EC2 or IMDS not available, using existing credential chain: %v", imdsErr)
+		}
+	}
+
+	// Ensure Azure credentials are explicitly set if present
+	// OpenShift installer for Azure uses these environment variables for authentication
+	azureEnvVars := []string{
+		"AZURE_SUBSCRIPTION_ID",
+		"AZURE_TENANT_ID",
+		"AZURE_CLIENT_ID",
+		"AZURE_CLIENT_SECRET",
+	}
+	for _, envVar := range azureEnvVars {
+		if val := os.Getenv(envVar); val != "" {
+			envVars = append(envVars, fmt.Sprintf("%s=%s", envVar, val))
 		}
 	}
 
