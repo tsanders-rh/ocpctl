@@ -160,6 +160,8 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		tmplStr = ibmCloudInstallConfigTemplate
 	case "gcp":
 		tmplStr = gcpInstallConfigTemplate
+	case "azure":
+		tmplStr = azureInstallConfigTemplate
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", prof.Platform)
 	}
@@ -430,6 +432,48 @@ compute:
   replicas: {{.WorkerReplicas}}
   platform:
     gcp:
+      type: {{.WorkerType}}
+networking:
+  networkType: {{.NetworkType}}
+  clusterNetwork:
+  - cidr: {{.ClusterCIDR}}
+    hostPrefix: {{.ClusterPrefix}}
+  serviceNetwork:
+  - {{.ServiceCIDR}}
+  machineNetwork:
+  - cidr: {{.MachineCIDR}}
+pullSecret: '{{.PullSecret}}'
+{{- if .SSHKey}}
+sshKey: '{{.SSHKey}}'
+{{- end}}
+`
+
+const azureInstallConfigTemplate = `apiVersion: v1
+baseDomain: {{.BaseDomain}}
+metadata:
+  name: {{.ClusterName}}
+publish: {{.PublishStrategy}}
+platform:
+  azure:
+    region: {{.Region}}
+    baseDomainResourceGroupName: {{.ClusterName}}-rg
+{{- if .UserTags}}
+    userTags:
+{{- range $key, $value := .UserTags}}
+      {{$key}}: {{$value}}
+{{- end}}
+{{- end}}
+controlPlane:
+  name: master
+  replicas: {{.ControlPlaneReplicas}}
+  platform:
+    azure:
+      type: {{.ControlPlaneType}}
+compute:
+- name: worker
+  replicas: {{.WorkerReplicas}}
+  platform:
+    azure:
       type: {{.WorkerType}}
 networking:
   networkType: {{.NetworkType}}
