@@ -102,10 +102,9 @@ export const createClusterSchema = z.object({
   work_days: z.array(z.string()).optional(),
 }).refine(
   (data) => {
-    // base_domain is required for OpenShift clusters on AWS, GCP, and IBM Cloud
-    // Azure manages DNS differently and doesn't require base_domain
-    if (data.cluster_type === ClusterType.OpenShift &&
-        data.platform !== Platform.Azure) {
+    // base_domain is required for OpenShift IPI clusters
+    // (not required for managed services like ROSA, ARO, AKS)
+    if (data.cluster_type === ClusterType.OpenShift) {
       return !!data.base_domain;
     }
     return true;

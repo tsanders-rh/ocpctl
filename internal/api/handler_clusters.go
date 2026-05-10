@@ -155,7 +155,8 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 	debugLog("Request validation passed")
 
-	// Custom validation: base_domain is required for OpenShift clusters
+	// Custom validation: base_domain is required for OpenShift IPI clusters
+	// (not required for managed services like ROSA, ARO)
 	if req.ClusterType == "openshift" && req.BaseDomain == "" {
 		return ErrorBadRequest(c, "base_domain is required for OpenShift clusters")
 	}

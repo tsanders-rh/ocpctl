@@ -26,6 +26,11 @@ regions:
     - westeurope
   default: eastus
 
+baseDomains:
+  allowlist:
+    - azure.mg.dog8code.com
+  default: azure.mg.dog8code.com
+
 compute:
   controlPlane:
     replicas: 3
