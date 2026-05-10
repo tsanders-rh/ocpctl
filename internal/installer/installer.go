@@ -299,6 +299,12 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 		}
 	}
 
+	// Ensure HOME is set so Azure CLI can find its authentication
+	// The Azure SDK also uses HOME to locate ~/.azure/config
+	if home := os.Getenv("HOME"); home != "" {
+		envVars = append(envVars, fmt.Sprintf("HOME=%s", home))
+	}
+
 	cmd.Env = append(envVars,
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
 	)
@@ -406,6 +412,12 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 		if val := os.Getenv(envVar); val != "" {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", envVar, val))
 		}
+	}
+
+	// Ensure HOME is set so Azure CLI can find its authentication
+	// The Azure SDK also uses HOME to locate ~/.azure/config
+	if home := os.Getenv("HOME"); home != "" {
+		envVars = append(envVars, fmt.Sprintf("HOME=%s", home))
 	}
 
 	cmd.Env = append(envVars,
