@@ -4,7 +4,7 @@ description: Standard 3-master, 3-worker OpenShift cluster on Azure VMs
 platform: azure
 clusterType: openshift
 track: ga
-enabled: true
+enabled: false
 
 openshiftVersions:
   allowlist:
