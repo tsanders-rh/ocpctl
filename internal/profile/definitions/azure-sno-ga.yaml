@@ -1,0 +1,89 @@
+name: azure-sno-ga
+displayName: Azure Single Node OpenShift
+description: Single-node OpenShift cluster on Azure (for dev/test workloads)
+platform: azure
+clusterType: openshift
+track: ga
+enabled: true
+
+openshiftVersions:
+  allowlist:
+    - "4.18"
+    - "4.19"
+    - "4.20"
+    - "4.21"
+    - "4.22"
+  default: "4.19"  # 4.20+ uses Cluster API with known port conflict issues
+
+regions:
+  allowlist:
+    - eastus
+    - eastus2
+    - westus
+    - westus2
+    - centralus
+    - northeurope
+    - westeurope
+  default: eastus2
+
+baseDomains:
+  allowlist:
+    - azure.mg.dog8code.com
+  default: azure.mg.dog8code.com
+
+compute:
+  controlPlane:
+    replicas: 1
+    instanceType: Standard_D8s_v5  # 8 vCPU, 32 GB RAM
+  workers:
+    replicas: 0  # SNO has no separate workers
+
+lifecycle:
+  maxTTLHours: 168        # 1 week max
+  defaultTTLHours: 72     # 3 days default
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 4
+
+tags:
+  required:
+    Environment: development
+  defaults:
+    Purpose: development
+    ManagedBy: ocpctl
+    ClusterType: sno
+  allowUserTags: true
+
+features:
+  offHoursScaling: true
+
+costControls:
+  estimatedHourlyCost: 0.67   # Single Standard_D8s_v5 + storage
+  maxMonthlyCost: 482         # Always-on monthly cost
+  budgetAlertThreshold: 0.8
+  warningMessage: "SNO cannot scale workers. Stop VM to reduce costs."
+
+platformConfig:
+  azure:
+    subscriptionId: ""  # Set via environment variable AZURE_SUBSCRIPTION_ID
+    baseDomainResourceGroup: azure-mg-dog8code-com-dns
+    controlPlane:
+      vmSize: Standard_D8s_v5
+      osDiskSizeGB: 128
+      osDiskType: Premium_LRS
+
+metadata:
+  capabilities:
+    - Single Node OpenShift on Azure
+    - Full OpenShift features on 1 node
+    - Hibernation via VM stop/start
+    - Cost savings up to 95% when hibernated
+  capacity:
+    nodes: "1 node (combined control plane + worker)"
+    vcpu: "8 vCPU"
+    memory: "32 GB RAM"
+  notes:
+    - "Single node: 1x Standard_D8s_v5 @ $0.672/hr"
+    - "Total: ~$0.67/hr or $482/month always-on"
+    - "Hibernated cost: ~$0.03/hr (storage only) = 95% savings"
+    - "SNO is NOT recommended for production workloads"
+    - "No high availability - single point of failure"

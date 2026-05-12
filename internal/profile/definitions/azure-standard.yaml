@@ -13,7 +13,7 @@ openshiftVersions:
     - "4.20"
     - "4.21"
     - "4.22"
-  default: "4.20"
+  default: "4.19"  # 4.20+ uses Cluster API with known port conflict issues
 
 regions:
   allowlist:
@@ -24,7 +24,7 @@ regions:
     - centralus
     - northeurope
     - westeurope
-  default: eastus
+  default: eastus2
 
 baseDomains:
   allowlist:
@@ -34,12 +34,12 @@ baseDomains:
 compute:
   controlPlane:
     replicas: 3
-    instanceType: Standard_D8s_v3  # 8 vCPU, 32 GB RAM
+    instanceType: Standard_D8s_v5  # 8 vCPU, 32 GB RAM (v5 for better availability)
   workers:
     replicas: 3
     minReplicas: 2
     maxReplicas: 20
-    instanceType: Standard_D4s_v3  # 4 vCPU, 16 GB RAM
+    instanceType: Standard_D4s_v5  # 4 vCPU, 16 GB RAM (v5 for better availability)
     autoscaling: false
 
 lifecycle:
@@ -71,11 +71,11 @@ platformConfig:
     subscriptionId: ""  # Set via environment variable AZURE_SUBSCRIPTION_ID
     baseDomainResourceGroup: azure-mg-dog8code-com-dns  # Azure DNS zone resource group
     controlPlane:
-      vmSize: Standard_D8s_v3
+      vmSize: Standard_D8s_v5
       osDiskSizeGB: 128
       osDiskType: Premium_LRS
     compute:
-      vmSize: Standard_D4s_v3
+      vmSize: Standard_D4s_v5
       osDiskSizeGB: 128
       osDiskType: Premium_LRS
 
@@ -90,7 +90,7 @@ metadata:
     vcpu: "40 vCPU total (24 master + 16 worker)"
     memory: "160 GB RAM total (96 master + 64 worker)"
   notes:
-    - "Masters: 3x Standard_D8s_v3 @ $0.672/hr = $2.02/hr"
-    - "Workers: 3x Standard_D4s_v3 @ $0.336/hr = $1.01/hr"
+    - "Masters: 3x Standard_D8s_v5 @ $0.672/hr = $2.02/hr"
+    - "Workers: 3x Standard_D4s_v5 @ $0.336/hr = $1.01/hr"
     - "Total: ~$3.50/hr or $2,520/month always-on"
     - "Hibernated cost: ~$0.30/hr (storage only) = 91% savings"

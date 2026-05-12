@@ -2480,6 +2480,27 @@ func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *
 		}, nil
 	}
 
+	// Azure clusters - kubeconfigs not available on API server (stored in S3)
+	// Return well-known Azure storage classes for OpenShift
+	if cluster.Platform == types.PlatformAzure {
+		return []StorageClass{
+			{
+				Name:              "managed-csi",
+				Provisioner:       "disk.csi.azure.com",
+				ReclaimPolicy:     "Delete",
+				VolumeBindingMode: "WaitForFirstConsumer",
+				IsDefault:         true,
+			},
+			{
+				Name:              "managed-premium",
+				Provisioner:       "kubernetes.io/azure-disk",
+				ReclaimPolicy:     "Delete",
+				VolumeBindingMode: "WaitForFirstConsumer",
+				IsDefault:         false,
+			},
+		}, nil
+	}
+
 	// Construct kubeconfig path
 	workDir := os.Getenv("WORK_DIR")
 	if workDir == "" {
