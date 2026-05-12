@@ -47,6 +47,7 @@ export default function NewClusterPage() {
   const [selectedClusterType, setSelectedClusterType] = useState<ClusterType>(ClusterType.OpenShift);
   const [selectedTrack, setSelectedTrack] = useState<string | undefined>(undefined);
   const { data: profiles } = useProfiles(selectedPlatform);
+  // Only call teams API for admins/team admins (regular users don't have access)
   const { data: teamsData } = useTeams();
   const createCluster = useCreateCluster();
   const [apiValidationErrors, setApiValidationErrors] = useState<ValidationError[]>([]);
@@ -133,7 +134,21 @@ export default function NewClusterPage() {
 
   // Filter teams based on user role
   const accessibleTeams = useMemo(() => {
-    if (!teamsData?.teams || !user) return [];
+    if (!user) return [];
+
+    // For regular users without team API access, construct teams from user.teams
+    if (!teamsData?.teams && user.role === UserRole.USER) {
+      const memberTeams = user.teams || [];
+      return memberTeams.map(teamName => ({
+        id: teamName,
+        name: teamName,
+        created_at: "",
+        updated_at: ""
+      }));
+    }
+
+    // If we don't have team data and user is admin/team admin, return empty (still loading)
+    if (!teamsData?.teams) return [];
 
     // Admins can see all teams
     if (user.role === UserRole.ADMIN) {
@@ -148,7 +163,7 @@ export default function NewClusterPage() {
       return teamsData.teams.filter(team => allAccessibleTeamNames.includes(team.name));
     }
 
-    // Regular users can only see teams they belong to
+    // Regular users can only see teams they belong to (when API data is available)
     const memberTeams = user.teams || [];
     return teamsData.teams.filter(team => memberTeams.includes(team.name));
   }, [teamsData?.teams, user]);

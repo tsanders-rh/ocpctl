@@ -300,13 +300,15 @@ func RequireAuthDual(auth *Auth, iamAuth *IAMAuthenticator) echo.MiddlewareFunc 
 
 			// Create a user object from claims
 			user := &types.User{
-				ID:       claims.UserID,
-				Email:    claims.Email,
-				Role:     types.UserRole(claims.Role),
+				ID:           claims.UserID,
+				Email:        claims.Email,
+				Role:         types.UserRole(claims.Role),
+				Teams:        claims.Teams,
+				ManagedTeams: claims.ManagedTeams,
 			}
 
-			// For team admins, load managed teams from database
-			// JWT tokens don't contain team memberships, so we query for real-time accuracy
+			// For team admins, optionally refresh managed teams from database for real-time accuracy
+			// JWT tokens contain teams/managed_teams, but we can load fresh data if needed
 			if user.Role == types.RoleTeamAdmin {
 				storeVal := c.Get("store")
 				if storeVal != nil {

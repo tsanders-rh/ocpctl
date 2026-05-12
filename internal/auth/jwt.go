@@ -12,9 +12,11 @@ import (
 
 // Claims represents JWT claims with custom fields
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID       string   `json:"user_id"`
+	Email        string   `json:"email"`
+	Role         string   `json:"role"`
+	Teams        []string `json:"teams,omitempty"`         // Teams user belongs to
+	ManagedTeams []string `json:"managed_teams,omitempty"` // Teams user can administer (TEAM_ADMIN)
 	jwt.RegisteredClaims
 }
 
@@ -38,9 +40,11 @@ func NewAuth(jwtSecret string, accessTTL, refreshTTL time.Duration) *Auth {
 func (a *Auth) GenerateAccessToken(user *types.User) (string, error) {
 	now := time.Now()
 	claims := &Claims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   string(user.Role),
+		UserID:       user.ID,
+		Email:        user.Email,
+		Role:         string(user.Role),
+		Teams:        user.Teams,
+		ManagedTeams: user.ManagedTeams,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(a.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
