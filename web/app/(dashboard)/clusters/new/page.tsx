@@ -93,10 +93,16 @@ export default function NewClusterPage() {
     const filteredProfiles = profiles?.filter((p) => {
       // Filter by cluster type
       let clusterTypeMatch = false;
-      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-)
-      // but exclude ROSA profiles (aws-rosa-)
+      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-, azure-)
+      // but exclude managed service profiles (ROSA, ARO, AKS, EKS, IKS, GKE)
       if (selectedClusterType === ClusterType.OpenShift) {
-        clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`) && !p.name.startsWith(`${selectedPlatform}-rosa-`);
+        clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`) &&
+          !p.name.startsWith(`${selectedPlatform}-rosa-`) &&
+          !p.name.startsWith(`${selectedPlatform}-aro-`) &&
+          !p.name.startsWith(`${selectedPlatform}-aks-`) &&
+          !p.name.startsWith(`${selectedPlatform}-eks-`) &&
+          !p.name.startsWith(`${selectedPlatform}-iks-`) &&
+          !p.name.startsWith(`${selectedPlatform}-gke-`);
       }
       // For ROSA clusters, show profiles that start with aws-rosa-
       else if (selectedClusterType === ClusterType.ROSA) {
