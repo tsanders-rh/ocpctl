@@ -68,8 +68,57 @@ func (a *AROInstaller) VerifyAuthentication(ctx context.Context) error {
 	return nil
 }
 
+// CreateVNet creates an Azure Virtual Network for ARO
+func (a *AROInstaller) CreateVNet(ctx context.Context, resourceGroup, vnetName, region string) error {
+	args := []string{
+		"network", "vnet", "create",
+		"--resource-group", resourceGroup,
+		"--name", vnetName,
+		"--location", region,
+		"--address-prefixes", "10.0.0.0/16",
+	}
+
+	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("create vnet: %w: %s", err, stderr.String())
+	}
+
+	return nil
+}
+
+// CreateSubnet creates a subnet within a VNet
+func (a *AROInstaller) CreateSubnet(ctx context.Context, resourceGroup, vnetName, subnetName, addressPrefix string, serviceEndpoints bool) error {
+	args := []string{
+		"network", "vnet", "subnet", "create",
+		"--resource-group", resourceGroup,
+		"--vnet-name", vnetName,
+		"--name", subnetName,
+		"--address-prefixes", addressPrefix,
+	}
+
+	// ARO master and worker subnets need service endpoints
+	if serviceEndpoints {
+		args = append(args, "--service-endpoints", "Microsoft.ContainerRegistry")
+	}
+
+	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("create subnet %s: %w: %s", subnetName, err, stderr.String())
+	}
+
+	return nil
+}
+
 // CreateCluster creates an ARO cluster using az aro create
-func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConfig, logFile string) (string, error) {
+func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConfig, logFile string, vnetName, masterSubnetName, workerSubnetName string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 
@@ -78,6 +127,9 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 		"aro", "create",
 		"--resource-group", config.ResourceGroup,
 		"--name", config.Name,
+		"--vnet", vnetName,
+		"--master-subnet", masterSubnetName,
+		"--worker-subnet", workerSubnetName,
 		"--master-vm-size", config.MasterVMSize,
 		"--worker-vm-size", config.WorkerVMSize,
 		"--worker-count", fmt.Sprintf("%d", config.WorkerCount),

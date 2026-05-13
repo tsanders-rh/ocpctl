@@ -71,6 +71,29 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("create resource group: %w", err)
 	}
 
+	// Generate VNet and subnet names
+	vnetName := fmt.Sprintf("%s-vnet", cluster.Name)
+	masterSubnetName := "master-subnet"
+	workerSubnetName := "worker-subnet"
+
+	// Create VNet
+	log.Printf("[JOB %s] Creating VNet: %s", job.ID, vnetName)
+	if err := aroInstaller.CreateVNet(ctx, resourceGroup, vnetName, cluster.Region); err != nil {
+		return fmt.Errorf("create vnet: %w", err)
+	}
+
+	// Create master subnet (10.0.0.0/23 = 512 IPs)
+	log.Printf("[JOB %s] Creating master subnet", job.ID)
+	if err := aroInstaller.CreateSubnet(ctx, resourceGroup, vnetName, masterSubnetName, "10.0.0.0/23", true); err != nil {
+		return fmt.Errorf("create master subnet: %w", err)
+	}
+
+	// Create worker subnet (10.0.2.0/23 = 512 IPs)
+	log.Printf("[JOB %s] Creating worker subnet", job.ID)
+	if err := aroInstaller.CreateSubnet(ctx, resourceGroup, vnetName, workerSubnetName, "10.0.2.0/23", true); err != nil {
+		return fmt.Errorf("create worker subnet: %w", err)
+	}
+
 	// Build ARO cluster config
 	clusterConfig := &installer.AROClusterConfig{
 		Name:             cluster.Name,
@@ -98,7 +121,7 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 
 	// Create ARO cluster
 	log.Printf("[JOB %s] Creating ARO cluster (this will take 30-40 minutes)", job.ID)
-	output, err := aroInstaller.CreateCluster(ctx, clusterConfig, logFilePath)
+	output, err := aroInstaller.CreateCluster(ctx, clusterConfig, logFilePath, vnetName, masterSubnetName, workerSubnetName)
 	if err != nil {
 		// Stop log streaming
 		streamCancel()
