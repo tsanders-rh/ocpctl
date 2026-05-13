@@ -9,7 +9,7 @@ ALTER TABLE clusters DROP CONSTRAINT IF EXISTS clusters_platform_check;
 ALTER TABLE clusters ADD CONSTRAINT clusters_platform_check
   CHECK (platform IN ('aws', 'ibmcloud', 'gcp', 'azure'));
 
--- Note: cluster_type constraint doesn't exist, so 'aro' and 'aks' types are already supported
+-- Note: cluster_type enum values ('aro' and 'aks') will be added in migration 00048
 
 -- +goose Down
 -- Revert to previous constraint (only for rollback scenarios)
