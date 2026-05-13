@@ -1,8 +1,8 @@
 # ocpctl
 
-**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, ROSA, EKS, IKS, and GKE.**
+**Self-service Kubernetes cluster provisioning and lifecycle management for OpenShift, ROSA, EKS, IKS, GKE, ARO, and AKS.**
 
-ocpctl is a production-ready platform that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters on AWS, Google Cloud Platform (GCP), and IBM Cloud with automated cost controls, comprehensive security, and enterprise-grade operations.
+ocpctl is a production-ready platform that provides a standardized workflow for requesting, managing, and terminating ephemeral Kubernetes clusters on AWS, Google Cloud Platform (GCP), IBM Cloud, and Microsoft Azure with automated cost controls, comprehensive security, and enterprise-grade operations.
 
 ---
 
@@ -19,7 +19,7 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 - **Automatic cost controls** - TTL-based destruction, work hours hibernation, and comprehensive resource tagging
 - **Reliable cleanup** - Preserves installer state for deterministic teardown and detects orphaned resources
 - **Enterprise security** - Dual authentication (JWT/IAM), rate limiting, audit logging, and RBAC
-- **Multi-platform** - OpenShift, AWS EKS, and IBM Cloud IKS with standardized profiles
+- **Multi-platform** - OpenShift, ROSA, ARO, EKS, AKS, GKE, and IKS across AWS, Azure, GCP, and IBM Cloud
 
 ---
 
@@ -28,16 +28,18 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 ### Platform Support
 - ✅ **OpenShift 4.x** (AWS, GCP, IBM Cloud) - Full lifecycle including hibernation
 - ✅ **ROSA (Red Hat OpenShift Service on AWS)** - Fully-managed OpenShift with AWS-managed control plane
+- ✅ **ARO (Azure Red Hat OpenShift)** - Managed OpenShift on Microsoft Azure
 - ✅ **Google Kubernetes Engine (GKE)** - Managed Kubernetes on Google Cloud
 - ✅ **AWS EKS** - Elastic Kubernetes Service with VPC management
+- ✅ **Azure AKS** - Azure Kubernetes Service with auto-scaling node pools
 - ✅ **IBM Cloud IKS** - IBM Kubernetes Service
-- ✅ **Multi-version support** - OpenShift 4.18 - 4.22+, Kubernetes 1.30 - 1.35
+- ✅ **Multi-version support** - OpenShift 4.16 - 4.22+, Kubernetes 1.30 - 1.35
 
 ### Cost Management
 - **Automatic TTL-based destruction** - Clusters self-destruct after configured lifetime
-- **Work hours hibernation** - Stop instances outside business hours (OpenShift, ROSA worker scaling, GKE auto-scaling)
+- **Work hours hibernation** - Stop instances outside business hours (OpenShift, ROSA/ARO worker scaling, GKE/AKS auto-scaling)
 - **Comprehensive resource tagging** - Track costs by owner, team, cost center, and cluster
-- **Orphaned resource detection** - Identify and clean up resources from failed deployments (AWS, GCP)
+- **Orphaned resource detection** - Identify and clean up resources from failed deployments (AWS, GCP, Azure)
 - **Cloud billing integration** - GCP BigQuery billing export for accurate cost tracking
 
 ### Security & Compliance
@@ -71,11 +73,11 @@ Prerequisites → Choose Method → Deploy → Verify
 👉 **[Complete Prerequisites Guide](docs/deployment/PREREQUISITES.md)**
 
 Quick checklist:
-- ✅ AWS account with appropriate permissions
-- ✅ Route53 hosted zone for cluster domains
-- ✅ OpenShift pull secret from Red Hat
-- ✅ AWS CLI, Git, and build tools installed
-- ✅ ~$150-500/month budget (varies by usage)
+- ✅ Cloud account with appropriate permissions (AWS, GCP, IBM Cloud, or Azure)
+- ✅ Route53 hosted zone for cluster domains (AWS OpenShift)
+- ✅ OpenShift pull secret from Red Hat (for OpenShift/ROSA/ARO clusters)
+- ✅ Cloud CLI tools installed (aws-cli, gcloud, ibmcloud, or azure-cli)
+- ✅ ~$150-500/month budget (varies by usage and platform)
 
 ### 🚀 Step 2: Choose Deployment Method
 
@@ -240,7 +242,7 @@ TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
 curl -X GET https://api.ocpctl.mg.dog8code.com/v1/clusters \
   -H "Authorization: Bearer $TOKEN"
 
-# Create cluster
+# Create AWS OpenShift cluster
 curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
@@ -251,6 +253,22 @@ curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
     "version": "4.22.0",
     "profile": "aws-sno-test",
     "region": "us-west-2",
+    "owner": "user@example.com",
+    "team": "engineering",
+    "cost_center": "dev-ops"
+  }'
+
+# Create Azure ARO cluster
+curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-aro-cluster",
+    "platform": "azure",
+    "cluster_type": "aro",
+    "version": "4.20.15",
+    "profile": "azure-aro-standard",
+    "region": "eastus",
     "owner": "user@example.com",
     "team": "engineering",
     "cost_center": "dev-ops"
@@ -267,9 +285,14 @@ See [API Documentation](docs/deployment/API_SUBDOMAIN_SETUP.md) for complete end
 
 ### Latest Release
 
-**Version:** v0.20260507.a07a92c (May 7, 2026)
+**Version:** v0.20260512.7618038 (May 12, 2026)
 
 **Recent Updates:**
+- ✅ **Azure Platform Support** - ARO (Azure Red Hat OpenShift) and AKS (Azure Kubernetes Service) now supported
+  - Automated VNet and subnet creation for ARO clusters
+  - Auto-scaling node pools for AKS
+  - Hibernation via MachineSet/NodePool scaling
+  - Full version support (ARO: 4.16-4.20, AKS: K8s 1.31-1.35)
 - ✅ **ROSA Support** - Full lifecycle management for Red Hat OpenShift Service on AWS
 - ✅ ROSA credentials fix - Automatic credential capture with retry logic
 - ✅ Password visibility toggle - Eye icon to show/hide cluster credentials in UI
