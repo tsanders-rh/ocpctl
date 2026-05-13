@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -41,16 +42,26 @@ func (h *DestroyHandler) handleARODestroy(ctx context.Context, job *types.Job, c
 	log.Printf("[JOB %s] Deleting ARO cluster from resource group: %s", job.ID, resourceGroup)
 	output, err := aroInstaller.DestroyCluster(ctx, resourceGroup, cluster.Name)
 	if err != nil {
-		log.Printf("[JOB %s] ARO cluster deletion failed: %v", job.ID, err)
-		log.Printf("[JOB %s] Output: %s", job.ID, output)
-		return fmt.Errorf("destroy ARO cluster: %w", err)
+		// Check if resource group doesn't exist - this means cluster is already gone
+		if isResourceNotFoundError(output) {
+			log.Printf("[JOB %s] Resource group not found, cluster already destroyed", job.ID)
+		} else {
+			log.Printf("[JOB %s] ARO cluster deletion failed: %v", job.ID, err)
+			log.Printf("[JOB %s] Output: %s", job.ID, output)
+			return fmt.Errorf("destroy ARO cluster: %w", err)
+		}
 	}
 
 	// Delete resource group (this removes all associated resources)
 	log.Printf("[JOB %s] Deleting resource group: %s", job.ID, resourceGroup)
 	if err := aroInstaller.DeleteResourceGroup(ctx, resourceGroup); err != nil {
-		log.Printf("[JOB %s] Resource group deletion failed: %v", job.ID, err)
-		return fmt.Errorf("delete resource group: %w", err)
+		// Check if resource group doesn't exist - this means it's already gone
+		if isResourceNotFoundError(err.Error()) {
+			log.Printf("[JOB %s] Resource group not found, already deleted", job.ID)
+		} else {
+			log.Printf("[JOB %s] Resource group deletion failed: %v", job.ID, err)
+			return fmt.Errorf("delete resource group: %w", err)
+		}
 	}
 
 	// Update cluster status to DESTROYED
@@ -95,16 +106,26 @@ func (h *DestroyHandler) handleAKSDestroy(ctx context.Context, job *types.Job, c
 	log.Printf("[JOB %s] Deleting AKS cluster from resource group: %s", job.ID, resourceGroup)
 	output, err := aksInstaller.DestroyCluster(ctx, resourceGroup, cluster.Name)
 	if err != nil {
-		log.Printf("[JOB %s] AKS cluster deletion failed: %v", job.ID, err)
-		log.Printf("[JOB %s] Output: %s", job.ID, output)
-		return fmt.Errorf("destroy AKS cluster: %w", err)
+		// Check if resource group doesn't exist - this means cluster is already gone
+		if isResourceNotFoundError(output) {
+			log.Printf("[JOB %s] Resource group not found, cluster already destroyed", job.ID)
+		} else {
+			log.Printf("[JOB %s] AKS cluster deletion failed: %v", job.ID, err)
+			log.Printf("[JOB %s] Output: %s", job.ID, output)
+			return fmt.Errorf("destroy AKS cluster: %w", err)
+		}
 	}
 
 	// Delete resource group
 	log.Printf("[JOB %s] Deleting resource group: %s", job.ID, resourceGroup)
 	if err := aroInstaller.DeleteResourceGroup(ctx, resourceGroup); err != nil {
-		log.Printf("[JOB %s] Resource group deletion failed: %v", job.ID, err)
-		return fmt.Errorf("delete resource group: %w", err)
+		// Check if resource group doesn't exist - this means it's already gone
+		if isResourceNotFoundError(err.Error()) {
+			log.Printf("[JOB %s] Resource group not found, already deleted", job.ID)
+		} else {
+			log.Printf("[JOB %s] Resource group deletion failed: %v", job.ID, err)
+			return fmt.Errorf("delete resource group: %w", err)
+		}
 	}
 
 	// Update cluster status to DESTROYED
@@ -114,4 +135,12 @@ func (h *DestroyHandler) handleAKSDestroy(ctx context.Context, job *types.Job, c
 
 	log.Printf("[JOB %s] AKS cluster destruction completed successfully", job.ID)
 	return nil
+}
+
+// isResourceNotFoundError checks if an Azure error indicates a resource doesn't exist
+// This is used to treat missing resources as already deleted (idempotent destroy)
+func isResourceNotFoundError(errMsg string) bool {
+	return strings.Contains(errMsg, "ResourceGroupNotFound") ||
+		strings.Contains(errMsg, "ResourceNotFound") ||
+		strings.Contains(errMsg, "could not be found")
 }
