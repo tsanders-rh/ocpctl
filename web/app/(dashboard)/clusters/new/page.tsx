@@ -91,6 +91,11 @@ export default function NewClusterPage() {
   // Filter profiles by platform, cluster type, and track, then sort alphabetically
   const sortedProfiles = useMemo(() => {
     const filteredProfiles = profiles?.filter((p) => {
+      // Filter by enabled status
+      if (!p.enabled) {
+        return false;
+      }
+
       // Filter by cluster type
       let clusterTypeMatch = false;
       // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-, azure-)

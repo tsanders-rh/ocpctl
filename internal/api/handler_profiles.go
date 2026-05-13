@@ -115,6 +115,15 @@ func (h *ProfileHandler) List(c echo.Context) error {
 		profiles = h.registry.List()
 	}
 
+	// Filter out disabled profiles
+	var enabledProfiles []*profile.Profile
+	for _, p := range profiles {
+		if p.Enabled {
+			enabledProfiles = append(enabledProfiles, p)
+		}
+	}
+	profiles = enabledProfiles
+
 	// Apply track filter if specified
 	if trackParam != "" {
 		// Validate track
