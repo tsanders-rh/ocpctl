@@ -297,7 +297,7 @@ func (a *AROInstaller) DeleteResourceGroup(ctx context.Context, name string) err
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("delete resource group: %w", err)
+		return fmt.Errorf("delete resource group: %w: %s", err, stderr.String())
 	}
 
 	return nil
