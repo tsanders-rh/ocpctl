@@ -547,7 +547,7 @@ export default function NewClusterPage() {
               {selectedProfile && (selectedProfile.openshift_versions?.allowed || selectedProfile.kubernetes_versions?.allowed) && (
                 <div className="space-y-2">
                   <Label htmlFor="version">
-                    {(watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa") ? "OpenShift Version" : "Kubernetes Version"}
+                    {(watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa" || watchedValues.cluster_type === "aro") ? "OpenShift Version" : "Kubernetes Version"}
                   </Label>
                   <Select
                     value={watchedValues.version || ""}
@@ -557,7 +557,7 @@ export default function NewClusterPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {((watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa")
+                      {((watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa" || watchedValues.cluster_type === "aro")
                         ? selectedProfile.openshift_versions?.allowed
                         : selectedProfile.kubernetes_versions?.allowed
                       )?.map((version) => (
