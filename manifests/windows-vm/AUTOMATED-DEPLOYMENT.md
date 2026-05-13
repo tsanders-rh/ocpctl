@@ -35,7 +35,7 @@ The `auto-setup-irsa.sh` script runs automatically and:
    - ServiceAccount: `windows-image-importer` (with IAM role annotation)
    - DataVolume: `windows` (downloads from S3)
    - DataSource: `windows` (for VM cloning)
-   - Template: `windows10-template` (for creating VMs)
+   - Template: `windows10-oadp-vm` (for creating VMs)
 
 3. **Starts Windows Image Download**
    - Source: `s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2`
@@ -75,19 +75,21 @@ oc get datavolume windows -n openshift-virtualization-os-images -w
 Once the cluster is ready and the DataVolume shows "Succeeded":
 
 ```bash
-# Create a Windows VM
-oc process windows10-template \
+# Recommended: use the launch script
+./5_launch_vm.sh my-windows-vm
+
+# Or manually:
+oc process windows10-oadp-vm \
   -n openshift-virtualization-os-images \
   -p VM_NAME=my-windows-vm \
-  -p VM_NAMESPACE=default \
+  -p VM_NAMESPACE=windows-oadp-test \
   | oc apply -f -
 
 # Start the VM
-oc patch vm my-windows-vm -n default --type merge \
-  -p '{"spec":{"running":true}}'
+virtctl start my-windows-vm -n windows-oadp-test
 
 # Connect to the VM console
-virtctl console my-windows-vm -n default
+virtctl console my-windows-vm -n windows-oadp-test
 ```
 
 ## What Gets Created
@@ -107,7 +109,7 @@ virtctl console my-windows-vm -n default
   - 70Gi PVC (23GB actual image size)
 - **DataSource**: `windows`
   - Reference for cloning VMs
-- **Template**: `windows10-template`
+- **Template**: `windows10-oadp-vm`
   - Pre-configured Windows 10 VM template
   - 4 vCPUs, 8GB RAM
 
@@ -140,15 +142,29 @@ The IAM role has minimal permissions:
 
 ## Troubleshooting
 
-### DataVolume Stuck in Pending
+### DataVolume Stuck in Pending or Importer Pod Unschedulable
+
+The most common cause is a StorageClass incompatibility: CDI needs an `Immediate`-binding StorageClass
+and both the main PVC and scratch PVC must land in the same AZ. Use `2_setup-storageclass.sh` to fix:
 
 ```bash
-# Check importer pod
-oc get pods -n openshift-virtualization-os-images
+# Auto-detect and apply the correct StorageClass, then re-apply the DataVolume
+cd manifests/windows-vm
+./2_setup-storageclass.sh --watch
+
+# Preview what it will do without changing anything
+./2_setup-storageclass.sh --dry-run
+```
+
+For deeper inspection:
+
+```bash
+# Check importer pod scheduling events
+oc describe pod -n openshift-virtualization-os-images \
+  $(oc get pods -n openshift-virtualization-os-images -o name | grep importer)
 
 # Check pod logs
-oc logs -f $(oc get pods -n openshift-virtualization-os-images \
-  -l cdi.kubevirt.io/dataVolume=windows -o name)
+oc logs -f -n openshift-virtualization-os-images -l app=containerized-data-importer
 
 # Check events
 oc get events -n openshift-virtualization-os-images --sort-by='.lastTimestamp'
@@ -227,7 +243,7 @@ oc login <your-cluster>
 ./get-cluster-info.sh
 ./setup-irsa.sh <infraID> <region>
 oc apply -f 1a_windows-image-serviceaccount.yaml
-oc apply -f 2_windows-datavolume-irsa.yaml
+./2_setup-storageclass.sh   # handles StorageClass + DataVolume apply
 oc apply -f 3_datasource-windows.yaml
 oc apply -f 4_windows10-template.yaml
 ```
