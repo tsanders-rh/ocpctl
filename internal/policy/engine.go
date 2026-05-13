@@ -141,10 +141,12 @@ func (e *Engine) validateRegion(req *CreateClusterRequest, prof *profile.Profile
 
 // validateBaseDomain checks base domain is in profile allowlist
 func (e *Engine) validateBaseDomain(req *CreateClusterRequest, prof *profile.Profile, result *ValidationResult) {
-	// Base domain is only required for OpenShift clusters
-	// EKS, IKS, GKE, and ROSA clusters don't use base domain
-	// ROSA uses AWS-managed DNS
-	if req.ClusterType == "eks" || req.ClusterType == "iks" || req.ClusterType == "gke" || req.ClusterType == "rosa" {
+	// Base domain is only required for self-managed OpenShift IPI clusters
+	// Managed services don't use base domain (cloud provider manages DNS):
+	// - ROSA uses AWS-managed DNS
+	// - ARO uses Azure-managed DNS
+	// - EKS, IKS, GKE, AKS are managed Kubernetes (no base domain)
+	if req.ClusterType == "eks" || req.ClusterType == "iks" || req.ClusterType == "gke" || req.ClusterType == "rosa" || req.ClusterType == "aro" || req.ClusterType == "aks" {
 		return
 	}
 
