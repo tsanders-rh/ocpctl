@@ -52,7 +52,7 @@ func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, c
 		{
 			LocalPath: filepath.Join(workDir, "auth", "kubeadmin-password"),
 			S3Key:     fmt.Sprintf("clusters/%s/artifacts/auth/kubeadmin-password", clusterID),
-			Required:  true,
+			Required:  false, // Only exists for OpenShift IPI clusters
 		},
 
 		// Metadata
@@ -73,7 +73,7 @@ func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, c
 		{
 			LocalPath: filepath.Join(workDir, ".openshift_install_state.json"),
 			S3Key:     fmt.Sprintf("clusters/%s/artifacts/openshift_install_state.json", clusterID),
-			Required:  true,
+			Required:  false, // Only exists for OpenShift IPI clusters
 		},
 
 		// Install config backup
