@@ -782,6 +782,10 @@ func (w *Worker) cleanupPartialDeployment(ctx context.Context, job *types.Job) {
 		w.cleanupEKSDeployment(ctx, job, cluster, workDir)
 	case types.ClusterTypeIKS:
 		w.cleanupIKSDeployment(ctx, job, cluster, workDir)
+	case types.ClusterTypeARO:
+		w.cleanupARODeployment(ctx, job, cluster, workDir)
+	case types.ClusterTypeAKS:
+		w.cleanupAKSDeployment(ctx, job, cluster, workDir)
 	default:
 		log.Printf("Unknown cluster type %s, skipping cleanup", cluster.ClusterType)
 	}
@@ -853,6 +857,97 @@ func (w *Worker) cleanupIKSDeployment(ctx context.Context, job *types.Job, clust
 		log.Printf("Warning: IKS cluster destroy failed for job %s: %v\nOutput: %s", job.ID, err, output)
 	} else {
 		log.Printf("Successfully cleaned up IKS deployment for job %s", job.ID)
+	}
+}
+
+// cleanupARODeployment cleans up partial ARO deployment
+func (w *Worker) cleanupARODeployment(ctx context.Context, job *types.Job, cluster *types.Cluster, workDir string) {
+	log.Printf("Cleaning up partial ARO deployment for cluster %s in region %s", cluster.Name, cluster.Region)
+
+	aroInstaller := installer.NewAROInstaller()
+
+	// Load metadata to get resource group name
+	metadata, err := aroInstaller.LoadMetadata(workDir)
+	if err != nil {
+		// If metadata not available, construct resource group name from cluster name
+		log.Printf("Warning: failed to load metadata, constructing resource group name")
+		metadata = map[string]string{
+			"resource_group": fmt.Sprintf("ocpctl-%s-rg", cluster.Name),
+		}
+	}
+
+	resourceGroup := metadata["resource_group"]
+
+	// Try to delete ARO cluster
+	log.Printf("Attempting to delete ARO cluster from resource group: %s", resourceGroup)
+	output, err := aroInstaller.DestroyCluster(ctx, resourceGroup, cluster.Name)
+	if err != nil {
+		// Check if resource not found - this means cluster doesn't exist
+		if isResourceNotFoundError(output) {
+			log.Printf("ARO cluster not found, already cleaned up")
+		} else {
+			log.Printf("Warning: ARO cluster delete failed for job %s: %v\nOutput: %s", job.ID, err, output)
+		}
+	} else {
+		log.Printf("Successfully deleted ARO cluster for job %s", job.ID)
+	}
+
+	// Try to delete resource group
+	log.Printf("Attempting to delete resource group: %s", resourceGroup)
+	if err := aroInstaller.DeleteResourceGroup(ctx, resourceGroup); err != nil {
+		if isResourceNotFoundError(err.Error()) {
+			log.Printf("Resource group not found, already cleaned up")
+		} else {
+			log.Printf("Warning: Resource group delete failed for job %s: %v", job.ID, err)
+		}
+	} else {
+		log.Printf("Successfully deleted resource group for job %s", job.ID)
+	}
+}
+
+// cleanupAKSDeployment cleans up partial AKS deployment
+func (w *Worker) cleanupAKSDeployment(ctx context.Context, job *types.Job, cluster *types.Cluster, workDir string) {
+	log.Printf("Cleaning up partial AKS deployment for cluster %s in region %s", cluster.Name, cluster.Region)
+
+	aksInstaller := installer.NewAKSInstaller()
+	aroInstaller := installer.NewAROInstaller()
+
+	// Load metadata to get resource group name
+	metadata, err := aroInstaller.LoadMetadata(workDir)
+	if err != nil {
+		// If metadata not available, construct resource group name from cluster name
+		log.Printf("Warning: failed to load metadata, constructing resource group name")
+		metadata = map[string]string{
+			"resource_group": fmt.Sprintf("ocpctl-%s-rg", cluster.Name),
+		}
+	}
+
+	resourceGroup := metadata["resource_group"]
+
+	// Try to delete AKS cluster
+	log.Printf("Attempting to delete AKS cluster from resource group: %s", resourceGroup)
+	output, err := aksInstaller.DestroyCluster(ctx, resourceGroup, cluster.Name)
+	if err != nil {
+		// Check if resource not found - this means cluster doesn't exist
+		if isResourceNotFoundError(output) {
+			log.Printf("AKS cluster not found, already cleaned up")
+		} else {
+			log.Printf("Warning: AKS cluster delete failed for job %s: %v\nOutput: %s", job.ID, err, output)
+		}
+	} else {
+		log.Printf("Successfully deleted AKS cluster for job %s", job.ID)
+	}
+
+	// Try to delete resource group
+	log.Printf("Attempting to delete resource group: %s", resourceGroup)
+	if err := aroInstaller.DeleteResourceGroup(ctx, resourceGroup); err != nil {
+		if isResourceNotFoundError(err.Error()) {
+			log.Printf("Resource group not found, already cleaned up")
+		} else {
+			log.Printf("Warning: Resource group delete failed for job %s: %v", job.ID, err)
+		}
+	} else {
+		log.Printf("Successfully deleted resource group for job %s", job.ID)
 	}
 }
 
