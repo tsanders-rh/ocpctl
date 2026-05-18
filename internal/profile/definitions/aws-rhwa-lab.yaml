@@ -2,6 +2,7 @@ name: aws-rhwa-lab
 displayName: AWS RHWA Lab
 description: Compact 3-node cluster for RHWA/Medik8s node remediation testing. Control plane is schedulable with manual credentials for full AWS access required by failure injection scenarios.
 platform: aws
+clusterType: openshift
 track: ga
 enabled: true
 credentialsMode: Manual

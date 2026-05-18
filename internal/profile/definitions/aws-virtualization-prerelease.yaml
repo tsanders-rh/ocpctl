@@ -2,6 +2,7 @@ name: aws-virtualization-prerelease
 displayName: AWS OpenShift Virtualization
 description: Cluster optimized for OpenShift Virtualization pre-release testing with bare metal instances supporting nested virtualization
 platform: aws
+clusterType: openshift
 track: prerelease
 enabled: true
 credentialsMode: Mint

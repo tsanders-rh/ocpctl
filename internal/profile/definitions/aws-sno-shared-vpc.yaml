@@ -2,6 +2,7 @@ name: aws-sno-shared-vpc
 displayName: AWS Single Node OpenShift (Shared VPC Template)
 description: Template for deploying SNO clusters in a persistent shared VPC. Copy and customize with your VPC subnets.
 platform: aws
+clusterType: openshift
 enabled: false  # This is a template - copy and customize to enable
 
 openshiftVersions:

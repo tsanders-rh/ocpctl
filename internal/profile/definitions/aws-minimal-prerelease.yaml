@@ -2,6 +2,7 @@ name: aws-minimal-prerelease
 displayName: AWS Minimal
 description: Compact 3-node cluster for pre-release testing (EC, RC, nightly builds)
 platform: aws
+clusterType: openshift
 track: prerelease
 enabled: true
 credentialsMode: Mint

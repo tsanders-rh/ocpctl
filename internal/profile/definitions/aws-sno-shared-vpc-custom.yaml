@@ -2,6 +2,7 @@ name: aws-sno-shared
 displayName: AWS Single Node OpenShift (SNO) Shared VPC
 description: SNO clusters in persistent shared VPC for migration testing
 platform: aws
+clusterType: openshift
 enabled: true
 
 openshiftVersions:

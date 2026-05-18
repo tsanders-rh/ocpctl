@@ -2,6 +2,7 @@ name: aws-virtualization-ga
 displayName: AWS OpenShift Virtualization
 description: Cluster optimized for OpenShift Virtualization with bare metal instances supporting nested virtualization
 platform: aws
+clusterType: openshift
 track: ga
 enabled: true
 credentialsMode: Manual

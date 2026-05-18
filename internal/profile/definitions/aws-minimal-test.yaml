@@ -2,6 +2,7 @@ name: aws-minimal-test
 displayName: AWS Minimal Test Cluster
 description: Compact 3-node cluster for quick testing (masters schedulable, no workers)
 platform: aws
+clusterType: openshift
 enabled: true
 
 openshiftVersions:

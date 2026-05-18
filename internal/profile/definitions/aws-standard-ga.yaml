@@ -2,6 +2,7 @@ name: aws-standard-ga
 displayName: AWS Standard
 description: Standard 6-node cluster with dedicated workers for development and integration testing
 platform: aws
+clusterType: openshift
 track: ga
 enabled: true
 credentialsMode: Auto
