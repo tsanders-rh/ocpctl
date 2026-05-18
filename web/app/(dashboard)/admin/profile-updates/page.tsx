@@ -87,16 +87,21 @@ export default function ProfileUpdatesPage() {
   const [searchFilter, setSearchFilter] = useState('')
   const [clusterTypeFilter, setClusterTypeFilter] = useState<string>('all')
   const [showOnlyWithUpdates, setShowOnlyWithUpdates] = useState(true)
+  const [includeRCVersions, setIncludeRCVersions] = useState(false)
 
   // Fetch version check data
   const { data, isLoading, refetch } = useQuery<CheckVersionsResponse>({
-    queryKey: ['admin', 'profile-updates'],
+    queryKey: ['admin', 'profile-updates', includeRCVersions],
     queryFn: async () => {
       const token = useAuthStore.getState().accessToken
       if (!token) {
         throw new Error('Not authenticated')
       }
-      const response = await fetch('/api/v1/admin/profiles/version-check', {
+      const url = new URL('/api/v1/admin/profiles/version-check', window.location.origin)
+      if (includeRCVersions) {
+        url.searchParams.set('includeRC', 'true')
+      }
+      const response = await fetch(url.toString(), {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -504,18 +509,33 @@ export default function ProfileUpdatesPage() {
             {/* Show Only With Updates */}
             <div className="space-y-2">
               <Label htmlFor="updates-only">Display Options</Label>
-              <div className="flex items-center space-x-2 h-10">
-                <Checkbox
-                  id="updates-only"
-                  checked={showOnlyWithUpdates}
-                  onCheckedChange={(checked) => setShowOnlyWithUpdates(checked as boolean)}
-                />
-                <label
-                  htmlFor="updates-only"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  Show only profiles with updates
-                </label>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="updates-only"
+                    checked={showOnlyWithUpdates}
+                    onCheckedChange={(checked) => setShowOnlyWithUpdates(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="updates-only"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Show only profiles with updates
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="include-rc"
+                    checked={includeRCVersions}
+                    onCheckedChange={(checked) => setIncludeRCVersions(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="include-rc"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Include release candidate versions
+                  </label>
+                </div>
               </div>
             </div>
           </div>

@@ -56,7 +56,7 @@ func NewVersionChecker() *VersionChecker {
 }
 
 // CheckProfileUpdates checks if a profile has available version updates
-func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile) (*ProfileVersionStatus, error) {
+func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile, includeRC bool) (*ProfileVersionStatus, error) {
 	status := &ProfileVersionStatus{
 		ProfileName:       prof.Name,
 		CurrentVersions:   []string{},
@@ -82,7 +82,7 @@ func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile
 	switch prof.ClusterType {
 	case types.ClusterTypeOpenShift:
 		// Get OpenShift versions
-		availableVersions, err = vc.GetOpenShiftVersions(ctx)
+		availableVersions, err = vc.GetOpenShiftVersions(ctx, includeRC)
 		if err != nil {
 			// Return status with current versions populated, but log error
 			fmt.Printf("Warning: failed to get OpenShift versions for %s: %v\n", prof.Name, err)
@@ -140,12 +140,17 @@ func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile
 }
 
 // GetOpenShiftVersions fetches available OpenShift versions from mirror
-func (vc *VersionChecker) GetOpenShiftVersions(ctx context.Context) ([]string, error) {
+func (vc *VersionChecker) GetOpenShiftVersions(ctx context.Context, includeRC bool) ([]string, error) {
 	// Check cache first
+	// Note: Cache is shared between RC and non-RC calls for now - could be separated if needed
 	vc.cache.mu.RLock()
 	if time.Since(vc.cache.LastUpdated) < vc.cacheTTL && len(vc.cache.OpenShiftVersions) > 0 {
 		versions := vc.cache.OpenShiftVersions
 		vc.cache.mu.RUnlock()
+		// Filter by RC flag
+		if !includeRC {
+			return filterNonRCVersions(versions), nil
+		}
 		return versions, nil
 	}
 	vc.cache.mu.RUnlock()
@@ -170,7 +175,8 @@ func (vc *VersionChecker) GetOpenShiftVersions(ctx context.Context) ([]string, e
 	}
 
 	// Parse HTML for version directories
-	versionRegex := regexp.MustCompile(`href="(4\.\d+\.\d+)/"`)
+	// Match both stable versions (4.22.0) and RC versions (4.22.0-rc.4)
+	versionRegex := regexp.MustCompile(`href="(4\.\d+\.\d+(?:-rc\.\d+)?)/"`)
 	matches := versionRegex.FindAllStringSubmatch(string(body), -1)
 
 	versionsMap := make(map[string]bool)
@@ -322,7 +328,8 @@ func (vc *VersionChecker) RefreshCache(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		if _, err := vc.GetOpenShiftVersions(ctx); err != nil {
+		// Refresh with includeRC=true to get all versions
+		if _, err := vc.GetOpenShiftVersions(ctx, true); err != nil {
 			errors <- fmt.Errorf("OpenShift: %w", err)
 		}
 	}()
@@ -384,6 +391,18 @@ func (vc *VersionChecker) GetCacheAge() time.Duration {
 	vc.cache.mu.RLock()
 	defer vc.cache.mu.RUnlock()
 	return time.Since(vc.cache.LastUpdated)
+}
+
+// filterNonRCVersions filters out release candidate versions
+func filterNonRCVersions(versions []string) []string {
+	filtered := make([]string, 0, len(versions))
+	for _, v := range versions {
+		// Exclude versions containing "-rc."
+		if !regexp.MustCompile(`-rc\.`).MatchString(v) {
+			filtered = append(filtered, v)
+		}
+	}
+	return filtered
 }
 
 // filterRelevantVersions filters new versions to only show relevant updates
