@@ -352,7 +352,7 @@ export default function ProfileUpdatesPage() {
     // Cluster type filter
     if (clusterTypeFilter !== 'all') {
       const profileName = profile.profile_name.toLowerCase()
-      if (clusterTypeFilter === 'openshift' && !profileName.includes('openshift') && !profileName.includes('rosa') && !profileName.includes('sno') && !profileName.includes('gcp-standard')) {
+      if (clusterTypeFilter === 'openshift' && !profileName.includes('openshift') && !profileName.includes('rosa') && !profileName.includes('sno') && !profileName.includes('virt') && !profileName.includes('gcp-standard')) {
         return false
       }
       if (clusterTypeFilter === 'eks' && !profileName.includes('eks')) {
