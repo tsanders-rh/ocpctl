@@ -1319,6 +1319,12 @@ metadata:
 
 // createOperatorGroup creates an OperatorGroup for the namespace
 func (h *PostConfigureHandler) createOperatorGroup(ctx context.Context, kubeconfigPath, namespace string) error {
+	// Skip creating OperatorGroup for openshift-operators - it already has a built-in one
+	if namespace == "openshift-operators" {
+		log.Printf("Skipping OperatorGroup creation for %s (already has global-operators)", namespace)
+		return nil
+	}
+
 	yamlContent := fmt.Sprintf(`apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -1648,6 +1654,18 @@ func (h *PostConfigureHandler) applyOpenShiftManifest(ctx context.Context, clust
 		errMsg := err.Error()
 		_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
 		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	// Check if manifest uses a CRD and wait for it to be ready
+	// This prevents race conditions where manifests are applied before CRDs are fully registered
+	crdName := extractCRDNameFromManifest(string(content))
+	if crdName != "" {
+		log.Printf("Manifest %s uses CRD %s, checking readiness", manifest.Name, crdName)
+		if err := h.waitForCRDReady(ctx, kubeconfigPath, crdName); err != nil {
+			errMsg := fmt.Sprintf("CRD not ready: %v", err)
+			_ = h.updateConfigTaskStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+			return fmt.Errorf("wait for CRD %s: %w", crdName, err)
+		}
 	}
 
 	// Apply manifest
@@ -2309,4 +2327,101 @@ func (h *PostConfigureHandler) executeCustomHelmChartWithFeatures(ctx context.Co
 
 	// Execute Helm chart with rendered values
 	return h.installCustomHelmChart(ctx, cluster, kubeconfigPath, renderedChart)
+}
+
+// waitForCRDReady waits for a CRD to be established and ready to accept resources
+// This prevents race conditions where manifests try to create resources before CRDs are fully registered
+func (h *PostConfigureHandler) waitForCRDReady(ctx context.Context, kubeconfigPath, crdName string) error {
+	log.Printf("Waiting for CRD %s to be ready...", crdName)
+
+	timeout := time.After(2 * time.Minute)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for CRD %s to be ready", crdName)
+		case <-ticker.C:
+			// Check if CRD exists and is established
+			cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
+				"get", "crd", crdName, "-o", "jsonpath={.status.conditions[?(@.type=='Established')].status}")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				// CRD doesn't exist yet, continue waiting
+				continue
+			}
+
+			if strings.TrimSpace(string(output)) == "True" {
+				log.Printf("CRD %s is ready", crdName)
+				return nil
+			}
+		}
+	}
+}
+
+// extractCRDNameFromManifest parses manifest content to determine which CRD it uses
+// Returns empty string if the resource is a built-in Kubernetes type (Namespace, ConfigMap, etc.)
+func extractCRDNameFromManifest(content string) string {
+	// Parse YAML to find apiVersion and kind
+	lines := strings.Split(content, "\n")
+	var apiVersion, kind string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "apiVersion:") {
+			apiVersion = strings.TrimSpace(strings.TrimPrefix(line, "apiVersion:"))
+		} else if strings.HasPrefix(line, "kind:") {
+			kind = strings.TrimSpace(strings.TrimPrefix(line, "kind:"))
+		}
+	}
+
+	// Skip built-in Kubernetes types that don't use CRDs
+	builtInKinds := map[string]bool{
+		"Namespace":             true,
+		"ConfigMap":             true,
+		"Secret":                true,
+		"Service":               true,
+		"Deployment":            true,
+		"StatefulSet":           true,
+		"DaemonSet":             true,
+		"Pod":                   true,
+		"ServiceAccount":        true,
+		"Role":                  true,
+		"RoleBinding":           true,
+		"ClusterRole":           true,
+		"ClusterRoleBinding":    true,
+		"PersistentVolumeClaim": true,
+		"PersistentVolume":      true,
+	}
+
+	if builtInKinds[kind] {
+		return ""
+	}
+
+	// For custom resources, construct the CRD name from kind and apiVersion
+	// Format: <plural>.<group>
+	// Example: selfnoderemediationtemplates.self-node-remediation.medik8s.io
+
+	if apiVersion == "" || kind == "" {
+		return ""
+	}
+
+	// Extract group from apiVersion (remove version part)
+	// Example: "self-node-remediation.medik8s.io/v1alpha1" -> "self-node-remediation.medik8s.io"
+	group := apiVersion
+	if idx := strings.Index(apiVersion, "/"); idx != -1 {
+		group = apiVersion[:idx]
+	}
+
+	// Convert kind to lowercase plural (simple pluralization)
+	// This is a heuristic - may not work for all cases, but works for common patterns
+	plural := strings.ToLower(kind)
+	if !strings.HasSuffix(plural, "s") {
+		plural = plural + "s"
+	}
+
+	return plural + "." + group
 }

@@ -1,0 +1,121 @@
+id: rhwa
+name: Red Hat Workload Availability (RHWA / Medik8s)
+description: Node health monitoring and automated remediation operators. Includes Node Health Check (NHC), Self Node Remediation (SNR), Fence Agents Remediation (FAR), Machine Deletion Remediation (MDR), and Node Maintenance Operator (NMO).
+category: monitoring
+enabled: true
+supportedPlatforms: [openshift]
+
+versions:
+  - channel: stable
+    displayName: "RHWA Stable"
+    isDefault: true
+    config:
+      operators:
+        - name: node-healthcheck-operator
+          namespace: openshift-operators
+          source: redhat-operators
+          channel: stable
+
+        - name: self-node-remediation
+          namespace: openshift-operators
+          source: redhat-operators
+          channel: stable
+          dependsOn: [node-healthcheck-operator]
+
+        - name: fence-agents-remediation
+          namespace: openshift-operators
+          source: redhat-operators
+          channel: stable
+          dependsOn: [node-healthcheck-operator]
+
+        - name: machine-deletion-remediation
+          namespace: openshift-operators
+          source: redhat-operators
+          channel: stable
+          dependsOn: [node-healthcheck-operator]
+
+        - name: node-maintenance-operator
+          namespace: openshift-operators
+          source: redhat-operators
+          channel: stable
+
+      manifests:
+        - name: workload-availability-namespace
+          description: "Create openshift-workload-availability namespace for RHWA resources"
+          content: |
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: openshift-workload-availability
+              labels:
+                openshift.io/cluster-monitoring: "true"
+
+        - name: nhc-compact-baseline
+          description: "Baseline NodeHealthCheck for compact 3-node clusters"
+          content: |
+            apiVersion: remediation.medik8s.io/v1alpha1
+            kind: NodeHealthCheck
+            metadata:
+              name: compact-cluster-baseline
+              namespace: openshift-workload-availability
+            spec:
+              minHealthy: 51%
+              remediationTemplate:
+                apiVersion: self-node-remediation.medik8s.io/v1alpha1
+                kind: SelfNodeRemediationTemplate
+                namespace: openshift-workload-availability
+                name: self-node-remediation-compact-template
+              selector:
+                matchLabels:
+                  node-role.kubernetes.io/master: ""
+              unhealthyConditions:
+                - type: Ready
+                  status: "False"
+                  duration: 300s
+                - type: Ready
+                  status: Unknown
+                  duration: 300s
+          namespace: openshift-workload-availability
+          dependsOn: [workload-availability-namespace, node-healthcheck-operator, self-node-remediation-template]
+
+        - name: self-node-remediation-template
+          description: "SelfNodeRemediationTemplate for automatic node recovery"
+          content: |
+            apiVersion: self-node-remediation.medik8s.io/v1alpha1
+            kind: SelfNodeRemediationTemplate
+            metadata:
+              name: self-node-remediation-compact-template
+              namespace: openshift-workload-availability
+            spec:
+              template:
+                spec:
+                  remediationStrategy: ResourceDeletion
+          namespace: openshift-workload-availability
+          dependsOn: [workload-availability-namespace, self-node-remediation]
+
+        - name: machine-deletion-template
+          description: "MachineDeletionRemediationTemplate for machine replacement"
+          content: |
+            apiVersion: machine-deletion-remediation.medik8s.io/v1alpha1
+            kind: MachineDeletionRemediationTemplate
+            metadata:
+              name: machine-deletion-template
+              namespace: openshift-workload-availability
+            spec:
+              template:
+                spec:
+                  order: 0
+          namespace: openshift-workload-availability
+          dependsOn: [workload-availability-namespace, machine-deletion-remediation]
+
+metadata:
+  notes:
+    - "Installs 5 Medik8s operators: NHC, SNR, FAR, MDR, NMO"
+    - "Operators installed in openshift-operators namespace (AllNamespaces mode)"
+    - "Custom resources created in openshift-workload-availability namespace"
+    - "Creates baseline NodeHealthCheck with 51% minHealthy (safe for 3-node)"
+    - "5-minute unhealthy duration before remediation trigger"
+  warnings:
+    - "Remediation will NOT trigger if < 51% nodes healthy"
+    - "300s delay before remediation starts"
+    - "Destructive tests may impact cluster availability"
