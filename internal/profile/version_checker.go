@@ -56,7 +56,7 @@ func NewVersionChecker() *VersionChecker {
 }
 
 // CheckProfileUpdates checks if a profile has available version updates
-func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile, includeRC bool) (*ProfileVersionStatus, error) {
+func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile, includeRC bool, includeCI bool) (*ProfileVersionStatus, error) {
 	status := &ProfileVersionStatus{
 		ProfileName:       prof.Name,
 		CurrentVersions:   []string{},
@@ -81,12 +81,24 @@ func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile
 
 	switch prof.ClusterType {
 	case types.ClusterTypeOpenShift:
-		// Get OpenShift versions
+		// Get OpenShift versions from public mirror
 		availableVersions, err = vc.GetOpenShiftVersions(ctx, includeRC)
 		if err != nil {
 			// Return status with current versions populated, but log error
 			fmt.Printf("Warning: failed to get OpenShift versions for %s: %v\n", prof.Name, err)
 			return status, nil
+		}
+
+		// If includeCI is enabled, fetch CI versions and merge
+		if includeCI {
+			ciVersions, err := vc.GetOpenShiftCIVersions(ctx)
+			if err != nil {
+				fmt.Printf("Warning: failed to get OpenShift CI versions for %s: %v\n", prof.Name, err)
+				// Continue with just mirror versions
+			} else {
+				// Merge CI versions, removing duplicates (prefer mirror versions)
+				availableVersions = mergeVersions(availableVersions, ciVersions)
+			}
 		}
 
 	case "rosa":
@@ -200,6 +212,57 @@ func (vc *VersionChecker) GetOpenShiftVersions(ctx context.Context, includeRC bo
 	vc.cache.OpenShiftVersions = versions
 	vc.cache.LastUpdated = time.Now()
 	vc.cache.mu.Unlock()
+
+	return versions, nil
+}
+
+// GetOpenShiftCIVersions fetches available OpenShift versions from CI release stream
+func (vc *VersionChecker) GetOpenShiftCIVersions(ctx context.Context) ([]string, error) {
+	// CI release stream API endpoint
+	url := "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable/tags"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := vc.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch OpenShift CI release stream: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("CI API returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Parse JSON response
+	var result struct {
+		Tags []struct {
+			Name string `json:"name"`
+		} `json:"tags"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Extract version strings
+	versions := make([]string, 0, len(result.Tags))
+	for _, tag := range result.Tags {
+		// Only include 4.x versions (filter out any other tags)
+		if regexp.MustCompile(`^4\.\d+\.\d+`).MatchString(tag.Name) {
+			versions = append(versions, tag.Name)
+		}
+	}
+
+	// Sort versions
+	sortVersions(versions)
 
 	return versions, nil
 }
@@ -403,6 +466,32 @@ func filterNonRCVersions(versions []string) []string {
 		}
 	}
 	return filtered
+}
+
+// mergeVersions merges two version lists, removing duplicates
+// Versions from the first list (mirror) take precedence over the second list (CI)
+func mergeVersions(mirrorVersions, ciVersions []string) []string {
+	// Build a set of mirror versions for fast lookup
+	mirrorSet := make(map[string]bool)
+	for _, v := range mirrorVersions {
+		mirrorSet[v] = true
+	}
+
+	// Start with all mirror versions
+	merged := make([]string, len(mirrorVersions))
+	copy(merged, mirrorVersions)
+
+	// Add CI versions that aren't already in mirror
+	for _, v := range ciVersions {
+		if !mirrorSet[v] {
+			merged = append(merged, v)
+		}
+	}
+
+	// Sort the merged list
+	sortVersions(merged)
+
+	return merged
 }
 
 // filterRelevantVersions filters new versions to only show relevant updates

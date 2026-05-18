@@ -75,36 +75,53 @@ echo -e "Region: ${YELLOW}$REGION${NC}"
 echo -e "Mode: ${YELLOW}$([ "$DRY_RUN" = true ] && echo "DRY RUN" || echo "EXECUTE")${NC}"
 echo ""
 
-# Get list of active clusters from database via API
-echo -e "${BLUE}Fetching active clusters from API...${NC}"
-ACTIVE_CLUSTERS=$(ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
-    "curl -s http://localhost:8080/api/v1/clusters 2>/dev/null | jq -r '.clusters[]? | select(.status != \"destroyed\") | .name' 2>/dev/null" \
-    | grep -v '^$' || echo "")
+# Get list of active clusters from database directly
+echo -e "${BLUE}Fetching active clusters from ocpctl database...${NC}"
+ACTIVE_CLUSTERS_DB=$(ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+    "sudo bash -c \"source /etc/ocpctl/api.env && psql \\\$DATABASE_URL -t -c \\\"SELECT name FROM clusters WHERE status NOT IN ('destroyed', 'failed');\\\"\" 2>/dev/null" \
+    | grep -v '^$' | tr -d ' ' || echo "")
 
-if [ -z "$ACTIVE_CLUSTERS" ]; then
-    echo -e "${YELLOW}WARNING: Could not fetch cluster list from API, assuming NO active clusters${NC}"
-    echo -e "${YELLOW}All OpenShift IAM roles will be considered orphaned${NC}"
-    echo ""
-    read -p "Continue anyway? (type 'yes' to confirm): " confirm
-    if [ "$confirm" != "yes" ]; then
-        echo -e "${YELLOW}Cancelled.${NC}"
-        exit 0
-    fi
-    ACTIVE_CLUSTERS=""
+if [ -z "$ACTIVE_CLUSTERS_DB" ]; then
+    echo -e "${RED}ERROR: Could not fetch cluster list from database${NC}"
+    exit 1
 fi
 
-CLUSTER_COUNT=$(echo "$ACTIVE_CLUSTERS" | wc -l | tr -d ' ')
-echo -e "${GREEN}Found $CLUSTER_COUNT active clusters in database${NC}"
-echo ""
+DB_CLUSTER_COUNT=$(echo "$ACTIVE_CLUSTERS_DB" | wc -l | tr -d ' ')
+echo -e "${GREEN}Found $DB_CLUSTER_COUNT active clusters in ocpctl database${NC}"
 
-# Build lookup map of active infraIDs
-# Pattern: cluster-name-{5chars} = infraID
-declare -A ACTIVE_INFRA_IDS
-for cluster in $ACTIVE_CLUSTERS; do
-    # Extract potential infraID patterns for this cluster
-    # e.g., "tsanders-test-445" -> "tsanders-test-445-*****"
-    ACTIVE_INFRA_IDS["$cluster"]=1
+# CRITICAL: Also check for clusters running in AWS but not in database
+echo -e "${BLUE}Scanning AWS for running clusters not in database...${NC}"
+RUNNING_INFRA_IDS=$(aws ec2 describe-instances \
+    --region "$REGION" \
+    --filters "Name=tag-key,Values=kubernetes.io/cluster/*" "Name=instance-state-name,Values=running,pending,stopping,stopped" \
+    --query 'Reservations[].Instances[].Tags[?starts_with(Key, `kubernetes.io/cluster/`)].Key' \
+    --output text 2>/dev/null | tr '\t' '\n' | sed 's/kubernetes.io\/cluster\///' | sort -u || echo "")
+
+# Extract cluster names from infraIDs and combine with database clusters
+ACTIVE_CLUSTERS="$ACTIVE_CLUSTERS_DB"
+AWS_ONLY_COUNT=0
+for infra_id in $RUNNING_INFRA_IDS; do
+    # Extract cluster name (remove 5-char suffix)
+    if [[ $infra_id =~ ^(.+)-[a-z0-9]{5}$ ]]; then
+        cluster_name="${BASH_REMATCH[1]}"
+    else
+        cluster_name="$infra_id"
+    fi
+
+    # Add to active list if not already there
+    if ! echo "$ACTIVE_CLUSTERS" | grep -q "^${cluster_name}$"; then
+        echo -e "${YELLOW}  Found untracked running cluster: $cluster_name (infraID: $infra_id)${NC}"
+        ACTIVE_CLUSTERS="${ACTIVE_CLUSTERS}"$'\n'"${cluster_name}"
+        ((AWS_ONLY_COUNT++))
+    fi
 done
+
+TOTAL_CLUSTER_COUNT=$(echo "$ACTIVE_CLUSTERS" | grep -v '^$' | wc -l | tr -d ' ')
+if [ $AWS_ONLY_COUNT -gt 0 ]; then
+    echo -e "${YELLOW}Found $AWS_ONLY_COUNT running clusters in AWS not tracked by ocpctl${NC}"
+fi
+echo -e "${GREEN}Total active clusters (DB + AWS): $TOTAL_CLUSTER_COUNT${NC}"
+echo ""
 
 # Function to extract infraID from role name
 # Example: "tsanders-test-445-kqbf7-openshift-cloud-credential-operator-clou" -> "tsanders-test-445-kqbf7"

@@ -88,6 +88,8 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 
 	// Optional: include release candidate versions
 	includeRC := c.QueryParam("includeRC") == "true"
+	// Optional: include OpenShift CI releases
+	includeCI := c.QueryParam("includeCI") == "true"
 
 	// Get all enabled profiles
 	profiles := h.registry.List()
@@ -102,7 +104,7 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 
 	for _, prof := range profiles {
 		go func(p *profile.Profile) {
-			status, err := h.versionChecker.CheckProfileUpdates(ctx, p, includeRC)
+			status, err := h.versionChecker.CheckProfileUpdates(ctx, p, includeRC, includeCI)
 			results <- result{status: status, err: err}
 		}(prof)
 	}

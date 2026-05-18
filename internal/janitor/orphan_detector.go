@@ -96,7 +96,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		orphans = append(orphans, hostedZoneOrphans...)
 	}
 
-	// Check IAM Roles
+	// Check IAM Roles (tagged with ManagedBy=ocpctl)
 	iamRoleOrphans, err := j.detectOrphanedIAMRoles(ctx, cfg, clustersByName)
 	if err != nil {
 		log.Printf("Error detecting orphaned IAM roles: %v", err)
@@ -104,12 +104,23 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		orphans = append(orphans, iamRoleOrphans...)
 	}
 
-	// Check OIDC Providers
-	oidcOrphans, err := j.detectOrphanedOIDCProviders(ctx, cfg, clustersByName)
+	// Check OIDC Providers (returns both orphaned providers AND their infraIDs)
+	oidcOrphans, orphanedInfraIDs, err := j.detectOrphanedOIDCProviders(ctx, cfg, clustersByName)
 	if err != nil {
 		log.Printf("Error detecting orphaned OIDC providers: %v", err)
 	} else {
 		orphans = append(orphans, oidcOrphans...)
+
+		// Use the orphaned infraIDs to find related IAM roles (even if untagged)
+		if len(orphanedInfraIDs) > 0 {
+			log.Printf("Found %d orphaned OIDC providers, searching for related IAM roles", len(orphanedInfraIDs))
+			iamRolesByInfraID, err := j.detectIAMRolesByInfraID(ctx, cfg, orphanedInfraIDs)
+			if err != nil {
+				log.Printf("Error detecting IAM roles by infraID: %v", err)
+			} else {
+				orphans = append(orphans, iamRolesByInfraID...)
+			}
+		}
 	}
 
 	// Check EBS Volumes
@@ -665,16 +676,18 @@ func (j *Janitor) detectOrphanedIAMRoles(ctx context.Context, cfg aws.Config, cl
 }
 
 // detectOrphanedOIDCProviders finds OIDC providers created for clusters that don't exist
-func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+// Returns orphaned OIDC providers and a list of infraIDs for finding related IAM roles
+func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, []string, error) {
 	iamClient := iam.NewFromConfig(cfg)
 
 	// List all OIDC providers
 	result, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	orphans := []OrphanedResource{}
+	orphanedInfraIDs := []string{} // Track infraIDs for orphaned OIDC providers
 
 	for _, provider := range result.OpenIDConnectProviderList {
 		providerArn := aws.ToString(provider.Arn)
@@ -693,14 +706,17 @@ func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Confi
 		// OIDC providers have URLs like:
 		// - rh-oidc.s3.us-east-1.amazonaws.com/29avu8o05l9g7lq97vbcsgqfgmklqqh3 (cluster infra ID)
 		// - oidc.s3.us-east-1.amazonaws.com/29avu8o05l9g7lq97vbcsgqfgmklqqh3
+		// - tsanders-rhwa-4-gjbgg-oidc.s3.us-east-1.amazonaws.com (ccoctl format)
 
 		// Check if this is an OpenShift OIDC provider
 		if !strings.Contains(providerURL, "rh-oidc.s3.") && !strings.Contains(providerURL, "oidc.s3.") {
 			continue
 		}
 
-		// Look for ClusterName in tags
+		// Extract tags
 		clusterName := ""
+		infraID := ""
+		managedBy := ""
 		tags := make(map[string]string)
 		for _, tag := range detailsResult.Tags {
 			tagKey := aws.ToString(tag.Key)
@@ -709,7 +725,16 @@ func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Confi
 
 			if tagKey == "ClusterName" {
 				clusterName = tagValue
+			} else if tagKey == "InfraID" {
+				infraID = tagValue
+			} else if tagKey == "ManagedBy" {
+				managedBy = tagValue
 			}
+		}
+
+		// Only process OIDC providers managed by ocpctl
+		if managedBy != "ocpctl" && managedBy != "cluster-control-plane" {
+			continue
 		}
 
 		// If we found a ClusterName tag, check if cluster exists
@@ -723,6 +748,11 @@ func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Confi
 					Region:       "global", // IAM is global
 					Tags:         tags,
 				})
+
+				// Track this infraID for finding related IAM roles
+				if infraID != "" {
+					orphanedInfraIDs = append(orphanedInfraIDs, infraID)
+				}
 			}
 		} else {
 			// No ClusterName tag - this provider might be orphaned but we can't be sure
@@ -730,6 +760,83 @@ func (j *Janitor) detectOrphanedOIDCProviders(ctx context.Context, cfg aws.Confi
 			log.Printf("Warning: OIDC provider %s has no ClusterName tag, skipping", providerURL)
 		}
 	}
+
+	return orphans, orphanedInfraIDs, nil
+}
+
+// detectIAMRolesByInfraID finds IAM roles matching the given infraIDs
+// This is used to find untagged IAM roles from failed clusters that still have tagged OIDC providers
+func (j *Janitor) detectIAMRolesByInfraID(ctx context.Context, cfg aws.Config, infraIDs []string) ([]OrphanedResource, error) {
+	if len(infraIDs) == 0 {
+		return []OrphanedResource{}, nil
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+	orphans := []OrphanedResource{}
+
+	log.Printf("[detectIAMRolesByInfraID] Searching for IAM roles matching %d orphaned infraIDs", len(infraIDs))
+
+	// Create a map for faster lookups
+	infraIDMap := make(map[string]bool)
+	for _, id := range infraIDs {
+		infraIDMap[id] = true
+	}
+
+	// Use paginator to iterate through all IAM roles
+	paginator := iam.NewListRolesPaginator(iamClient, &iam.ListRolesInput{})
+
+	totalScanned := 0
+	matchedRoles := 0
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			log.Printf("[detectIAMRolesByInfraID] Error paginating roles: %v", err)
+			return nil, err
+		}
+
+		for _, role := range page.Roles {
+			totalScanned++
+			roleName := aws.ToString(role.RoleName)
+
+			// Check if this role name contains any of the orphaned infraIDs
+			// IAM roles from ccoctl have pattern: <infraID>-openshift-<component>
+			// Examples:
+			//   tsanders-rhwa-3-6k24t-openshift-machine-api-aws-cloud-credential
+			//   tsanders-rhwa-3-6k24t-master-role
+			//   tsanders-rhwa-3-6k24t-worker-role
+			for infraID := range infraIDMap {
+				if strings.HasPrefix(roleName, infraID+"-") {
+					// Found a match!
+					matchedRoles++
+
+					// Get role tags
+					tagsResult, err := iamClient.ListRoleTags(ctx, &iam.ListRoleTagsInput{
+						RoleName: role.RoleName,
+					})
+
+					tags := make(map[string]string)
+					if err == nil {
+						for _, tag := range tagsResult.Tags {
+							tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+						}
+					}
+
+					orphans = append(orphans, OrphanedResource{
+						Type:         "IAMRole",
+						ResourceID:   aws.ToString(role.Arn),
+						ResourceName: roleName,
+						Region:       "global", // IAM is global
+						Tags:         tags,
+					})
+
+					break // No need to check other infraIDs for this role
+				}
+			}
+		}
+	}
+
+	log.Printf("[detectIAMRolesByInfraID] Scanned %d total roles, found %d roles matching orphaned infraIDs", totalScanned, matchedRoles)
 
 	return orphans, nil
 }

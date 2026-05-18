@@ -88,10 +88,11 @@ export default function ProfileUpdatesPage() {
   const [clusterTypeFilter, setClusterTypeFilter] = useState<string>('all')
   const [showOnlyWithUpdates, setShowOnlyWithUpdates] = useState(true)
   const [includeRCVersions, setIncludeRCVersions] = useState(false)
+  const [includeCIReleases, setIncludeCIReleases] = useState(false)
 
   // Fetch version check data
   const { data, isLoading, refetch } = useQuery<CheckVersionsResponse>({
-    queryKey: ['admin', 'profile-updates', includeRCVersions],
+    queryKey: ['admin', 'profile-updates', includeRCVersions, includeCIReleases],
     queryFn: async () => {
       const token = useAuthStore.getState().accessToken
       if (!token) {
@@ -100,6 +101,9 @@ export default function ProfileUpdatesPage() {
       const url = new URL('/api/v1/admin/profiles/version-check', window.location.origin)
       if (includeRCVersions) {
         url.searchParams.set('includeRC', 'true')
+      }
+      if (includeCIReleases) {
+        url.searchParams.set('includeCI', 'true')
       }
       const response = await fetch(url.toString(), {
         headers: {
@@ -534,6 +538,19 @@ export default function ProfileUpdatesPage() {
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     Include release candidate versions
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="include-ci"
+                    checked={includeCIReleases}
+                    onCheckedChange={(checked) => setIncludeCIReleases(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="include-ci"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Include OpenShift CI releases (bleeding edge)
                   </label>
                 </div>
               </div>

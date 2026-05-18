@@ -692,6 +692,11 @@ func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outp
 
 	log.Printf("Running: oc adm release extract --credentials-requests --cloud=aws --to=%s --from=%s", outputDir, releaseImage)
 	if err := cmd.Run(); err != nil {
+		// Log the full error immediately for debugging
+		log.Printf("ERROR: oc adm release extract failed!")
+		log.Printf("ERROR: Exit error: %v", err)
+		log.Printf("ERROR: Stdout: %s", stdout.String())
+		log.Printf("ERROR: Stderr: %s", stderr.String())
 		return fmt.Errorf("oc adm release extract failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
 	}
 
@@ -760,6 +765,11 @@ func (i *Installer) executeCCOCtl(ctx context.Context, clusterName, region, cred
 	log.Printf("Executing: %s", cmd.String())
 	err := cmd.Run()
 	if err != nil {
+		// Log the full error immediately for debugging
+		log.Printf("ERROR: ccoctl command failed!")
+		log.Printf("ERROR: Exit error: %v", err)
+		log.Printf("ERROR: Stdout: %s", stdout.String())
+		log.Printf("ERROR: Stderr: %s", stderr.String())
 		return fmt.Errorf("ccoctl failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
 	}
 
