@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -343,20 +343,13 @@ func (pu *ProfileUpdater) ValidateUpdate(profile *Profile) error {
 
 // validateVersionFormats validates version string formats
 func (pu *ProfileUpdater) validateVersionFormats(versions []string) error {
-	// Support both semantic versions (4.20.3) and minor versions (1.30)
-	semverRegex := `^\d+\.\d+(\.\d+)?$`
+	// Support semantic versions, minor versions, and pre-release versions
+	// Examples: 4.20.3, 1.30, 4.22.0-rc.4, 4.22.0-fc.3, 4.22.0-ec.5
+	semverRegex := regexp.MustCompile(`^\d+\.\d+(\.\d+)?(-[a-z]+\.\d+)?$`)
 
 	for _, v := range versions {
-		matched, err := filepath.Match(semverRegex, v)
-		if err != nil {
-			return fmt.Errorf("regex error: %w", err)
-		}
-		if !matched {
-			// Try simple string validation
-			parts := strings.Split(v, ".")
-			if len(parts) < 2 || len(parts) > 3 {
-				return fmt.Errorf("invalid version format: %s (expected X.Y or X.Y.Z)", v)
-			}
+		if !semverRegex.MatchString(v) {
+			return fmt.Errorf("invalid version format: %s (expected X.Y, X.Y.Z, or X.Y.Z-suffix.N)", v)
 		}
 	}
 
