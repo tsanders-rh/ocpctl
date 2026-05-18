@@ -288,7 +288,8 @@ export default function ProfileUpdatesPage() {
     // Determine if this is OpenShift or Kubernetes profile
     const isOpenShift = profile.profile_name.includes('openshift') ||
                         profile.profile_name.includes('rosa') ||
-                        profile.profile_name.includes('sno')
+                        profile.profile_name.includes('sno') ||
+                        profile.profile_name.includes('virt')
 
     const updateRequest: UpdateVersionsRequest = {
       dry_run: dryRunMode,
