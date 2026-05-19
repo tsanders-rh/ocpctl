@@ -136,9 +136,21 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		}
 	}
 
-	// Verify binaries exist
+	// Verify binaries exist - if not, try downloading on-demand
 	if _, err := os.Stat(binaryPath); err != nil {
-		return nil, fmt.Errorf("openshift-install binary not found for version %s at %s: %w", version, binaryPath, err)
+		log.Printf("openshift-install binary not found for version %s at %s, attempting to download...", version, binaryPath)
+
+		// Try downloading the specific version on-demand
+		if downloadErr := downloadInstallerOnDemand(version); downloadErr != nil {
+			return nil, fmt.Errorf("openshift-install binary not found for version %s at %s: %w (download attempt failed: %v)", version, binaryPath, err, downloadErr)
+		}
+
+		// Verify download succeeded
+		if _, err := os.Stat(binaryPath); err != nil {
+			return nil, fmt.Errorf("openshift-install binary not found for version %s at %s after download attempt: %w", version, binaryPath, err)
+		}
+
+		log.Printf("Successfully downloaded openshift-install for version %s", version)
 	}
 
 	if _, err := os.Stat(ccoCtlPath); err != nil {
@@ -152,12 +164,83 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	log.Printf("Using OpenShift installer version %s: %s", majorMinor, binaryPath)
 	log.Printf("Using ccoctl version %s: %s", majorMinor, ccoCtlPath)
 
+	// Verify the binary is the correct version
+	if err := verifyInstallerVersion(binaryPath, version); err != nil {
+		log.Printf("WARNING: %v", err)
+		// Don't fail - allow using the available version but log the warning
+	}
+
 	return &Installer{
 		binaryPath:  binaryPath,
 		ccoCtlPath:  ccoCtlPath,
 		timeout:     120 * time.Minute,
 		useSTSCreds: useSTSCreds,
 	}, nil
+}
+
+// downloadInstallerOnDemand attempts to download the OpenShift installer for a specific version
+// Uses download-specific-version.sh script which tries S3 → Public Mirror → CI Release Stream
+func downloadInstallerOnDemand(version string) error {
+	// Path to download script
+	scriptPath := "/opt/ocpctl/scripts/download-specific-version.sh"
+
+	// Check if script exists
+	if _, err := os.Stat(scriptPath); err != nil {
+		// Fall back to local development path
+		scriptPath = "./scripts/download-specific-version.sh"
+		if _, err := os.Stat(scriptPath); err != nil {
+			return fmt.Errorf("download-specific-version.sh script not found")
+		}
+	}
+
+	log.Printf("Running download script for version %s...", version)
+
+	// Execute download script with full version
+	cmd := exec.Command("/bin/bash", scriptPath, version, "/usr/local/bin")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("download script failed: %w", err)
+	}
+
+	return nil
+}
+
+// verifyInstallerVersion checks that the binary version matches the requested version
+func verifyInstallerVersion(binaryPath, requestedVersion string) error {
+	// Run openshift-install version
+	cmd := exec.Command(binaryPath, "version")
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to check installer version: %w", err)
+	}
+
+	// Parse version from output (first line, second field)
+	// Example output: "openshift-install 4.22.0-rc.4\n..."
+	output := stdout.String()
+	lines := strings.Split(output, "\n")
+	if len(lines) == 0 {
+		return fmt.Errorf("empty version output from installer")
+	}
+
+	fields := strings.Fields(lines[0])
+	if len(fields) < 2 {
+		return fmt.Errorf("unexpected version output format: %s", lines[0])
+	}
+
+	actualVersion := fields[1]
+
+	// Check if versions match
+	if actualVersion != requestedVersion {
+		return fmt.Errorf("installer version mismatch: requested %s but binary is %s", requestedVersion, actualVersion)
+	}
+
+	log.Printf("✓ Verified installer version: %s", actualVersion)
+	return nil
 }
 
 // isDevPreviewVersion detects if a version string is a dev-preview/candidate release

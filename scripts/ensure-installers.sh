@@ -136,6 +136,83 @@ download_from_mirror() {
     fi
 }
 
+download_from_ci_release() {
+    local full_version=$1
+    local binary=$2
+    local base_version=$(echo "$full_version" | cut -d- -f1)
+    local version=$(echo "$base_version" | cut -d. -f1,2)
+    local local_path="${INSTALL_DIR}/${binary}-${version}"
+
+    log "Downloading ${binary} ${full_version} from CI release stream..."
+
+    # Check if oc is available (required for extracting from release image)
+    if ! command -v oc &> /dev/null; then
+        log "✗ oc CLI not found - cannot extract from CI release image"
+        return 1
+    fi
+
+    local release_image="quay.io/openshift-release-dev/ocp-release:${full_version}-x86_64"
+    log "Release image: ${release_image}"
+
+    local tmp_dir=$(mktemp -d)
+
+    # Extract tools from release image
+    log "Extracting tools from release image (may take 1-2 minutes)..."
+    if ! oc adm release extract --tools "${release_image}" --to="${tmp_dir}" 2>&1 | grep -v "warning:"; then
+        rm -rf "${tmp_dir}"
+        log "✗ Failed to extract tools from release image"
+        return 1
+    fi
+
+    # Find the extracted tarball based on binary type
+    local tarball=""
+    if [ "$binary" = "openshift-install" ]; then
+        tarball=$(ls "${tmp_dir}"/openshift-install-linux*.tar.gz 2>/dev/null | head -1)
+    elif [ "$binary" = "oc" ]; then
+        tarball=$(ls "${tmp_dir}"/openshift-client-linux*.tar.gz 2>/dev/null | head -1)
+    elif [ "$binary" = "ccoctl" ]; then
+        tarball=$(ls "${tmp_dir}"/ccoctl-linux*.tar.gz 2>/dev/null | head -1)
+    fi
+
+    if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then
+        log "✗ ${binary} tarball not found in extracted tools"
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+
+    # Extract binary from tarball
+    if tar -xzf "${tarball}" -C "${tmp_dir}"; then
+        if [ -f "${tmp_dir}/${binary}" ]; then
+            mv "${tmp_dir}/${binary}" "${local_path}"
+            chmod +x "${local_path}"
+
+            # Special handling for oc - also extract kubectl
+            if [ "$binary" = "oc" ] && [ -f "${tmp_dir}/kubectl" ]; then
+                local kubectl_path="${INSTALL_DIR}/kubectl"
+                mv "${tmp_dir}/kubectl" "${kubectl_path}"
+                chmod +x "${kubectl_path}"
+                log "✓ Also installed kubectl from oc tarball"
+            fi
+
+            rm -rf "${tmp_dir}"
+
+            # Upload to S3 for future use
+            upload_to_s3 "${version}" "${binary}" "${local_path}"
+
+            log "✓ Downloaded ${binary} ${full_version} from CI release stream"
+            return 0
+        else
+            log "✗ ${binary} binary not found in tarball"
+            rm -rf "${tmp_dir}"
+            return 1
+        fi
+    else
+        log "✗ Failed to extract ${binary} from tarball"
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+}
+
 upload_to_s3() {
     local version=$1
     local binary=$2
@@ -163,7 +240,7 @@ ensure_binary() {
 
     log "${binary} ${version} not found, attempting download..."
 
-    # Try S3 first
+    # Try S3 first (cached binaries)
     if download_from_s3 "${version}" "${binary}"; then
         return 0
     fi
@@ -175,11 +252,18 @@ ensure_binary() {
         return 1
     fi
 
+    # Try public mirror (priority source)
     if download_from_mirror "${full_version}" "${binary}"; then
         return 0
     fi
 
-    log "✗ Failed to download ${binary} ${version}"
+    # Final fallback: CI release stream (for RC/FC/EC versions not on public mirror)
+    log "Mirror download failed, trying CI release stream..."
+    if download_from_ci_release "${full_version}" "${binary}"; then
+        return 0
+    fi
+
+    log "✗ Failed to download ${binary} ${version} from all sources"
     return 1
 }
 

@@ -85,6 +85,9 @@ echo -e "${GREEN}✓ Uploaded bootstrap-worker.sh${NC}"
 aws s3 cp scripts/ensure-installers.sh ${S3_BUCKET}/scripts/ensure-installers.sh
 echo -e "${GREEN}✓ Uploaded ensure-installers.sh${NC}"
 
+aws s3 cp scripts/download-specific-version.sh ${S3_BUCKET}/scripts/download-specific-version.sh
+echo -e "${GREEN}✓ Uploaded download-specific-version.sh${NC}"
+
 aws s3 cp scripts/ocpctl-worker.service ${S3_BUCKET}/scripts/ocpctl-worker.service
 echo -e "${GREEN}✓ Uploaded ocpctl-worker.service${NC}"
 
@@ -200,9 +203,10 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Create versioned directory
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
-    # Deploy ensure-installers script
+    # Deploy installer scripts
     scp -i "$SSH_KEY" scripts/ensure-installers.sh $SSH_USER@$host:/tmp/ensure-installers.sh
-    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && rm /tmp/ensure-installers.sh"
+    scp -i "$SSH_KEY" scripts/download-specific-version.sh $SSH_USER@$host:/tmp/download-specific-version.sh
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && sudo install -m 755 /tmp/download-specific-version.sh ${REMOTE_BASE}/scripts/download-specific-version.sh && rm /tmp/ensure-installers.sh /tmp/download-specific-version.sh"
 
     # Run ensure-installers to download/update all required CLIs (openshift-install, rosa, eksctl, etc.)
     echo -e "${YELLOW}  Running ensure-installers to install/update CLIs...${NC}"
