@@ -6,7 +6,7 @@ export function useProfiles(platform?: Platform, track?: string) {
   return useQuery({
     queryKey: ["profiles", platform, track],
     queryFn: () => profilesApi.list(platform, track),
-    staleTime: 5 * 60 * 1000, // 5 minutes (profiles don't change often)
+    staleTime: 30 * 1000, // 30 seconds (allow quick updates to propagate)
   });
 }
 
@@ -15,6 +15,6 @@ export function useProfile(name: string) {
     queryKey: ["profile", name],
     queryFn: () => profilesApi.get(name),
     enabled: !!name,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
