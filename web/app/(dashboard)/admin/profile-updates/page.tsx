@@ -37,9 +37,14 @@ import {
 
 // Semantic version comparison helper
 function compareVersions(a: string, b: string): number {
-  const aParts = a.split('.').map(Number)
-  const bParts = b.split('.').map(Number)
+  // Split version and pre-release parts
+  const [aVer, aPrerelease] = a.split('-')
+  const [bVer, bPrerelease] = b.split('-')
 
+  const aParts = aVer.split('.').map(Number)
+  const bParts = bVer.split('.').map(Number)
+
+  // Compare version numbers
   for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
     const aNum = aParts[i] || 0
     const bNum = bParts[i] || 0
@@ -47,6 +52,13 @@ function compareVersions(a: string, b: string): number {
     if (aNum !== bNum) {
       return aNum - bNum
     }
+  }
+
+  // If versions are equal, GA releases come after pre-releases
+  if (aPrerelease && !bPrerelease) return -1
+  if (!aPrerelease && bPrerelease) return 1
+  if (aPrerelease && bPrerelease) {
+    return aPrerelease.localeCompare(bPrerelease)
   }
 
   return 0
@@ -146,6 +158,7 @@ export default function ProfileUpdatesPage() {
       } else {
         toast.success(`Profile ${variables.profileName} updated successfully`)
         queryClient.invalidateQueries({ queryKey: ['admin', 'profile-updates'] })
+        queryClient.invalidateQueries({ queryKey: ['profiles'] })
         // Clear all changes for this profile
         setSelectedVersions(prev => {
           const newState = { ...prev }
