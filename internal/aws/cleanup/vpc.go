@@ -30,6 +30,7 @@ func DeleteVPCAndDependencies(ctx context.Context, ec2Client *ec2.Client, vpcID 
 			return deleteLoadBalancers(ctx, region, vpcID)
 		}},
 		{"NAT gateways", deleteNATGateways},
+		{"EC2 instances", terminateEC2Instances},
 		{"network interfaces", deleteNetworkInterfaces},
 		{"egress-only internet gateways", deleteEgressOnlyInternetGateways},
 		{"internet gateways", detachAndDeleteInternetGateways},
@@ -164,6 +165,63 @@ func deleteNATGateways(ctx context.Context, ec2Client *ec2.Client, vpcID string)
 		log.Printf("Waiting 20 seconds for NAT gateways to leave active state")
 		time.Sleep(20 * time.Second)
 	}
+	return nil
+}
+
+func terminateEC2Instances(ctx context.Context, ec2Client *ec2.Client, vpcID string) error {
+	// Find all EC2 instances in this VPC
+	out, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		Filters: []types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	var instanceIDs []string
+	for _, reservation := range out.Reservations {
+		for _, instance := range reservation.Instances {
+			state := instance.State.Name
+			// Skip instances that are already terminated or shutting down
+			if state == types.InstanceStateNameTerminated || state == types.InstanceStateNameShuttingDown {
+				continue
+			}
+			instanceID := aws.ToString(instance.InstanceId)
+			if instanceID != "" {
+				instanceIDs = append(instanceIDs, instanceID)
+			}
+		}
+	}
+
+	if len(instanceIDs) == 0 {
+		log.Printf("No EC2 instances found in VPC %s", vpcID)
+		return nil
+	}
+
+	log.Printf("Terminating %d EC2 instance(s): %v", len(instanceIDs), instanceIDs)
+	_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: instanceIDs,
+	})
+	if err != nil {
+		return ignoreBenignError(err)
+	}
+
+	// Wait for instances to actually terminate (not just start terminating)
+	// This ensures network interfaces are released before we try to delete them
+	log.Printf("Waiting for %d instance(s) to terminate (this may take 1-2 minutes)...", len(instanceIDs))
+	waiter := ec2.NewInstanceTerminatedWaiter(ec2Client)
+	err = waiter.Wait(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	}, 5*time.Minute) // Allow up to 5 minutes for termination
+	if err != nil {
+		log.Printf("Warning: instance termination wait failed: %v (proceeding anyway)", err)
+		// Don't return error - try to continue with cleanup even if wait fails
+		time.Sleep(30 * time.Second) // Fall back to brief sleep
+	} else {
+		log.Printf("All instances terminated successfully")
+	}
+
 	return nil
 }
 
