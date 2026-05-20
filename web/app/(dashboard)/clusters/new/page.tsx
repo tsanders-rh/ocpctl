@@ -220,10 +220,9 @@ export default function NewClusterPage() {
           setValue("base_domain", selectedProfile.base_domains.default, { shouldValidate: true });
         }
 
-        // Set credentials mode from profile if available
-        if (selectedProfile.credentials_mode) {
-          setValue("credentials_mode", selectedProfile.credentials_mode as "Manual" | "Passthrough" | "Mint" | "Auto" | "Static", { shouldValidate: true });
-        }
+        // Set credentials mode from profile (default to Auto if not specified)
+        const credMode = selectedProfile.credentials_mode || "Auto";
+        setValue("credentials_mode", credMode as "Manual" | "Passthrough" | "Mint" | "Auto" | "Static", { shouldValidate: true });
 
         setValue("ttl_hours", selectedProfile.lifecycle.default_ttl_hours, { shouldValidate: true });
       }, 0);
