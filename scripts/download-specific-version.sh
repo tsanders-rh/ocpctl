@@ -39,7 +39,6 @@ error() {
 is_dev_preview_version() {
     local version=$1
     [[ "$version" == *"-ec."* ]] || \
-    [[ "$version" == *"-rc."* ]] || \
     [[ "$version" == *"-0.nightly"* ]] || \
     [[ "$version" == *"-fc."* ]]
 }
@@ -56,7 +55,7 @@ get_mirror_base_path() {
 download_from_s3() {
     local binary=$1
     local s3_path="s3://${S3_BUCKET}/installers/${FULL_VERSION}/${binary}"
-    local local_path="${INSTALL_DIR}/${binary}-${MAJOR_MINOR}"
+    local local_path="${INSTALL_DIR}/${binary}-${FULL_VERSION}"
 
     log "Checking S3 cache..."
     if aws s3 cp "${s3_path}" "${local_path}" 2>/dev/null; then
@@ -83,7 +82,7 @@ download_from_mirror() {
 
     local mirror_url="https://mirror.openshift.com/pub/openshift-v4/${arch_path}clients/${mirror_base}/${FULL_VERSION}/${tarball_name}"
     local tmp_dir=$(mktemp -d)
-    local local_path="${INSTALL_DIR}/${binary}-${MAJOR_MINOR}"
+    local local_path="${INSTALL_DIR}/${binary}-${FULL_VERSION}"
 
     log "Trying public mirror: ${mirror_url}"
 
@@ -121,14 +120,24 @@ download_from_ci_release() {
         return 1
     fi
 
+    # Check if pull secret is available (required for CI releases)
+    if [ -z "${OPENSHIFT_PULL_SECRET:-}" ]; then
+        error "OPENSHIFT_PULL_SECRET not set - cannot extract from CI release"
+        return 1
+    fi
+
     local release_image="quay.io/openshift-release-dev/ocp-release:${FULL_VERSION}-x86_64"
     local tmp_dir=$(mktemp -d)
-    local local_path="${INSTALL_DIR}/${binary}-${MAJOR_MINOR}"
+    local local_path="${INSTALL_DIR}/${binary}-${FULL_VERSION}"
+    local pull_secret_file="${tmp_dir}/pull-secret.json"
+
+    # Write pull secret to temp file for oc command
+    echo "$OPENSHIFT_PULL_SECRET" > "$pull_secret_file"
 
     log "Extracting from CI release image: ${release_image}"
     log "This may take 1-2 minutes..."
 
-    if ! oc adm release extract --tools "${release_image}" --to="${tmp_dir}" 2>&1 | grep -v "warning:"; then
+    if ! oc adm release extract --tools "${release_image}" --to="${tmp_dir}" --registry-config="${pull_secret_file}" 2>&1 | grep -v "warning:"; then
         rm -rf "${tmp_dir}"
         return 1
     fi
@@ -181,8 +190,8 @@ main() {
     local failed=0
 
     # Download openshift-install
-    if [ -f "${INSTALL_DIR}/openshift-install-${MAJOR_MINOR}" ]; then
-        log "✓ openshift-install-${MAJOR_MINOR} already exists"
+    if [ -f "${INSTALL_DIR}/openshift-install-${FULL_VERSION}" ]; then
+        log "✓ openshift-install-${FULL_VERSION} already exists"
     else
         log "Downloading openshift-install..."
         if ! download_from_s3 "openshift-install"; then
@@ -196,8 +205,8 @@ main() {
     fi
 
     # Download ccoctl (non-fatal)
-    if [ -f "${INSTALL_DIR}/ccoctl-${MAJOR_MINOR}" ]; then
-        log "✓ ccoctl-${MAJOR_MINOR} already exists"
+    if [ -f "${INSTALL_DIR}/ccoctl-${FULL_VERSION}" ]; then
+        log "✓ ccoctl-${FULL_VERSION} already exists"
     else
         log "Downloading ccoctl..."
         if ! download_from_s3 "ccoctl"; then
@@ -210,8 +219,8 @@ main() {
     fi
 
     # Download oc (non-fatal)
-    if [ -f "${INSTALL_DIR}/oc-${MAJOR_MINOR}" ]; then
-        log "✓ oc-${MAJOR_MINOR} already exists"
+    if [ -f "${INSTALL_DIR}/oc-${FULL_VERSION}" ]; then
+        log "✓ oc-${FULL_VERSION} already exists"
     else
         log "Downloading oc..."
         if ! download_from_s3 "oc"; then
@@ -231,9 +240,9 @@ main() {
     success "Successfully downloaded OpenShift ${FULL_VERSION} installer binaries"
 
     # Verify installed version
-    if [ -f "${INSTALL_DIR}/openshift-install-${MAJOR_MINOR}" ]; then
+    if [ -f "${INSTALL_DIR}/openshift-install-${FULL_VERSION}" ]; then
         log "Verifying installed version..."
-        ACTUAL_VERSION=$("${INSTALL_DIR}/openshift-install-${MAJOR_MINOR}" version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
+        ACTUAL_VERSION=$("${INSTALL_DIR}/openshift-install-${FULL_VERSION}" version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
         log "Installed version: ${ACTUAL_VERSION}"
 
         if [ "$ACTUAL_VERSION" != "$FULL_VERSION" ]; then

@@ -5,7 +5,7 @@ platform: aws
 clusterType: openshift
 track: prerelease
 enabled: true
-credentialsMode: Mint
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

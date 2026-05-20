@@ -4,6 +4,7 @@ description: Single node cluster for rapid testing and development (fastest depl
 platform: aws
 clusterType: openshift
 enabled: false
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

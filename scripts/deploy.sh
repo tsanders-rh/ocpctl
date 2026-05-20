@@ -157,6 +157,16 @@ ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "mkdir -p /tmp/addons && sudo mkdir -p ${R
 scp -i "$SSH_KEY" -r internal/addon/definitions/* $SSH_USER@$API_HOST:/tmp/addons/
 ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo cp -r /tmp/addons/* ${REMOTE_BASE}/addons/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/addons && rm -rf /tmp/addons"
 
+# Deploy worker.env configuration
+if [ -f config/worker.env ]; then
+    echo -e "${YELLOW}  Deploying worker.env configuration...${NC}"
+    scp -i "$SSH_KEY" config/worker.env $SSH_USER@$API_HOST:/tmp/worker.env
+    ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo install -m 600 /tmp/worker.env /etc/ocpctl/worker.env && sudo chown ocpctl:ocpctl /etc/ocpctl/worker.env && rm /tmp/worker.env"
+    echo -e "${GREEN}✓ Deployed worker.env${NC}"
+else
+    echo -e "${YELLOW}  ⚠ worker.env not found, skipping${NC}"
+fi
+
 # Update environment configuration
 echo -e "${YELLOW}  Updating environment configuration...${NC}"
 ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo bash -c 'grep -q \"^ADDONS_DIR=\" /etc/ocpctl/api.env && sed -i \"s|^ADDONS_DIR=.*|ADDONS_DIR=${REMOTE_BASE}/addons|\" /etc/ocpctl/api.env || echo \"ADDONS_DIR=${REMOTE_BASE}/addons\" >> /etc/ocpctl/api.env'"
@@ -223,6 +233,16 @@ for host in "${WORKER_HOSTS[@]}"; do
     ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
     scp -i "$SSH_KEY" -r internal/profile/definitions/* $SSH_USER@$host:/tmp/profiles/
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+
+    # Deploy worker.env configuration
+    if [ -f config/worker.env ]; then
+        echo -e "${YELLOW}  Deploying worker.env configuration...${NC}"
+        scp -i "$SSH_KEY" config/worker.env $SSH_USER@$host:/tmp/worker.env
+        ssh -i "$SSH_KEY" $SSH_USER@$host "sudo install -m 600 /tmp/worker.env /etc/ocpctl/worker.env && sudo chown ocpctl:ocpctl /etc/ocpctl/worker.env && rm /tmp/worker.env"
+        echo -e "${GREEN}✓ Deployed worker.env${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ worker.env not found, skipping${NC}"
+    fi
 
     # Deploy systemd service file
     scp -i "$SSH_KEY" deploy/systemd/ocpctl-worker.service $SSH_USER@$host:/tmp/ocpctl-worker.service

@@ -4,6 +4,7 @@ description: Cluster optimized for OpenShift Virtualization with bare metal inst
 platform: aws
 clusterType: openshift
 enabled: false
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

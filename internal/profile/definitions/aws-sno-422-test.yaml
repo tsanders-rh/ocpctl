@@ -4,6 +4,7 @@ description: Single node cluster for 4.22.0-ec.5 testing with increased resource
 platform: aws
 clusterType: openshift
 enabled: false
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

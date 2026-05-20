@@ -4,6 +4,7 @@ description: Compact 3-node cluster for quick testing (masters schedulable, no w
 platform: aws
 clusterType: openshift
 enabled: true
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

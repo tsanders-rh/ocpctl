@@ -46,7 +46,8 @@ export default function NewClusterPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>(Platform.AWS);
   const [selectedClusterType, setSelectedClusterType] = useState<ClusterType>(ClusterType.OpenShift);
   const [selectedTrack, setSelectedTrack] = useState<string | undefined>(undefined);
-  const { data: profiles } = useProfiles(selectedPlatform);
+  // Poll every 10 seconds to automatically pick up profile updates from admin
+  const { data: profiles } = useProfiles(selectedPlatform, undefined, { refetchInterval: 10000 });
   // Only call teams API for admins/team admins (regular users don't have access)
   const { data: teamsData } = useTeams();
   const createCluster = useCreateCluster();
@@ -241,10 +242,9 @@ export default function NewClusterPage() {
       // Remove override_work_hours from payload (it's only for UI)
       delete payload.override_work_hours;
 
-      // Handle credentials_mode: "Auto" = auto-detect = don't send to API (null in backend)
-      if (payload.credentials_mode === "Auto") {
-        delete payload.credentials_mode;
-      }
+      // Keep credentials_mode as "Auto" - backend will handle it by omitting from install-config.yaml
+      // This allows the installer to auto-detect the best mode (Mint or Passthrough)
+      // DO NOT delete it - if we send nil, backend falls back to profile default
 
       // Only include work hours if override is enabled
       if (!data.override_work_hours) {

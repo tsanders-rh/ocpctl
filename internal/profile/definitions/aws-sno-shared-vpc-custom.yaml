@@ -4,6 +4,7 @@ description: SNO clusters in persistent shared VPC for migration testing
 platform: aws
 clusterType: openshift
 enabled: true
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

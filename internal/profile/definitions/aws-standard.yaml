@@ -4,6 +4,7 @@ description: Standard 6-node cluster with dedicated workers for development and 
 platform: aws
 clusterType: openshift
 enabled: false
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

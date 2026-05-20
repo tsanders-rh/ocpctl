@@ -102,7 +102,7 @@ type CreateClusterRequest struct {
 	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
 	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
 	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
-	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Manual Passthrough Mint Static"`
+	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Auto Manual Passthrough Mint Static"`
 	CustomPullSecret   *string                    `json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge with standard pull secret
 	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
 }
@@ -147,6 +147,13 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		return ErrorBadRequest(c, "Invalid request body")
 	}
 	debugLog("Request bound successfully: name=%s, cluster_type=%s, profile=%s", req.Name, req.ClusterType, req.Profile)
+
+	// Debug log credentials mode
+	if req.CredentialsMode != nil {
+		log.Printf("[DEBUG] CredentialsMode from request: '%s'", *req.CredentialsMode)
+	} else {
+		log.Printf("[DEBUG] CredentialsMode from request: nil")
+	}
 
 	// Validate request body
 	if err := c.Validate(req); err != nil {
@@ -212,15 +219,18 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	// Get default TTL if not provided
+	// Load profile from database (used for validation and default values)
+	profileForValidation, err := h.store.GetProfile(ctx, req.Profile)
+	if err != nil {
+		return ErrorBadRequest(c, "Invalid profile: "+err.Error())
+	}
+
 	ttl := 0
 	if req.TTLHours != nil {
 		ttl = *req.TTLHours
 	} else {
-		defaultTTL, err := h.policy.GetDefaultTTL(req.Profile)
-		if err != nil {
-			return ErrorBadRequest(c, "Invalid profile: "+err.Error())
-		}
-		ttl = defaultTTL
+		// Use profile default TTL
+		ttl = profileForValidation.Lifecycle.DefaultTTLHours
 	}
 
 	// Build policy validation request
@@ -243,13 +253,9 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		PreserveOnFailure: req.PreserveOnFailure,
 	}
 
-	// Validate against policy
+	// Validate against policy using database-loaded profile
 	debugLog("Starting policy validation for profile: %s", req.Profile)
-	validation, err := h.policy.ValidateCreateRequest(policyReq)
-	if err != nil {
-		log.Printf("[ERROR] Policy validation error: %v", err)
-		return LogAndReturnGenericError(c, fmt.Errorf("policy validation failed: %w", err))
-	}
+	validation := h.policy.ValidateWithProfile(policyReq, profileForValidation)
 	debugLog("Policy validation completed, valid=%v", validation.Valid)
 
 	if !validation.Valid {
@@ -398,16 +404,12 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	// Set initial post_deploy_status based on profile configuration
 	// This prevents hibernation from blocking clusters that don't have post-deployment config
-	prof, err := h.registry.Get(req.Profile)
-	if err != nil {
-		return LogAndReturnGenericError(c, fmt.Errorf("failed to load profile: %w", err))
-	}
-
-	hasPostDeployment := prof.PostDeployment != nil && (
-		len(prof.PostDeployment.Operators) > 0 ||
-		len(prof.PostDeployment.Scripts) > 0 ||
-		len(prof.PostDeployment.Manifests) > 0 ||
-		len(prof.PostDeployment.HelmCharts) > 0)
+	// Reuse profile loaded earlier for validation
+	hasPostDeployment := profileForValidation.PostDeployment != nil && (
+		len(profileForValidation.PostDeployment.Operators) > 0 ||
+		len(profileForValidation.PostDeployment.Scripts) > 0 ||
+		len(profileForValidation.PostDeployment.Manifests) > 0 ||
+		len(profileForValidation.PostDeployment.HelmCharts) > 0)
 
 	// Load add-ons and merge into custom post-config if specified
 	debugLog("PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
@@ -1543,8 +1545,8 @@ func (h *ClusterHandler) GetStatistics(c echo.Context) error {
 	for _, stat := range profileStats {
 		profileCounts[stat.Profile] += stat.Count
 
-		// Get profile cost (use GetAny to include disabled profiles for existing clusters)
-		prof, err := h.registry.GetAny(stat.Profile)
+		// Get profile from database (includes disabled profiles for existing clusters)
+		prof, err := h.store.GetProfile(ctx, stat.Profile)
 		if err != nil || prof == nil {
 			continue // Skip if profile not found
 		}
@@ -1655,8 +1657,8 @@ func (h *ClusterHandler) GetLongRunningClusters(c echo.Context) error {
 	// Calculate costs for each cluster and build response array
 	responses := make([]LongRunningClusterResponse, 0, len(clusters))
 	for _, cluster := range clusters {
-		// Get profile for cost calculation
-		prof, err := h.registry.GetAny(cluster.Cluster.Profile)
+		// Get profile from database for cost calculation
+		prof, err := h.store.GetProfile(ctx, cluster.Cluster.Profile)
 		if err != nil || prof == nil {
 			// Skip if profile not found (shouldn't happen for valid clusters)
 			log.Printf("Warning: profile %s not found for cluster %s", cluster.Cluster.Profile, cluster.Cluster.ID)

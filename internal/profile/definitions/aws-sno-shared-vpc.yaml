@@ -4,6 +4,7 @@ description: Template for deploying SNO clusters in a persistent shared VPC. Cop
 platform: aws
 clusterType: openshift
 enabled: false  # This is a template - copy and customize to enable
+credentialsMode: Auto
 
 openshiftVersions:
   allowlist:

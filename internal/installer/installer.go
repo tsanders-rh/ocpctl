@@ -114,26 +114,52 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.18, 4.19, 4.20, 4.21, 4.22)", version)
 	}
 
-	// Check for version-specific binaries in environment
-	binaryEnvKey := fmt.Sprintf("OPENSHIFT_INSTALL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+	// Check for version-specific binaries in environment (exact version first, then major.minor)
+	// Try exact version env var first (e.g., OPENSHIFT_INSTALL_BINARY_4_22_0_ec_5)
+	exactVersionKey := strings.ReplaceAll(strings.ReplaceAll(version, ".", "_"), "-", "_")
+	binaryEnvKey := fmt.Sprintf("OPENSHIFT_INSTALL_BINARY_%s", exactVersionKey)
 	binaryPath := os.Getenv(binaryEnvKey)
 
-	// Fall back to version-suffixed binary in standard location
+	// Fall back to major.minor env var (e.g., OPENSHIFT_INSTALL_BINARY_4_22)
+	if binaryPath == "" {
+		binaryEnvKey = fmt.Sprintf("OPENSHIFT_INSTALL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+		binaryPath = os.Getenv(binaryEnvKey)
+	}
+
+	// Fall back to exact version binary in standard location
+	if binaryPath == "" {
+		exactVersionPath := fmt.Sprintf("/usr/local/bin/openshift-install-%s", version)
+		if _, err := os.Stat(exactVersionPath); err == nil {
+			binaryPath = exactVersionPath
+		}
+	}
+
+	// Fall back to major.minor version binary
 	if binaryPath == "" {
 		binaryPath = fmt.Sprintf("/usr/local/bin/openshift-install-%s", majorMinor)
 	}
 
-	// Check for version-specific ccoctl
-	ccoCtlEnvKey := fmt.Sprintf("CCOCTL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+	// Check for version-specific ccoctl (exact version first, then major.minor)
+	ccoCtlEnvKey := fmt.Sprintf("CCOCTL_BINARY_%s", exactVersionKey)
 	ccoCtlPath := os.Getenv(ccoCtlEnvKey)
 
+	// Fall back to major.minor env var
 	if ccoCtlPath == "" {
-		// For 4.22, use RHEL9-specific ccoctl (required for RHEL9 FIPS releases)
-		if majorMinor == "4.22" {
-			ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s-rhel9", majorMinor)
-		} else {
-			ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s", majorMinor)
+		ccoCtlEnvKey = fmt.Sprintf("CCOCTL_BINARY_%s", strings.ReplaceAll(majorMinor, ".", "_"))
+		ccoCtlPath = os.Getenv(ccoCtlEnvKey)
+	}
+
+	// Fall back to exact version binary in standard location
+	if ccoCtlPath == "" {
+		exactCcoCtlPath := fmt.Sprintf("/usr/local/bin/ccoctl-%s", version)
+		if _, err := os.Stat(exactCcoCtlPath); err == nil {
+			ccoCtlPath = exactCcoCtlPath
 		}
+	}
+
+	// Fall back to major.minor version binary
+	if ccoCtlPath == "" {
+		ccoCtlPath = fmt.Sprintf("/usr/local/bin/ccoctl-%s", majorMinor)
 	}
 
 	// Verify binaries exist - if not, try downloading on-demand
@@ -166,8 +192,25 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 
 	// Verify the binary is the correct version
 	if err := verifyInstallerVersion(binaryPath, version); err != nil {
-		log.Printf("WARNING: %v", err)
-		// Don't fail - allow using the available version but log the warning
+		log.Printf("Version mismatch detected: %v", err)
+		log.Printf("Removing incorrect binary and downloading exact version %s...", version)
+
+		// Remove the mismatched binary
+		if removeErr := os.Remove(binaryPath); removeErr != nil {
+			log.Printf("Warning: failed to remove binary %s: %v", binaryPath, removeErr)
+		}
+
+		// Download the correct version
+		if downloadErr := downloadInstallerOnDemand(version); downloadErr != nil {
+			return nil, fmt.Errorf("failed to download correct installer version %s: %w", version, downloadErr)
+		}
+
+		// Verify the new binary exists
+		if _, err := os.Stat(binaryPath); err != nil {
+			return nil, fmt.Errorf("installer binary not found after download: %w", err)
+		}
+
+		log.Printf("✓ Downloaded correct installer version: %s", version)
 	}
 
 	return &Installer{
@@ -195,10 +238,16 @@ func downloadInstallerOnDemand(version string) error {
 
 	log.Printf("Running download script for version %s...", version)
 
-	// Execute download script with full version
-	cmd := exec.Command("/bin/bash", scriptPath, version, "/usr/local/bin")
+	// Execute download script with full version - use sudo since /usr/local/bin requires root
+	cmd := exec.Command("sudo", "/bin/bash", scriptPath, version, "/usr/local/bin")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Pass OPENSHIFT_PULL_SECRET environment variable (required for CI releases)
+	// sudo preserves environment with -E, but we'll explicitly set it
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("OPENSHIFT_PULL_SECRET=%s", os.Getenv("OPENSHIFT_PULL_SECRET")),
+	)
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("download script failed: %w", err)
@@ -347,7 +396,7 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	if credMode == "Static" || credMode == "Mint" {
 		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
-	} else if credMode == "" {
+	} else if credMode == "" || credMode == "Auto" {
 		// Auto mode (no credentialsMode set) - let installer use default EC2 instance profile detection
 		// DO NOT extract IMDS credentials to env vars - OpenShift 4.18-4.21 wants to detect EC2 role itself
 		log.Printf("Auto credentials mode - using installer's default EC2 instance profile detection")
@@ -461,7 +510,7 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	if credMode == "Static" || credMode == "Mint" {
 		log.Printf("%s credentials mode - using permanent IAM credentials from environment", credMode)
 		// Don't extract from IMDS - let existing env vars be used
-	} else if credMode == "" {
+	} else if credMode == "" || credMode == "Auto" {
 		// Auto mode (no credentialsMode set) - let installer use default EC2 instance profile detection
 		// DO NOT extract IMDS credentials to env vars - OpenShift 4.18-4.21 wants to detect EC2 role itself
 		log.Printf("Auto credentials mode - using installer's default EC2 instance profile detection")
