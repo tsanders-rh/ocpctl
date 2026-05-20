@@ -91,8 +91,11 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 	// Optional: include OpenShift CI releases
 	includeCI := c.QueryParam("includeCI") == "true"
 
-	// Get all enabled profiles
-	profiles := h.registry.List()
+	// Get all enabled profiles from database
+	profiles, err := h.store.ListProfiles(ctx, nil, nil, true)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to load profiles: %v", err))
+	}
 
 	// Check each profile for updates in parallel
 	type result struct {
@@ -188,16 +191,40 @@ func (h *ProfileUpdateHandler) HandleUpdateVersions(c echo.Context) error {
 		})
 	}
 
-	// Perform actual update
-	backupPath, err := h.updater.UpdateVersions(profileName, updates)
+	// Get current profile
+	p, err := h.store.GetProfile(ctx, profileName)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("Profile not found: %v", err))
+	}
+
+	// Update the version configuration based on cluster type
+	if len(req.OpenshiftVersions) > 0 {
+		if p.OpenshiftVersions == nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "Profile does not have OpenShift version configuration")
+		}
+		p.OpenshiftVersions.Allowlist = req.OpenshiftVersions
+		if req.OpenshiftDefaultVersion != "" {
+			p.OpenshiftVersions.Default = req.OpenshiftDefaultVersion
+		}
+	}
+
+	if len(req.KubernetesVersions) > 0 {
+		if p.KubernetesVersions == nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "Profile does not have Kubernetes version configuration")
+		}
+		p.KubernetesVersions.Allowlist = req.KubernetesVersions
+		if req.KubernetesDefaultVersion != "" {
+			p.KubernetesVersions.Default = req.KubernetesDefaultVersion
+		}
+	}
+
+	// Perform database update (no cache, immediately visible!)
+	err = h.store.UpsertProfile(ctx, p)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to update profile: %v", err))
 	}
 
-	// Reload profile registry to pick up changes
-	if err := h.registry.Reload(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Profile updated but registry reload failed: %v", err))
-	}
+	backupPath := "" // Database doesn't need file backups
 
 	// Create audit event
 	auditEvent := &types.AuditEvent{

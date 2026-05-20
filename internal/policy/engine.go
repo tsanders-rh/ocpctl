@@ -35,6 +35,18 @@ func (e *Engine) ValidateCreateRequest(req *CreateClusterRequest) (*ValidationRe
 		return result, nil
 	}
 
+	return e.ValidateWithProfile(req, prof), nil
+}
+
+// ValidateWithProfile validates a cluster creation request with a pre-loaded profile
+// This method allows callers to load the profile from database and pass it directly
+func (e *Engine) ValidateWithProfile(req *CreateClusterRequest, prof *profile.Profile) *ValidationResult {
+	result := &ValidationResult{
+		Valid:      true,
+		Errors:     []ValidationError{},
+		MergedTags: make(map[string]string),
+	}
+
 	// Validate each field against profile
 	e.validateName(req, result)
 	e.validatePlatform(req, prof, result)
@@ -51,7 +63,7 @@ func (e *Engine) ValidateCreateRequest(req *CreateClusterRequest) (*ValidationRe
 		result.DestroyAt = destroyAt.Format(time.RFC3339)
 	}
 
-	return result, nil
+	return result
 }
 
 // validateName checks cluster name is DNS-compatible

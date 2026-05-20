@@ -91,11 +91,12 @@ func (h *ProfileHandler) List(c echo.Context) error {
 	platformParam := c.QueryParam("platform")
 	trackParam := c.QueryParam("track")
 
-	var profiles []*profile.Profile
+	// Prepare filter options
+	var platformFilter *types.Platform
+	var trackFilter *string
 
-	// Start with platform filter if specified
+	// Validate and set platform filter
 	if platformParam != "" {
-		// Validate platform
 		var platform types.Platform
 		switch platformParam {
 		case "aws":
@@ -109,36 +110,22 @@ func (h *ProfileHandler) List(c echo.Context) error {
 		default:
 			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', 'gcp', or 'azure'")
 		}
-
-		profiles = h.registry.ListByPlatform(platform)
-	} else {
-		profiles = h.registry.List()
+		platformFilter = &platform
 	}
 
-	// Filter out disabled profiles
-	var enabledProfiles []*profile.Profile
-	for _, p := range profiles {
-		if p.Enabled {
-			enabledProfiles = append(enabledProfiles, p)
-		}
-	}
-	profiles = enabledProfiles
-
-	// Apply track filter if specified
+	// Validate and set track filter
 	if trackParam != "" {
-		// Validate track
 		if trackParam != "ga" && trackParam != "prerelease" && trackParam != "kube" {
 			return ErrorBadRequest(c, "Invalid track. Must be 'ga', 'prerelease', or 'kube'")
 		}
+		trackFilter = &trackParam
+	}
 
-		// Filter profiles by track
-		var filtered []*profile.Profile
-		for _, p := range profiles {
-			if p.Track == trackParam {
-				filtered = append(filtered, p)
-			}
-		}
-		profiles = filtered
+	// Query database for profiles (enabledOnly = true)
+	profiles, err := h.store.ListProfiles(ctx, platformFilter, trackFilter, true)
+	if err != nil {
+		log.Printf("Failed to list profiles from database: %v", err)
+		return ErrorInternal(c, "Failed to load profiles")
 	}
 
 	// Apply team-based filtering (non-admin users only)
@@ -225,7 +212,8 @@ func (h *ProfileHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 	name := c.Param("name")
 
-	prof, err := h.registry.Get(name)
+	// Query database for profile
+	prof, err := h.store.GetProfile(ctx, name)
 	if err != nil {
 		return ErrorNotFound(c, "Profile not found: "+err.Error())
 	}

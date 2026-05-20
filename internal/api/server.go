@@ -337,11 +337,11 @@ func (s *Server) setupRoutes() {
 	clustersGroup.PATCH("/:id/configurations/:config_id/retry", configHandler.RetryConfiguration)
 
 	// Profile routes (require authentication)
-	// Profiles change infrequently, cache for 1 hour
+	// Profiles can be updated by admins, cache for 30 seconds to allow quick propagation
 	profileHandler := NewProfileHandler(s.registry, s.store)
 	profilesGroup := v1.Group("/profiles", auth.RequireAuthDual(s.auth, s.iamAuth))
-	profilesGroup.GET("", profileHandler.List, apimiddleware.CachePublic(1*time.Hour))
-	profilesGroup.GET("/:name", profileHandler.Get, apimiddleware.CachePublic(1*time.Hour))
+	profilesGroup.GET("", profileHandler.List, apimiddleware.CachePublic(30*time.Second))
+	profilesGroup.GET("/:name", profileHandler.Get, apimiddleware.CachePublic(30*time.Second))
 
 	// Post-config add-ons routes (require authentication)
 	addonsHandler := NewAddonsHandler(s.store, s.registry)

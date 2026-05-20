@@ -157,8 +157,17 @@ export default function ProfileUpdatesPage() {
         toast.success('Dry run successful - validation passed')
       } else {
         toast.success(`Profile ${variables.profileName} updated successfully`)
-        queryClient.invalidateQueries({ queryKey: ['admin', 'profile-updates'] })
-        queryClient.invalidateQueries({ queryKey: ['profiles'] })
+        // Invalidate ALL profile queries (including with platform/track params)
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return (
+              (Array.isArray(key) && key[0] === 'profiles') ||
+              (Array.isArray(key) && key[0] === 'profile') ||
+              (Array.isArray(key) && key[0] === 'admin' && key[1] === 'profile-updates')
+            )
+          }
+        })
         // Clear all changes for this profile
         setSelectedVersions(prev => {
           const newState = { ...prev }
@@ -231,7 +240,10 @@ export default function ProfileUpdatesPage() {
     },
     onSuccess: (data) => {
       toast.success(`Profiles reloaded successfully (${data.profiles_loaded} loaded)`)
+      // Invalidate and force refetch to bust cache
       queryClient.invalidateQueries({ queryKey: ['admin', 'profile-updates'] })
+      queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      queryClient.refetchQueries({ queryKey: ['profiles'] })
     },
     onError: (error: Error) => {
       toast.error(`Reload failed: ${error.message}`)
