@@ -62,7 +62,7 @@ func DefaultServerConfig() *ServerConfig {
 		JWTRefreshTTL:     7 * 24 * time.Hour, // 7 days
 		AllowedOrigins:    []string{"http://localhost:3000"}, // Next.js dev server
 		MaxBodySize:       "1M",
-		RateLimitRequests: 100,
+		RateLimitRequests: 300, // Increased to support auto-refresh UI patterns
 		RateLimitDuration: 1 * time.Minute,
 	}
 }
@@ -202,7 +202,8 @@ func (s *Server) setupMiddleware() {
 	}))
 
 	// Rate limiting (global, moderate limits)
-	s.echo.Use(apimiddleware.RateLimit(s.config.RateLimitRequests, 10))
+	// Burst of 30 allows initial page load with multiple concurrent queries
+	s.echo.Use(apimiddleware.RateLimit(s.config.RateLimitRequests, 30))
 }
 
 // setupRoutes configures API routes
