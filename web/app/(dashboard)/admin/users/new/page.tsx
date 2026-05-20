@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, X, Eye, EyeOff } from "lucide-react";
 import { UserRole, type CreateUserRequest } from "@/types/api";
 
 export default function NewUserPage() {
@@ -25,6 +25,7 @@ export default function NewUserPage() {
   const createUser = useCreateUser();
   const { data: teamsData } = useTeams();
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -131,18 +132,32 @@ export default function NewUserPage() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Password *</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Minimum 8 characters"
-                {...register("password", {
-                  required: "Password is required",
-                  minLength: {
-                    value: 8,
-                    message: "Password must be at least 8 characters",
-                  },
-                })}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Minimum 8 characters"
+                  {...register("password", {
+                    required: "Password is required",
+                    minLength: {
+                      value: 8,
+                      message: "Password must be at least 8 characters",
+                    },
+                  })}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
               {errors.password && (
                 <p className="text-sm text-red-600">{errors.password.message}</p>
               )}

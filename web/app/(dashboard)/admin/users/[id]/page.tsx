@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, X, Eye, EyeOff } from "lucide-react";
 import { UserRole, type UpdateUserRequest } from "@/types/api";
 import { useEffect, useState } from "react";
 
@@ -29,6 +29,8 @@ export default function EditUserPage() {
   const { data: teamsData } = useTeams();
   const updateUser = useUpdateUser();
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -278,17 +280,31 @@ export default function EditUserPage() {
 
             <div className="space-y-2">
               <Label htmlFor="new_password">New Password</Label>
-              <Input
-                id="new_password"
-                type="password"
-                placeholder="••••••••"
-                {...register("new_password", {
-                  minLength: {
-                    value: 8,
-                    message: "Password must be at least 8 characters",
-                  },
-                })}
-              />
+              <div className="relative">
+                <Input
+                  id="new_password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  {...register("new_password", {
+                    minLength: {
+                      value: 8,
+                      message: "Password must be at least 8 characters",
+                    },
+                  })}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
               {errors.new_password && (
                 <p className="text-sm text-red-600">{errors.new_password.message}</p>
               )}
@@ -296,12 +312,26 @@ export default function EditUserPage() {
 
             <div className="space-y-2">
               <Label htmlFor="confirm_password">Confirm New Password</Label>
-              <Input
-                id="confirm_password"
-                type="password"
-                placeholder="••••••••"
-                {...register("confirm_password")}
-              />
+              <div className="relative">
+                <Input
+                  id="confirm_password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  {...register("confirm_password")}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
               {watchedPassword && watchedConfirmPassword && watchedPassword !== watchedConfirmPassword && (
                 <p className="text-sm text-red-600">Passwords do not match</p>
               )}
