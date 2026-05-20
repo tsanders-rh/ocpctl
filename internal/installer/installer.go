@@ -283,13 +283,26 @@ func verifyInstallerVersion(binaryPath, requestedVersion string) error {
 
 	actualVersion := fields[1]
 
-	// Check if versions match
-	if actualVersion != requestedVersion {
-		return fmt.Errorf("installer version mismatch: requested %s but binary is %s", requestedVersion, actualVersion)
+	// Check if versions match exactly
+	if actualVersion == requestedVersion {
+		log.Printf("✓ Verified installer version: %s", actualVersion)
+		return nil
 	}
 
-	log.Printf("✓ Verified installer version: %s", actualVersion)
-	return nil
+	// For dev-preview versions (RC, EC, FC, nightly), allow using a newer build
+	// of the same major.minor version for destroy operations
+	// Example: rc.4 can destroy clusters created with rc.3
+	if isDevPreviewVersion(actualVersion) && isDevPreviewVersion(requestedVersion) {
+		actualMajorMinor := extractMajorMinor(actualVersion)
+		requestedMajorMinor := extractMajorMinor(requestedVersion)
+
+		if actualMajorMinor == requestedMajorMinor {
+			log.Printf("✓ Version compatible: using %s for %s (same major.minor)", actualVersion, requestedVersion)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("installer version mismatch: requested %s but binary is %s", requestedVersion, actualVersion)
 }
 
 // isDevPreviewVersion detects if a version string is a dev-preview/candidate release
