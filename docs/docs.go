@@ -23,6 +23,58 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/clusters/long-running": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns READY clusters running 24+ hours without hibernation (admin only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get long-running clusters",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Minimum running hours (default: 24)",
+                        "name": "min_hours",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/clusters/statistics": {
             "get": {
                 "security": [
@@ -365,6 +417,247 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/profiles/reload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forces a reload of all profiles from the profiles directory into the in-memory registry. Useful after manual profile file changes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Reload all profiles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ReloadProfilesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - Admin access required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/profiles/version-check": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Checks all enabled profiles for available OpenShift and Kubernetes version updates from official release channels",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Check profiles for version updates",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Force refresh version cache",
+                        "name": "refresh",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include release candidate versions",
+                        "name": "includeRC",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include OpenShift CI releases",
+                        "name": "includeCI",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CheckVersionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - Admin access required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/profiles/{name}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Rolls back a profile to its latest backup file. This restores the previous version of the profile configuration before the last update.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Rollback profile to backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - Admin access required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found or no backup available",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/profiles/{name}/update-versions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the OpenShift or Kubernetes version allowlist and default version for a specific profile. Creates a backup before updating.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Update profile versions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Version update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateVersionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateVersionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - Admin access required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/system/infrastructure": {
             "get": {
                 "security": [
@@ -391,6 +684,845 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a list of all teams (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "List teams",
+                "responses": {
+                    "200": {
+                        "description": "Returns teams array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list teams",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new team (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Create team",
+                "parameters": [
+                    {
+                        "description": "Team creation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreateTeamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Team"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Team name already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to create team",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves team details by name (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Get team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Team"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get team",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a team (admin only). Only allowed if no clusters reference it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Delete team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Team has clusters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to delete team",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates team description (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Update team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Team update fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateTeamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Team"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update team",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/admins": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all users who can administer a given team (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "List team admins",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns team and admins array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list team admins",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Grants team admin privilege to a user for a specific team (platform admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Grant team admin privilege",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Grant request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.GrantTeamAdminRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or user doesn't have TEAM_ADMIN role",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to grant privilege",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/admins/{user_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revokes team admin privilege from a user for a specific team (platform admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Revoke team admin privilege",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Mapping not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to revoke privilege",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/allowed-profiles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the list of profiles allowed for this team (null/empty = all profiles allowed)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Get team allowed profiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns allowed_profiles array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get allowed profiles",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the list of profiles allowed for this team. Empty array = no profiles allowed. Null = all profiles allowed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Update team allowed profiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Allowed profiles list",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdateAllowedProfilesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Team"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update allowed profiles",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/eligible-users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns users who are not yet members of the specified team (excludes ADMIN role users who have access to all teams)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Get eligible users for team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns eligible users array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get eligible users",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/members": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all users who belong to a given team (platform admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "List team members",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns team and members array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list team members",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a user to a team for general membership (platform admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Add user to team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Add user request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.AddUserToTeamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to add user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/{name}/members/{user_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a user from a team (platform admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Remove user from team",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Membership not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to remove user",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1687,7 +2819,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Hibernates a cluster by stopping its instances. Reduces costs during off-hours. (AWS only)",
+                "description": "Hibernates a cluster to reduce costs during off-hours. AWS/GCP: stops instances. EKS/GKE: scales node pools to 0. IKS: scales workers to 0.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1751,6 +2883,73 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/instances": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all EC2 instances associated with the cluster (AWS only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clusters"
+                ],
+                "summary": "Get cluster EC2 instances",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.EC2Instance"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2144,7 +3343,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Resumes a hibernated cluster by starting its instances. (AWS only)",
+                "description": "Resumes a hibernated cluster. AWS/GCP: starts instances. EKS/GKE: restores node pools. IKS: restores workers.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2275,6 +3474,73 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/clusters/{id}/storage-classes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all storage classes available in the cluster",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clusters"
+                ],
+                "summary": "Get cluster storage classes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.StorageClass"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -2436,6 +3702,133 @@ const docTemplate = `{
                 }
             }
         },
+        "/costs/gcp": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves GCP billing costs for a time period, aggregated by cluster or service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "costs"
+                ],
+                "summary": "Get GCP costs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "30 days ago",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "today",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "cluster",
+                        "description": "Group by: cluster, service, profile",
+                        "name": "group_by",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/costs/gcp/project": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves total GCP billing costs for the project",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "costs"
+                ],
+                "summary": "Get total GCP project costs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "30 days ago",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "today",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns basic health status of the API server including auth availability",
@@ -2589,7 +3982,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, and search query. Each add-on includes multiple versions with one marked as default.",
+                "description": "Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, profile capabilities, and search query. Each add-on includes multiple versions with one marked as default.",
                 "produces": [
                     "application/json"
                 ],
@@ -2600,7 +3993,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Filter by category (backup, migration, cicd, monitoring, security, storage, networking)",
+                        "description": "Filter by category (backup, migration, cicd, monitoring, security, storage, networking, virtualization)",
                         "name": "category",
                         "in": "query"
                     },
@@ -2608,6 +4001,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by supported platform (openshift, eks, iks)",
                         "name": "platform",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by profile capabilities (e.g., aws-minimal)",
+                        "name": "profile",
                         "in": "query"
                     },
                     {
@@ -2691,7 +4090,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all available cluster profiles. Can be filtered by platform (aws or ibmcloud).",
+                "description": "Returns all available cluster profiles. Can be filtered by platform (aws, ibmcloud, or gcp) and track (ga or prerelease).",
                 "consumes": [
                     "application/json"
                 ],
@@ -2705,8 +4104,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Filter by platform (aws, ibmcloud)",
+                        "description": "Filter by platform (aws, ibmcloud, gcp)",
                         "name": "platform",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by track (ga, prerelease)",
+                        "name": "track",
                         "in": "query"
                     }
                 ],
@@ -2721,7 +4126,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid platform parameter",
+                        "description": "Invalid platform or track parameter",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2780,7 +4185,7 @@ const docTemplate = `{
         },
         "/ready": {
             "get": {
-                "description": "Checks if the server is ready to handle requests by verifying database connectivity",
+                "description": "Comprehensive health check validating all critical dependencies (database, S3, AWS credentials, JWT)",
                 "produces": [
                     "application/json"
                 ],
@@ -2790,21 +4195,17 @@ const docTemplate = `{
                 "summary": "Readiness check",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "All dependencies healthy",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "additionalProperties": true
                         }
                     },
                     "503": {
-                        "description": "Service Unavailable",
+                        "description": "One or more dependencies unavailable",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -3422,6 +4823,150 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_tsanders-rh_ocpctl_internal_profile.AKSConfig": {
+            "type": "object",
+            "properties": {
+                "kubernetes_version": {
+                    "type": "string"
+                },
+                "network_plugin": {
+                    "description": "azure, kubenet",
+                    "type": "string"
+                },
+                "network_policy": {
+                    "description": "azure, calico",
+                    "type": "string"
+                },
+                "node_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AKSNodePoolConfig"
+                    }
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AKSNodePoolConfig": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "enable_auto_scale": {
+                    "type": "boolean"
+                },
+                "max_count": {
+                    "type": "integer"
+                },
+                "min_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "os_disk_size_gb": {
+                    "type": "integer"
+                },
+                "vm_size": {
+                    "description": "e.g., \"Standard_D4s_v3\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AROConfig": {
+            "type": "object",
+            "properties": {
+                "master_vm_size": {
+                    "description": "e.g., \"Standard_D8s_v3\"",
+                    "type": "string"
+                },
+                "openshift_version": {
+                    "type": "string"
+                },
+                "pull_secret_path": {
+                    "type": "string"
+                },
+                "worker_count": {
+                    "type": "integer"
+                },
+                "worker_vm_size": {
+                    "description": "e.g., \"Standard_D4s_v3\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AWSConfig": {
+            "type": "object",
+            "properties": {
+                "instanceMetadataService": {
+                    "type": "string"
+                },
+                "rootVolume": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AWSRootVolume"
+                },
+                "subnets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AWSRootVolume": {
+            "type": "object",
+            "properties": {
+                "iops": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AzureConfig": {
+            "type": "object",
+            "properties": {
+                "base_domain_resource_group": {
+                    "type": "string"
+                },
+                "compute": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AzureMachineConfig"
+                },
+                "control_plane": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AzureMachineConfig"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "resource_group_prefix": {
+                    "type": "string"
+                },
+                "subnetwork": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.AzureMachineConfig": {
+            "type": "object",
+            "properties": {
+                "os_disk_size_gb": {
+                    "type": "integer"
+                },
+                "os_disk_type": {
+                    "description": "StandardSSD_LRS, Premium_LRS",
+                    "type": "string"
+                },
+                "vm_size": {
+                    "description": "e.g., \"Standard_D8s_v3\"",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig": {
             "type": "object",
             "required": [
@@ -3541,6 +5086,23 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_internal_profile.EKSConfig": {
+            "type": "object",
+            "properties": {
+                "enabled_cluster_log_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "private_access": {
+                    "type": "boolean"
+                },
+                "public_access": {
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig": {
             "type": "object",
             "properties": {
@@ -3566,6 +5128,105 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_internal_profile.GCPConfig": {
+            "type": "object",
+            "properties": {
+                "compute": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.GCPMachineConfig"
+                },
+                "control_plane": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.GCPMachineConfig"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "project": {
+                    "type": "string"
+                },
+                "secure_boot_policy": {
+                    "type": "string"
+                },
+                "service_account": {
+                    "type": "string"
+                },
+                "subnetwork": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.GCPMachineConfig": {
+            "type": "object",
+            "properties": {
+                "disk_size_gb": {
+                    "type": "integer"
+                },
+                "disk_type": {
+                    "type": "string"
+                },
+                "machine_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.GKEConfig": {
+            "type": "object",
+            "properties": {
+                "enable_workload_identity": {
+                    "type": "boolean"
+                },
+                "enabled_cluster_log_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "node_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.GKENodePoolConfig"
+                    }
+                },
+                "private_access": {
+                    "type": "boolean"
+                },
+                "public_access": {
+                    "type": "boolean"
+                },
+                "release_channel": {
+                    "description": "\"rapid\", \"regular\", \"stable\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.GKENodePoolConfig": {
+            "type": "object",
+            "properties": {
+                "disk_size_gb": {
+                    "type": "integer"
+                },
+                "disk_type": {
+                    "type": "string"
+                },
+                "enable_auto_scale": {
+                    "type": "boolean"
+                },
+                "machine_type": {
+                    "type": "string"
+                },
+                "max_node_count": {
+                    "type": "integer"
+                },
+                "min_node_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_internal_profile.HelmChartConfig": {
             "type": "object",
             "required": [
@@ -3586,6 +5247,23 @@ const docTemplate = `{
                 "values": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.IBMCloudConfig": {
+            "type": "object",
+            "properties": {
+                "classicInfrastructure": {
+                    "type": "boolean"
+                },
+                "dataCenter": {
+                    "type": "string"
+                },
+                "resourceGroup": {
+                    "type": "string"
+                },
+                "vpcname": {
+                    "type": "string"
                 }
             }
         },
@@ -3644,6 +5322,27 @@ const docTemplate = `{
                 "url": {
                     "description": "Remote URL (e.g. GitHub raw URL)",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.MetadataConfig": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "capacity": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -3746,6 +5445,38 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_internal_profile.PlatformConfig": {
+            "type": "object",
+            "properties": {
+                "aks": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AKSConfig"
+                },
+                "aro": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AROConfig"
+                },
+                "aws": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AWSConfig"
+                },
+                "azure": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.AzureConfig"
+                },
+                "eks": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.EKSConfig"
+                },
+                "gcp": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.GCPConfig"
+                },
+                "gke": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.GKEConfig"
+                },
+                "ibmcloud": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.IBMCloudConfig"
+                },
+                "rosa": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ROSAConfig"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig": {
             "type": "object",
             "properties": {
@@ -3779,6 +5510,161 @@ const docTemplate = `{
                 "timeout": {
                     "description": "Duration string, e.g. \"30m\"",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.Profile": {
+            "type": "object",
+            "required": [
+                "compute",
+                "description",
+                "displayName",
+                "lifecycle",
+                "name",
+                "platform",
+                "regions",
+                "tags"
+            ],
+            "properties": {
+                "baseDomains": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.BaseDomainConfig"
+                },
+                "clusterType": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterType"
+                },
+                "compute": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ComputeConfig"
+                },
+                "costControls": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig"
+                },
+                "credentialsMode": {
+                    "description": "Default credentials mode (Mint, Passthrough, Manual, Static)",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "features": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.FeaturesConfig"
+                },
+                "kubernetesVersions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
+                "lifecycle": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.LifecycleConfig"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.MetadataConfig"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "networking": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.NetworkingConfig"
+                },
+                "openshiftVersions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.VersionConfig"
+                },
+                "platform": {
+                    "enum": [
+                        "aws",
+                        "ibmcloud",
+                        "gcp",
+                        "azure"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform"
+                        }
+                    ]
+                },
+                "platformConfig": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PlatformConfig"
+                },
+                "postDeployment": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.PostDeploymentConfig"
+                },
+                "regions": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.RegionConfig"
+                },
+                "tags": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig"
+                },
+                "track": {
+                    "description": "ga, prerelease, or kube",
+                    "type": "string",
+                    "enum": [
+                        "ga",
+                        "prerelease",
+                        "kube"
+                    ]
+                },
+                "zones": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ZoneConfig"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ProfileVersionStatus": {
+            "type": "object",
+            "properties": {
+                "available_versions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "current_versions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default_version": {
+                    "type": "string"
+                },
+                "last_checked": {
+                    "type": "string"
+                },
+                "new_versions": {
+                    "description": "Versions not in current list",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "profile_name": {
+                    "type": "string"
+                },
+                "update_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ROSAConfig": {
+            "type": "object",
+            "properties": {
+                "compute_nodes": {
+                    "description": "Number of compute nodes",
+                    "type": "integer"
+                },
+                "machine_type": {
+                    "description": "Compute instance type",
+                    "type": "string"
+                },
+                "multi_az": {
+                    "description": "Multi-AZ deployment",
+                    "type": "boolean"
+                },
+                "sts_enabled": {
+                    "description": "STS authentication (required for ROSA)",
+                    "type": "boolean"
                 }
             }
         },
@@ -3900,6 +5786,25 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_internal_profile.ZoneConfig": {
+            "type": "object",
+            "required": [
+                "allowed",
+                "default"
+            ],
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.APIKeyResponse": {
             "type": "object",
             "properties": {
@@ -3945,6 +5850,20 @@ const docTemplate = `{
                 "APIKeyScopeReadOnly",
                 "APIKeyScopeFullAccess"
             ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.AddUserToTeamRequest": {
+            "type": "object",
+            "required": [
+                "user_id"
+            ],
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.AddonSelection": {
             "type": "object",
@@ -4001,8 +5920,15 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "credentials_mode": {
+                    "type": "string"
+                },
                 "custom_post_config": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
+                },
+                "custom_pull_secret": {
+                    "description": "Optional custom pull secret JSON to merge",
+                    "type": "string"
                 },
                 "destroy_at": {
                     "type": "string"
@@ -4041,6 +5967,9 @@ const docTemplate = `{
                 },
                 "post_deploy_status": {
                     "type": "string"
+                },
+                "preserve_on_failure": {
+                    "type": "boolean"
                 },
                 "profile": {
                     "type": "string"
@@ -4157,23 +6086,39 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "openshift",
+                "rosa",
                 "eks",
-                "iks"
+                "iks",
+                "gke",
+                "aro",
+                "aks"
             ],
             "x-enum-comments": {
+                "ClusterTypeAKS": "Azure Kubernetes Service",
+                "ClusterTypeARO": "Azure Red Hat OpenShift (managed)",
                 "ClusterTypeEKS": "AWS Elastic Kubernetes Service",
+                "ClusterTypeGKE": "Google Kubernetes Engine",
                 "ClusterTypeIKS": "IBM Cloud Kubernetes Service",
-                "ClusterTypeOpenShift": "OpenShift (OCP/ROSA)"
+                "ClusterTypeOpenShift": "OpenShift IPI (self-managed)",
+                "ClusterTypeROSA": "Red Hat OpenShift Service on AWS (managed)"
             },
             "x-enum-descriptions": [
-                "OpenShift (OCP/ROSA)",
+                "OpenShift IPI (self-managed)",
+                "Red Hat OpenShift Service on AWS (managed)",
                 "AWS Elastic Kubernetes Service",
-                "IBM Cloud Kubernetes Service"
+                "IBM Cloud Kubernetes Service",
+                "Google Kubernetes Engine",
+                "Azure Red Hat OpenShift (managed)",
+                "Azure Kubernetes Service"
             ],
             "x-enum-varnames": [
                 "ClusterTypeOpenShift",
+                "ClusterTypeROSA",
                 "ClusterTypeEKS",
-                "ClusterTypeIKS"
+                "ClusterTypeIKS",
+                "ClusterTypeGKE",
+                "ClusterTypeARO",
+                "ClusterTypeAKS"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.CreateAPIKeyRequest": {
@@ -4208,6 +6153,22 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreateTeamRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 2
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.CreateUserRequest": {
             "type": "object",
             "required": [
@@ -4226,6 +6187,13 @@ const docTemplate = `{
                 },
                 "role": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "teams": {
+                    "description": "Non-admin users must belong to at least one team (validated in handler)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "username": {
                     "type": "string",
@@ -4454,6 +6422,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "path": {
+                    "description": "Path to script in manifests directory",
+                    "type": "string"
+                },
                 "timeout": {
                     "description": "Duration string, e.g. \"10m\" (max 30m)",
                     "type": "string"
@@ -4468,6 +6440,20 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.GrantTeamAdminRequest": {
+            "type": "object",
+            "required": [
+                "user_id"
+            ],
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
                 }
             }
         },
@@ -4675,7 +6661,14 @@ const docTemplate = `{
                 "OIDCProvider",
                 "EBSVolume",
                 "ElasticIP",
-                "CloudWatchLogGroup"
+                "CloudWatchLogGroup",
+                "GCPServiceAccount",
+                "GCPNetwork",
+                "GCPSubnetwork",
+                "GCPDisk",
+                "GCPInstance",
+                "GCPBucket",
+                "GCPIPAddress"
             ],
             "x-enum-varnames": [
                 "OrphanedResourceTypeVPC",
@@ -4687,18 +6680,29 @@ const docTemplate = `{
                 "OrphanedResourceTypeOIDCProvider",
                 "OrphanedResourceTypeEBSVolume",
                 "OrphanedResourceTypeElasticIP",
-                "OrphanedResourceTypeCloudWatchLogGroup"
+                "OrphanedResourceTypeCloudWatchLogGroup",
+                "OrphanedResourceTypeGCPServiceAccount",
+                "OrphanedResourceTypeGCPNetwork",
+                "OrphanedResourceTypeGCPSubnetwork",
+                "OrphanedResourceTypeGCPDisk",
+                "OrphanedResourceTypeGCPInstance",
+                "OrphanedResourceTypeGCPBucket",
+                "OrphanedResourceTypeGCPIPAddress"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.Platform": {
             "type": "string",
             "enum": [
                 "aws",
-                "ibmcloud"
+                "ibmcloud",
+                "gcp",
+                "azure"
             ],
             "x-enum-varnames": [
                 "PlatformAWS",
-                "PlatformIBMCloud"
+                "PlatformIBMCloud",
+                "PlatformGCP",
+                "PlatformAzure"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate": {
@@ -4834,6 +6838,35 @@ const docTemplate = `{
                 "type": "string"
             }
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.Team": {
+            "type": "object",
+            "properties": {
+                "allowed_profiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.UpdateAPIKeyRequest": {
             "type": "object",
             "properties": {
@@ -4841,6 +6874,20 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255,
                     "minLength": 3
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateAllowedProfilesRequest": {
+            "type": "object",
+            "required": [
+                "allowed_profiles"
+            ],
+            "properties": {
+                "allowed_profiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4863,6 +6910,14 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdateTeamRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.UpdateUserRequest": {
             "type": "object",
             "properties": {
@@ -4875,6 +6930,13 @@ const docTemplate = `{
                 },
                 "role": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "teams": {
+                    "description": "Update user's team memberships",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "username": {
                     "type": "string",
@@ -4898,8 +6960,20 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "managed_teams": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "role": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UserRole"
+                },
+                "teams": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "timezone": {
                     "type": "string"
@@ -4923,12 +6997,14 @@ const docTemplate = `{
             "enum": [
                 "ADMIN",
                 "USER",
-                "VIEWER"
+                "VIEWER",
+                "TEAM_ADMIN"
             ],
             "x-enum-varnames": [
                 "RoleAdmin",
                 "RoleUser",
-                "RoleViewer"
+                "RoleViewer",
+                "RoleTeamAdmin"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.WorkHoursSchedule": {
@@ -5035,6 +7111,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.CheckVersionsResponse": {
+            "type": "object",
+            "properties": {
+                "cache_age": {
+                    "type": "string"
+                },
+                "last_checked": {
+                    "type": "string"
+                },
+                "profiles_with_updates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.ProfileVersionStatus"
+                    }
+                },
+                "total_profiles": {
+                    "type": "integer"
+                },
+                "updates_available": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.ClusterOutputsResponse": {
             "type": "object",
             "properties": {
@@ -5083,6 +7182,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.ClusterPlatformCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "platform": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.ClusterProfileCount": {
             "type": "object",
             "properties": {
@@ -5099,6 +7209,12 @@ const docTemplate = `{
             "properties": {
                 "active_clusters": {
                     "type": "integer"
+                },
+                "clusters_by_platform": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ClusterPlatformCount"
+                    }
                 },
                 "clusters_by_profile": {
                     "type": "array",
@@ -5188,12 +7304,26 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "openshift",
+                        "rosa",
                         "eks",
-                        "iks"
+                        "iks",
+                        "gke",
+                        "aro",
+                        "aks"
                     ]
                 },
                 "cost_center": {
                     "type": "string"
+                },
+                "credentials_mode": {
+                    "type": "string",
+                    "enum": [
+                        "Auto",
+                        "Manual",
+                        "Passthrough",
+                        "Mint",
+                        "Static"
+                    ]
                 },
                 "customPostConfig": {
                     "description": "Custom post-deployment operators, scripts, and manifests",
@@ -5202,6 +7332,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CustomPostConfig"
                         }
                     ]
+                },
+                "custom_pull_secret": {
+                    "description": "Optional custom pull secret JSON to merge with standard pull secret",
+                    "type": "string"
                 },
                 "enable_efs_storage": {
                     "type": "boolean"
@@ -5230,7 +7364,9 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "aws",
-                        "ibmcloud"
+                        "ibmcloud",
+                        "gcp",
+                        "azure"
                     ]
                 },
                 "postConfigAddOns": {
@@ -5239,6 +7375,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.AddonSelection"
                     }
+                },
+                "preserve_on_failure": {
+                    "type": "boolean"
                 },
                 "profile": {
                     "type": "string"
@@ -5319,6 +7458,32 @@ const docTemplate = `{
                 },
                 "taskCount": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.EC2Instance": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
+                "instance_type": {
+                    "type": "string"
+                },
+                "launch_time": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "private_ip_address": {
+                    "type": "string"
+                },
+                "public_ip_address": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
                 }
             }
         },
@@ -5517,6 +7682,9 @@ const docTemplate = `{
                 "cost_controls": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.CostControlsConfig"
                 },
+                "credentials_mode": {
+                    "type": "string"
+                },
                 "deployment_metrics": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ProfileDeploymentMetrics"
                 },
@@ -5558,6 +7726,43 @@ const docTemplate = `{
                 },
                 "tags": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.TagsConfig"
+                },
+                "track": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ReloadProfilesResponse": {
+            "type": "object",
+            "properties": {
+                "profiles_loaded": {
+                    "type": "integer"
+                },
+                "reloaded_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.StorageClass": {
+            "type": "object",
+            "properties": {
+                "is_default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provisioner": {
+                    "type": "string"
+                },
+                "reclaim_policy": {
+                    "type": "string"
+                },
+                "volume_binding_mode": {
+                    "type": "string"
                 }
             }
         },
@@ -5626,6 +7831,58 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api.UpdateVersionsRequest": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean"
+                },
+                "kubernetes_default_version": {
+                    "type": "string"
+                },
+                "kubernetes_versions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "openshift_default_version": {
+                    "type": "string"
+                },
+                "openshift_versions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.UpdateVersionsResponse": {
+            "type": "object",
+            "properties": {
+                "audit_event_id": {
+                    "type": "string"
+                },
+                "backup_path": {
+                    "type": "string"
+                },
+                "dry_run": {
+                    "type": "boolean"
+                },
+                "preview_profile": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_internal_profile.Profile"
+                },
+                "profile_name": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
