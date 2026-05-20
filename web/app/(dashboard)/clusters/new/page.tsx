@@ -784,20 +784,6 @@ export default function NewClusterPage() {
                           "Use when testing OpenShift 4.22+ with a simpler credential model. All cluster components share the same static AWS credentials from the installer. Requires permanent AWS credentials during installation."
                         )}
                       </p>
-                      {watchedValues.version?.includes("4.22") && watchedValues.credentials_mode === "Auto" && (
-                        <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
-                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                          <div className="text-sm space-y-1">
-                            <p className="font-medium text-amber-900 dark:text-amber-100">
-                              OpenShift 4.22 Requires Mint or Static Mode
-                            </p>
-                            <p className="text-amber-800 dark:text-amber-200">
-                              OpenShift 4.22 pre-release requires <span className="font-semibold">Mint</span> or <span className="font-semibold">Static</span> credentials mode with permanent IAM credentials.
-                              Auto mode (Passthrough) will not work.
-                            </p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
