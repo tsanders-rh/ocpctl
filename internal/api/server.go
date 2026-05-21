@@ -228,7 +228,7 @@ func (s *Server) setupRoutes() {
 	authGroup := v1.Group("/auth")
 
 	// Strict rate limiting for login to prevent brute force
-	authGroup.POST("/login", authHandler.Login, apimiddleware.StrictRateLimit(5)) // 5 requests/minute
+	authGroup.POST("/login", authHandler.Login, apimiddleware.StrictRateLimitWithMessage(5, "too many login attempts, please wait a minute and try again")) // 5 requests/minute
 	authGroup.POST("/logout", authHandler.Logout, apimiddleware.StrictRateLimit(10))   // 10 requests/minute
 	authGroup.POST("/refresh", authHandler.Refresh, apimiddleware.StrictRateLimit(10)) // 10 requests/minute
 

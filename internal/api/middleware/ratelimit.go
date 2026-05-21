@@ -93,6 +93,11 @@ func (s *RateLimiterStore) cleanupRoutine() {
 
 // RateLimit returns a rate limiting middleware
 func RateLimit(requestsPerMinute int, burst int) echo.MiddlewareFunc {
+	return RateLimitWithMessage(requestsPerMinute, burst, "rate limit exceeded, please try again later")
+}
+
+// RateLimitWithMessage returns a rate limiting middleware with a custom error message
+func RateLimitWithMessage(requestsPerMinute int, burst int, errorMessage string) echo.MiddlewareFunc {
 	store := NewRateLimiterStore(requestsPerMinute, burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -110,7 +115,7 @@ func RateLimit(requestsPerMinute int, burst int) echo.MiddlewareFunc {
 			if !limiter.Allow() {
 				return echo.NewHTTPError(
 					http.StatusTooManyRequests,
-					"rate limit exceeded, please try again later",
+					errorMessage,
 				)
 			}
 
@@ -122,4 +127,9 @@ func RateLimit(requestsPerMinute int, burst int) echo.MiddlewareFunc {
 // StrictRateLimit returns a stricter rate limit for sensitive endpoints
 func StrictRateLimit(requestsPerMinute int) echo.MiddlewareFunc {
 	return RateLimit(requestsPerMinute, 1) // Very low burst
+}
+
+// StrictRateLimitWithMessage returns a stricter rate limit with a custom error message
+func StrictRateLimitWithMessage(requestsPerMinute int, errorMessage string) echo.MiddlewareFunc {
+	return RateLimitWithMessage(requestsPerMinute, 1, errorMessage)
 }
