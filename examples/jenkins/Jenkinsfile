@@ -242,23 +242,12 @@ pipeline {
                             continue
                         }
 
-                        // DEBUG: Print raw response
-                        echo "DEBUG: Raw API response body (first 500 chars): ${result.body.take(500)}"
+                        def responseData = readJSON text: result.body
 
-                        def clusterData = readJSON text: result.body
+                        // GET endpoint returns {"cluster": {...}} while POST returns cluster directly
+                        def clusterData = responseData.cluster ?: responseData
 
-                        // DEBUG: Print parsed object
-                        echo "DEBUG: Parsed clusterData keys: ${clusterData.keySet()}"
-                        echo "DEBUG: clusterData.status direct access: ${clusterData.status}"
-                        echo "DEBUG: clusterData['status'] bracket access: ${clusterData['status']}"
-
-                        // Try direct assignment without .toString()
-                        def statusValue = clusterData.status
-                        echo "DEBUG: Local statusValue variable: ${statusValue}"
-
-                        // Now assign to global
-                        globalClusterStatus = statusValue.toString()
-                        echo "DEBUG: globalClusterStatus after assignment: ${globalClusterStatus}"
+                        globalClusterStatus = clusterData.status.toString()
 
                         // Only print status when it changes
                         if (globalClusterStatus != lastStatus) {
@@ -304,6 +293,7 @@ pipeline {
 
                     def outputs = readJSON text: result.body
 
+                    // The outputs endpoint returns data directly (not wrapped like the cluster GET endpoint)
                     // Save kubeconfig to file
                     def kubeconfigFile = "kubeconfig-${globalClusterName}.yaml"
                     writeFile file: kubeconfigFile, text: outputs.kubeconfig
@@ -590,7 +580,9 @@ def waitForDeletion(String clusterId) {
 
         // Check status
         try {
-            def clusterData = readJSON text: result.body
+            def responseData = readJSON text: result.body
+            // GET endpoint returns {"cluster": {...}} wrapper
+            def clusterData = responseData.cluster ?: responseData
             def status = clusterData.status
 
             if (status == 'DESTROYED') {
