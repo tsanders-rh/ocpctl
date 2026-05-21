@@ -272,6 +272,10 @@ func (s *Server) setupRoutes() {
 	adminGroup.PATCH("/orphaned-resources/:id/ignore", orphanedHandler.MarkIgnored)
 	adminGroup.DELETE("/orphaned-resources/:id", orphanedHandler.Delete)
 
+	// Metrics routes (admin only)
+	metricsHandler := NewMetricsHandler(s.store)
+	adminGroup.GET("/metrics/current", metricsHandler.GetCurrentMetrics)
+
 	// Profile version update routes (admin only)
 	profilesDir := os.Getenv("PROFILES_DIR")
 	if profilesDir == "" {
