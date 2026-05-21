@@ -4,6 +4,10 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 )
@@ -97,21 +101,53 @@ func (h *MetricsHandler) getAPIMetrics() APIMetricsSnapshot {
 }
 
 func (h *MetricsHandler) getWorkerMetrics(ctx context.Context) WorkerMetricsSnapshot {
+	// Count total workers: 1 static + autoscale workers
+	totalWorkers := 1 // Static worker
+
+	// Query AWS for autoscale workers
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err == nil {
+		ec2Client := ec2.NewFromConfig(cfg)
+
+		input := &ec2.DescribeInstancesInput{
+			Filters: []types.Filter{
+				{
+					Name:   aws.String("tag:Name"),
+					Values: []string{"ocpctl-worker"},
+				},
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"running"},
+				},
+			},
+		}
+
+		result, err := ec2Client.DescribeInstances(ctx, input)
+		if err == nil {
+			for _, reservation := range result.Reservations {
+				totalWorkers += len(reservation.Instances)
+			}
+		}
+	}
+
 	// Count running jobs to estimate active workers
 	var runningCount int
 	h.store.Pool().QueryRow(ctx, `
 		SELECT COUNT(*) FROM jobs WHERE status = 'RUNNING'
 	`).Scan(&runningCount)
 
+	// Active workers = min(running jobs, total workers)
 	active := runningCount
-	if active > 0 {
-		active = 1 // At least one worker is active
+	if active > totalWorkers {
+		active = totalWorkers
 	}
 
+	idle := totalWorkers - active
+
 	return WorkerMetricsSnapshot{
-		Total:  1, // Static worker + autoscale
+		Total:  totalWorkers,
 		Active: active,
-		Idle:   1 - active,
+		Idle:   idle,
 	}
 }
 
@@ -203,19 +239,51 @@ func (h *MetricsHandler) getClusterMetrics(ctx context.Context) ClusterMetricsSn
 }
 
 func (h *MetricsHandler) getAutoscaleMetrics(ctx context.Context) AutoscaleMetricsSnapshot {
-	// Simple logic: desired = ceil(queue_depth / 3)
+	// Count running autoscale workers from AWS EC2
+	currentWorkers := 1 // Static worker always counts as 1
+
+	// Query AWS for autoscale workers
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err == nil {
+		ec2Client := ec2.NewFromConfig(cfg)
+
+		input := &ec2.DescribeInstancesInput{
+			Filters: []types.Filter{
+				{
+					Name:   aws.String("tag:Name"),
+					Values: []string{"ocpctl-worker"},
+				},
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"running"},
+				},
+			},
+		}
+
+		result, err := ec2Client.DescribeInstances(ctx, input)
+		if err == nil {
+			// Count running autoscale instances
+			autoscaleCount := 0
+			for _, reservation := range result.Reservations {
+				autoscaleCount += len(reservation.Instances)
+			}
+			currentWorkers += autoscaleCount
+		}
+	}
+
+	// Calculate desired workers: ceil(queue_depth / 3), minimum 1
 	var queueDepth int
 	h.store.Pool().QueryRow(ctx, `
 		SELECT COUNT(*) FROM jobs WHERE status = 'PENDING'
 	`).Scan(&queueDepth)
 
-	desired := 1 // Always at least 1
+	desired := 1 // Always at least 1 (static worker)
 	if queueDepth > 3 {
-		desired = (queueDepth + 2) / 3 // Ceiling division
+		desired = 1 + ((queueDepth + 2) / 3) // Static worker + autoscale workers
 	}
 
 	return AutoscaleMetricsSnapshot{
-		CurrentWorkers: 1, // Would query AWS autoscale group in production
+		CurrentWorkers: currentWorkers,
 		DesiredWorkers: desired,
 	}
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Activity, Database, Layers, Server, Users, TrendingUp } from 'lucide-react';
+import { useAuthStore } from '@/lib/stores/authStore';
 
 interface MetricsSnapshot {
   api: {
@@ -41,22 +42,37 @@ export default function MonitoringPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const { accessToken } = useAuthStore();
 
   const fetchMetrics = async () => {
     try {
+      console.log('[Monitoring] fetchMetrics called, token present:', !!accessToken);
+
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
+
+      console.log('[Monitoring] Fetching from /api/v1/admin/metrics/current');
       const response = await fetch('/api/v1/admin/metrics/current', {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
       });
 
+      console.log('[Monitoring] Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to fetch metrics');
+        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(`HTTP ${response.status}: ${errorData.message || 'Failed to fetch metrics'}`);
       }
 
       const data = await response.json();
+      console.log('[Monitoring] Metrics received:', data);
       setMetrics(data);
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {
+      console.error('[Monitoring] Error fetching metrics:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
@@ -64,6 +80,15 @@ export default function MonitoringPage() {
   };
 
   useEffect(() => {
+    if (!accessToken) {
+      console.log('[Monitoring] No access token available');
+      setLoading(false);
+      setError('Authentication required');
+      return;
+    }
+
+    console.log('[Monitoring] Starting metrics fetch with token');
+
     // Initial fetch
     fetchMetrics();
 
@@ -71,7 +96,7 @@ export default function MonitoringPage() {
     const interval = setInterval(fetchMetrics, 15000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [accessToken]);
 
   if (loading && !metrics) {
     return (
