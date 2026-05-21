@@ -23,8 +23,20 @@ The pipeline:
 
 ## Prerequisites
 
-### Required
-- **Jenkins 2.x** with Pipeline plugin
+### Required Jenkins Plugins
+- **Pipeline** (workflow-aggregator) - Usually pre-installed
+- **Pipeline: Utility Steps** (pipeline-utility-steps) - **REQUIRED** for JSON parsing
+- **Git** plugin - For SCM checkout
+
+**To install missing plugins:**
+1. Go to **Jenkins → Manage Jenkins → Plugins**
+2. Click **Available plugins**
+3. Search for "Pipeline Utility Steps"
+4. Check the box and click **Install**
+5. Restart Jenkins after installation
+
+### Required Software
+- **Jenkins 2.x** or later
 - **Network access** to ocpctl API (https://ocpctl.mg.dog8code.com)
 - **OpenShift CLI** (`oc`) installed on Jenkins agent (for running tests)
 - **One of the following** for authentication:
@@ -267,6 +279,22 @@ exit 0
 6. **Timeouts**: Use `--timeout` flags to avoid hanging
 
 ## Troubleshooting
+
+### Problem: "No such DSL method 'readJSON' found"
+
+**Error message**: `java.lang.NoSuchMethodError: No such DSL method 'readJSON' found`
+
+**Cause**: Missing the **Pipeline Utility Steps** plugin
+
+**Solution**:
+1. Go to **Jenkins → Manage Jenkins → Plugins**
+2. Click **Available plugins**
+3. Search for "Pipeline Utility Steps"
+4. Check the box and click **Install**
+5. Restart Jenkins
+6. Re-run the pipeline
+
+**Plugin details**: This plugin provides essential utility steps like `readJSON`, `readYaml`, `writeJSON`, etc. that are used throughout the pipeline.
 
 ### Problem: "Build with Parameters" option not showing
 
