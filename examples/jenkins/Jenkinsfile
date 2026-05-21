@@ -28,13 +28,16 @@ pipeline {
         choice(
             name: 'OPENSHIFT_VERSION',
             choices: [
-                '4.22.0',
                 '4.21.10',
                 '4.21.9',
+                '4.21.8',
                 '4.20.5',
-                '4.20.4'
+                '4.20.4',
+                '4.20.3',
+                '4.19.23',
+                '4.18.35'
             ],
-            description: 'OpenShift version'
+            description: 'OpenShift version (verify allowed versions for your selected profile)'
         )
         choice(
             name: 'REGION',
