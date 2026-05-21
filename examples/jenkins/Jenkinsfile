@@ -416,7 +416,26 @@ def curlWithAuth(Map args) {
     def path = args.path
     def body = args.body ?: ''
 
-    def authArgs = buildAuthArgs()
+    // Use EC2 IAM or API KEY based on selected auth method
+    if (params.AUTH_METHOD == 'EC2_IAM') {
+        return executeCurl(method, path, body, '--aws-sigv4 "aws:amz:us-east-1:execute-api"')
+    } else {
+        // API_KEY method - wrap in withCredentials
+        return withCredentials([string(credentialsId: 'ocpctl-api-key', variable: 'API_KEY')]) {
+            return executeCurl(method, path, body, "-H \"Authorization: Bearer \${API_KEY}\"")
+        }
+    }
+}
+
+/**
+ * Execute curl command with retry logic
+ * @param method HTTP method
+ * @param path API path
+ * @param body Request body
+ * @param authArgs Authentication arguments string
+ * @return Map with 'code' and 'body' fields
+ */
+def executeCurl(String method, String path, String body, String authArgs) {
     def bodyArg = body ? "-d '${body}'" : ''
 
     def command = """
@@ -460,21 +479,6 @@ def curlWithAuth(Map args) {
     }
 
     return [code: '500', body: 'Max retries exceeded']
-}
-
-/**
- * Build authentication arguments for curl based on selected method
- * @return String with curl auth arguments
- */
-def buildAuthArgs() {
-    if (params.AUTH_METHOD == 'EC2_IAM') {
-        return '--aws-sigv4 "aws:amz:us-east-1:execute-api"'
-    } else {
-        // API_KEY method
-        return withCredentials([string(credentialsId: 'ocpctl-api-key', variable: 'API_KEY')]) {
-            return "-H \"Authorization: Bearer ${API_KEY}\""
-        }
-    }
 }
 
 /**
