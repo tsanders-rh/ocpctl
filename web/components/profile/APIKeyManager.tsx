@@ -67,6 +67,7 @@ export function APIKeyManager() {
   const [editKeyName, setEditKeyName] = useState("");
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyScope, setNewKeyScope] = useState<APIKeyScope>(APIKeyScope.FULL_ACCESS);
+  const [newKeyExpiresAt, setNewKeyExpiresAt] = useState<string>("");
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [showPlainKey, setShowPlainKey] = useState(false);
@@ -85,6 +86,7 @@ export function APIKeyManager() {
       setNewlyCreatedKey(response.plain_key);
       setNewKeyName("");
       setNewKeyScope(APIKeyScope.FULL_ACCESS);
+      setNewKeyExpiresAt("");
     },
   });
 
@@ -120,10 +122,17 @@ export function APIKeyManager() {
   const handleCreate = () => {
     if (!newKeyName.trim()) return;
 
-    createMutation.mutate({
+    const request: CreateAPIKeyRequest = {
       name: newKeyName.trim(),
       scope: newKeyScope,
-    });
+    };
+
+    // Add expires_at if provided
+    if (newKeyExpiresAt) {
+      request.expires_at = new Date(newKeyExpiresAt).toISOString();
+    }
+
+    createMutation.mutate(request);
   };
 
   const handleUpdate = (id: string) => {
@@ -144,6 +153,9 @@ export function APIKeyManager() {
       setNewlyCreatedKey(null);
       setShowPlainKey(false);
     }
+    setNewKeyName("");
+    setNewKeyScope(APIKeyScope.FULL_ACCESS);
+    setNewKeyExpiresAt("");
     setCreateDialogOpen(false);
   };
 
@@ -283,6 +295,21 @@ export function APIKeyManager() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="key-expires">
+                      Expiration Date (Optional)
+                    </Label>
+                    <Input
+                      id="key-expires"
+                      type="date"
+                      value={newKeyExpiresAt}
+                      onChange={(e) => setNewKeyExpiresAt(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty for a key that never expires
+                    </p>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button
@@ -331,6 +358,7 @@ export function APIKeyManager() {
                 <TableHead>Key Prefix</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Expires</TableHead>
                 <TableHead>Last Used</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -381,6 +409,9 @@ export function APIKeyManager() {
                         Active
                       </Badge>
                     )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {key.expires_at ? formatDate(key.expires_at) : "Never"}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {key.last_used_at ? formatDate(key.last_used_at) : "Never"}

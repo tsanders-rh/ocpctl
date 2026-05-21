@@ -48,9 +48,9 @@ This method works in any Jenkins environment (on-prem, cloud, EC2, or outside AW
 3. Click **"Create API Key"**
 4. Fill in the form:
    - **Name**: `Jenkins CI/CD`
-   - **Scope**: `full_access`
-   - **Expires**: Optional (e.g., 1 year from now)
-5. Click **"Create"**
+   - **Scope**: `Full Access`
+   - **Expiration Date**: (Optional) Select a date, e.g., 1 year from now, or leave empty for no expiration
+5. Click **"Create API Key"**
 6. **IMPORTANT**: Copy the API key immediately (starts with `ocpctl_`)
    - This is the only time you'll see it!
    - Example: `ocpctl_K3xZ9mQ2pL8vN4cD6jH5bG7wF1sT9xYuM3qR6nP2...`
