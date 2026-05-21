@@ -192,8 +192,9 @@ pipeline {
                     echo "DEBUG: Parsed cluster data keys: ${clusterData?.keySet()}"
                     echo "DEBUG: Cluster ID from response: ${clusterData?.id}"
 
-                    env.CLUSTER_ID = clusterData.id
-                    env.CLUSTER_NAME_ACTUAL = clusterData.name
+                    // Convert to string explicitly for environment variables
+                    env.CLUSTER_ID = "${clusterData.id}"
+                    env.CLUSTER_NAME_ACTUAL = "${clusterData.name}"
 
                     echo "✓ Cluster created successfully"
                     echo "  Cluster ID:   ${env.CLUSTER_ID}"
@@ -279,11 +280,11 @@ pipeline {
                     def kubeconfigFile = "kubeconfig-${env.CLUSTER_NAME_ACTUAL}.yaml"
                     writeFile file: kubeconfigFile, text: outputs.kubeconfig
 
-                    // Set environment variables for tests
+                    // Set environment variables for tests (convert to string explicitly)
                     env.KUBECONFIG = "${env.WORKSPACE}/${kubeconfigFile}"
-                    env.CLUSTER_API_URL = outputs.api_url ?: 'N/A'
-                    env.CLUSTER_CONSOLE_URL = outputs.console_url ?: 'N/A'
-                    env.KUBEADMIN_PASSWORD = outputs.kubeadmin?.password ?: 'N/A'
+                    env.CLUSTER_API_URL = "${outputs.api_url ?: 'N/A'}"
+                    env.CLUSTER_CONSOLE_URL = "${outputs.console_url ?: 'N/A'}"
+                    env.KUBEADMIN_PASSWORD = "${outputs.kubeadmin?.password ?: 'N/A'}"
 
                     echo "✓ Credentials retrieved successfully"
                     echo "  API URL:      ${env.CLUSTER_API_URL}"
