@@ -386,10 +386,12 @@ pipeline {
         }
 
         failure {
-            echo "✗ Pipeline failed. Check logs for details."
-            if (env.CLUSTER_ID) {
-                echo "Cluster ID: ${env.CLUSTER_ID}"
-                echo "Cluster preservation: ${params.PRESERVE_ON_FAILURE ? 'ENABLED' : 'DISABLED'}"
+            script {
+                echo "✗ Pipeline failed. Check logs for details."
+                if (env.CLUSTER_ID) {
+                    echo "Cluster ID: ${env.CLUSTER_ID}"
+                    echo "Cluster preservation: ${params.PRESERVE_ON_FAILURE ? 'ENABLED' : 'DISABLED'}"
+                }
             }
         }
     }
