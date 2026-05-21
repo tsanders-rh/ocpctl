@@ -191,11 +191,20 @@ pipeline {
                     def clusterData = readJSON text: result.body
                     echo "DEBUG: Parsed cluster data keys: ${clusterData?.keySet()}"
                     echo "DEBUG: Cluster ID from response: ${clusterData?.id}"
+                    echo "DEBUG: Cluster ID type: ${clusterData.id.getClass()}"
 
-                    // Convert to string explicitly for environment variables
-                    env.CLUSTER_ID = "${clusterData.id}"
-                    env.CLUSTER_NAME_ACTUAL = "${clusterData.name}"
+                    // Store in local variables first
+                    def clusterId = clusterData.id.toString()
+                    def clusterName = clusterData.name.toString()
 
+                    echo "DEBUG: clusterId variable: ${clusterId}"
+                    echo "DEBUG: clusterName variable: ${clusterName}"
+
+                    // Assign to environment variables
+                    env.CLUSTER_ID = clusterId
+                    env.CLUSTER_NAME_ACTUAL = clusterName
+
+                    echo "DEBUG: After assignment - env.CLUSTER_ID: ${env.CLUSTER_ID}"
                     echo "✓ Cluster created successfully"
                     echo "  Cluster ID:   ${env.CLUSTER_ID}"
                     echo "  Cluster Name: ${env.CLUSTER_NAME_ACTUAL}"
