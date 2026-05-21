@@ -88,8 +88,8 @@ echo "[Test 4/6] Deploying test workload..."
 TEST_NAMESPACE="ocpctl-test-${RANDOM}"
 oc new-project ${TEST_NAMESPACE}
 
-# Deploy a simple nginx deployment
-oc create deployment nginx-test --image=nginx:latest -n ${TEST_NAMESPACE}
+# Deploy using OpenShift-compatible nginx image (runs as non-root on port 8080)
+oc create deployment nginx-test --image=nginxinc/nginx-unprivileged:latest -n ${TEST_NAMESPACE}
 oc scale deployment/nginx-test --replicas=3 -n ${TEST_NAMESPACE}
 
 echo "  Waiting for deployment to be ready..."
@@ -118,7 +118,7 @@ echo ""
 
 # Test 6: Service connectivity
 echo "[Test 6/6] Testing service connectivity..."
-oc expose deployment/nginx-test --port=80 -n ${TEST_NAMESPACE}
+oc expose deployment/nginx-test --port=8080 --target-port=8080 -n ${TEST_NAMESPACE}
 
 # Wait for service
 sleep 5
@@ -128,7 +128,7 @@ echo "  Service IP: ${SERVICE_IP}"
 
 # Test connectivity from within a pod
 TEST_POD=$(oc get pods -n ${TEST_NAMESPACE} -l app=nginx-test -o jsonpath='{.items[0].metadata.name}')
-if oc exec ${TEST_POD} -n ${TEST_NAMESPACE} -- curl -s --max-time 5 ${SERVICE_IP}:80 > /dev/null; then
+if oc exec ${TEST_POD} -n ${TEST_NAMESPACE} -- curl -s --max-time 5 ${SERVICE_IP}:8080 > /dev/null; then
     echo "✓ Test 6 passed - Service connectivity verified"
 else
     echo "ERROR: Service connectivity test failed"
