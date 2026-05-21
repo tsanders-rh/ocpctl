@@ -180,11 +180,18 @@ pipeline {
                         body: createPayload
                     )
 
+                    echo "DEBUG: HTTP Code: ${result.code}"
+                    echo "DEBUG: Response Body Length: ${result.body?.length() ?: 0}"
+                    echo "DEBUG: Response Body: ${result.body}"
+
                     if (result.code != '201') {
                         error("Failed to create cluster. HTTP ${result.code}: ${result.body}")
                     }
 
                     def clusterData = readJSON text: result.body
+                    echo "DEBUG: Parsed cluster data keys: ${clusterData?.keySet()}"
+                    echo "DEBUG: Cluster ID from response: ${clusterData?.id}"
+
                     env.CLUSTER_ID = clusterData.id
                     env.CLUSTER_NAME_ACTUAL = clusterData.name
 
