@@ -15,6 +15,7 @@ import groovy.transform.Field
 
 @Field String globalClusterId = ''
 @Field String globalClusterName = ''
+@Field String globalClusterStatus = 'PENDING'
 @Field String globalKubeconfig = ''
 @Field String globalApiUrl = ''
 @Field String globalConsoleUrl = ''
@@ -225,10 +226,9 @@ pipeline {
 
                     def maxAttempts = 240  // 120 minutes at 30-second intervals
                     def attempt = 0
-                    def status = 'PENDING'
                     def lastStatus = ''
 
-                    while (attempt < maxAttempts && status != 'READY') {
+                    while (attempt < maxAttempts && globalClusterStatus != 'READY') {
                         sleep(30)
                         attempt++
 
@@ -243,12 +243,12 @@ pipeline {
                         }
 
                         def clusterData = readJSON text: result.body
-                        status = clusterData.status?.toString() ?: 'UNKNOWN'
+                        globalClusterStatus = clusterData.status.toString()
 
                         // Only print status when it changes
-                        if (status != lastStatus) {
-                            echo "Cluster status changed: ${lastStatus} → ${status}"
-                            lastStatus = status
+                        if (globalClusterStatus != lastStatus) {
+                            echo "Cluster status changed: ${lastStatus} → ${globalClusterStatus}"
+                            lastStatus = globalClusterStatus
                         }
 
                         if (attempt % 10 == 0) {
@@ -256,13 +256,13 @@ pipeline {
                             echo "Still waiting... (${elapsed} minutes elapsed, attempt ${attempt}/${maxAttempts})"
                         }
 
-                        if (status == 'FAILED') {
+                        if (globalClusterStatus == 'FAILED') {
                             globalProvisioningFailed = 'true'
                             error("Cluster provisioning failed. Status: FAILED. Cluster will be preserved for investigation.")
                         }
                     }
 
-                    if (status != 'READY') {
+                    if (globalClusterStatus != 'READY') {
                         globalProvisioningFailed = 'true'
                         def timeout = (maxAttempts * 30) / 60
                         error("Timeout: Cluster did not reach READY state within ${timeout} minutes. Cluster will be preserved.")
