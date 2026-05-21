@@ -251,13 +251,9 @@ pipeline {
 
                         // Only print status when it changes
                         if (globalClusterStatus != lastStatus) {
-                            echo "Cluster status changed: ${lastStatus} → ${globalClusterStatus}"
-                            lastStatus = globalClusterStatus
-                        }
-
-                        if (attempt % 10 == 0) {
                             def elapsed = (attempt * 30) / 60
-                            echo "Still waiting... (${elapsed} minutes elapsed, attempt ${attempt}/${maxAttempts})"
+                            echo "Cluster status: ${lastStatus} → ${globalClusterStatus} (${elapsed} minutes elapsed)"
+                            lastStatus = globalClusterStatus
                         }
 
                         if (globalClusterStatus == 'FAILED') {
