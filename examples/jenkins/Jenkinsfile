@@ -1,0 +1,566 @@
+pipeline {
+    agent any
+
+    parameters {
+        // Authentication
+        choice(
+            name: 'AUTH_METHOD',
+            choices: ['API_KEY', 'EC2_IAM'],
+            description: 'Authentication method: API_KEY (portable) or EC2_IAM (Jenkins on EC2 with instance role)'
+        )
+
+        // Cluster Configuration
+        string(
+            name: 'CLUSTER_NAME_PREFIX',
+            defaultValue: 'jenkins-test',
+            description: 'Cluster name prefix (will append build number)'
+        )
+        choice(
+            name: 'PROFILE',
+            choices: [
+                'aws-sno-ga',
+                'aws-standard-ga',
+                'aws-minimal-ga',
+                'aws-virt-windows-minimal-ga'
+            ],
+            description: 'Cluster profile (controls node count, instance types, features)'
+        )
+        choice(
+            name: 'OPENSHIFT_VERSION',
+            choices: [
+                '4.22.0',
+                '4.21.10',
+                '4.21.9',
+                '4.20.5',
+                '4.20.4'
+            ],
+            description: 'OpenShift version'
+        )
+        choice(
+            name: 'REGION',
+            choices: [
+                'us-east-1',
+                'us-east-2',
+                'us-west-2',
+                'eu-west-1',
+                'ap-southeast-1'
+            ],
+            description: 'AWS region'
+        )
+        string(
+            name: 'BASE_DOMAIN',
+            defaultValue: 'mg.dog8code.com',
+            description: 'Base domain for cluster DNS'
+        )
+
+        // Metadata
+        string(
+            name: 'OWNER_EMAIL',
+            defaultValue: 'jenkins@example.com',
+            description: 'Cluster owner email address'
+        )
+        string(
+            name: 'TEAM',
+            defaultValue: 'jenkins-automation',
+            description: 'Team name for cost allocation'
+        )
+        string(
+            name: 'COST_CENTER',
+            defaultValue: 'jenkins-ci',
+            description: 'Cost center code'
+        )
+
+        // Lifecycle
+        string(
+            name: 'TTL_HOURS',
+            defaultValue: '24',
+            description: 'Time-to-live in hours (auto-deletion timeout)'
+        )
+        booleanParam(
+            name: 'PRESERVE_ON_FAILURE',
+            defaultValue: true,
+            description: 'Preserve cluster if provisioning or tests fail (for debugging)'
+        )
+
+        // Testing
+        string(
+            name: 'TEST_SCRIPT_PATH',
+            defaultValue: './run-tests.sh',
+            description: 'Path to test script (must be executable, relative to workspace)'
+        )
+    }
+
+    environment {
+        OCPCTL_API_URL = 'https://ocpctl.mg.dog8code.com'
+        CLUSTER_NAME = "${params.CLUSTER_NAME_PREFIX}-${env.BUILD_NUMBER}"
+        CLUSTER_ID = ''
+        CLUSTER_NAME_ACTUAL = ''
+        KUBECONFIG = ''
+        CLUSTER_API_URL = ''
+        CLUSTER_CONSOLE_URL = ''
+        PROVISIONING_FAILED = 'false'
+        TESTS_FAILED = 'false'
+    }
+
+    stages {
+        stage('Validate') {
+            steps {
+                script {
+                    echo "=== OCPCTL Jenkins Pipeline ==="
+                    echo "Build Number:       ${env.BUILD_NUMBER}"
+                    echo "Cluster Name:       ${env.CLUSTER_NAME}"
+                    echo "Profile:            ${params.PROFILE}"
+                    echo "OpenShift Version:  ${params.OPENSHIFT_VERSION}"
+                    echo "Region:             ${params.REGION}"
+                    echo "Base Domain:        ${params.BASE_DOMAIN}"
+                    echo "Auth Method:        ${params.AUTH_METHOD}"
+                    echo "Preserve on Fail:   ${params.PRESERVE_ON_FAILURE}"
+                    echo "Test Script:        ${params.TEST_SCRIPT_PATH}"
+                    echo "===================================="
+
+                    // Validate test script exists
+                    if (!fileExists(params.TEST_SCRIPT_PATH)) {
+                        error("Test script not found: ${params.TEST_SCRIPT_PATH}")
+                    }
+
+                    // Make test script executable
+                    sh "chmod +x ${params.TEST_SCRIPT_PATH}"
+
+                    // Validate credentials based on auth method
+                    if (params.AUTH_METHOD == 'API_KEY') {
+                        try {
+                            withCredentials([string(credentialsId: 'ocpctl-api-key', variable: 'API_KEY')]) {
+                                echo "✓ API key credential found"
+                            }
+                        } catch (Exception e) {
+                            error("API_KEY authentication selected but 'ocpctl-api-key' credential not found in Jenkins")
+                        }
+                    } else if (params.AUTH_METHOD == 'EC2_IAM') {
+                        echo "Using EC2 IAM role authentication (instance metadata)"
+                    }
+
+                    echo "Validation complete!"
+                }
+            }
+        }
+
+        stage('Create Cluster') {
+            steps {
+                script {
+                    echo "Creating cluster via ocpctl API..."
+
+                    def createPayload = """
+{
+    "name": "${env.CLUSTER_NAME}",
+    "platform": "aws",
+    "cluster_type": "openshift",
+    "version": "${params.OPENSHIFT_VERSION}",
+    "profile": "${params.PROFILE}",
+    "region": "${params.REGION}",
+    "base_domain": "${params.BASE_DOMAIN}",
+    "owner": "${params.OWNER_EMAIL}",
+    "team": "${params.TEAM}",
+    "cost_center": "${params.COST_CENTER}",
+    "ttl_hours": ${params.TTL_HOURS},
+    "preserve_on_failure": ${params.PRESERVE_ON_FAILURE},
+    "extra_tags": {
+        "JenkinsBuild": "${env.BUILD_NUMBER}",
+        "JenkinsBuildUrl": "${env.BUILD_URL}",
+        "JenkinsJob": "${env.JOB_NAME}"
+    }
+}
+"""
+
+                    def result = curlWithAuth(
+                        method: 'POST',
+                        path: '/api/v1/clusters',
+                        body: createPayload
+                    )
+
+                    if (result.code != '201') {
+                        error("Failed to create cluster. HTTP ${result.code}: ${result.body}")
+                    }
+
+                    def clusterData = readJSON text: result.body
+                    env.CLUSTER_ID = clusterData.id
+                    env.CLUSTER_NAME_ACTUAL = clusterData.name
+
+                    echo "✓ Cluster created successfully"
+                    echo "  Cluster ID:   ${env.CLUSTER_ID}"
+                    echo "  Cluster Name: ${env.CLUSTER_NAME_ACTUAL}"
+                    echo "  Status:       ${clusterData.status}"
+                }
+            }
+        }
+
+        stage('Wait for Ready') {
+            steps {
+                script {
+                    echo "Waiting for cluster to reach READY status..."
+                    echo "This typically takes 30-60 minutes for OpenShift clusters"
+
+                    def maxAttempts = 240  // 120 minutes at 30-second intervals
+                    def attempt = 0
+                    def status = 'PENDING'
+                    def lastStatus = ''
+
+                    while (attempt < maxAttempts && status != 'READY') {
+                        sleep(30)
+                        attempt++
+
+                        def result = curlWithAuth(
+                            method: 'GET',
+                            path: "/api/v1/clusters/${env.CLUSTER_ID}"
+                        )
+
+                        if (result.code != '200') {
+                            echo "Warning: Failed to get cluster status (HTTP ${result.code}), retrying..."
+                            continue
+                        }
+
+                        def clusterData = readJSON text: result.body
+                        status = clusterData.status
+
+                        // Only print status when it changes
+                        if (status != lastStatus) {
+                            echo "Cluster status changed: ${lastStatus} → ${status}"
+                            lastStatus = status
+                        }
+
+                        if (attempt % 10 == 0) {
+                            def elapsed = (attempt * 30) / 60
+                            echo "Still waiting... (${elapsed} minutes elapsed, attempt ${attempt}/${maxAttempts})"
+                        }
+
+                        if (status == 'FAILED') {
+                            env.PROVISIONING_FAILED = 'true'
+                            error("Cluster provisioning failed. Status: FAILED. Cluster will be preserved for investigation.")
+                        }
+                    }
+
+                    if (status != 'READY') {
+                        env.PROVISIONING_FAILED = 'true'
+                        def timeout = (maxAttempts * 30) / 60
+                        error("Timeout: Cluster did not reach READY state within ${timeout} minutes. Cluster will be preserved.")
+                    }
+
+                    echo "✓ Cluster is READY!"
+                }
+            }
+        }
+
+        stage('Get Credentials') {
+            steps {
+                script {
+                    echo "Retrieving cluster credentials and kubeconfig..."
+
+                    def result = curlWithAuth(
+                        method: 'GET',
+                        path: "/api/v1/clusters/${env.CLUSTER_ID}/outputs"
+                    )
+
+                    if (result.code != '200') {
+                        error("Failed to get cluster outputs. HTTP ${result.code}: ${result.body}")
+                    }
+
+                    def outputs = readJSON text: result.body
+
+                    // Save kubeconfig to file
+                    def kubeconfigFile = "kubeconfig-${env.CLUSTER_NAME_ACTUAL}.yaml"
+                    writeFile file: kubeconfigFile, text: outputs.kubeconfig
+
+                    // Set environment variables for tests
+                    env.KUBECONFIG = "${env.WORKSPACE}/${kubeconfigFile}"
+                    env.CLUSTER_API_URL = outputs.api_url ?: 'N/A'
+                    env.CLUSTER_CONSOLE_URL = outputs.console_url ?: 'N/A'
+                    env.KUBEADMIN_PASSWORD = outputs.kubeadmin?.password ?: 'N/A'
+
+                    echo "✓ Credentials retrieved successfully"
+                    echo "  API URL:      ${env.CLUSTER_API_URL}"
+                    echo "  Console URL:  ${env.CLUSTER_CONSOLE_URL}"
+                    echo "  Kubeconfig:   ${env.KUBECONFIG}"
+
+                    // Verify kubeconfig works
+                    sh """
+                        export KUBECONFIG=${env.KUBECONFIG}
+                        oc version --client || echo "Warning: oc client not found"
+                        oc cluster-info || echo "Warning: Unable to connect to cluster"
+                    """
+                }
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                script {
+                    echo "Running custom test suite: ${params.TEST_SCRIPT_PATH}"
+
+                    def testExitCode = sh(
+                        script: """
+                            export KUBECONFIG=${env.KUBECONFIG}
+                            export CLUSTER_NAME=${env.CLUSTER_NAME_ACTUAL}
+                            export CLUSTER_ID=${env.CLUSTER_ID}
+                            export CLUSTER_API_URL="${env.CLUSTER_API_URL}"
+                            export CLUSTER_CONSOLE_URL="${env.CLUSTER_CONSOLE_URL}"
+                            export KUBEADMIN_PASSWORD="${env.KUBEADMIN_PASSWORD}"
+
+                            # Run user-provided test script
+                            ${params.TEST_SCRIPT_PATH}
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (testExitCode != 0) {
+                        env.TESTS_FAILED = 'true'
+                        error("Tests failed with exit code ${testExitCode}. Cluster will be preserved for investigation.")
+                    }
+
+                    echo "✓ All tests passed!"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo "===================================="
+                echo "Pipeline Completed - Cleanup Phase"
+                echo "===================================="
+
+                // Archive artifacts regardless of outcome
+                echo "Archiving artifacts..."
+                archiveArtifacts artifacts: "kubeconfig-*.yaml", allowEmptyArchive: true
+                archiveArtifacts artifacts: "test-results/**/*", allowEmptyArchive: true
+
+                // Conditional deletion logic
+                def shouldDelete = shouldDeleteCluster()
+
+                if (shouldDelete) {
+                    echo "Deleting cluster ${env.CLUSTER_ID}..."
+
+                    try {
+                        def result = curlWithAuth(
+                            method: 'DELETE',
+                            path: "/api/v1/clusters/${env.CLUSTER_ID}"
+                        )
+
+                        if (result.code == '200') {
+                            echo "✓ Cluster deletion initiated"
+
+                            // Optionally wait for deletion to complete
+                            // Uncomment if you want to block until deletion finishes
+                            // waitForDeletion(env.CLUSTER_ID)
+                        } else {
+                            echo "Warning: Cluster deletion request failed (HTTP ${result.code})"
+                            echo "You may need to delete manually: ${env.CLUSTER_ID}"
+                        }
+                    } catch (Exception e) {
+                        echo "Warning: Exception during cluster deletion: ${e.message}"
+                        echo "Cluster ${env.CLUSTER_ID} may need manual cleanup"
+                    }
+                } else {
+                    def reason = getPreservationReason()
+                    echo "╔════════════════════════════════════════════════════════╗"
+                    echo "║         CLUSTER PRESERVED FOR INVESTIGATION            ║"
+                    echo "╚════════════════════════════════════════════════════════╝"
+                    echo ""
+                    echo "Reason:       ${reason}"
+                    echo "Cluster ID:   ${env.CLUSTER_ID}"
+                    echo "Cluster Name: ${env.CLUSTER_NAME_ACTUAL}"
+                    echo "Console URL:  ${env.CLUSTER_CONSOLE_URL}"
+                    echo ""
+                    echo "To delete manually:"
+                    echo "  curl -X DELETE ${env.OCPCTL_API_URL}/api/v1/clusters/${env.CLUSTER_ID} \\"
+                    echo "    -H \"Authorization: Bearer <YOUR_API_KEY>\""
+                    echo ""
+                }
+
+                // Clean up workspace files
+                sh "rm -f kubeconfig-*.yaml || true"
+            }
+        }
+
+        success {
+            echo "✓ Pipeline completed successfully!"
+        }
+
+        failure {
+            echo "✗ Pipeline failed. Check logs for details."
+            if (env.CLUSTER_ID) {
+                echo "Cluster ID: ${env.CLUSTER_ID}"
+                echo "Cluster preservation: ${params.PRESERVE_ON_FAILURE ? 'ENABLED' : 'DISABLED'}"
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Make authenticated curl request to ocpctl API
+ * @param method HTTP method (GET, POST, DELETE)
+ * @param path API path (e.g., /api/v1/clusters)
+ * @param body Request body (optional, for POST)
+ * @return Map with 'code' and 'body' fields
+ */
+def curlWithAuth(Map args) {
+    def method = args.method ?: 'GET'
+    def path = args.path
+    def body = args.body ?: ''
+
+    def authArgs = buildAuthArgs()
+    def bodyArg = body ? "-d '${body}'" : ''
+
+    def command = """
+        curl -s -X ${method} ${env.OCPCTL_API_URL}${path} \\
+        ${authArgs} \\
+        -H "Content-Type: application/json" \\
+        ${bodyArg} \\
+        -w "\\nHTTP_CODE:%{http_code}"
+    """
+
+    // Retry logic for transient errors
+    def maxRetries = 3
+    def attempt = 0
+
+    while (attempt < maxRetries) {
+        def output = sh(script: command, returnStdout: true).trim()
+
+        // Parse response: everything before "HTTP_CODE:" is body, after is code
+        def parts = output.split('HTTP_CODE:')
+        def responseBody = parts.length > 0 ? parts[0].trim() : ''
+        def httpCode = parts.length > 1 ? parts[1].trim() : '000'
+
+        // Success codes
+        if (httpCode.startsWith('2')) {
+            return [code: httpCode, body: responseBody]
+        }
+
+        // Transient errors - retry with backoff
+        if (httpCode == '429' || httpCode == '503' || httpCode == '504') {
+            attempt++
+            if (attempt < maxRetries) {
+                def waitTime = Math.pow(2, attempt) * 5
+                echo "Transient error ${httpCode}, retrying in ${waitTime}s (attempt ${attempt}/${maxRetries})"
+                sleep(waitTime as Integer)
+                continue
+            }
+        }
+
+        // Permanent error or max retries reached
+        return [code: httpCode, body: responseBody]
+    }
+
+    return [code: '500', body: 'Max retries exceeded']
+}
+
+/**
+ * Build authentication arguments for curl based on selected method
+ * @return String with curl auth arguments
+ */
+def buildAuthArgs() {
+    if (params.AUTH_METHOD == 'EC2_IAM') {
+        return '--aws-sigv4 "aws:amz:us-east-1:execute-api"'
+    } else {
+        // API_KEY method
+        return withCredentials([string(credentialsId: 'ocpctl-api-key', variable: 'API_KEY')]) {
+            return "-H \"Authorization: Bearer ${API_KEY}\""
+        }
+    }
+}
+
+/**
+ * Determine if cluster should be deleted based on failure flags
+ * @return boolean true if cluster should be deleted
+ */
+def shouldDeleteCluster() {
+    // Always delete if preservation is disabled
+    if (params.PRESERVE_ON_FAILURE == false) {
+        return true
+    }
+
+    // Preserve if provisioning failed
+    if (env.PROVISIONING_FAILED == 'true') {
+        return false
+    }
+
+    // Preserve if tests failed
+    if (env.TESTS_FAILED == 'true') {
+        return false
+    }
+
+    // Both succeeded - safe to delete
+    return true
+}
+
+/**
+ * Get human-readable reason for cluster preservation
+ * @return String describing why cluster was preserved
+ */
+def getPreservationReason() {
+    def reasons = []
+
+    if (env.PROVISIONING_FAILED == 'true') {
+        reasons.add('Provisioning failed')
+    }
+
+    if (env.TESTS_FAILED == 'true') {
+        reasons.add('Tests failed')
+    }
+
+    if (params.PRESERVE_ON_FAILURE && reasons.isEmpty()) {
+        reasons.add('Preservation enabled (tests passed but preservation requested)')
+    }
+
+    return reasons.isEmpty() ? 'Unknown' : reasons.join(', ')
+}
+
+/**
+ * Wait for cluster deletion to complete (optional)
+ * @param clusterId Cluster ID to wait for
+ */
+def waitForDeletion(String clusterId) {
+    echo "Waiting for cluster deletion to complete..."
+
+    def maxAttempts = 60  // 30 minutes at 30-second intervals
+    def attempt = 0
+
+    while (attempt < maxAttempts) {
+        sleep(30)
+        attempt++
+
+        def result = curlWithAuth(
+            method: 'GET',
+            path: "/api/v1/clusters/${clusterId}"
+        )
+
+        // 404 means cluster is deleted
+        if (result.code == '404') {
+            echo "✓ Cluster deleted successfully"
+            return
+        }
+
+        // Check status
+        try {
+            def clusterData = readJSON text: result.body
+            def status = clusterData.status
+
+            if (status == 'DESTROYED') {
+                echo "✓ Cluster destroyed successfully"
+                return
+            }
+
+            if (attempt % 10 == 0) {
+                echo "Deletion in progress (status: ${status}, attempt ${attempt}/${maxAttempts})"
+            }
+        } catch (Exception e) {
+            echo "Warning: Unable to parse cluster status, continuing to wait..."
+        }
+    }
+
+    echo "Warning: Deletion timeout reached, but deletion may still be in progress"
+    echo "Check cluster status manually if needed"
+}
