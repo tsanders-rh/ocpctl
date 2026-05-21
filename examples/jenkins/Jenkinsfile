@@ -1,3 +1,27 @@
+import groovy.transform.Field
+
+// ============================================================================
+// Global Variables
+// ============================================================================
+// IMPORTANT: We use @Field global variables instead of environment variables
+// because Jenkins CPS (Continuation Passing Style) has serialization issues
+// when assigning values from JSON responses to env variables within script blocks.
+//
+// The symptom: env.CLUSTER_ID = clusterData.id results in env.CLUSTER_ID being null
+// even though the local variable has the correct value.
+//
+// The solution: Use @Field annotated script-scoped variables that bypass CPS serialization.
+// ============================================================================
+
+@Field String globalClusterId = ''
+@Field String globalClusterName = ''
+@Field String globalKubeconfig = ''
+@Field String globalApiUrl = ''
+@Field String globalConsoleUrl = ''
+@Field String globalKubeadminPassword = ''
+@Field String globalProvisioningFailed = 'false'
+@Field String globalTestsFailed = 'false'
+
 pipeline {
     agent any
 
@@ -96,13 +120,8 @@ pipeline {
     environment {
         OCPCTL_API_URL = 'https://ocpctl.mg.dog8code.com'
         CLUSTER_NAME = "${params.CLUSTER_NAME_PREFIX}-${env.BUILD_NUMBER}"
-        CLUSTER_ID = ''
-        CLUSTER_NAME_ACTUAL = ''
-        KUBECONFIG = ''
-        CLUSTER_API_URL = ''
-        CLUSTER_CONSOLE_URL = ''
-        PROVISIONING_FAILED = 'false'
-        TESTS_FAILED = 'false'
+        // Note: Cluster outputs and status flags use global variables (see @Field declarations at top)
+        // to work around Jenkins CPS serialization issues with env variable assignment in script blocks
     }
 
     stages {
@@ -180,34 +199,19 @@ pipeline {
                         body: createPayload
                     )
 
-                    echo "DEBUG: HTTP Code: ${result.code}"
-                    echo "DEBUG: Response Body Length: ${result.body?.length() ?: 0}"
-                    echo "DEBUG: Response Body: ${result.body}"
-
                     if (result.code != '201') {
                         error("Failed to create cluster. HTTP ${result.code}: ${result.body}")
                     }
 
                     def clusterData = readJSON text: result.body
-                    echo "DEBUG: Parsed cluster data keys: ${clusterData?.keySet()}"
-                    echo "DEBUG: Cluster ID from response: ${clusterData?.id}"
-                    echo "DEBUG: Cluster ID type: ${clusterData.id.getClass()}"
 
-                    // Store in local variables first
-                    def clusterId = clusterData.id.toString()
-                    def clusterName = clusterData.name.toString()
+                    // Store cluster info in global variables to avoid Jenkins CPS serialization issues
+                    globalClusterId = clusterData.id.toString()
+                    globalClusterName = clusterData.name.toString()
 
-                    echo "DEBUG: clusterId variable: ${clusterId}"
-                    echo "DEBUG: clusterName variable: ${clusterName}"
-
-                    // Assign to environment variables
-                    env.CLUSTER_ID = clusterId
-                    env.CLUSTER_NAME_ACTUAL = clusterName
-
-                    echo "DEBUG: After assignment - env.CLUSTER_ID: ${env.CLUSTER_ID}"
                     echo "✓ Cluster created successfully"
-                    echo "  Cluster ID:   ${env.CLUSTER_ID}"
-                    echo "  Cluster Name: ${env.CLUSTER_NAME_ACTUAL}"
+                    echo "  Cluster ID:   ${globalClusterId}"
+                    echo "  Cluster Name: ${globalClusterName}"
                     echo "  Status:       ${clusterData.status}"
                 }
             }
@@ -230,7 +234,7 @@ pipeline {
 
                         def result = curlWithAuth(
                             method: 'GET',
-                            path: "/api/v1/clusters/${env.CLUSTER_ID}"
+                            path: "/api/v1/clusters/${globalClusterId}"
                         )
 
                         if (result.code != '200') {
@@ -253,13 +257,13 @@ pipeline {
                         }
 
                         if (status == 'FAILED') {
-                            env.PROVISIONING_FAILED = 'true'
+                            globalProvisioningFailed = 'true'
                             error("Cluster provisioning failed. Status: FAILED. Cluster will be preserved for investigation.")
                         }
                     }
 
                     if (status != 'READY') {
-                        env.PROVISIONING_FAILED = 'true'
+                        globalProvisioningFailed = 'true'
                         def timeout = (maxAttempts * 30) / 60
                         error("Timeout: Cluster did not reach READY state within ${timeout} minutes. Cluster will be preserved.")
                     }
@@ -276,7 +280,7 @@ pipeline {
 
                     def result = curlWithAuth(
                         method: 'GET',
-                        path: "/api/v1/clusters/${env.CLUSTER_ID}/outputs"
+                        path: "/api/v1/clusters/${globalClusterId}/outputs"
                     )
 
                     if (result.code != '200') {
@@ -286,23 +290,23 @@ pipeline {
                     def outputs = readJSON text: result.body
 
                     // Save kubeconfig to file
-                    def kubeconfigFile = "kubeconfig-${env.CLUSTER_NAME_ACTUAL}.yaml"
+                    def kubeconfigFile = "kubeconfig-${globalClusterName}.yaml"
                     writeFile file: kubeconfigFile, text: outputs.kubeconfig
 
-                    // Set environment variables for tests (convert to string explicitly)
-                    env.KUBECONFIG = "${env.WORKSPACE}/${kubeconfigFile}"
-                    env.CLUSTER_API_URL = "${outputs.api_url ?: 'N/A'}"
-                    env.CLUSTER_CONSOLE_URL = "${outputs.console_url ?: 'N/A'}"
-                    env.KUBEADMIN_PASSWORD = "${outputs.kubeadmin?.password ?: 'N/A'}"
+                    // Store in global variables
+                    globalKubeconfig = "${env.WORKSPACE}/${kubeconfigFile}"
+                    globalApiUrl = outputs.api_url ?: 'N/A'
+                    globalConsoleUrl = outputs.console_url ?: 'N/A'
+                    globalKubeadminPassword = outputs.kubeadmin?.password ?: 'N/A'
 
                     echo "✓ Credentials retrieved successfully"
-                    echo "  API URL:      ${env.CLUSTER_API_URL}"
-                    echo "  Console URL:  ${env.CLUSTER_CONSOLE_URL}"
-                    echo "  Kubeconfig:   ${env.KUBECONFIG}"
+                    echo "  API URL:      ${globalApiUrl}"
+                    echo "  Console URL:  ${globalConsoleUrl}"
+                    echo "  Kubeconfig:   ${globalKubeconfig}"
 
                     // Verify kubeconfig works
                     sh """
-                        export KUBECONFIG=${env.KUBECONFIG}
+                        export KUBECONFIG=${globalKubeconfig}
                         oc version --client || echo "Warning: oc client not found"
                         oc cluster-info || echo "Warning: Unable to connect to cluster"
                     """
@@ -317,12 +321,12 @@ pipeline {
 
                     def testExitCode = sh(
                         script: """
-                            export KUBECONFIG=${env.KUBECONFIG}
-                            export CLUSTER_NAME=${env.CLUSTER_NAME_ACTUAL}
-                            export CLUSTER_ID=${env.CLUSTER_ID}
-                            export CLUSTER_API_URL="${env.CLUSTER_API_URL}"
-                            export CLUSTER_CONSOLE_URL="${env.CLUSTER_CONSOLE_URL}"
-                            export KUBEADMIN_PASSWORD="${env.KUBEADMIN_PASSWORD}"
+                            export KUBECONFIG=${globalKubeconfig}
+                            export CLUSTER_NAME=${globalClusterName}
+                            export CLUSTER_ID=${globalClusterId}
+                            export CLUSTER_API_URL="${globalApiUrl}"
+                            export CLUSTER_CONSOLE_URL="${globalConsoleUrl}"
+                            export KUBEADMIN_PASSWORD="${globalKubeadminPassword}"
 
                             # Run user-provided test script
                             ${params.TEST_SCRIPT_PATH}
@@ -331,7 +335,7 @@ pipeline {
                     )
 
                     if (testExitCode != 0) {
-                        env.TESTS_FAILED = 'true'
+                        globalTestsFailed = 'true'
                         error("Tests failed with exit code ${testExitCode}. Cluster will be preserved for investigation.")
                     }
 
@@ -357,12 +361,12 @@ pipeline {
                 def shouldDelete = shouldDeleteCluster()
 
                 if (shouldDelete) {
-                    echo "Deleting cluster ${env.CLUSTER_ID}..."
+                    echo "Deleting cluster ${globalClusterId}..."
 
                     try {
                         def result = curlWithAuth(
                             method: 'DELETE',
-                            path: "/api/v1/clusters/${env.CLUSTER_ID}"
+                            path: "/api/v1/clusters/${globalClusterId}"
                         )
 
                         if (result.code == '200') {
@@ -370,14 +374,14 @@ pipeline {
 
                             // Optionally wait for deletion to complete
                             // Uncomment if you want to block until deletion finishes
-                            // waitForDeletion(env.CLUSTER_ID)
+                            // waitForDeletion(globalClusterId)
                         } else {
                             echo "Warning: Cluster deletion request failed (HTTP ${result.code})"
-                            echo "You may need to delete manually: ${env.CLUSTER_ID}"
+                            echo "You may need to delete manually: ${globalClusterId}"
                         }
                     } catch (Exception e) {
                         echo "Warning: Exception during cluster deletion: ${e.message}"
-                        echo "Cluster ${env.CLUSTER_ID} may need manual cleanup"
+                        echo "Cluster ${globalClusterId} may need manual cleanup"
                     }
                 } else {
                     def reason = getPreservationReason()
@@ -386,12 +390,12 @@ pipeline {
                     echo "╚════════════════════════════════════════════════════════╝"
                     echo ""
                     echo "Reason:       ${reason}"
-                    echo "Cluster ID:   ${env.CLUSTER_ID}"
-                    echo "Cluster Name: ${env.CLUSTER_NAME_ACTUAL}"
-                    echo "Console URL:  ${env.CLUSTER_CONSOLE_URL}"
+                    echo "Cluster ID:   ${globalClusterId}"
+                    echo "Cluster Name: ${globalClusterName}"
+                    echo "Console URL:  ${globalConsoleUrl}"
                     echo ""
                     echo "To delete manually:"
-                    echo "  curl -X DELETE ${env.OCPCTL_API_URL}/api/v1/clusters/${env.CLUSTER_ID} \\"
+                    echo "  curl -X DELETE ${env.OCPCTL_API_URL}/api/v1/clusters/${globalClusterId} \\"
                     echo "    -H \"Authorization: Bearer <YOUR_API_KEY>\""
                     echo ""
                 }
@@ -408,8 +412,8 @@ pipeline {
         failure {
             script {
                 echo "✗ Pipeline failed. Check logs for details."
-                if (env.CLUSTER_ID) {
-                    echo "Cluster ID: ${env.CLUSTER_ID}"
+                if (globalClusterId) {
+                    echo "Cluster ID: ${globalClusterId}"
                     echo "Cluster preservation: ${params.PRESERVE_ON_FAILURE ? 'ENABLED' : 'DISABLED'}"
                 }
             }
@@ -509,12 +513,12 @@ def shouldDeleteCluster() {
     }
 
     // Preserve if provisioning failed
-    if (env.PROVISIONING_FAILED == 'true') {
+    if (globalProvisioningFailed == 'true') {
         return false
     }
 
     // Preserve if tests failed
-    if (env.TESTS_FAILED == 'true') {
+    if (globalTestsFailed == 'true') {
         return false
     }
 
@@ -529,11 +533,11 @@ def shouldDeleteCluster() {
 def getPreservationReason() {
     def reasons = []
 
-    if (env.PROVISIONING_FAILED == 'true') {
+    if (globalProvisioningFailed == 'true') {
         reasons.add('Provisioning failed')
     }
 
-    if (env.TESTS_FAILED == 'true') {
+    if (globalTestsFailed == 'true') {
         reasons.add('Tests failed')
     }
 
