@@ -147,12 +147,25 @@ curl -X GET https://ocpctl.mg.dog8code.com/api/v1/profiles \
    - **Script Path**: `examples/jenkins/Jenkinsfile`
 2. Click **"Save"**
 
+### Step 3: Initial Build to Discover Parameters
+
+**IMPORTANT**: Jenkins requires running the pipeline once before parameters are visible.
+
+1. Click **"Build Now"** (this first build will discover the parameters)
+2. The build may fail initially - that's expected
+3. After the build completes, refresh the page
+4. You should now see **"Build with Parameters"** instead of "Build Now"
+
+This is normal Jenkins behavior - parameters defined in the Jenkinsfile are only discovered after the first execution.
+
 ### Alternative: Inline Pipeline
 
 If you prefer to paste the Jenkinsfile content directly:
 1. **Definition**: `Pipeline script`
 2. Copy the entire contents of `Jenkinsfile` into the **Script** text box
 3. Click **"Save"**
+4. Click **"Build Now"** once to discover parameters (may fail, that's OK)
+5. Refresh - you'll now see **"Build with Parameters"**
 
 ## Usage
 
@@ -254,6 +267,18 @@ exit 0
 6. **Timeouts**: Use `--timeout` flags to avoid hanging
 
 ## Troubleshooting
+
+### Problem: "Build with Parameters" option not showing
+
+**Cause**: Jenkins hasn't discovered the pipeline parameters yet
+
+**Solution**:
+- Click **"Build Now"** once to run the pipeline
+- The build may fail (that's OK - it's just discovering parameters)
+- After the build completes, refresh the page
+- You should now see **"Build with Parameters"**
+
+**Why this happens**: Jenkins only discovers parameters when it executes the Jenkinsfile for the first time. This is standard Jenkins behavior for all parameterized pipelines.
 
 ### Problem: "API key credential not found"
 

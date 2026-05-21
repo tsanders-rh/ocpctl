@@ -85,7 +85,7 @@ pipeline {
         // Testing
         string(
             name: 'TEST_SCRIPT_PATH',
-            defaultValue: './run-tests.sh',
+            defaultValue: './examples/jenkins/run-tests.sh',
             description: 'Path to test script (must be executable, relative to workspace)'
         )
     }
