@@ -271,16 +271,20 @@ func (h *MetricsHandler) getAutoscaleMetrics(ctx context.Context) AutoscaleMetri
 		}
 	}
 
-	// Calculate desired workers: ceil(queue_depth / 3), minimum 1
+	// Calculate desired workers: 1 static + autoscale workers based on queue depth
 	var queueDepth int
 	h.store.Pool().QueryRow(ctx, `
 		SELECT COUNT(*) FROM jobs WHERE status = 'PENDING'
 	`).Scan(&queueDepth)
 
-	desired := 1 // Always at least 1 (static worker)
+	// Calculate autoscale workers needed: ceil(queue_depth / 3), minimum 1
+	autoscaleNeeded := 1 // ASG minimum is 1
 	if queueDepth > 3 {
-		desired = 1 + ((queueDepth + 2) / 3) // Static worker + autoscale workers
+		autoscaleNeeded = (queueDepth + 2) / 3 // Ceiling division
 	}
+
+	// Total desired = 1 static worker + autoscale workers
+	desired := 1 + autoscaleNeeded
 
 	return AutoscaleMetricsSnapshot{
 		CurrentWorkers: currentWorkers,
