@@ -10,6 +10,7 @@ import (
 	"time"
 
 	echoSwagger "github.com/swaggo/echo-swagger"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -173,6 +174,9 @@ func (s *Server) setupMiddleware() {
 	// Logging middleware
 	s.echo.Use(apimiddleware.Logger())
 
+	// Prometheus metrics middleware
+	s.echo.Use(apimiddleware.PrometheusMetrics())
+
 	// Gzip compression for responses > 1KB
 	s.echo.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Level: 5, // Balance between compression ratio and CPU usage
@@ -212,6 +216,9 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/health", s.healthCheck)
 	s.echo.GET("/ready", s.readyCheck)
 	s.echo.GET("/version", s.versionCheck)
+
+	// Prometheus metrics endpoint (no auth required for Prometheus scraper)
+	s.echo.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
 
 	// Swagger API documentation (no auth required)
 	// Serve the embedded swagger.json file directly (bypasses broken template rendering)

@@ -84,17 +84,17 @@ pipeline {
         // Metadata
         string(
             name: 'OWNER_EMAIL',
-            defaultValue: 'jenkins@example.com',
+            defaultValue: 'tsanders@redhat.com',
             description: 'Cluster owner email address'
         )
         string(
             name: 'TEAM',
-            defaultValue: 'jenkins-automation',
+            defaultValue: 'Staff',
             description: 'Team name for cost allocation'
         )
         string(
             name: 'COST_CENTER',
-            defaultValue: 'jenkins-ci',
+            defaultValue: '733',
             description: 'Cost center code'
         )
 

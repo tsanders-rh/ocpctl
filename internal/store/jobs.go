@@ -558,6 +558,81 @@ func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, err
 	return jobs, nil
 }
 
+// GetIncompleteFailedJobs returns FAILED jobs that don't have an ended_at timestamp.
+// These jobs were marked as FAILED but the worker crashed before completing cleanup
+// (releasing locks, setting ended_at, etc.). The janitor uses this to complete cleanup.
+func (s *JobStore) GetIncompleteFailedJobs(ctx context.Context) ([]*types.Job, error) {
+	query := `
+		SELECT id, cluster_id, job_type, status, attempt, max_attempts,
+		       error_code, error_message, started_at, ended_at,
+		       created_at, updated_at, metadata
+		FROM jobs
+		WHERE status = $1 AND ended_at IS NULL
+		ORDER BY started_at ASC
+	`
+
+	rows, err := s.pool.Query(ctx, query, types.JobStatusFailed)
+	if err != nil {
+		return nil, fmt.Errorf("query incomplete failed jobs: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := []*types.Job{}
+	for rows.Next() {
+		var job types.Job
+		err := rows.Scan(
+			&job.ID,
+			&job.ClusterID,
+			&job.JobType,
+			&job.Status,
+			&job.Attempt,
+			&job.MaxAttempts,
+			&job.ErrorCode,
+			&job.ErrorMessage,
+			&job.StartedAt,
+			&job.EndedAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+			&job.Metadata,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan incomplete failed job: %w", err)
+		}
+		jobs = append(jobs, &job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate incomplete failed jobs: %w", err)
+	}
+
+	return jobs, nil
+}
+
+// CompleteFailedJobCleanup sets ended_at for a FAILED job and appends a note to error_message.
+// This is used by the janitor to complete cleanup for jobs that were marked as FAILED but
+// the worker crashed before setting ended_at (e.g., after marking job as FAILED but before
+// releasing the lock in the defer statement).
+func (s *JobStore) CompleteFailedJobCleanup(ctx context.Context, id string) error {
+	query := `
+		UPDATE jobs
+		SET ended_at = NOW(),
+		    error_message = COALESCE(error_message, '') || ' [Cleanup completed by janitor after worker crash]',
+		    updated_at = NOW()
+		WHERE id = $1 AND ended_at IS NULL
+	`
+
+	result, err := s.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("complete failed job cleanup: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // CountPending returns the total count of jobs with PENDING or RETRYING status.
 // This is used for monitoring queue depth and worker capacity planning.
 func (s *JobStore) CountPending(ctx context.Context) (int, error) {

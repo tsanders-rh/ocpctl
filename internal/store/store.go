@@ -145,6 +145,12 @@ func (s *Store) Stats() *pgxpool.Stat {
 	return s.pool.Stat()
 }
 
+// Pool returns the underlying database connection pool
+// This is useful for custom queries and metrics collection
+func (s *Store) Pool() *pgxpool.Pool {
+	return s.pool
+}
+
 // GetDatabaseHost returns the database host:port from the connection config
 func (s *Store) GetDatabaseHost() string {
 	config := s.pool.Config()

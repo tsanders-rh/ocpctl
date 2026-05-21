@@ -34,6 +34,7 @@ import (
 	_ "github.com/tsanders-rh/ocpctl/docs" // Import generated docs
 	"github.com/tsanders-rh/ocpctl/internal/addon"
 	"github.com/tsanders-rh/ocpctl/internal/api"
+	"github.com/tsanders-rh/ocpctl/internal/metrics"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/secrets"
@@ -206,6 +207,28 @@ func main() {
 	config.Version = Version
 	config.Commit = Commit
 	config.BuildTime = BuildTime
+
+	// Set build info metric
+	metrics.BuildInfo.WithLabelValues(Version, Commit, BuildTime).Set(1)
+	metrics.UptimeSeconds.WithLabelValues("api").Set(0)
+
+	// Start metrics collector
+	log.Println("Starting metrics collector...")
+	metricsCollector := metrics.NewCollector(st, 15*time.Second)
+	metricsCtx, metricsCancel := context.WithCancel(context.Background())
+	defer metricsCancel()
+
+	go metricsCollector.Start(metricsCtx)
+
+	// Update uptime metric every 30 seconds
+	startTime := time.Now()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			metrics.UptimeSeconds.WithLabelValues("api").Set(time.Since(startTime).Seconds())
+		}
+	}()
 
 	// Create API server
 	server, err := api.NewServer(config, st, registry, policyEngine)

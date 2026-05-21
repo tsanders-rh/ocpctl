@@ -127,6 +127,11 @@ func (j *Janitor) run() {
 		log.Printf("Error cleaning up stuck jobs: %v", err)
 	}
 
+	// Cleanup incomplete failed jobs (failed but didn't release locks)
+	if err := j.cleanupIncompleteFailedJobs(ctx); err != nil {
+		log.Printf("Error cleaning up incomplete failed jobs: %v", err)
+	}
+
 	// Detect and alert on stuck locks (before cleanup)
 	if err := j.detectStuckLocks(ctx); err != nil {
 		log.Printf("Error detecting stuck locks: %v", err)
@@ -332,6 +337,44 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 
 			log.Printf("Marked stuck job %s as permanently failed", job.ID)
 		}
+	}
+
+	return nil
+}
+
+// cleanupIncompleteFailedJobs finds FAILED jobs that didn't complete cleanup (no ended_at)
+// and ensures their locks are released and ended_at is set. This handles cases where workers
+// crashed after marking a job as FAILED but before completing the cleanup process.
+func (j *Janitor) cleanupIncompleteFailedJobs(ctx context.Context) error {
+	// Get all incomplete failed jobs
+	incompleteJobs, err := j.store.Jobs.GetIncompleteFailedJobs(ctx)
+	if err != nil {
+		return fmt.Errorf("get incomplete failed jobs: %w", err)
+	}
+
+	if len(incompleteJobs) == 0 {
+		return nil
+	}
+
+	log.Printf("Found %d incomplete failed jobs (FAILED but no ended_at)", len(incompleteJobs))
+
+	for _, job := range incompleteJobs {
+		log.Printf("Cleaning up incomplete failed job %s (type=%s, cluster=%s, started=%s)",
+			job.ID, job.JobType, job.ClusterID, job.StartedAt)
+
+		// Release any locks held by this job
+		if err := j.store.JobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
+			log.Printf("Warning: Failed to release lock for cluster %s: %v", job.ClusterID, err)
+			// Continue even if lock release fails - we still want to set ended_at
+		}
+
+		// Complete the cleanup by setting ended_at
+		if err := j.store.Jobs.CompleteFailedJobCleanup(ctx, job.ID); err != nil {
+			log.Printf("Failed to complete cleanup for job %s: %v", job.ID, err)
+			continue
+		}
+
+		log.Printf("Completed cleanup for incomplete failed job %s (released lock, set ended_at)", job.ID)
 	}
 
 	return nil
