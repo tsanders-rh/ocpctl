@@ -242,8 +242,23 @@ pipeline {
                             continue
                         }
 
+                        // DEBUG: Print raw response
+                        echo "DEBUG: Raw API response body (first 500 chars): ${result.body.take(500)}"
+
                         def clusterData = readJSON text: result.body
-                        globalClusterStatus = clusterData.status.toString()
+
+                        // DEBUG: Print parsed object
+                        echo "DEBUG: Parsed clusterData keys: ${clusterData.keySet()}"
+                        echo "DEBUG: clusterData.status direct access: ${clusterData.status}"
+                        echo "DEBUG: clusterData['status'] bracket access: ${clusterData['status']}"
+
+                        // Try direct assignment without .toString()
+                        def statusValue = clusterData.status
+                        echo "DEBUG: Local statusValue variable: ${statusValue}"
+
+                        // Now assign to global
+                        globalClusterStatus = statusValue.toString()
+                        echo "DEBUG: globalClusterStatus after assignment: ${globalClusterStatus}"
 
                         // Only print status when it changes
                         if (globalClusterStatus != lastStatus) {
