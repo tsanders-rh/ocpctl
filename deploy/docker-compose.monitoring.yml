@@ -1,0 +1,61 @@
+version: '3.8'
+
+# Docker Compose for local OCPCTL monitoring stack
+# Start with: docker-compose -f deploy/docker-compose.monitoring.yml up -d
+# Access Grafana at: http://localhost:3001 (admin/admin)
+# Access Prometheus at: http://localhost:9091
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ocpctl-prometheus
+    ports:
+      - "9091:9090"  # Expose on 9091 to avoid conflicts
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'  # Keep metrics for 30 days
+      - '--web.enable-lifecycle'              # Allow config reload via API
+    restart: unless-stopped
+    networks:
+      - monitoring
+    # Override prometheus.yml for local development
+    # Replace localhost with host.docker.internal to reach host machine
+    environment:
+      - PROMETHEUS_OVERRIDE_CONFIG=true
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ocpctl-grafana
+    ports:
+      - "3001:3000"  # Expose on 3001 to avoid conflicts with Next.js
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge

@@ -1,0 +1,85 @@
+# Prometheus Configuration for OCPCTL
+
+global:
+  scrape_interval: 15s      # Scrape targets every 15 seconds
+  evaluation_interval: 15s   # Evaluate rules every 15 seconds
+  scrape_timeout: 10s        # Timeout for scrapes
+
+  # Attach these labels to any time series or alerts
+  external_labels:
+    environment: 'production'
+    cluster: 'ocpctl'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - localhost:9093
+
+# Load rules once and periodically evaluate them
+# rule_files:
+#   - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OCPCTL API Server
+  - job_name: 'ocpctl-api'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # OCPCTL Worker (static worker on same host)
+  - job_name: 'ocpctl-worker-static'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # OCPCTL Autoscale Workers (EC2 service discovery)
+  # Automatically discovers workers in autoscaling group
+  - job_name: 'ocpctl-worker-autoscale'
+    ec2_sd_configs:
+      - region: us-east-1
+        port: 9090
+        filters:
+          - name: tag:Service
+            values: ['ocpctl-worker']
+          - name: instance-state-name
+            values: ['running']
+
+    relabel_configs:
+      # Use instance ID as the instance label
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance
+
+      # Add availability zone
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: availability_zone
+
+      # Add instance type
+      - source_labels: [__meta_ec2_instance_type]
+        target_label: instance_type
+
+      # Add tags
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: name
+
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # PostgreSQL Exporter (if installed)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['localhost:9187']
+
+  # Node Exporter (system metrics - if installed)
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['localhost:9100']
