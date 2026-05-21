@@ -308,6 +308,22 @@ exit 0
 
 **Why this happens**: Jenkins only discovers parameters when it executes the Jenkinsfile for the first time. This is standard Jenkins behavior for all parameterized pipelines.
 
+### Problem: "OpenShift version X.X.X not in profile allowlist"
+
+**Error message**: `validation_failed: OpenShift version 4.22.0 not in profile allowlist`
+
+**Cause**: The selected OpenShift version is not allowed by the selected cluster profile
+
+**Solution**:
+1. Check which versions are allowed for your selected profile:
+   ```bash
+   curl https://ocpctl.mg.dog8code.com/api/v1/profiles/aws-sno-ga | jq '.openshift_versions.allowlist'
+   ```
+2. Update the Jenkins pipeline to use an allowed version
+3. Different profiles support different version ranges - always verify before building
+
+**Note**: The Jenkinsfile default versions are based on the `aws-sno-ga` profile. If using a different profile, you may need to select a different version.
+
 ### Problem: "API key credential not found"
 
 **Solution**:
