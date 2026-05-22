@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Book, Users, Shield, Sparkles } from "lucide-react";
+import { Book, Users, Shield, Sparkles, Database } from "lucide-react";
 
 const userGuides = [
   {
@@ -12,23 +12,28 @@ const userGuides = [
     icon: Book,
     content: `# Getting Started with OCPCTL
 
-Welcome to OCPCTL! This guide will help you get started with creating and managing ephemeral OpenShift clusters.
+Welcome to OCPCTL! This comprehensive guide will help you get started with creating and managing Kubernetes and OpenShift clusters across multiple cloud providers.
 
 ## What is OCPCTL?
 
-OCPCTL is a self-service platform for provisioning and managing ephemeral Kubernetes and OpenShift clusters on AWS and IBM Cloud. It provides:
+OCPCTL is a self-service platform for provisioning and managing Kubernetes and OpenShift clusters on AWS, Google Cloud, and IBM Cloud. It provides instant access to pre-provisioned clusters or on-demand cluster creation with full lifecycle management.
 
-- **Self-service cluster creation** - Request OpenShift, EKS, or IKS clusters through an easy-to-use web interface
+**Core Capabilities:**
+- **Cluster Pools** - Instant access to pre-provisioned clusters for CI/CD and rapid testing
+- **Self-service cluster creation** - Request clusters through an easy-to-use web interface or API
 - **Automated lifecycle management** - Clusters are automatically destroyed after their TTL expires
-- **Work hours hibernation** - Clusters can automatically hibernate outside business hours to save costs
-- **Policy enforcement** - Cluster configurations are validated against organizational policies
-- **Audit trail** - All operations are logged for compliance and tracking
+- **Work hours hibernation** - Clusters automatically hibernate outside business hours to save costs
+- **Policy enforcement** - Cluster configurations validated against organizational policies
+- **Audit trail** - All operations logged for compliance and tracking
 - **Post-deployment automation** - Automatically configure operators, scripts, and dashboards
+- **CI/CD integration** - REST API and SDKs for automated cluster provisioning
 
-**Supported Platforms:**
-- **AWS OpenShift** - OpenShift 4.20+ clusters on AWS
+**Supported Platforms & Cluster Types:**
+- **AWS OpenShift** - OpenShift 4.18-4.22 clusters (IPI installer)
 - **AWS EKS** - Managed Kubernetes clusters with Kubernetes Dashboard
-- **IBM Cloud IKS** - Managed Kubernetes clusters on IBM Cloud classic infrastructure
+- **GCP GKE** - Google Kubernetes Engine clusters
+- **GCP OpenShift** - OpenShift clusters on Google Cloud
+- **IBM Cloud IKS** - Managed Kubernetes on IBM Cloud classic infrastructure
 
 ## Logging In
 
@@ -59,12 +64,18 @@ After logging in, you'll see the main dashboard with several sections:
 
 ### Sidebar Navigation
 
-- **Clusters** - View and manage your clusters
-- **Profiles** - Browse available cluster profiles
+**Main Navigation:**
+- **Clusters** - View and manage all your clusters (active, hibernated, provisioning)
+- **Cluster Pools** - Browse and lease pre-provisioned clusters for instant access
+- **Profiles** - Browse available cluster profiles and post-deployment configurations
 - **API Documentation** - Interactive API reference (Swagger UI)
-- **User Guide** - This documentation
-- **Admin Dashboard** (Admin only) - System overview and orphaned resources
-- **User Management** (Admin only) - Manage user accounts
+- **User Guide** - This comprehensive documentation
+
+**Admin Navigation** (Admin role only):
+- **Admin Dashboard** - System overview, statistics, and orphaned resources
+- **User Management** - Create and manage user accounts
+- **Team Management** - Configure team-based access control
+- **Cluster Pools** - Create and manage cluster pools (admin view with full controls)
 
 ### Clusters Page
 
@@ -86,19 +97,30 @@ Each cluster card displays:
 ### Cluster Actions
 
 Click on a cluster card to view details and perform actions:
-- **Download Kubeconfig** - Get credentials to access the cluster
+- **Download Kubeconfig** - Get credentials to access the cluster via kubectl/oc
 - **Console URL** (OpenShift) - Access OpenShift web console
-- **Dashboard URL** (EKS) - Access Kubernetes Dashboard with provided token
-- **Extend TTL** - Postpone automatic destruction
-- **Hibernate** - Shut down cluster to save costs
-- **Resume** - Start a hibernated cluster
-- **Destroy** - Immediately delete the cluster
+- **Dashboard URL** (EKS/GKE) - Access Kubernetes Dashboard with provided token
+- **Extend TTL** - Postpone automatic destruction (within profile limits)
+- **Hibernate** - Shut down cluster to save costs (reduces costs by ~90%)
+- **Resume** - Start a hibernated cluster (takes 5-10 minutes)
+- **Release Cluster** (Pool-leased clusters) - Return cluster to pool for others to use
+- **Destroy** - Permanently delete the cluster (irreversible)
 
-**Note:** EKS clusters include an automatically configured Kubernetes Dashboard accessible via LoadBalancer with token-based authentication. The dashboard token is securely stored and displayed in cluster outputs.
+**Notes:**
+- EKS and GKE clusters include an automatically configured Kubernetes Dashboard accessible via LoadBalancer with token-based authentication
+- Dashboard tokens are securely stored and displayed in cluster outputs
+- Pool-leased clusters show lease expiration time and auto-release countdown
 
 ## What's Next?
 
-Click on **Cluster Management** in the navigation to learn how to create and manage clusters.
+**For rapid testing and CI/CD:**
+- Click on **Cluster Pools** to get instant access to pre-provisioned clusters
+
+**To create custom clusters:**
+- Click on **Cluster Management** in the navigation to learn how to create and manage clusters
+
+**For automation:**
+- Check out **Advanced Features** for API keys, templates, and programmatic access
 `,
   },
   {
@@ -118,69 +140,116 @@ This guide covers creating, configuring, and managing OpenShift clusters with OC
 
 ### Step 2: Choose a Profile
 
-Select a cluster profile that matches your needs:
+Select a cluster profile that matches your needs. Profiles define the cluster configuration, size, and optional post-deployment automation.
 
-#### aws-sno-test (Recommended for Testing)
-- **Configuration:** 1 control-plane node (schedulable, Single Node OpenShift)
-- **Workers:** 0 worker nodes
-- **Cost:** ~$0.80/hour
-- **Max TTL:** 24 hours, Default: 8 hours
-- **Best for:** Rapid testing and development
+**💡 Tip:** For instant access, check **Cluster Pools** instead of creating a new cluster.
 
-#### aws-minimal-test
-- **Configuration:** 3 control-plane nodes (schedulable)
-- **Workers:** 0 worker nodes
+#### AWS OpenShift Profiles
+
+**aws-sno-ga** (Recommended for Quick Testing)
+- **Configuration:** Single Node OpenShift (SNO) - 1 schedulable control-plane node
+- **Instance:** m6i.2xlarge (8 vCPU, 32GB RAM)
+- **Cost:** ~$0.38/hour
+- **OpenShift Versions:** 4.18-4.21 (default: 4.20)
+- **Max TTL:** 72 hours, Default: 24 hours
+- **Best for:** Rapid testing, development, learning OpenShift
+
+**aws-minimal-test**
+- **Configuration:** 3 control-plane nodes (schedulable), 0 dedicated workers
+- **Instance:** m6i.2xlarge
+- **Cost:** ~$1.15/hour
 - **Max TTL:** 72 hours
-- **Best for:** Multi-node testing without dedicated workers
+- **Best for:** Multi-node HA testing without dedicated workers
 
-#### aws-standard
-- **Configuration:** 3 control-plane nodes + 3 worker nodes (m6i.2xlarge)
+**aws-standard**
+- **Configuration:** 3 control-plane + 3 worker nodes
+- **Instances:** m6i.2xlarge
+- **Cost:** ~$2.30/hour
 - **Max TTL:** 168 hours (7 days)
-- **Best for:** Standard development and integration testing
+- **Best for:** Production-like environments, integration testing
 
-#### aws-virtualization
-- **Configuration:** 3 control-plane nodes (m6i.2xlarge) + 3 worker nodes (m6i.metal)
+**aws-virtualization**
+- **Configuration:** 3 control-plane (m6i.2xlarge) + 3 workers (m6i.metal - bare metal)
 - **Cost:** ~$35.50/hour
 - **Max TTL:** 168 hours, Default: 72 hours
-- **Best for:** OpenShift Virtualization workloads requiring nested virtualization
+- **Best for:** OpenShift Virtualization (CNV), nested virtualization workloads
 
-#### aws-virt-windows-minimal
-- **Configuration:** 3 control-plane nodes (m6i.2xlarge) + 2 worker nodes (m6i.metal)
+**aws-virt-windows-minimal**
+- **Configuration:** 3 control-plane (m6i.2xlarge) + 2 workers (m6i.metal)
 - **Cost:** ~$25/hour
 - **Max TTL:** 168 hours, Default: 72 hours
-- **Post-Deployment:** Automatically configures IRSA for Windows VM image access
+- **Post-Deployment:** Auto-configures IRSA for Windows VM image access from S3
 - **Best for:** OpenShift Virtualization with Windows VM workloads
 
-#### eks-minimal (AWS EKS)
-- **Configuration:** 2-node managed Kubernetes cluster (t3.medium)
-- **Cost:** ~$0.15/hour ($110/month with EKS control plane)
-- **Max TTL:** 168 hours, Default: 48 hours
-- **Post-Deployment:** Automatically installs Kubernetes Dashboard with token authentication
-- **Best for:** Kubernetes development and testing without OpenShift
+**aws-prerelease** (Testing Pre-GA Versions)
+- **Configuration:** Configurable (SNO or multi-node)
+- **OpenShift Versions:** 4.22+ pre-release versions
+- **Credentials:** Requires Mint or Static mode (Auto not supported)
+- **Best for:** Testing upcoming OpenShift releases
 
-#### eks-standard (AWS EKS)
-- **Configuration:** 3-node managed Kubernetes cluster with larger instances
+#### AWS Kubernetes (EKS) Profiles
+
+**eks-minimal**
+- **Configuration:** 2-node managed Kubernetes cluster
+- **Instances:** t3.medium (2 vCPU, 4GB RAM)
+- **Cost:** ~$0.15/hour + $0.10/hour EKS control plane
+- **Kubernetes Versions:** 1.28-1.31
+- **Max TTL:** 168 hours, Default: 48 hours
+- **Post-Deployment:** Kubernetes Dashboard with token auth
+- **Best for:** Kubernetes testing without OpenShift overhead
+
+**eks-standard**
+- **Configuration:** 3-node managed Kubernetes cluster
+- **Instances:** t3.large (2 vCPU, 8GB RAM)
+- **Cost:** ~$0.30/hour + $0.10/hour EKS control plane
 - **Max TTL:** 168 hours
-- **Post-Deployment:** Kubernetes Dashboard and monitoring tools
-- **Best for:** Standard Kubernetes workloads
+- **Best for:** Standard Kubernetes development and testing
 
-#### iks-minimal (IBM Cloud IKS)
-- **Configuration:** 2-node managed Kubernetes cluster (b3c.4x16 - 4 vCPU, 16GB RAM)
-- **Cost:** ~$0.28/hour ($202/month, free control plane)
+#### GCP Profiles
+
+**gke-standard** (Google Kubernetes Engine)
+- **Configuration:** 3-node managed Kubernetes cluster
+- **Machine Type:** n1-standard-2 (2 vCPU, 7.5GB RAM)
+- **Cost:** ~$0.32/hour (free GKE control plane)
+- **Kubernetes Versions:** 1.28-1.31
+- **Max TTL:** 168 hours
+- **Best for:** Kubernetes development on Google Cloud
+
+**gcp-openshift-standard** (OpenShift on GCP)
+- **Configuration:** 3 control-plane + 3 worker nodes
+- **Machine Type:** n2-standard-4 (4 vCPU, 16GB RAM)
+- **Cost:** ~$1.50/hour
+- **OpenShift Versions:** 4.20-4.21
+- **Max TTL:** 168 hours
+- **Best for:** OpenShift testing on Google Cloud Platform
+
+#### IBM Cloud Profiles
+
+**iks-minimal** (IBM Cloud Kubernetes Service)
+- **Configuration:** 2-node managed Kubernetes cluster
+- **Instance:** b3c.4x16 (4 vCPU, 16GB RAM)
+- **Cost:** ~$0.28/hour (free IKS control plane)
+- **Kubernetes Versions:** 1.28-1.30
 - **Max TTL:** 168 hours, Default: 48 hours
-- **Best for:** Kubernetes development on IBM Cloud
+- **Best for:** Kubernetes development on IBM Cloud classic infrastructure
 
-**Note:** Some profiles include automated post-deployment configuration. See [Post-Deployment Configuration](#post-deployment-configuration) below for details.
+**Note:** Profiles with post-deployment automation install operators and configure clusters automatically after creation. See [Post-Deployment Configuration](#post-deployment-configuration) for details.
 
 ### Step 3: Configure Cluster Details
 
 Fill in the required fields:
 
 **Basic Information:**
-- **Cluster Name** - Unique identifier (3-63 characters, lowercase, numbers, hyphens)
-- **Platform** - Select \`aws\` (OpenShift, EKS) or \`ibmcloud\` (OpenShift, IKS)
-- **Version** - OpenShift version (e.g., 4.20.3) or Kubernetes version (e.g., 1.30)
-- **Region** - AWS region (e.g., us-east-1) or IBM Cloud region (e.g., us-south)
+- **Cluster Name** - Unique identifier (3-63 characters, lowercase letters, numbers, hyphens only)
+- **Profile** - Select from available profiles (determines platform, size, and configuration)
+- **Platform** - Automatically set by profile: \`aws\`, \`gcp\`, or \`ibmcloud\`
+- **Version** - OpenShift version (4.18-4.22) or Kubernetes version (1.28-1.31)
+  - Versions available depend on selected profile
+  - Default version recommended for stability
+- **Region** - Geographic location for cluster deployment
+  - AWS: us-east-1, us-east-2, us-west-1, us-west-2, eu-west-1, ap-southeast-1, etc.
+  - GCP: us-central1, us-east1, us-west1, europe-west1, asia-east1, etc.
+  - IBM Cloud: us-south, us-east, eu-gb, eu-de, au-syd, etc.
 
 **Organization Details:**
 - **Owner Email** - Your email address (pre-filled)
@@ -982,6 +1051,801 @@ When creating a cluster with work hours enabled:
 `,
   },
   {
+    id: "cluster-pools",
+    title: "Cluster Pools",
+    icon: Database,
+    content: `# Cluster Pools Guide
+
+Get instant access to pre-provisioned OpenShift clusters for testing and development.
+
+## What are Cluster Pools?
+
+Cluster Pools are collections of pre-provisioned, ready-to-use clusters that you can lease instantly instead of waiting 30-60 minutes for provisioning. Perfect for CI/CD pipelines, rapid testing, and development workflows.
+
+**Benefits:**
+- ⚡ **Instant access** - Get a cluster in seconds, not minutes
+- 🔄 **Auto-release** - Clusters automatically return to pool when lease expires
+- 💰 **Cost-efficient** - Shared pool resources reduce overall infrastructure costs
+- 🎯 **Self-service** - Lease and release via Web UI or API
+- 🤖 **CI/CD ready** - Perfect for automated testing pipelines
+
+**Use Cases:**
+- GitHub Actions, Jenkins, or Tekton CI/CD pipelines
+- Rapid development iterations and testing
+- Demo and presentation environments
+- Automated integration testing
+- Temporary cluster needs without provisioning delays
+
+---
+
+## Quick Start: Web UI
+
+### Browse Available Pools
+
+1. **Navigate to Cluster Pools**
+   - Click **Cluster Pools** in the sidebar
+   - Or visit: \`https://ocpctl.mg.dog8code.com/pools\`
+
+2. **View Pool Information**
+   - Each pool card shows:
+     - **Pool name and description**
+     - **Profile** - Cluster configuration (SNO, standard, etc.)
+     - **Target size** - Desired number of ready clusters
+     - **Max lease duration** - How long you can keep a cluster
+     - **Work hours schedule** - When pool is active (if configured)
+
+### Lease a Cluster
+
+1. **Select a Pool**
+   - Click **View Pool Details** on any pool card
+   - Or navigate directly to \`/pools/{pool-name}\`
+
+2. **Check Real-Time Statistics**
+   The pool details page shows live metrics:
+   - **Ready Clusters** - Available for immediate lease (green)
+   - **Leased Clusters** - Currently in use (blue)
+   - **Provisioning Clusters** - Being created to replenish pool (orange)
+   - **Total Clusters** - Overall pool size (purple)
+
+3. **Lease a Cluster**
+   - Click the **Lease Cluster** button
+   - Wait a few seconds for confirmation
+   - You'll be automatically redirected to the cluster details page
+
+4. **Access Your Cluster**
+   - View cluster API URL and OpenShift console URL
+   - Download kubeconfig from the cluster details page
+   - Start using the cluster immediately!
+
+### Release a Cluster
+
+When you're finished with a cluster:
+
+1. Navigate to the cluster details page (\`/clusters/{cluster-id}\`)
+2. Click the **Release Cluster** button
+3. Cluster is immediately returned to the pool and becomes available for others
+
+**Auto-Release**: If you forget to release, the cluster automatically returns to the pool after the lease period expires (typically 2-4 hours).
+
+---
+
+## API Usage
+
+### Authentication
+
+All API requests require authentication. Use either a JWT token or API key:
+
+**JWT Token (Login):**
+\`\`\`bash
+# Login to get token
+curl -X POST https://ocpctl.mg.dog8code.com/api/v1/auth/login \\
+  -H "Content-Type: application/json" \\
+  -d '{"email": "user@example.com", "password": "your-password"}'
+
+# Extract token from response
+export TOKEN="your-jwt-token"
+\`\`\`
+
+**API Key (Recommended for automation):**
+\`\`\`bash
+# Use API key created in your profile
+export TOKEN="ocpctl_ak_your_key_here"
+\`\`\`
+
+### List Available Pools
+
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" \\
+  https://ocpctl.mg.dog8code.com/api/v1/pools?enabled_only=true
+\`\`\`
+
+**Response:**
+\`\`\`json
+{
+  "pools": [
+    {
+      "name": "dev-pool",
+      "display_name": "Development Pool",
+      "description": "Fast SNO clusters for development",
+      "profile": "aws-sno-ga",
+      "target_size": 3,
+      "max_lease_duration_hours": 2,
+      "enabled": true
+    }
+  ]
+}
+\`\`\`
+
+### Get Pool Statistics
+
+Check pool availability before leasing:
+
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" \\
+  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/stats
+\`\`\`
+
+**Response:**
+\`\`\`json
+{
+  "pool_name": "dev-pool",
+  "total_clusters": 5,
+  "ready_clusters": 3,
+  "leased_clusters": 1,
+  "provisioning_clusters": 1
+}
+\`\`\`
+
+### Lease a Cluster
+
+\`\`\`bash
+curl -X POST \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "leased_by": "my-test-job-123",
+    "metadata": {
+      "purpose": "integration testing",
+      "ticket": "JIRA-456",
+      "team": "platform-team"
+    }
+  }' \\
+  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/lease
+\`\`\`
+
+**Response:**
+\`\`\`json
+{
+  "cluster_id": "abc-123-def-456",
+  "cluster_name": "dev-pool-xyz789",
+  "leased_by": "my-test-job-123",
+  "leased_at": "2026-05-22T10:00:00Z",
+  "lease_expires_at": "2026-05-22T12:00:00Z",
+  "api_url": "https://api.cluster.example.com:6443",
+  "console_url": "https://console-openshift-console.apps.cluster.example.com",
+  "kubeconfig_path": "s3://ocpctl-artifacts/clusters/abc-123-def-456/kubeconfig"
+}
+\`\`\`
+
+### Download and Use Kubeconfig
+
+\`\`\`bash
+# Extract kubeconfig path from lease response
+KUBECONFIG_PATH="s3://ocpctl-artifacts/clusters/abc-123-def-456/kubeconfig"
+
+# Download using AWS CLI
+aws s3 cp $KUBECONFIG_PATH ./kubeconfig
+chmod 600 ./kubeconfig
+
+# Use the cluster
+export KUBECONFIG=./kubeconfig
+kubectl get nodes
+oc get clusterversion
+oc get pods -A
+\`\`\`
+
+### Release a Cluster
+
+Always release clusters when done to free them for others:
+
+\`\`\`bash
+curl -X POST \\
+  -H "Authorization: Bearer $TOKEN" \\
+  https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/abc-123-def-456/release
+\`\`\`
+
+**Response:** 204 No Content (success)
+
+---
+
+## CI/CD Integration Examples
+
+### GitHub Actions
+
+Create \`.github/workflows/integration-test.yml\`:
+
+\`\`\`yaml
+name: Integration Tests
+on: [push, pull_request]
+
+jobs:
+  test-with-cluster-pool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Lease Cluster from Pool
+        id: lease
+        run: |
+          RESPONSE=$(curl -X POST \\
+            -H "Authorization: Bearer \${{ secrets.OCPCTL_TOKEN }}" \\
+            -H "Content-Type: application/json" \\
+            -d '{
+              "leased_by": "github-run-\${{ github.run_id }}",
+              "metadata": {
+                "repo": "\${{ github.repository }}",
+                "workflow": "\${{ github.workflow }}",
+                "run_id": "\${{ github.run_id }}",
+                "branch": "\${{ github.ref_name }}"
+              }
+            }' \\
+            https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/lease)
+
+          echo "Response: $RESPONSE"
+
+          CLUSTER_ID=$(echo $RESPONSE | jq -r '.cluster_id')
+          KUBECONFIG_PATH=$(echo $RESPONSE | jq -r '.kubeconfig_path')
+
+          echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
+          echo "kubeconfig_path=$KUBECONFIG_PATH" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Download Kubeconfig
+        run: |
+          aws s3 cp \${{ steps.lease.outputs.kubeconfig_path }} ./kubeconfig
+          chmod 600 ./kubeconfig
+
+      - name: Run Integration Tests
+        env:
+          KUBECONFIG: ./kubeconfig
+        run: |
+          kubectl get nodes
+          kubectl get pods -A
+          ./scripts/run-integration-tests.sh
+
+      - name: Release Cluster
+        if: always()
+        run: |
+          curl -X POST \\
+            -H "Authorization: Bearer \${{ secrets.OCPCTL_TOKEN }}" \\
+            https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/\${{ steps.lease.outputs.cluster_id }}/release
+\`\`\`
+
+**Setup Instructions:**
+1. Add \`OCPCTL_TOKEN\` to GitHub repository secrets (get from your OCPCTL profile)
+2. Add AWS credentials for kubeconfig downloads: \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\`
+3. Update \`ci-pool\` to match your pool name
+4. Customize test script path
+
+### Bash Script
+
+\`\`\`bash
+#!/bin/bash
+set -euo pipefail
+
+# Configuration
+POOL_NAME="dev-pool"
+OCPCTL_URL="https://ocpctl.mg.dog8code.com"
+TOKEN="\${OCPCTL_TOKEN}"  # Set via environment variable
+
+# Colors for output
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m' # No Color
+
+echo "\${GREEN}Leasing cluster from pool: $POOL_NAME\${NC}"
+
+# Lease cluster
+RESPONSE=$(curl -s -X POST \\
+    -H "Authorization: Bearer $TOKEN" \\
+    -H "Content-Type: application/json" \\
+    -d "{
+        \\"leased_by\\": \\"script-$(date +%s)\\",
+        \\"metadata\\": {
+            \\"script\\": \\"$0\\",
+            \\"user\\": \\"$(whoami)\\",
+            \\"hostname\\": \\"$(hostname)\\"
+        }
+    }" \\
+    "$OCPCTL_URL/api/v1/pools/$POOL_NAME/lease")
+
+# Extract cluster ID
+CLUSTER_ID=$(echo "$RESPONSE" | jq -r '.cluster_id')
+KUBECONFIG_PATH=$(echo "$RESPONSE" | jq -r '.kubeconfig_path')
+
+if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" = "null" ]; then
+    echo "\${RED}Error: Failed to lease cluster\${NC}"
+    echo "$RESPONSE" | jq .
+    exit 1
+fi
+
+echo "\${GREEN}Leased cluster: $CLUSTER_ID\${NC}"
+
+# Ensure cleanup on exit
+cleanup() {
+    echo "\${YELLOW}Releasing cluster $CLUSTER_ID...\${NC}"
+    curl -s -X POST \\
+        -H "Authorization: Bearer $TOKEN" \\
+        "$OCPCTL_URL/api/v1/pools/clusters/$CLUSTER_ID/release"
+    echo "\${GREEN}Cluster released\${NC}"
+}
+trap cleanup EXIT
+
+# Download kubeconfig
+echo "Downloading kubeconfig..."
+aws s3 cp "$KUBECONFIG_PATH" ./kubeconfig
+export KUBECONFIG=./kubeconfig
+
+# Verify cluster access
+echo "Verifying cluster access..."
+kubectl get nodes
+
+# Run your tests here
+echo "\${GREEN}Running tests on cluster...\${NC}"
+# ./your-test-script.sh
+
+echo "\${GREEN}Tests complete!\${NC}"
+\`\`\`
+
+### Python Client
+
+\`\`\`python
+#!/usr/bin/env python3
+import requests
+import os
+import sys
+import time
+from datetime import datetime
+
+class OcpctlPoolClient:
+    def __init__(self, base_url, token):
+        self.base_url = base_url
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+    def get_pool_stats(self, pool_name):
+        """Get real-time pool statistics"""
+        url = f"{self.base_url}/api/v1/pools/{pool_name}/stats"
+        response = requests.get(url, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+
+    def lease_cluster(self, pool_name, leased_by, metadata=None):
+        """Lease a cluster from the specified pool"""
+        url = f"{self.base_url}/api/v1/pools/{pool_name}/lease"
+        payload = {
+            "leased_by": leased_by,
+            "metadata": metadata or {}
+        }
+
+        response = requests.post(url, json=payload, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+
+    def release_cluster(self, cluster_id):
+        """Release a leased cluster back to the pool"""
+        url = f"{self.base_url}/api/v1/pools/clusters/{cluster_id}/release"
+        response = requests.post(url, headers=self.headers)
+        response.raise_for_status()
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize client
+    client = OcpctlPoolClient(
+        base_url="https://ocpctl.mg.dog8code.com",
+        token=os.environ.get("OCPCTL_TOKEN")
+    )
+
+    pool_name = "dev-pool"
+
+    # Check pool availability
+    print(f"Checking pool: {pool_name}")
+    stats = client.get_pool_stats(pool_name)
+    print(f"  Ready clusters: {stats['ready_clusters']}")
+    print(f"  Total clusters: {stats['total_clusters']}")
+
+    if stats['ready_clusters'] == 0:
+        print("No clusters available. Exiting.")
+        sys.exit(1)
+
+    # Lease cluster
+    print(f"\\nLeasing cluster from {pool_name}...")
+    lease = client.lease_cluster(
+        pool_name=pool_name,
+        leased_by=f"python-script-{int(time.time())}",
+        metadata={
+            "purpose": "integration testing",
+            "timestamp": datetime.utcnow().isoformat(),
+            "user": os.environ.get("USER", "unknown")
+        }
+    )
+
+    cluster_id = lease["cluster_id"]
+    print(f"✓ Leased cluster: {lease['cluster_name']}")
+    print(f"  API URL: {lease['api_url']}")
+    print(f"  Console: {lease['console_url']}")
+    print(f"  Lease expires: {lease['lease_expires_at']}")
+
+    try:
+        # Download kubeconfig
+        print(f"\\nDownloading kubeconfig from: {lease['kubeconfig_path']}")
+        # Use AWS CLI or boto3 to download
+        # os.system(f"aws s3 cp {lease['kubeconfig_path']} ./kubeconfig")
+
+        # Your test logic here
+        print("\\nRunning tests...")
+        time.sleep(2)  # Simulate work
+        print("✓ Tests completed successfully")
+
+    except Exception as e:
+        print(f"Error during tests: {e}", file=sys.stderr)
+        raise
+
+    finally:
+        # Always release
+        print(f"\\nReleasing cluster {cluster_id}...")
+        client.release_cluster(cluster_id)
+        print("✓ Cluster released and returned to pool")
+\`\`\`
+
+---
+
+## Best Practices
+
+### 1. Always Release Clusters
+
+Even though auto-release exists, manually release when done:
+
+- Frees resources faster for other users
+- Reduces infrastructure costs
+- Good team citizenship
+
+**In CI/CD pipelines**, use cleanup handlers:
+\`\`\`bash
+# Bash: trap ensures release even on failure
+trap "release_cluster $CLUSTER_ID" EXIT
+
+# Python: try/finally block
+try:
+    # Use cluster
+finally:
+    release_cluster(cluster_id)
+\`\`\`
+
+### 2. Add Meaningful Metadata
+
+Help with debugging, tracking, and audit trails:
+
+\`\`\`json
+{
+  "leased_by": "github-actions-workflow-123",
+  "metadata": {
+    "repo": "my-org/my-app",
+    "workflow": "integration-tests",
+    "run_id": "12345",
+    "branch": "feature/new-api",
+    "commit_sha": "abc123def456",
+    "pr_number": "789",
+    "purpose": "API integration testing"
+  }
+}
+\`\`\`
+
+### 3. Check Pool Stats First
+
+Before leasing, verify pools have capacity:
+
+\`\`\`bash
+curl https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/stats
+
+# If ready_clusters = 0:
+# - Wait for replenishment (check provisioning_clusters)
+# - Use a different pool
+# - Contact admin to increase pool size
+\`\`\`
+
+### 4. Handle Lease Failures Gracefully
+
+Pools may be empty or temporarily unavailable:
+
+\`\`\`python
+import time
+import requests
+
+def lease_with_retry(client, pool_name, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return client.lease_cluster(pool_name, "my-job")
+        except requests.HTTPError as e:
+            if e.response.status_code == 503:  # Service Unavailable
+                if attempt < max_retries - 1:
+                    wait_time = 60 * (attempt + 1)  # Exponential backoff
+                    print(f"Pool empty, retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception("Pool unavailable after retries")
+            else:
+                raise
+\`\`\`
+
+### 5. Use Appropriate Pools
+
+Match your workload to the pool's profile:
+
+- **SNO pools** (\`aws-sno-ga\`) - Fast testing, single node, ~$0.38/hr
+- **Standard pools** (\`aws-standard\`) - Multi-node testing, production-like
+- **Virtualization pools** (\`aws-virtualization\`) - CNV workloads, metal instances
+
+Check the pool's \`profile\` field to understand cluster configuration.
+
+### 6. Monitor Lease Expiration
+
+Track your lease time and release before expiration:
+
+\`\`\`bash
+LEASE_EXPIRES=$(echo $LEASE_RESPONSE | jq -r '.lease_expires_at')
+echo "⚠️  Cluster will auto-release at: $LEASE_EXPIRES"
+
+# Convert to timestamp and calculate remaining time
+EXPIRES_TS=$(date -d "$LEASE_EXPIRES" +%s)
+NOW_TS=$(date +%s)
+REMAINING=$((EXPIRES_TS - NOW_TS))
+echo "Time remaining: $((REMAINING / 60)) minutes"
+\`\`\`
+
+---
+
+## Troubleshooting
+
+### Pool Shows No Available Clusters
+
+**Symptom:** \`ready_clusters: 0\` in stats API
+
+**Possible Causes & Solutions:**
+
+1. **Replenishment in progress**
+   - Check \`provisioning_clusters\` count
+   - Wait 30-45 minutes for new clusters to be ready
+   - Pool manager automatically maintains target size
+
+2. **Work hours enforcement**
+   - Pool may be scaled down outside business hours
+   - Check pool's \`scheduled_mode\` setting
+   - Wait until next work hours window or contact admin
+
+3. **Pool size too small**
+   - All clusters are currently leased
+   - Contact admin to increase \`target_size\`
+
+### Lease Request Fails with 503 Error
+
+**Error Message:** \`{"error": "No clusters available in pool"}\`
+
+**Solutions:**
+- **Retry with delay**: Pool may be replenishing
+- **Check stats endpoint**: See provisioning status
+- **Use alternative pool**: Switch to backup pool
+- **Contact admin**: Request pool size increase
+
+**Example retry logic:**
+\`\`\`bash
+for i in {1..3}; do
+  if CLUSTER_ID=$(lease_cluster); then
+    break
+  fi
+  echo "Retry $i/3 in 60 seconds..."
+  sleep 60
+done
+\`\`\`
+
+### Cluster Not Releasing
+
+**Symptom:** Cluster stuck in LEASED state
+
+**Diagnostic Steps:**
+
+1. **Check cluster details:**
+   \`\`\`bash
+   curl -H "Authorization: Bearer $TOKEN" \\
+     https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+   \`\`\`
+
+2. **Verify lease expiration:**
+   - If \`lease_expires_at\` is in the past, background job will auto-release within 60 seconds
+   - Pool manager runs every minute
+
+3. **Check pool manager status** (admin only):
+   - Review pool manager logs
+   - Verify background scheduler is running
+
+**Manual Fix (Admin Only):**
+Contact administrator to manually release or investigate pool manager issues.
+
+### Cannot Access Leased Cluster
+
+**Symptom:** \`kubectl\` or \`oc\` commands fail with connection errors
+
+**Diagnostic Checklist:**
+
+**1. Verify kubeconfig download:**
+\`\`\`bash
+# Check if kubeconfig exists in S3
+aws s3 ls s3://ocpctl-artifacts/clusters/{cluster-id}/kubeconfig
+
+# Verify file was downloaded
+ls -lh ./kubeconfig
+
+# Check file permissions
+chmod 600 ./kubeconfig
+\`\`\`
+
+**2. Test API connectivity:**
+\`\`\`bash
+# Get API URL from lease response
+API_URL="https://api.cluster.example.com:6443"
+
+# Test health endpoint
+curl -k $API_URL/healthz
+
+# Expected: "ok"
+\`\`\`
+
+**3. Verify cluster is READY:**
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" \\
+  https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+
+# status should be "READY", not "CREATING" or "PROVISIONING"
+\`\`\`
+
+**4. Check DNS resolution:**
+\`\`\`bash
+# Extract API hostname from URL
+API_HOST=$(echo $API_URL | sed 's|https://||' | sed 's|:6443||')
+
+# Test DNS
+nslookup $API_HOST
+dig $API_HOST
+
+# Verify it resolves to valid IP
+\`\`\`
+
+---
+
+## Frequently Asked Questions
+
+### How long can I lease a cluster?
+
+Each pool has a \`max_lease_duration_hours\` setting, typically 2-4 hours. Your lease will automatically expire after this period. You can release manually at any time before expiration.
+
+**Future enhancement:** Lease extension API is planned for a future release.
+
+### Can I extend an active lease?
+
+Not currently supported. If you need more time:
+1. Release the current cluster
+2. Immediately lease a new one from the pool
+3. Migrate any necessary data/state
+
+**Workaround:** Create your cluster with a longer TTL instead of using pools for extended testing.
+
+### What happens to my workloads when a cluster is released?
+
+**All workloads are permanently deleted.** Clusters are returned to a clean state before being added back to the pool.
+
+**Important:** Extract any important data, logs, or artifacts **before** releasing the cluster.
+
+### Can I lease multiple clusters simultaneously?
+
+**Yes!** There's no limit on concurrent leases per user. You can:
+- Lease multiple clusters from the same pool
+- Lease clusters from different pools
+- Mix pool-leased clusters with regular created clusters
+
+Each lease is tracked independently with its own expiration.
+
+### How do I know which pool to use?
+
+Check the pool's \`profile\` field to understand cluster configuration:
+
+- **\`aws-sno-ga\`** - Single Node OpenShift, fast and cheap (~$0.38/hr)
+  - Best for: Quick testing, development, learning
+
+- **\`aws-standard\`** - 3 control plane + 3 worker nodes
+  - Best for: Production-like testing, HA scenarios
+
+- **\`aws-virtualization\`** - Metal worker nodes for CNV
+  - Best for: OpenShift Virtualization, Windows VMs, nested virtualization
+
+- **\`eks-minimal\`** - 2-node Kubernetes cluster
+  - Best for: Kubernetes (non-OpenShift) testing
+
+Browse pool details in the UI to see full configuration.
+
+### Are pools available 24/7?
+
+**Depends on pool configuration.** Some pools use \`scheduled_mode\` for cost optimization:
+
+- **Always-on pools:** Available 24/7
+- **Scheduled pools:** Only active during business hours (e.g., Mon-Fri 8am-6pm EST)
+
+Check pool details to see:
+- \`scheduled_mode\`: true/false
+- \`schedule_timezone\`: Timezone (e.g., America/New_York)
+- \`schedule_start_hour\` / \`schedule_end_hour\`: Active hours
+- \`schedule_days_of_week\`: Active days (0=Sunday, 1=Monday, etc.)
+
+### How much does using a pool cost?
+
+**Pools are shared infrastructure**, making them cost-effective:
+
+**Example:** A pool with 3 ready SNO clusters costs ~$1.14/hr but serves unlimited users:
+- Individual SNO cluster: $0.38/hr × 30 min wait = $0.19 wasted
+- Pool SNO cluster: $0.00 wait (instant), shared cost across team
+
+**Cost comparison:**
+- **Traditional:** Create cluster ($0.38/hr) → wait 45 min ($0.29 wasted) → test 15 min → destroy
+- **Pool:** Lease instantly → test 15 min → release → reused by others
+
+**Team savings:** If 10 developers each create 3 clusters/day:
+- Without pools: 30 clusters × $0.29 wait = **$8.70/day wasted**
+- With pools: 3 shared clusters × $0.38/hr × 10 hrs = **$11.40/day total**
+
+### What if I lose my lease information?
+
+If you lose the lease response with \`cluster_id\`:
+
+1. **Check your clusters page:**
+   \`\`\`
+   https://ocpctl.mg.dog8code.com/clusters
+   \`\`\`
+   Pool-leased clusters show up with \`pool_state: LEASED\`
+
+2. **API query:**
+   \`\`\`bash
+   curl -H "Authorization: Bearer $TOKEN" \\
+     https://ocpctl.mg.dog8code.com/api/v1/clusters
+   # Filter for clusters with your leased_by identifier
+   \`\`\`
+
+3. **Let it auto-release:**
+   If you can't find it, the cluster will auto-release when the lease expires
+
+---
+
+## Additional Resources
+
+- **Full Feature Documentation**: See \`docs/features/CLUSTER_POOLS.md\` on GitHub
+- **API Reference**: https://ocpctl.mg.dog8code.com/swagger/index.html (search for "Pools")
+- **Cluster Management Guide**: See "Cluster Management" section in this guide
+- **Architecture Details**: \`docs/architecture/architecture.md\`
+
+**Need Help?**
+- Contact your OCPCTL administrator
+- Check API documentation for endpoint details
+- Review cluster logs if lease fails
+`,
+  },
+  {
     id: "admin-features",
     title: "Admin Features",
     icon: Shield,
@@ -993,10 +1857,14 @@ This guide covers administrative features available to users with Admin role.
 
 Access the admin dashboard by clicking **Admin Dashboard** in the sidebar.
 
-The dashboard provides:
-- **Cluster Statistics** - System-wide metrics and cost breakdowns
-- **Orphaned Resources** - AWS resources without database entries
-- **User Management** - Create and manage user accounts
+The dashboard provides comprehensive system oversight:
+- **Cluster Statistics** - System-wide metrics, cost breakdowns, and usage patterns
+- **Orphaned Resources** - AWS/GCP/IBM Cloud resources without database entries
+- **User Management** - Create and manage user accounts with RBAC
+- **Team Management** - Configure team-based access control and quotas
+- **Cluster Pool Management** - Create and monitor cluster pools
+- **Long-Running Clusters** - Identify clusters exceeding expected TTL
+- **Infrastructure Overview** - Real-time platform resource utilization
 
 ### Cluster Statistics
 
@@ -1256,6 +2124,188 @@ Instead of deleting users (which preserves audit trail):
 2. Recreate with same email
 3. Provide new temporary password
 4. User changes password on first login
+
+## Cluster Pool Management
+
+**Access:** Admin Dashboard → Cluster Pools
+
+### Creating a Pool
+
+1. Navigate to **Admin** → **Cluster Pools**
+2. Click **Create Pool** button
+3. Configure pool settings:
+   - **Name** - Unique identifier (e.g., \`dev-pool\`, \`ci-pool\`)
+   - **Display Name** - User-facing name
+   - **Description** - What this pool provides
+   - **Profile** - Cluster profile to use (determines cluster configuration)
+   - **Target Size** - Desired number of READY clusters
+   - **Min Size** - Minimum pool size (default: 1)
+   - **Max Size** - Maximum pool size (default: 2x target)
+   - **Max Lease Duration** - Hours before auto-release (default: 2)
+   - **Auto-Release Enabled** - Automatically release expired leases
+   - **Max Cluster Age** - Days before clusters are refreshed (default: 7)
+   - **Auto-Refresh Enabled** - Automatically destroy and recreate aged clusters
+   - **Scheduled Mode** - Enable work hours scheduling
+   - **Schedule Settings** - Timezone, start/end hours, days of week
+   - **Cluster Config** - JSON overrides for cluster configuration
+
+4. Click **Create Pool**
+
+**Example Pool Configuration:**
+\`\`\`json
+{
+  "name": "dev-pool",
+  "display_name": "Development Pool",
+  "description": "Fast SNO clusters for development and testing",
+  "profile": "aws-sno-ga",
+  "target_size": 3,
+  "min_size": 1,
+  "max_size": 5,
+  "max_lease_duration_hours": 2,
+  "auto_release_enabled": true,
+  "max_cluster_age_days": 7,
+  "scheduled_mode": false
+}
+\`\`\`
+
+### Monitoring Pool Health
+
+1. Navigate to pool details page
+2. View real-time statistics:
+   - **Ready Clusters** - Available for lease
+   - **Leased Clusters** - Currently in use
+   - **Provisioning Clusters** - Being created
+   - **Total Clusters** - Overall pool size
+   - **Health Ratio** - ready_clusters / target_size
+   - **Utilization** - leased_clusters / total_clusters
+
+**Key Metrics:**
+- **Pool Health** - Ratio should be close to 1.0 (100%)
+- **Lease Utilization** - High utilization indicates demand
+- **Provisioning Time** - Average time to create new clusters
+- **Failed Provisions** - Clusters that failed to create
+
+### Adjusting Pool Size
+
+**Via UI:**
+1. Navigate to **Admin** → **Cluster Pools**
+2. Click on pool name
+3. Click **Edit** button
+4. Update \`target_size\`, \`min_size\`, or \`max_size\`
+5. Click **Save**
+
+**Via API:**
+\`\`\`bash
+curl -X PATCH \\
+  -H "Authorization: Bearer $ADMIN_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"target_size": 5}' \\
+  https://ocpctl.mg.dog8code.com/api/v1/admin/pools/dev-pool
+\`\`\`
+
+**When to adjust:**
+- **Increase** target_size if pools frequently empty
+- **Decrease** target_size during off-hours to save costs
+- **Enable scheduled_mode** for automatic work hours scaling
+
+### Enabling/Disabling Pools
+
+**Disable a pool:**
+1. Navigate to pool details
+2. Click **Edit**
+3. Uncheck **Enabled**
+4. Click **Save**
+
+**Effect:**
+- Pool no longer visible to regular users
+- Existing leases continue until expiration
+- New clusters are not provisioned
+- Existing READY clusters remain available for admin
+
+**Use cases:**
+- Temporarily disable during maintenance
+- Deprecate old pools without deleting
+- Prevent new leases during migrations
+
+### Deleting a Pool
+
+1. Navigate to pool details
+2. Click **Delete Pool** button
+3. Confirm deletion
+
+**⚠️ Important:**
+- Pool is permanently deleted from database
+- Clusters in pool are **orphaned** (pool_id set to NULL)
+- Clusters continue running as regular clusters
+- Users lose pool lease metadata
+- Cannot be undone
+
+**Best Practice:** Disable pools instead of deleting to preserve history.
+
+### Pool Manager Background Service
+
+The pool manager runs automatically and handles:
+
+**1. Pool Replenishment** (every 30 seconds)
+- Checks if ready_clusters < target_size
+- Creates new clusters with pool_state=PROVISIONING
+- Respects min_size and max_size bounds
+
+**2. Lease Expiration** (every 60 seconds)
+- Finds clusters with lease_expires_at < NOW()
+- Updates pool_state to EXPIRED
+- Queues clusters for release/cleanup
+
+**3. Cluster Refresh** (daily)
+- Identifies clusters older than max_cluster_age_days
+- Destroys aged clusters
+- Replenishes with fresh clusters
+
+**4. Work Hours Enforcement** (if scheduled_mode enabled)
+- Checks current time against schedule
+- Outside hours: Scales pool to 0 (destroys READY clusters)
+- During hours: Restores pool to target_size
+
+**Monitoring Pool Manager:**
+\`\`\`bash
+# SSH to API server
+ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+
+# Check pool manager logs
+sudo journalctl -u ocpctl-api -f | grep -i "pool"
+
+# Look for:
+# - "Pool manager: replenishing pool X (ready: Y, target: Z)"
+# - "Pool manager: releasing expired lease for cluster X"
+# - "Pool manager: refreshing aged cluster X"
+\`\`\`
+
+### Troubleshooting Pools
+
+**Pool Not Replenishing:**
+1. Check pool manager logs for errors
+2. Verify API server is running: \`systemctl status ocpctl-api\`
+3. Check if profile exists and is valid
+4. Verify AWS/GCP credentials are configured
+5. Check for quota limits in cloud provider
+
+**High Lease Rejections:**
+1. Increase target_size
+2. Check provisioning_clusters count (may be slow)
+3. Verify pool is enabled
+4. Check work hours schedule
+
+**Clusters Stuck in PROVISIONING:**
+1. Check worker service logs: \`journalctl -u ocpctl-worker -f\`
+2. Look for provisioning job errors
+3. Check cloud provider console for failed resources
+4. May need to manually destroy and retry
+
+**Cost Optimization:**
+- Use scheduled_mode for dev/test pools
+- Set max_cluster_age_days to prevent stale clusters
+- Monitor utilization and adjust target_size accordingly
+- Use SNO profiles for cost-effective pools
 
 ## Audit Logs
 
