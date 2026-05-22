@@ -121,6 +121,17 @@ type Cluster struct {
 	PreserveOnFailure   bool           `db:"preserve_on_failure" json:"preserve_on_failure"`
 	CredentialsMode     *string        `db:"credentials_mode" json:"credentials_mode,omitempty"`
 	CustomPullSecret    *string        `db:"custom_pull_secret" json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge
+
+	// Cluster pool tracking
+	PoolID          *string                `db:"pool_id" json:"pool_id,omitempty"`
+	PoolState       *PoolState             `db:"pool_state" json:"pool_state,omitempty"`
+	LeasedBy        *string                `db:"leased_by" json:"leased_by,omitempty"`
+	LeasedAt        *time.Time             `db:"leased_at" json:"leased_at,omitempty"`
+	LeaseExpiresAt  *time.Time             `db:"lease_expires_at" json:"lease_expires_at,omitempty"`
+	LeaseMetadata   map[string]interface{} `db:"lease_metadata" json:"lease_metadata,omitempty"`
+	PoolGeneration  int                    `db:"pool_generation" json:"pool_generation,omitempty"`
+	LastCleanedAt   *time.Time             `db:"last_cleaned_at" json:"last_cleaned_at,omitempty"`
+
 	// Cluster outputs (joined from cluster_outputs table)
 	APIURL              *string        `db:"api_url" json:"api_url,omitempty"`
 	ConsoleURL          *string        `db:"console_url" json:"console_url,omitempty"`

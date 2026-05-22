@@ -59,6 +59,7 @@ type Store struct {
 	Teams                     *TeamStore
 	TeamAdmins                *TeamAdminStore
 	TeamMemberships           *TeamMembershipStore
+	Pools                     *PoolStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -97,6 +98,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Teams = &TeamStore{db: pool}
 	s.TeamAdmins = &TeamAdminStore{db: pool}
 	s.TeamMemberships = &TeamMembershipStore{db: pool}
+	s.Pools = &PoolStore{pool: pool}
 
 	return s
 }

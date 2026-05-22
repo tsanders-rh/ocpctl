@@ -21,6 +21,11 @@ const (
 	JobTypeResume                 JobType = "RESUME"
 	JobTypePostConfigure          JobType = "POST_CONFIGURE"
 
+	// Cluster pool job types
+	JobTypePoolReplenish JobType = "POOL_REPLENISH" // Creates clusters to replenish pool
+	JobTypePoolClean     JobType = "POOL_CLEAN"     // Sanitizes cluster after release
+	JobTypePoolRefresh   JobType = "POOL_REFRESH"   // Replaces expired cluster with fresh one
+
 	// Future job types (not yet implemented):
 	// JobTypeScaleWorkers           JobType = "SCALE_WORKERS"  // Off-hours worker scaling
 	// JobTypeOrphanSweep            JobType = "ORPHAN_SWEEP"   // Automated orphan resource cleanup
