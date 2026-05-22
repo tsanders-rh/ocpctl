@@ -707,3 +707,113 @@ export interface ListTeamMembersResponse {
   team: string;
   members: UserTeamMembership[];
 }
+
+// Cluster Pool Types
+export enum PoolState {
+  READY = "READY",
+  LEASED = "LEASED",
+  PROVISIONING = "PROVISIONING",
+  CLEANING = "CLEANING",
+  EXPIRED = "EXPIRED",
+}
+
+export interface ClusterPool {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string;
+  profile: string;
+  target_size: number;
+  min_size: number;
+  max_size: number;
+  max_lease_duration_hours: number;
+  auto_release_enabled: boolean;
+  max_cluster_age_days: number;
+  auto_refresh_enabled: boolean;
+  scheduled_mode: boolean;
+  schedule_timezone?: string;
+  schedule_start_hour?: number;
+  schedule_end_hour?: number;
+  schedule_days_of_week?: number[];
+  cluster_config?: Record<string, any>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export interface PoolStats {
+  pool_id: string;
+  pool_name: string;
+  total_clusters: number;
+  ready_clusters: number;
+  leased_clusters: number;
+  provisioning_clusters: number;
+  cleaning_clusters: number;
+  expired_clusters: number;
+}
+
+export interface PoolWithStats extends ClusterPool {
+  stats: PoolStats;
+}
+
+export interface CreatePoolRequest {
+  name: string;
+  display_name: string;
+  description?: string;
+  profile: string;
+  target_size: number;
+  min_size: number;
+  max_size: number;
+  max_lease_duration_hours?: number;
+  auto_release_enabled?: boolean;
+  max_cluster_age_days?: number;
+  auto_refresh_enabled?: boolean;
+  scheduled_mode?: boolean;
+  schedule_timezone?: string;
+  schedule_start_hour?: number;
+  schedule_end_hour?: number;
+  schedule_days_of_week?: number[];
+  cluster_config?: Record<string, any>;
+  enabled?: boolean;
+}
+
+export interface UpdatePoolRequest {
+  display_name?: string;
+  description?: string;
+  target_size?: number;
+  min_size?: number;
+  max_size?: number;
+  max_lease_duration_hours?: number;
+  auto_release_enabled?: boolean;
+  max_cluster_age_days?: number;
+  auto_refresh_enabled?: boolean;
+  scheduled_mode?: boolean;
+  schedule_timezone?: string;
+  schedule_start_hour?: number;
+  schedule_end_hour?: number;
+  schedule_days_of_week?: number[];
+  cluster_config?: Record<string, any>;
+  enabled?: boolean;
+}
+
+export interface LeaseRequest {
+  leased_by: string;
+  duration?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface LeaseResponse {
+  cluster_id: string;
+  cluster_name: string;
+  leased_by: string;
+  leased_at: string;
+  lease_expires_at: string;
+  api_url: string;
+  console_url: string;
+  kubeconfig_path: string;
+}
+
+export interface ListPoolsResponse {
+  pools: PoolWithStats[];
+}
