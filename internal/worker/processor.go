@@ -21,6 +21,9 @@ type JobProcessor struct {
 	hibernateHandler                *HibernateHandler
 	resumeHandler                   *ResumeHandler
 	postConfigureHandler            *PostConfigureHandler
+	poolReplenishHandler            *PoolReplenishHandler
+	poolCleanHandler                *PoolCleanHandler
+	poolRefreshHandler              *PoolRefreshHandler
 }
 
 // NewJobProcessor creates a new job processor
@@ -36,6 +39,9 @@ func NewJobProcessor(config *Config, st *store.Store, profileRegistry *profile.R
 		hibernateHandler:              NewHibernateHandler(config, st),
 		resumeHandler:                 NewResumeHandler(config, st),
 		postConfigureHandler:          NewPostConfigureHandler(config, st, profileRegistry),
+		poolReplenishHandler:          NewPoolReplenishHandler(config, st),
+		poolCleanHandler:              NewPoolCleanHandler(config, st),
+		poolRefreshHandler:            NewPoolRefreshHandler(config, st),
 	}
 }
 
@@ -68,6 +74,15 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 
 	case types.JobTypePostConfigure:
 		return p.postConfigureHandler.Handle(ctx, job)
+
+	case types.JobTypePoolReplenish:
+		return p.poolReplenishHandler.Handle(ctx, job)
+
+	case types.JobTypePoolClean:
+		return p.poolCleanHandler.Handle(ctx, job)
+
+	case types.JobTypePoolRefresh:
+		return p.poolRefreshHandler.Handle(ctx, job)
 
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)

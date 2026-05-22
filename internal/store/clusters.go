@@ -1202,3 +1202,37 @@ func (s *ClusterStore) CheckInfraIDCollision(ctx context.Context, clusterName st
 
 	return recentClusters, nil
 }
+
+// Update updates a cluster with the provided field updates
+func (s *ClusterStore) Update(ctx context.Context, clusterID string, updates map[string]interface{}) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Build dynamic UPDATE query
+	query := "UPDATE clusters SET "
+	args := []interface{}{}
+	argNum := 1
+
+	for k, v := range updates {
+		if argNum > 1 {
+			query += ", "
+		}
+		query += fmt.Sprintf("%s = $%d", k, argNum)
+		args = append(args, v)
+		argNum++
+	}
+
+	query += fmt.Sprintf(", updated_at = NOW() WHERE id = $%d", argNum)
+	args = append(args, clusterID)
+
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
+}
+
+// UpdatePoolState updates the pool_state of a cluster
+func (s *ClusterStore) UpdatePoolState(ctx context.Context, clusterID string, poolState types.PoolState) error {
+	query := `UPDATE clusters SET pool_state = $1, updated_at = NOW() WHERE id = $2`
+	_, err := s.pool.Exec(ctx, query, poolState, clusterID)
+	return err
+}
