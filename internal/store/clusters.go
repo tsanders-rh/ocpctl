@@ -453,20 +453,20 @@ func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, s
 		UPDATE clusters
 		SET status = $1,
 			pool_state = CASE
-				WHEN $1 = $2 AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
+				WHEN $1 = 'READY' AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
 				ELSE pool_state
 			END,
 			updated_at = NOW()
-		WHERE id = $3
+		WHERE id = $2
 	`
 
 	var result pgconn.CommandTag
 	var err error
 
 	if tx != nil {
-		result, err = tx.Exec(ctx, query, status, types.ClusterStatusReady, id)
+		result, err = tx.Exec(ctx, query, status, id)
 	} else {
-		result, err = s.pool.Exec(ctx, query, status, types.ClusterStatusReady, id)
+		result, err = s.pool.Exec(ctx, query, status, id)
 	}
 
 	if err != nil {
