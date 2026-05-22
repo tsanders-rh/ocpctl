@@ -97,7 +97,12 @@ User documentation and guides:
 
 - **[getting-started.md](user-guide/getting-started.md)** - New user onboarding guide
 - **[cluster-management.md](user-guide/cluster-management.md)** - Cluster lifecycle management
-- **[aws-resource-management.md](user-guide/aws-resource-management.md)** - **NEW!** AWS resource tagging, orphan detection, and cost attribution
+- **[cluster-pools.md](user-guide/cluster-pools.md)** - **NEW!** Cluster pools for instant cluster access
+  - Browse and lease pre-provisioned clusters
+  - CI/CD integration examples (GitHub Actions, Jenkins, Tekton)
+  - API usage and automation
+  - Best practices and troubleshooting
+- **[aws-resource-management.md](user-guide/aws-resource-management.md)** - AWS resource tagging, orphan detection, and cost attribution
 
 ### 🔧 [operations/](operations/)
 
@@ -118,9 +123,23 @@ Operations and maintenance guides:
   - Monthly DR drill checklist
   - Cost estimates (~$6.71/month)
 
+### ✨ [features/](features/)
+
+Feature specifications and design documentation:
+
+- **[CLUSTER_POOLS.md](features/CLUSTER_POOLS.md)** - **NEW!** Cluster Pools architecture and design
+  - Pre-provisioned clusters for instant access
+  - Pool management and auto-scaling
+  - Lease/release workflow
+  - CI/CD integration patterns
+  - Cost analysis and ROI
+- **[ROSA_SUPPORT_PLAN.md](features/ROSA_SUPPORT_PLAN.md)** - ROSA (Red Hat OpenShift Service on AWS) implementation plan
+- **[AZURE_SUPPORT_PLAN.md](features/AZURE_SUPPORT_PLAN.md)** - Azure platform support plan
+- **[TEAM_ADMIN_RBAC_DESIGN.md](features/TEAM_ADMIN_RBAC_DESIGN.md)** - Team admin role-based access control
+
 ### 🔬 [issues/](issues/)
 
-Feature specifications and technical documentation:
+Issue tracking and technical documentation:
 
 - **[off-hours-scaling.md](issues/off-hours-scaling.md)** - Complete technical specification for off-hours worker scaling feature
 - **[github-issue-off-hours-scaling.md](issues/github-issue-off-hours-scaling.md)** - GitHub issue summary for off-hours scaling
@@ -139,6 +158,7 @@ Feature specifications and technical documentation:
 
 - **Setting up development environment**: [../DEVELOPMENT.md](../DEVELOPMENT.md)
 - **Deploying to production**: [deployment/DEPLOYMENT_WEB.md](deployment/DEPLOYMENT_WEB.md)
+- **Using cluster pools**: [user-guide/cluster-pools.md](user-guide/cluster-pools.md)
 - **Configuring disaster recovery**: [operations/DISASTER_RECOVERY.md](operations/DISASTER_RECOVERY.md)
 - **Installing OpenShift**: [setup/OPENSHIFT_INSTALL_SETUP.md](setup/OPENSHIFT_INSTALL_SETUP.md)
 - **Testing without provisioning**: [setup/TESTING_WITHOUT_OPENSHIFT.md](setup/TESTING_WITHOUT_OPENSHIFT.md)
