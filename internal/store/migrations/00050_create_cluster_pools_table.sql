@@ -1,6 +1,7 @@
 -- Create cluster_pools table for managing pre-provisioned cluster pools
 -- Migration: 00050
 
+-- +goose Up
 CREATE TABLE IF NOT EXISTS cluster_pools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL UNIQUE,
@@ -59,3 +60,6 @@ COMMENT ON COLUMN cluster_pools.max_lease_duration_hours IS 'Auto-release leased
 COMMENT ON COLUMN cluster_pools.max_cluster_age_days IS 'Auto-refresh clusters older than this';
 COMMENT ON COLUMN cluster_pools.scheduled_mode IS 'Enable work hours only mode (destroys clusters outside hours)';
 COMMENT ON COLUMN cluster_pools.cluster_config IS 'JSON overrides for cluster creation (region, ttl, tags, etc.)';
+
+-- +goose Down
+DROP TABLE IF EXISTS cluster_pools;

@@ -1,6 +1,7 @@
 -- Add cluster pool tracking fields to clusters table
 -- Migration: 00051
 
+-- +goose Up
 -- Add pool-related columns
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS pool_id UUID REFERENCES cluster_pools(id) ON DELETE SET NULL;
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS pool_state VARCHAR(20);
@@ -30,3 +31,18 @@ COMMENT ON COLUMN clusters.lease_expires_at IS 'Automatic release timestamp';
 COMMENT ON COLUMN clusters.lease_metadata IS 'JSON metadata about the lease (job_id, build_url, etc.)';
 COMMENT ON COLUMN clusters.pool_generation IS 'Incremented each time cluster is cleaned and returned to pool';
 COMMENT ON COLUMN clusters.last_cleaned_at IS 'Last successful POOL_CLEAN job completion timestamp';
+
+-- +goose Down
+ALTER TABLE clusters DROP CONSTRAINT IF EXISTS valid_pool_state;
+DROP INDEX IF EXISTS idx_clusters_pool_id_pool_state;
+DROP INDEX IF EXISTS idx_clusters_lease_expires_at;
+DROP INDEX IF EXISTS idx_clusters_pool_state;
+DROP INDEX IF EXISTS idx_clusters_pool_id;
+ALTER TABLE clusters DROP COLUMN IF EXISTS last_cleaned_at;
+ALTER TABLE clusters DROP COLUMN IF EXISTS pool_generation;
+ALTER TABLE clusters DROP COLUMN IF EXISTS lease_metadata;
+ALTER TABLE clusters DROP COLUMN IF EXISTS lease_expires_at;
+ALTER TABLE clusters DROP COLUMN IF EXISTS leased_at;
+ALTER TABLE clusters DROP COLUMN IF EXISTS leased_by;
+ALTER TABLE clusters DROP COLUMN IF EXISTS pool_state;
+ALTER TABLE clusters DROP COLUMN IF EXISTS pool_id;
