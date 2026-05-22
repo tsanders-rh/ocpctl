@@ -10,11 +10,13 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 **The Problem:**
 - Manual cluster provisioning is time-consuming and error-prone
+- **CI/CD pipelines wait 30-60 minutes** for cluster provisioning
 - Forgotten test clusters waste thousands in cloud costs
 - No standardized way to track cluster ownership and costs
 - Cleanup is unreliable - orphaned resources accumulate
 
 **The Solution:**
+- **Instant cluster access** - Pre-provisioned cluster pools provide clusters in < 5 seconds (100x faster)
 - **Automated lifecycle management** - Create, monitor, hibernate, and destroy clusters via web UI or API
 - **Automatic cost controls** - TTL-based destruction, work hours hibernation, and comprehensive resource tagging
 - **Reliable cleanup** - Preserves installer state for deterministic teardown and detects orphaned resources
@@ -34,6 +36,23 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 - ✅ **Azure AKS** - Azure Kubernetes Service with auto-scaling node pools
 - ✅ **IBM Cloud IKS** - IBM Kubernetes Service
 - ✅ **Multi-version support** - OpenShift 4.16 - 4.22+, Kubernetes 1.30 - 1.35
+
+### Cluster Pools 🚀
+- **Instant cluster access** - Lease pre-provisioned clusters in < 5 seconds (vs 30-60 minute provisioning)
+- **CI/CD optimized** - Perfect for GitHub Actions, Jenkins, Tekton, and GitLab pipelines
+- **Auto-scaling pools** - Maintains target number of ready clusters, scales with demand
+- **Auto-release** - Clusters automatically return to pool after lease expiration
+- **Work hours scheduling** - Pools scale down outside business hours to reduce costs
+- **Real-time metrics** - Monitor pool health, utilization, and lease activity
+- **Multi-tenancy** - Teams share pools without complex Prow-like infrastructure
+- **REST API** - Simple lease/release API for automation
+- **Cost-efficient** - Shared pools reduce overhead vs per-job cluster provisioning
+
+**Use Cases:**
+- Automated testing in CI/CD pipelines (100x faster than provisioning)
+- Rapid development iterations without waiting
+- Demo and presentation environments
+- Integration testing with production-like clusters
 
 ### Cost Management
 - **Automatic TTL-based destruction** - Clusters self-destruct after configured lifetime
@@ -167,26 +186,32 @@ Access at http://localhost:3000
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
 │   Web UI    │────▶│  API Server │────▶│  PostgreSQL  │
 │  (Next.js)  │     │   (Echo)    │     │   (State)    │
-└─────────────┘     └─────────────┘     └──────────────┘
-                           │                     │
-                           ▼                     │
-                    ┌─────────────┐              │
-                    │   Worker    │◀─────────────┘
+└─────────────┘     └──────┬──────┘     └──────┬───────┘
+                           │                    │
+                           │  ┌─────────────────┘
+                           │  │ Pool Manager (Background)
+                           │  │ • Replenish pools
+                           │  │ • Release expired leases
+                           │  │ • Refresh aged clusters
+                           ▼  ▼
+                    ┌─────────────┐
+                    │   Worker    │
                     │  Service    │
                     └──────┬──────┘
                            │
-            ┌──────────────┼──────────────┐
-            ▼              ▼              ▼
-     ┌───────────┐  ┌────────────┐  ┌──────────┐
-     │    S3     │  │ openshift- │  │ Janitor  │
-     │(Artifacts)│  │  install   │  │ (Cleanup)│
-     └───────────┘  └────────────┘  └──────────┘
+            ┌──────────────┼──────────────┬──────────────┐
+            ▼              ▼              ▼              ▼
+     ┌───────────┐  ┌────────────┐  ┌──────────┐  ┌────────┐
+     │    S3     │  │ openshift- │  │ Janitor  │  │ Pools  │
+     │(Artifacts)│  │  install   │  │ (Cleanup)│  │(Ready) │
+     └───────────┘  └────────────┘  └──────────┘  └────────┘
 ```
 
 **Services:**
-- **API Server** (Port 8080) - REST API with authentication and rate limiting
+- **API Server** (Port 8080) - REST API with authentication, rate limiting, and pool manager
 - **Worker** (Port 8081) - Asynchronous cluster provisioning and lifecycle operations
 - **Web UI** (Port 3000) - Modern React frontend with server-side rendering
+- **Pool Manager** - Background service maintaining cluster pools (embedded in API server)
 - **Janitor** - TTL enforcement and orphaned resource cleanup (embedded in worker)
 
 ---
@@ -196,6 +221,7 @@ Access at http://localhost:3000
 ### 📋 Getting Started
 - **[AWS Quick Start](docs/deployment/AWS_QUICKSTART.md)** - Deploy to AWS in under an hour
 - **[User Guide](docs/user-guide/getting-started.md)** - New user onboarding and first cluster
+- **[Cluster Pools Guide](docs/user-guide/cluster-pools.md)** - Instant cluster access for CI/CD pipelines
 - **[Cluster Management](docs/user-guide/cluster-management.md)** - Cluster lifecycle operations
 - **[Feature Matrix](docs/reference/FEATURE_MATRIX.md)** - Platform support and version compatibility
 
@@ -208,6 +234,7 @@ Access at http://localhost:3000
 ### 🏗️ Architecture & Design
 - **[Architecture Overview](docs/architecture/architecture.md)** - System design and components
 - **[Design Specification](docs/architecture/design-specification.md)** - Complete design specification
+- **[Cluster Pools Architecture](docs/features/CLUSTER_POOLS.md)** - Pool manager design and implementation
 - **[Worker Concurrency](docs/architecture/worker-concurrency-safety.md)** - Concurrency model and safety
 
 ### 🔧 Setup & Configuration
@@ -237,6 +264,44 @@ TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"yourpassword"}' \
   | jq -r '.access_token')
+
+# --- Cluster Pools (Instant Access) ---
+
+# List available pools
+curl -X GET https://api.ocpctl.mg.dog8code.com/v1/pools \
+  -H "Authorization: Bearer $TOKEN"
+
+# Get pool statistics
+curl -X GET https://api.ocpctl.mg.dog8code.com/v1/pools/ci-pool/stats \
+  -H "Authorization: Bearer $TOKEN"
+
+# Lease cluster from pool (< 5 seconds!)
+LEASE=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/ci-pool/lease \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "leased_by": "github-actions-run-123",
+    "metadata": {
+      "repo": "my-org/my-app",
+      "workflow": "integration-tests",
+      "run_id": "12345"
+    }
+  }')
+
+# Extract cluster ID and kubeconfig path
+CLUSTER_ID=$(echo $LEASE | jq -r '.cluster_id')
+KUBECONFIG_PATH=$(echo $LEASE | jq -r '.kubeconfig_path')
+
+# Download and use cluster
+aws s3 cp $KUBECONFIG_PATH ./kubeconfig
+export KUBECONFIG=./kubeconfig
+kubectl get nodes
+
+# Release cluster back to pool when done
+curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/clusters/$CLUSTER_ID/release \
+  -H "Authorization: Bearer $TOKEN"
+
+# --- Traditional Cluster Creation (30-60 minutes) ---
 
 # List clusters
 curl -X GET https://api.ocpctl.mg.dog8code.com/v1/clusters \
@@ -285,9 +350,15 @@ See [API Documentation](docs/deployment/API_SUBDOMAIN_SETUP.md) for complete end
 
 ### Latest Release
 
-**Version:** v0.20260512.7618038 (May 12, 2026)
+**Version:** v0.20260522.f53c2a5 (May 22, 2026)
 
 **Recent Updates:**
+- ✅ **Cluster Pools** - 🚀 NEW! Instant cluster access for CI/CD pipelines
+  - Pre-provisioned clusters available in < 5 seconds (100x faster)
+  - Auto-scaling pools with work hours scheduling
+  - REST API for lease/release operations
+  - Real-time pool metrics and utilization tracking
+  - Perfect for GitHub Actions, Jenkins, Tekton pipelines
 - ✅ **Azure Platform Support** - ARO (Azure Red Hat OpenShift) and AKS (Azure Kubernetes Service) now supported
   - Automated VNet and subnet creation for ARO clusters
   - Auto-scaling node pools for AKS
