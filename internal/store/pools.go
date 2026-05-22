@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -37,19 +38,26 @@ func (s *PoolStore) Create(ctx context.Context, tx pgx.Tx, pool *types.ClusterPo
 		RETURNING id, created_at, updated_at
 	`
 
-	var execer Execer = s.pool
+	var row pgx.Row
 	if tx != nil {
-		execer = tx
+		row = tx.QueryRow(ctx, query,
+			pool.Name, pool.DisplayName, pool.Description, pool.Profile,
+			pool.TargetSize, pool.MinSize, pool.MaxSize,
+			pool.MaxLeaseDurationHours, pool.AutoReleaseEnabled,
+			pool.MaxClusterAgeDays, pool.AutoRefreshEnabled,
+			pool.ScheduledMode, pool.ScheduleTimezone, pool.ScheduleStartHour, pool.ScheduleEndHour, pool.ScheduleDaysOfWeek,
+			pool.ClusterConfig, pool.Enabled, pool.CreatedBy,
+		)
+	} else {
+		row = s.pool.QueryRow(ctx, query,
+			pool.Name, pool.DisplayName, pool.Description, pool.Profile,
+			pool.TargetSize, pool.MinSize, pool.MaxSize,
+			pool.MaxLeaseDurationHours, pool.AutoReleaseEnabled,
+			pool.MaxClusterAgeDays, pool.AutoRefreshEnabled,
+			pool.ScheduledMode, pool.ScheduleTimezone, pool.ScheduleStartHour, pool.ScheduleEndHour, pool.ScheduleDaysOfWeek,
+			pool.ClusterConfig, pool.Enabled, pool.CreatedBy,
+		)
 	}
-
-	row := execer.QueryRow(ctx, query,
-		pool.Name, pool.DisplayName, pool.Description, pool.Profile,
-		pool.TargetSize, pool.MinSize, pool.MaxSize,
-		pool.MaxLeaseDurationHours, pool.AutoReleaseEnabled,
-		pool.MaxClusterAgeDays, pool.AutoRefreshEnabled,
-		pool.ScheduledMode, pool.ScheduleTimezone, pool.ScheduleStartHour, pool.ScheduleEndHour, pool.ScheduleDaysOfWeek,
-		pool.ClusterConfig, pool.Enabled, pool.CreatedBy,
-	)
 
 	return row.Scan(&pool.ID, &pool.CreatedAt, &pool.UpdatedAt)
 }
@@ -162,12 +170,13 @@ func (s *PoolStore) Update(ctx context.Context, tx pgx.Tx, poolID string, update
 	query += fmt.Sprintf(", updated_at = NOW() WHERE id = $%d", argNum)
 	args = append(args, poolID)
 
-	var execer Execer = s.pool
+	var result pgconn.CommandTag
+	var err error
 	if tx != nil {
-		execer = tx
+		result, err = tx.Exec(ctx, query, args...)
+	} else {
+		result, err = s.pool.Exec(ctx, query, args...)
 	}
-
-	result, err := execer.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}

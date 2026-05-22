@@ -309,6 +309,21 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/teams/:name/admins", teamHandler.GrantTeamAdmin)
 	adminGroup.DELETE("/teams/:name/admins/:user_id", teamHandler.RevokeTeamAdmin)
 
+	// Cluster pool management routes (admin only)
+	poolHandler := NewPoolHandler(s.store)
+	adminGroup.POST("/pools", poolHandler.CreatePool)
+	adminGroup.GET("/pools", poolHandler.ListPools)
+	adminGroup.GET("/pools/:name", poolHandler.GetPool)
+	adminGroup.PATCH("/pools/:name", poolHandler.UpdatePool)
+	adminGroup.DELETE("/pools/:name", poolHandler.DeletePool)
+
+	// Cluster pool lease/release routes (CI/CD integration, requires auth)
+	poolLeaseHandler := NewPoolLeaseHandler(s.store)
+	poolsGroup := v1.Group("/pools", auth.RequireAuthDual(s.auth, s.iamAuth))
+	poolsGroup.POST("/:pool_name/lease", poolLeaseHandler.LeaseCluster, apimiddleware.StrictRateLimit(20))           // 20 requests/minute
+	poolsGroup.POST("/clusters/:cluster_id/release", poolLeaseHandler.ReleaseCluster, apimiddleware.StrictRateLimit(20)) // 20 requests/minute
+	poolsGroup.GET("/:pool_name/stats", poolLeaseHandler.GetPoolStats)
+
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)
 
