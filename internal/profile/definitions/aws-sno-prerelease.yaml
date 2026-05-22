@@ -1,5 +1,5 @@
 name: aws-sno-prerelease
-displayName: AWS SNO
+displayName: AWS SNO (Prerelease)
 description: Single node OpenShift for pre-release testing (EC, RC, nightly builds)
 platform: aws
 clusterType: openshift

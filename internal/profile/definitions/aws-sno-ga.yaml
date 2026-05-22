@@ -1,5 +1,5 @@
 name: aws-sno-ga
-displayName: AWS SNO
+displayName: AWS SNO (GA)
 description: Single node OpenShift for production-ready releases (4.18-4.21)
 platform: aws
 clusterType: openshift

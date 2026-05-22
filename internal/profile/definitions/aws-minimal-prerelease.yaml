@@ -1,5 +1,5 @@
 name: aws-minimal-prerelease
-displayName: AWS Minimal
+displayName: AWS Minimal (Prerelease)
 description: Compact 3-node cluster for pre-release testing (EC, RC, nightly builds)
 platform: aws
 clusterType: openshift

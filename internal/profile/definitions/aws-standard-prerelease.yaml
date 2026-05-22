@@ -1,5 +1,5 @@
 name: aws-standard-prerelease
-displayName: AWS Standard
+displayName: AWS Standard (Prerelease)
 description: Standard 6-node cluster for pre-release testing (EC, RC, nightly builds)
 platform: aws
 clusterType: openshift

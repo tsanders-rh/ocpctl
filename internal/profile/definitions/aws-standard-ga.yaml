@@ -1,5 +1,5 @@
 name: aws-standard-ga
-displayName: AWS Standard
+displayName: AWS Standard (GA)
 description: Standard 6-node cluster with dedicated workers for development and integration testing
 platform: aws
 clusterType: openshift

@@ -1,5 +1,5 @@
 name: aws-minimal-ga
-displayName: AWS Minimal
+displayName: AWS Minimal (GA)
 description: Compact 3-node cluster for production-ready releases (masters schedulable, no workers)
 platform: aws
 clusterType: openshift
