@@ -12,11 +12,11 @@
 # - VirtIO drivers for optimal performance
 #
 # Creating a VM from this template:
-#   oc process windows10-oadp-vm -p VM_NAME=windows-vm1 -p VM_NAMESPACE=default | oc apply -f -
+#   oc process windows10-oadp-vm -p VM_NAME=windows-vm1 | oc apply -f -
 #
 # Template Parameters:
 # - VM_NAME: Name for the VM instance (auto-generated if not specified)
-# - VM_NAMESPACE: Namespace to create the VM in (default: default)
+# - VM_NAMESPACE: Namespace to create the VM in (default: windows-oadp-test)
 #
 apiVersion: template.openshift.io/v1
 kind: Template
@@ -68,6 +68,11 @@ metadata:
     template.kubevirt.io/provider-support-level: "Community"
     template.kubevirt.io/provider-url: "https://github.com/tsanders-rh/ocpctl"
 objects:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: ${VM_NAMESPACE}
+
   - apiVersion: kubevirt.io/v1
     kind: VirtualMachine
     metadata:
@@ -79,6 +84,7 @@ objects:
         vm.kubevirt.io/template.revision: "1"
         vm.kubevirt.io/template.version: v0.27.0
         vm.kubevirt.io/os: windows10
+        changedBlockTracking: "true"
     spec:
       runStrategy: Halted
       dataVolumeTemplates:
@@ -174,9 +180,9 @@ parameters:
     required: true
   - name: VM_NAMESPACE
     description: "Namespace to create the VM in"
-    value: "default"
+    value: "windows-oadp-test"
     required: true
   - name: STORAGE_CLASS
     description: "Storage class for the VM disk"
-    value: "gp3-csi-wfc"
+    value: "gp3-csi-immediate-us-west-2c"
     required: true
