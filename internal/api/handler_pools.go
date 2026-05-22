@@ -163,14 +163,15 @@ func (h *PoolHandler) CreatePool(c echo.Context) error {
 // ListPools returns all cluster pools
 //
 //	@Summary		List cluster pools
-//	@Description	Returns a list of all cluster pools (admin only)
+//	@Description	Returns a list of all cluster pools. All authenticated users can list enabled pools via /pools. Admins can list all pools (including disabled) via /admin/pools.
 //	@Tags			Pools
 //	@Accept			json
 //	@Produce		json
-//	@Param			enabled_only	query		boolean	false	"Filter to only enabled pools"
+//	@Param			enabled_only	query		boolean	false	"Filter to only enabled pools (default: true for /pools, false for /admin/pools)"
 //	@Success		200				{object}	map[string]interface{}	"Returns pools array"
 //	@Failure		500				{object}	map[string]string		"Failed to list pools"
 //	@Security		BearerAuth
+//	@Router			/pools [get]
 //	@Router			/admin/pools [get]
 func (h *PoolHandler) ListPools(c echo.Context) error {
 	ctx := c.Request().Context()

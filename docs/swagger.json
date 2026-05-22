@@ -415,6 +415,299 @@
                 }
             }
         },
+        "/admin/pools": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a list of all cluster pools. All authenticated users can list enabled pools via /pools. Admins can list all pools (including disabled) via /admin/pools.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "List cluster pools",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter to only enabled pools (default: true for /pools, false for /admin/pools)",
+                        "name": "enabled_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns pools array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list pools",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new cluster pool for pre-provisioned clusters (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Create cluster pool",
+                "parameters": [
+                    {
+                        "description": "Pool creation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreatePoolRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Pool name already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to create pool",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/pools/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves pool details and real-time statistics by name (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Get cluster pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns pool and stats",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Pool not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get pool",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a cluster pool (admin only). Orphans all clusters in the pool by setting their pool_id to NULL.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Delete cluster pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Pool not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to delete pool",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates pool configuration settings (admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Update cluster pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pool update fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdatePoolRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Pool not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to update pool",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/admin/profiles/reload": {
             "post": {
                 "security": [
@@ -3973,6 +4266,278 @@
                 }
             }
         },
+        "/metrics/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns current system metrics including API stats, job queue, clusters, and workers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Get current system metrics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.MetricsSnapshot"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pools": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a list of all cluster pools. All authenticated users can list enabled pools via /pools. Admins can list all pools (including disabled) via /admin/pools.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "List cluster pools",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter to only enabled pools (default: true for /pools, false for /admin/pools)",
+                        "name": "enabled_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns pools array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to list pools",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pools/clusters/{cluster_id}/release": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Releases a leased cluster back to the pool for sanitization and reuse.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Release cluster back to pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster ID",
+                        "name": "cluster_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Cluster is not leased",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to release cluster",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pools/{pool_name}/lease": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically leases an available cluster from a pool for CI/CD use. Returns cluster credentials.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Lease cluster from pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool name",
+                        "name": "pool_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Lease request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LeaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LeaseResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or pool disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Pool not found or no available clusters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to lease cluster",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pools/{pool_name}/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns real-time statistics for a cluster pool (available clusters, utilization, etc.)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pools"
+                ],
+                "summary": "Get pool statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool name",
+                        "name": "pool_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPoolStats"
+                        }
+                    },
+                    "404": {
+                        "description": "Pool not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get stats",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/post-config/addons": {
             "get": {
                 "security": [
@@ -5940,7 +6505,23 @@
                 "id": {
                     "type": "string"
                 },
+                "last_cleaned_at": {
+                    "type": "string"
+                },
                 "last_work_hours_check": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "lease_metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "leased_at": {
+                    "type": "string"
+                },
+                "leased_by": {
                     "type": "string"
                 },
                 "name": {
@@ -5959,6 +6540,16 @@
                 },
                 "platform": {
                     "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform"
+                },
+                "pool_generation": {
+                    "type": "integer"
+                },
+                "pool_id": {
+                    "description": "Cluster pool tracking",
+                    "type": "string"
+                },
+                "pool_state": {
+                    "$ref": "#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.PoolState"
                 },
                 "post_deploy_completed_at": {
                     "type": "string"
@@ -6018,6 +6609,147 @@
                 },
                 "work_hours_start": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool": {
+            "type": "object",
+            "properties": {
+                "auto_refresh_enabled": {
+                    "type": "boolean"
+                },
+                "auto_release_enabled": {
+                    "type": "boolean"
+                },
+                "cluster_config": {
+                    "description": "Configuration overrides (stored as JSONB in database)",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "description": "Metadata",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_cluster_age_days": {
+                    "description": "Cluster lifecycle",
+                    "type": "integer"
+                },
+                "max_lease_duration_hours": {
+                    "description": "Lease configuration",
+                    "type": "integer"
+                },
+                "max_size": {
+                    "type": "integer"
+                },
+                "min_size": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "schedule_days_of_week": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schedule_end_hour": {
+                    "type": "integer"
+                },
+                "schedule_start_hour": {
+                    "type": "integer"
+                },
+                "schedule_timezone": {
+                    "type": "string"
+                },
+                "scheduled_mode": {
+                    "description": "Scheduling (work hours mode)",
+                    "type": "boolean"
+                },
+                "target_size": {
+                    "description": "Pool sizing",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.ClusterPoolStats": {
+            "type": "object",
+            "properties": {
+                "active_leases": {
+                    "description": "Lease metrics",
+                    "type": "integer"
+                },
+                "avg_cluster_age": {
+                    "$ref": "#/definitions/time.Duration"
+                },
+                "avg_lease_duration": {
+                    "$ref": "#/definitions/time.Duration"
+                },
+                "capacity_percent": {
+                    "description": "(total / target_size) * 100",
+                    "type": "number"
+                },
+                "cleaning_clusters": {
+                    "type": "integer"
+                },
+                "computed_at": {
+                    "description": "Last update",
+                    "type": "string"
+                },
+                "expired_clusters": {
+                    "type": "integer"
+                },
+                "leased_clusters": {
+                    "type": "integer"
+                },
+                "oldest_cluster_age": {
+                    "description": "Age metrics",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/time.Duration"
+                        }
+                    ]
+                },
+                "pool_id": {
+                    "type": "string"
+                },
+                "pool_name": {
+                    "type": "string"
+                },
+                "provisioning_clusters": {
+                    "type": "integer"
+                },
+                "ready_clusters": {
+                    "type": "integer"
+                },
+                "total_clusters": {
+                    "description": "Cluster counts by state",
+                    "type": "integer"
+                },
+                "utilization_percent": {
+                    "description": "Utilization metrics",
+                    "type": "number"
                 }
             }
         },
@@ -6148,6 +6880,83 @@
                 "plain_key": {
                     "description": "Full key, only shown on creation",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.CreatePoolRequest": {
+            "type": "object",
+            "required": [
+                "display_name",
+                "name",
+                "profile",
+                "target_size"
+            ],
+            "properties": {
+                "auto_refresh_enabled": {
+                    "type": "boolean"
+                },
+                "auto_release_enabled": {
+                    "type": "boolean"
+                },
+                "cluster_config": {
+                    "description": "Configuration overrides",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "max_cluster_age_days": {
+                    "description": "Cluster lifecycle",
+                    "type": "integer"
+                },
+                "max_lease_duration_hours": {
+                    "description": "Lease configuration",
+                    "type": "integer"
+                },
+                "max_size": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "min_size": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 3
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "schedule_days_of_week": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schedule_end_hour": {
+                    "type": "integer"
+                },
+                "schedule_start_hour": {
+                    "type": "integer"
+                },
+                "schedule_timezone": {
+                    "type": "string"
+                },
+                "scheduled_mode": {
+                    "description": "Scheduling",
+                    "type": "boolean"
+                },
+                "target_size": {
+                    "description": "Pool sizing",
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 1
                 }
             }
         },
@@ -6531,7 +7340,29 @@
                 "UNLINK_SHARED_STORAGE",
                 "HIBERNATE",
                 "RESUME",
-                "POST_CONFIGURE"
+                "POST_CONFIGURE",
+                "POOL_REPLENISH",
+                "POOL_CLEAN",
+                "POOL_REFRESH"
+            ],
+            "x-enum-comments": {
+                "JobTypePoolClean": "Sanitizes cluster after release",
+                "JobTypePoolRefresh": "Replaces expired cluster with fresh one",
+                "JobTypePoolReplenish": "Creates clusters to replenish pool"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Creates clusters to replenish pool",
+                "Sanitizes cluster after release",
+                "Replaces expired cluster with fresh one"
             ],
             "x-enum-varnames": [
                 "JobTypeCreate",
@@ -6542,8 +7373,63 @@
                 "JobTypeUnlinkSharedStorage",
                 "JobTypeHibernate",
                 "JobTypeResume",
-                "JobTypePostConfigure"
+                "JobTypePostConfigure",
+                "JobTypePoolReplenish",
+                "JobTypePoolClean",
+                "JobTypePoolRefresh"
             ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.LeaseRequest": {
+            "type": "object",
+            "properties": {
+                "duration_hours": {
+                    "description": "Override default lease duration",
+                    "type": "integer"
+                },
+                "leased_by": {
+                    "description": "User, service account, or job ID",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Custom metadata (job_id, build_url, etc.)",
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.LeaseResponse": {
+            "type": "object",
+            "properties": {
+                "api_url": {
+                    "description": "Cluster access information",
+                    "type": "string"
+                },
+                "cluster_id": {
+                    "type": "string"
+                },
+                "cluster_name": {
+                    "type": "string"
+                },
+                "console_url": {
+                    "type": "string"
+                },
+                "kubeconfig_path": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "lease_metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "leased_at": {
+                    "type": "string"
+                },
+                "leased_by": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest": {
             "type": "object",
@@ -6701,6 +7587,37 @@
                 "PlatformIBMCloud",
                 "PlatformGCP",
                 "PlatformAzure"
+            ]
+        },
+        "github_com_tsanders-rh_ocpctl_pkg_types.PoolState": {
+            "type": "string",
+            "enum": [
+                "READY",
+                "LEASED",
+                "PROVISIONING",
+                "CLEANING",
+                "EXPIRED"
+            ],
+            "x-enum-comments": {
+                "PoolStateCleaning": "Being sanitized after release",
+                "PoolStateExpired": "Exceeded max age, pending refresh",
+                "PoolStateLeased": "Currently leased to a user/job",
+                "PoolStateProvisioning": "Being created for pool",
+                "PoolStateReady": "Available for lease"
+            },
+            "x-enum-descriptions": [
+                "Available for lease",
+                "Currently leased to a user/job",
+                "Being created for pool",
+                "Being sanitized after release",
+                "Exceeded max age, pending refresh"
+            ],
+            "x-enum-varnames": [
+                "PoolStateReady",
+                "PoolStateLeased",
+                "PoolStateProvisioning",
+                "PoolStateCleaning",
+                "PoolStateExpired"
             ]
         },
         "github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate": {
@@ -6908,6 +7825,73 @@
                 }
             }
         },
+        "github_com_tsanders-rh_ocpctl_pkg_types.UpdatePoolRequest": {
+            "type": "object",
+            "properties": {
+                "auto_refresh_enabled": {
+                    "type": "boolean"
+                },
+                "auto_release_enabled": {
+                    "type": "boolean"
+                },
+                "cluster_config": {
+                    "description": "Configuration overrides",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "description": "Enabled state",
+                    "type": "boolean"
+                },
+                "max_cluster_age_days": {
+                    "description": "Cluster lifecycle",
+                    "type": "integer"
+                },
+                "max_lease_duration_hours": {
+                    "description": "Lease configuration",
+                    "type": "integer"
+                },
+                "max_size": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "min_size": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "schedule_days_of_week": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schedule_end_hour": {
+                    "type": "integer"
+                },
+                "schedule_start_hour": {
+                    "type": "integer"
+                },
+                "schedule_timezone": {
+                    "type": "string"
+                },
+                "scheduled_mode": {
+                    "description": "Scheduling",
+                    "type": "boolean"
+                },
+                "target_size": {
+                    "description": "Pool sizing",
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_tsanders-rh_ocpctl_pkg_types.UpdateTeamRequest": {
             "type": "object",
             "properties": {
@@ -7025,6 +8009,26 @@
                 }
             }
         },
+        "internal_api.APIMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "active_connections": {
+                    "type": "integer"
+                },
+                "error_rate": {
+                    "type": "number"
+                },
+                "requests_by_status": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "requests_per_second": {
+                    "type": "number"
+                }
+            }
+        },
         "internal_api.ASGInfo": {
             "type": "object",
             "properties": {
@@ -7109,6 +8113,17 @@
                 }
             }
         },
+        "internal_api.AutoscaleMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "current_workers": {
+                    "type": "integer"
+                },
+                "desired_workers": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.CheckVersionsResponse": {
             "type": "object",
             "properties": {
@@ -7128,6 +8143,26 @@
                     "type": "integer"
                 },
                 "updates_available": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ClusterMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "by_profile": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_status": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "total": {
                     "type": "integer"
                 }
             }
@@ -7459,6 +8494,17 @@
                 }
             }
         },
+        "internal_api.DatabaseMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "max_connections": {
+                    "type": "integer"
+                },
+                "open_connections": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.EC2Instance": {
             "type": "object",
             "properties": {
@@ -7560,6 +8606,23 @@
                 }
             }
         },
+        "internal_api.JobMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "processing_total": {
+                    "type": "integer"
+                },
+                "queued_by_type": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "total_queued": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.KubeadminCredentials": {
             "type": "object",
             "properties": {
@@ -7595,6 +8658,29 @@
             "properties": {
                 "notes": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.MetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "api": {
+                    "$ref": "#/definitions/internal_api.APIMetricsSnapshot"
+                },
+                "autoscale": {
+                    "$ref": "#/definitions/internal_api.AutoscaleMetricsSnapshot"
+                },
+                "clusters": {
+                    "$ref": "#/definitions/internal_api.ClusterMetricsSnapshot"
+                },
+                "database": {
+                    "$ref": "#/definitions/internal_api.DatabaseMetricsSnapshot"
+                },
+                "jobs": {
+                    "$ref": "#/definitions/internal_api.JobMetricsSnapshot"
+                },
+                "workers": {
+                    "$ref": "#/definitions/internal_api.WorkerMetricsSnapshot"
                 }
             }
         },
@@ -7992,6 +9078,44 @@
                     "type": "string"
                 }
             }
+        },
+        "internal_api.WorkerMetricsSnapshot": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "idle": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "time.Duration": {
+            "type": "integer",
+            "format": "int64",
+            "enum": [
+                -9223372036854775808,
+                9223372036854775807,
+                1,
+                1000,
+                1000000,
+                1000000000,
+                60000000000,
+                3600000000000
+            ],
+            "x-enum-varnames": [
+                "minDuration",
+                "maxDuration",
+                "Nanosecond",
+                "Microsecond",
+                "Millisecond",
+                "Second",
+                "Minute",
+                "Hour"
+            ]
         }
     },
     "securityDefinitions": {

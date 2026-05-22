@@ -759,7 +759,18 @@ definitions:
         $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Tags'
       id:
         type: string
+      last_cleaned_at:
+        type: string
       last_work_hours_check:
+        type: string
+      lease_expires_at:
+        type: string
+      lease_metadata:
+        additionalProperties: true
+        type: object
+      leased_at:
+        type: string
+      leased_by:
         type: string
       name:
         type: string
@@ -773,6 +784,13 @@ definitions:
         type: string
       platform:
         $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.Platform'
+      pool_generation:
+        type: integer
+      pool_id:
+        description: Cluster pool tracking
+        type: string
+      pool_state:
+        $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.PoolState'
       post_deploy_completed_at:
         type: string
       post_deploy_status:
@@ -813,6 +831,102 @@ definitions:
         type: string
       work_hours_start:
         type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool:
+    properties:
+      auto_refresh_enabled:
+        type: boolean
+      auto_release_enabled:
+        type: boolean
+      cluster_config:
+        additionalProperties: true
+        description: Configuration overrides (stored as JSONB in database)
+        type: object
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        description: Metadata
+        type: boolean
+      id:
+        type: string
+      max_cluster_age_days:
+        description: Cluster lifecycle
+        type: integer
+      max_lease_duration_hours:
+        description: Lease configuration
+        type: integer
+      max_size:
+        type: integer
+      min_size:
+        type: integer
+      name:
+        type: string
+      profile:
+        type: string
+      schedule_days_of_week:
+        items:
+          type: integer
+        type: array
+      schedule_end_hour:
+        type: integer
+      schedule_start_hour:
+        type: integer
+      schedule_timezone:
+        type: string
+      scheduled_mode:
+        description: Scheduling (work hours mode)
+        type: boolean
+      target_size:
+        description: Pool sizing
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.ClusterPoolStats:
+    properties:
+      active_leases:
+        description: Lease metrics
+        type: integer
+      avg_cluster_age:
+        $ref: '#/definitions/time.Duration'
+      avg_lease_duration:
+        $ref: '#/definitions/time.Duration'
+      capacity_percent:
+        description: (total / target_size) * 100
+        type: number
+      cleaning_clusters:
+        type: integer
+      computed_at:
+        description: Last update
+        type: string
+      expired_clusters:
+        type: integer
+      leased_clusters:
+        type: integer
+      oldest_cluster_age:
+        allOf:
+        - $ref: '#/definitions/time.Duration'
+        description: Age metrics
+      pool_id:
+        type: string
+      pool_name:
+        type: string
+      provisioning_clusters:
+        type: integer
+      ready_clusters:
+        type: integer
+      total_clusters:
+        description: Cluster counts by state
+        type: integer
+      utilization_percent:
+        description: Utilization metrics
+        type: number
     type: object
   github_com_tsanders-rh_ocpctl_pkg_types.ClusterStatus:
     enum:
@@ -920,6 +1034,62 @@ definitions:
       plain_key:
         description: Full key, only shown on creation
         type: string
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.CreatePoolRequest:
+    properties:
+      auto_refresh_enabled:
+        type: boolean
+      auto_release_enabled:
+        type: boolean
+      cluster_config:
+        additionalProperties: true
+        description: Configuration overrides
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      max_cluster_age_days:
+        description: Cluster lifecycle
+        type: integer
+      max_lease_duration_hours:
+        description: Lease configuration
+        type: integer
+      max_size:
+        minimum: 1
+        type: integer
+      min_size:
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 50
+        minLength: 3
+        type: string
+      profile:
+        type: string
+      schedule_days_of_week:
+        items:
+          type: integer
+        type: array
+      schedule_end_hour:
+        type: integer
+      schedule_start_hour:
+        type: integer
+      schedule_timezone:
+        type: string
+      scheduled_mode:
+        description: Scheduling
+        type: boolean
+      target_size:
+        description: Pool sizing
+        maximum: 50
+        minimum: 1
+        type: integer
+    required:
+    - display_name
+    - name
+    - profile
+    - target_size
     type: object
   github_com_tsanders-rh_ocpctl_pkg_types.CreateTeamRequest:
     properties:
@@ -1192,7 +1362,27 @@ definitions:
     - HIBERNATE
     - RESUME
     - POST_CONFIGURE
+    - POOL_REPLENISH
+    - POOL_CLEAN
+    - POOL_REFRESH
     type: string
+    x-enum-comments:
+      JobTypePoolClean: Sanitizes cluster after release
+      JobTypePoolRefresh: Replaces expired cluster with fresh one
+      JobTypePoolReplenish: Creates clusters to replenish pool
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - Creates clusters to replenish pool
+    - Sanitizes cluster after release
+    - Replaces expired cluster with fresh one
     x-enum-varnames:
     - JobTypeCreate
     - JobTypeDestroy
@@ -1203,6 +1393,45 @@ definitions:
     - JobTypeHibernate
     - JobTypeResume
     - JobTypePostConfigure
+    - JobTypePoolReplenish
+    - JobTypePoolClean
+    - JobTypePoolRefresh
+  github_com_tsanders-rh_ocpctl_pkg_types.LeaseRequest:
+    properties:
+      duration_hours:
+        description: Override default lease duration
+        type: integer
+      leased_by:
+        description: User, service account, or job ID
+        type: string
+      metadata:
+        additionalProperties: true
+        description: Custom metadata (job_id, build_url, etc.)
+        type: object
+    type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.LeaseResponse:
+    properties:
+      api_url:
+        description: Cluster access information
+        type: string
+      cluster_id:
+        type: string
+      cluster_name:
+        type: string
+      console_url:
+        type: string
+      kubeconfig_path:
+        type: string
+      lease_expires_at:
+        type: string
+      lease_metadata:
+        additionalProperties: true
+        type: object
+      leased_at:
+        type: string
+      leased_by:
+        type: string
+    type: object
   github_com_tsanders-rh_ocpctl_pkg_types.LoginRequest:
     properties:
       email:
@@ -1322,6 +1551,32 @@ definitions:
     - PlatformIBMCloud
     - PlatformGCP
     - PlatformAzure
+  github_com_tsanders-rh_ocpctl_pkg_types.PoolState:
+    enum:
+    - READY
+    - LEASED
+    - PROVISIONING
+    - CLEANING
+    - EXPIRED
+    type: string
+    x-enum-comments:
+      PoolStateCleaning: Being sanitized after release
+      PoolStateExpired: Exceeded max age, pending refresh
+      PoolStateLeased: Currently leased to a user/job
+      PoolStateProvisioning: Being created for pool
+      PoolStateReady: Available for lease
+    x-enum-descriptions:
+    - Available for lease
+    - Currently leased to a user/job
+    - Being created for pool
+    - Being sanitized after release
+    - Exceeded max age, pending refresh
+    x-enum-varnames:
+    - PoolStateReady
+    - PoolStateLeased
+    - PoolStateProvisioning
+    - PoolStateCleaning
+    - PoolStateExpired
   github_com_tsanders-rh_ocpctl_pkg_types.PostConfigTemplate:
     properties:
       config:
@@ -1462,6 +1717,54 @@ definitions:
       work_hours_enabled:
         type: boolean
     type: object
+  github_com_tsanders-rh_ocpctl_pkg_types.UpdatePoolRequest:
+    properties:
+      auto_refresh_enabled:
+        type: boolean
+      auto_release_enabled:
+        type: boolean
+      cluster_config:
+        additionalProperties: true
+        description: Configuration overrides
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        description: Enabled state
+        type: boolean
+      max_cluster_age_days:
+        description: Cluster lifecycle
+        type: integer
+      max_lease_duration_hours:
+        description: Lease configuration
+        type: integer
+      max_size:
+        minimum: 1
+        type: integer
+      min_size:
+        minimum: 1
+        type: integer
+      schedule_days_of_week:
+        items:
+          type: integer
+        type: array
+      schedule_end_hour:
+        type: integer
+      schedule_start_hour:
+        type: integer
+      schedule_timezone:
+        type: string
+      scheduled_mode:
+        description: Scheduling
+        type: boolean
+      target_size:
+        description: Pool sizing
+        maximum: 50
+        minimum: 1
+        type: integer
+    type: object
   github_com_tsanders-rh_ocpctl_pkg_types.UpdateTeamRequest:
     properties:
       description:
@@ -1543,6 +1846,19 @@ definitions:
           type: string
         type: array
     type: object
+  internal_api.APIMetricsSnapshot:
+    properties:
+      active_connections:
+        type: integer
+      error_rate:
+        type: number
+      requests_by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      requests_per_second:
+        type: number
+    type: object
   internal_api.ASGInfo:
     properties:
       desired_capacity:
@@ -1600,6 +1916,13 @@ definitions:
         example: 3
         type: integer
     type: object
+  internal_api.AutoscaleMetricsSnapshot:
+    properties:
+      current_workers:
+        type: integer
+      desired_workers:
+        type: integer
+    type: object
   internal_api.CheckVersionsResponse:
     properties:
       cache_age:
@@ -1613,6 +1936,19 @@ definitions:
       total_profiles:
         type: integer
       updates_available:
+        type: integer
+    type: object
+  internal_api.ClusterMetricsSnapshot:
+    properties:
+      by_profile:
+        additionalProperties:
+          type: integer
+        type: object
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      total:
         type: integer
     type: object
   internal_api.ClusterOutputsResponse:
@@ -1840,6 +2176,13 @@ definitions:
       taskCount:
         type: integer
     type: object
+  internal_api.DatabaseMetricsSnapshot:
+    properties:
+      max_connections:
+        type: integer
+      open_connections:
+        type: integer
+    type: object
   internal_api.EC2Instance:
     properties:
       instance_id:
@@ -1906,6 +2249,17 @@ definitions:
       timestamp:
         type: string
     type: object
+  internal_api.JobMetricsSnapshot:
+    properties:
+      processing_total:
+        type: integer
+      queued_by_type:
+        additionalProperties:
+          type: integer
+        type: object
+      total_queued:
+        type: integer
+    type: object
   internal_api.KubeadminCredentials:
     properties:
       password:
@@ -1929,6 +2283,21 @@ definitions:
     properties:
       notes:
         type: string
+    type: object
+  internal_api.MetricsSnapshot:
+    properties:
+      api:
+        $ref: '#/definitions/internal_api.APIMetricsSnapshot'
+      autoscale:
+        $ref: '#/definitions/internal_api.AutoscaleMetricsSnapshot'
+      clusters:
+        $ref: '#/definitions/internal_api.ClusterMetricsSnapshot'
+      database:
+        $ref: '#/definitions/internal_api.DatabaseMetricsSnapshot'
+      jobs:
+        $ref: '#/definitions/internal_api.JobMetricsSnapshot'
+      workers:
+        $ref: '#/definitions/internal_api.WorkerMetricsSnapshot'
     type: object
   internal_api.OrphanedResourceListResponse:
     properties:
@@ -2191,6 +2560,36 @@ definitions:
       version:
         type: string
     type: object
+  internal_api.WorkerMetricsSnapshot:
+    properties:
+      active:
+        type: integer
+      idle:
+        type: integer
+      total:
+        type: integer
+    type: object
+  time.Duration:
+    enum:
+    - -9223372036854775808
+    - 9223372036854775807
+    - 1
+    - 1000
+    - 1000000
+    - 1000000000
+    - 60000000000
+    - 3600000000000
+    format: int64
+    type: integer
+    x-enum-varnames:
+    - minDuration
+    - maxDuration
+    - Nanosecond
+    - Microsecond
+    - Millisecond
+    - Second
+    - Minute
+    - Hour
 host: ocpctl.mg.dog8code.com
 info:
   contact:
@@ -2466,6 +2865,200 @@ paths:
       summary: Get orphaned resources statistics
       tags:
       - Orphaned Resources
+  /admin/pools:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of all cluster pools. All authenticated users can
+        list enabled pools via /pools. Admins can list all pools (including disabled)
+        via /admin/pools.
+      parameters:
+      - description: 'Filter to only enabled pools (default: true for /pools, false
+          for /admin/pools)'
+        in: query
+        name: enabled_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns pools array
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Failed to list pools
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cluster pools
+      tags:
+      - Pools
+    post:
+      consumes:
+      - application/json
+      description: Creates a new cluster pool for pre-provisioned clusters (admin
+        only)
+      parameters:
+      - description: Pool creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.CreatePoolRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Pool name already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to create pool
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create cluster pool
+      tags:
+      - Pools
+  /admin/pools/{name}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a cluster pool (admin only). Orphans all clusters in the
+        pool by setting their pool_id to NULL.
+      parameters:
+      - description: Pool name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Pool not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to delete pool
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete cluster pool
+      tags:
+      - Pools
+    get:
+      consumes:
+      - application/json
+      description: Retrieves pool details and real-time statistics by name (admin
+        only)
+      parameters:
+      - description: Pool name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns pool and stats
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Pool not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to get pool
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get cluster pool
+      tags:
+      - Pools
+    patch:
+      consumes:
+      - application/json
+      description: Updates pool configuration settings (admin only)
+      parameters:
+      - description: Pool name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Pool update fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.UpdatePoolRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPool'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Pool not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update pool
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update cluster pool
+      tags:
+      - Pools
   /admin/profiles/{name}/rollback:
     post:
       description: Rolls back a profile to its latest backup file. This restores the
@@ -4791,6 +5384,186 @@ paths:
       summary: Get job
       tags:
       - Jobs
+  /metrics/current:
+    get:
+      description: Returns current system metrics including API stats, job queue,
+        clusters, and workers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.MetricsSnapshot'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current system metrics
+      tags:
+      - metrics
+  /pools:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of all cluster pools. All authenticated users can
+        list enabled pools via /pools. Admins can list all pools (including disabled)
+        via /admin/pools.
+      parameters:
+      - description: 'Filter to only enabled pools (default: true for /pools, false
+          for /admin/pools)'
+        in: query
+        name: enabled_only
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns pools array
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Failed to list pools
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List cluster pools
+      tags:
+      - Pools
+  /pools/{pool_name}/lease:
+    post:
+      consumes:
+      - application/json
+      description: Atomically leases an available cluster from a pool for CI/CD use.
+        Returns cluster credentials.
+      parameters:
+      - description: Pool name
+        in: path
+        name: pool_name
+        required: true
+        type: string
+      - description: Lease request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LeaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.LeaseResponse'
+        "400":
+          description: Invalid request or pool disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Pool not found or no available clusters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to lease cluster
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Lease cluster from pool
+      tags:
+      - Pools
+  /pools/{pool_name}/stats:
+    get:
+      consumes:
+      - application/json
+      description: Returns real-time statistics for a cluster pool (available clusters,
+        utilization, etc.)
+      parameters:
+      - description: Pool name
+        in: path
+        name: pool_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tsanders-rh_ocpctl_pkg_types.ClusterPoolStats'
+        "404":
+          description: Pool not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to get stats
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get pool statistics
+      tags:
+      - Pools
+  /pools/clusters/{cluster_id}/release:
+    post:
+      consumes:
+      - application/json
+      description: Releases a leased cluster back to the pool for sanitization and
+        reuse.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: cluster_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Cluster is not leased
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to release cluster
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Release cluster back to pool
+      tags:
+      - Pools
   /post-config/addons:
     get:
       description: Lists all enabled post-config add-ons with version information.
