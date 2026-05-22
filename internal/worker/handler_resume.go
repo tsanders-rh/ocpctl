@@ -419,6 +419,12 @@ func (h *ResumeHandler) waitForClusterHealth(ctx context.Context, cluster *types
 		return fmt.Errorf("wait for router pods: %w", err)
 	}
 
+	// Verify console route is accessible
+	log.Printf("Verifying console route is accessible...")
+	if err := h.waitForConsoleAccessibility(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for console accessibility: %w", err)
+	}
+
 	// Wait for CNI pods to be healthy (multus, OVN) on all nodes
 	log.Printf("Waiting for CNI networking pods to be healthy...")
 	if err := h.waitForCNIPods(ctx, kubeconfigPath); err != nil {
@@ -474,7 +480,15 @@ func (h *ResumeHandler) waitForClusterOperators(ctx context.Context, kubeconfigP
 	retryDelay := 10 * time.Second
 
 	// Critical operators that must be ready
-	criticalOperators := []string{"kube-apiserver", "kube-controller-manager", "kube-scheduler", "ingress", "network"}
+	criticalOperators := []string{
+		"kube-apiserver",
+		"kube-controller-manager",
+		"kube-scheduler",
+		"ingress",
+		"network",
+		"authentication", // Required for OAuth/console login
+		"console",        // Required for console accessibility
+	}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		allReady := true
@@ -550,6 +564,58 @@ func (h *ResumeHandler) waitForRouterPods(ctx context.Context, kubeconfigPath st
 	}
 
 	return fmt.Errorf("router pods did not become ready after %d attempts", maxAttempts)
+}
+
+// waitForConsoleAccessibility verifies the console route is accessible and responding
+func (h *ResumeHandler) waitForConsoleAccessibility(ctx context.Context, kubeconfigPath string) error {
+	maxAttempts := 30 // 30 attempts * 10 seconds = 5 minutes
+	retryDelay := 10 * time.Second
+
+	// Get console route URL
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "route", "-n", "openshift-console", "console",
+		"-o", "jsonpath={.spec.host}")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("get console route: %w", err)
+	}
+
+	consoleHost := strings.TrimSpace(string(output))
+	if consoleHost == "" {
+		return fmt.Errorf("console route host is empty")
+	}
+
+	consoleURL := fmt.Sprintf("https://%s", consoleHost)
+	log.Printf("Console URL: %s", consoleURL)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Try to access the console route (expect 200 or 302 redirect to OAuth)
+		cmd := exec.CommandContext(ctx, "curl", "-k", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+			"--max-time", "5", consoleURL)
+		output, err := cmd.Output()
+		if err == nil {
+			statusCode := strings.TrimSpace(string(output))
+			// Accept 200 (OK), 302 (redirect to OAuth), or 303 (redirect)
+			if statusCode == "200" || statusCode == "302" || statusCode == "303" {
+				log.Printf("Console is accessible (HTTP %s)", statusCode)
+				return nil
+			}
+			log.Printf("Console returned HTTP %s (attempt %d/%d)", statusCode, attempt, maxAttempts)
+		}
+
+		if attempt%3 == 0 { // Log every 30 seconds
+			log.Printf("Console not yet accessible (attempt %d/%d)...", attempt, maxAttempts)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for console accessibility")
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("console did not become accessible after %d attempts", maxAttempts)
 }
 
 // waitForCNIPods waits for CNI networking pods (multus, OVN) to be healthy on all nodes
