@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,6 +95,22 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 		}
 	}
 
+	// Get pool creator username for cluster ownership
+	var ownerUsername string
+	err = h.store.Pool().QueryRow(ctx, "SELECT username FROM users WHERE id = $1", pool.CreatedBy).Scan(&ownerUsername)
+	if err != nil {
+		// If username not found, use the user ID as fallback
+		log.Printf("Warning: Could not fetch username for user %s: %v", pool.CreatedBy, err)
+		ownerUsername = pool.CreatedBy
+	}
+
+	// Get base domain from environment or use default
+	baseDomainStr := os.Getenv("BASE_DOMAIN")
+	if baseDomainStr == "" {
+		baseDomainStr = "mg.dog8code.com" // Default domain
+	}
+	baseDomain := &baseDomainStr
+
 	// Create new cluster record
 	newCluster := &types.Cluster{
 		ID:          uuid.New().String(),
@@ -103,8 +120,9 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 		Version:     defaultVersion,
 		Profile:     pool.Profile,
 		Region:      prof.Regions.Default,
-		Owner:       pool.CreatedBy,
-		OwnerID:     pool.CreatedBy,
+		BaseDomain:  baseDomain, // Required for OpenShift clusters
+		Owner:       ownerUsername,  // Use username for display
+		OwnerID:     pool.CreatedBy, // Pool creator owns pool clusters
 		Team:        "pool-managed",
 		CostCenter:  "pool-" + pool.Name,
 		Status:      types.ClusterStatusPending,
@@ -196,7 +214,11 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 
 // loadProfileRegistry loads the profile registry
 func (h *PoolRefreshHandler) loadProfileRegistry() (*profile.Registry, error) {
-	profilesDir := h.config.WorkDir + "/profiles"
+	// Get profiles directory from environment (same as API and other workers)
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "/opt/ocpctl/profiles" // Default path
+	}
 	loader := profile.NewLoader(profilesDir)
 	return profile.NewRegistry(loader)
 }

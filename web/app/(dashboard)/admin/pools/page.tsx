@@ -70,10 +70,10 @@ export default function PoolsPage() {
 
   const pools = data?.pools || [];
 
-  // Calculate totals
-  const totalClusters = pools.reduce((sum, p) => sum + p.stats.total_clusters, 0);
-  const totalReady = pools.reduce((sum, p) => sum + p.stats.ready_clusters, 0);
-  const totalLeased = pools.reduce((sum, p) => sum + p.stats.leased_clusters, 0);
+  // Calculate totals (with defensive checks)
+  const totalClusters = pools.reduce((sum, p) => sum + (p.stats?.total_clusters || 0), 0);
+  const totalReady = pools.reduce((sum, p) => sum + (p.stats?.ready_clusters || 0), 0);
+  const totalLeased = pools.reduce((sum, p) => sum + (p.stats?.leased_clusters || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -199,17 +199,17 @@ export default function PoolsPage() {
                     <td className="p-4">
                       <div className="flex flex-col gap-1 text-sm">
                         <div>
-                          <span className="text-green-600 font-medium">{pool.stats.ready_clusters}</span> ready
+                          <span className="text-green-600 font-medium">{pool.stats?.ready_clusters || 0}</span> ready
                         </div>
                         <div>
-                          <span className="text-orange-600 font-medium">{pool.stats.leased_clusters}</span> leased
+                          <span className="text-orange-600 font-medium">{pool.stats?.leased_clusters || 0}</span> leased
                         </div>
-                        {pool.stats.provisioning_clusters > 0 && (
+                        {(pool.stats?.provisioning_clusters || 0) > 0 && (
                           <div>
                             <span className="text-blue-600 font-medium">{pool.stats.provisioning_clusters}</span> provisioning
                           </div>
                         )}
-                        {pool.stats.expired_clusters > 0 && (
+                        {(pool.stats?.expired_clusters || 0) > 0 && (
                           <div>
                             <span className="text-red-600 font-medium">{pool.stats.expired_clusters}</span> expired
                           </div>
@@ -219,7 +219,7 @@ export default function PoolsPage() {
                     <td className="p-4">
                       <div className="text-sm">
                         <div className="font-medium">
-                          {pool.stats.ready_clusters} / {pool.target_size}
+                          {pool.stats?.ready_clusters || 0} / {pool.target_size}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           Min: {pool.min_size} | Max: {pool.max_size}

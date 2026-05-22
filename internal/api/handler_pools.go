@@ -184,8 +184,47 @@ func (h *PoolHandler) ListPools(c echo.Context) error {
 		return LogAndReturnGenericError(c, err)
 	}
 
+	// Fetch real-time statistics for each pool
+	poolsWithStats := make([]map[string]interface{}, len(pools))
+	for i, pool := range pools {
+		stats, err := h.store.Pools.GetStats(ctx, pool.ID)
+		if err != nil {
+			// If stats fetch fails, return pool with zero stats rather than failing entirely
+			stats = &types.ClusterPoolStats{
+				PoolID:   pool.ID,
+				PoolName: pool.Name,
+			}
+		}
+
+		poolsWithStats[i] = map[string]interface{}{
+			"id":                        pool.ID,
+			"name":                      pool.Name,
+			"display_name":              pool.DisplayName,
+			"description":               pool.Description,
+			"profile":                   pool.Profile,
+			"target_size":               pool.TargetSize,
+			"min_size":                  pool.MinSize,
+			"max_size":                  pool.MaxSize,
+			"max_lease_duration_hours":  pool.MaxLeaseDurationHours,
+			"auto_release_enabled":      pool.AutoReleaseEnabled,
+			"max_cluster_age_days":      pool.MaxClusterAgeDays,
+			"auto_refresh_enabled":      pool.AutoRefreshEnabled,
+			"scheduled_mode":            pool.ScheduledMode,
+			"schedule_timezone":         pool.ScheduleTimezone,
+			"schedule_start_hour":       pool.ScheduleStartHour,
+			"schedule_end_hour":         pool.ScheduleEndHour,
+			"schedule_days_of_week":     pool.ScheduleDaysOfWeek,
+			"cluster_config":            pool.ClusterConfig,
+			"enabled":                   pool.Enabled,
+			"created_at":                pool.CreatedAt,
+			"updated_at":                pool.UpdatedAt,
+			"created_by":                pool.CreatedBy,
+			"stats":                     stats,
+		}
+	}
+
 	return SuccessOK(c, map[string]interface{}{
-		"pools": pools,
+		"pools": poolsWithStats,
 	})
 }
 

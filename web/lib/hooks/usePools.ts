@@ -11,6 +11,25 @@ export function usePools(options?: { refetchInterval?: number }) {
   });
 }
 
+export function usePool(poolName: string, options?: { refetchInterval?: number }) {
+  return useQuery({
+    queryKey: ["pools", poolName],
+    queryFn: async () => {
+      // Fetch all pools and find the requested one
+      const response = await poolsApi.list();
+      const pool = response.pools.find(p => p.name === poolName);
+      if (!pool) {
+        throw new Error(`Pool ${poolName} not found`);
+      }
+      return pool;
+    },
+    enabled: !!poolName,
+    staleTime: 10 * 1000, // 10 seconds (more frequent for real-time stats)
+    refetchInterval: options?.refetchInterval, // Optional polling interval
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+  });
+}
+
 export function usePoolStats(poolName: string, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ["pool-stats", poolName],

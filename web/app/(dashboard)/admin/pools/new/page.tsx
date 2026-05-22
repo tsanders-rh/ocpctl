@@ -35,6 +35,14 @@ export default function NewPoolPage() {
   const [autoRelease, setAutoRelease] = useState(true);
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri default
 
+  // Cluster configuration overrides
+  const [clusterVersion, setClusterVersion] = useState<string>("");
+  const [clusterRegion, setClusterRegion] = useState<string>("");
+  const [clusterBaseDomain, setClusterBaseDomain] = useState<string>("");
+  const [clusterExtraTags, setClusterExtraTags] = useState<string>("");
+  const [workHoursEnabled, setWorkHoursEnabled] = useState<boolean | undefined>(undefined);
+  const [credentialsMode, setCredentialsMode] = useState<string>("");
+
   const { data: profilesData } = useQuery({
     queryKey: ["profiles"],
     queryFn: () => profilesApi.list(),
@@ -88,6 +96,22 @@ export default function NewPoolPage() {
     setSuccessMessage("");
     setErrorMessage("");
 
+    // Build cluster_config from overrides
+    const cluster_config: any = {};
+    if (clusterVersion) cluster_config.version = clusterVersion;
+    if (clusterRegion) cluster_config.region = clusterRegion;
+    if (clusterBaseDomain) cluster_config.base_domain = clusterBaseDomain;
+    if (clusterExtraTags) {
+      try {
+        cluster_config.extra_tags = JSON.parse(clusterExtraTags);
+      } catch (e) {
+        setErrorMessage("Invalid JSON in extra tags");
+        return;
+      }
+    }
+    if (workHoursEnabled !== undefined) cluster_config.work_hours_enabled = workHoursEnabled;
+    if (credentialsMode) cluster_config.credentials_mode = credentialsMode;
+
     // Build the final payload
     const payload: CreatePoolRequest = {
       ...data,
@@ -96,12 +120,14 @@ export default function NewPoolPage() {
       auto_refresh_enabled: autoRefresh,
       scheduled_mode: scheduledMode,
       schedule_days_of_week: scheduledMode ? selectedDays : undefined,
+      cluster_config: Object.keys(cluster_config).length > 0 ? cluster_config : undefined,
     };
 
     createMutation.mutate(payload);
   };
 
   const profiles = profilesData?.filter((p) => p.enabled) || [];
+  const selectedProfileData = profiles.find((p) => p.name === selectedProfile);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -196,6 +222,171 @@ export default function NewPoolPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Cluster Configuration Overrides */}
+        {selectedProfile && selectedProfileData && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Cluster Configuration Overrides (Optional)</CardTitle>
+              <CardDescription>
+                Override profile defaults for clusters in this pool. Leave blank to use profile defaults.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Version override */}
+                {selectedProfileData.openshift_versions?.allowed && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cluster_version">OpenShift Version</Label>
+                    <Select value={clusterVersion} onValueChange={setClusterVersion}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={`Use profile default (${selectedProfileData.openshift_versions.default})`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedProfileData.openshift_versions.allowed.map((version: string) => (
+                          <SelectItem key={version} value={version}>
+                            {version}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">
+                      Override version for all clusters in this pool
+                    </p>
+                  </div>
+                )}
+
+                {selectedProfileData.kubernetes_versions?.allowed && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cluster_version">Kubernetes Version</Label>
+                    <Select value={clusterVersion} onValueChange={setClusterVersion}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={`Use profile default (${selectedProfileData.kubernetes_versions.default})`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedProfileData.kubernetes_versions.allowed.map((version: string) => (
+                          <SelectItem key={version} value={version}>
+                            {version}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">
+                      Override version for all clusters in this pool
+                    </p>
+                  </div>
+                )}
+
+                {/* Region override */}
+                <div className="space-y-2">
+                  <Label htmlFor="cluster_region">Region</Label>
+                  <Select value={clusterRegion} onValueChange={setClusterRegion}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Use profile default (${selectedProfileData.regions?.default || 'N/A'})`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedProfileData.regions?.allowed?.map((region: string) => (
+                        <SelectItem key={region} value={region}>
+                          {region}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Override region for all clusters in this pool
+                  </p>
+                </div>
+              </div>
+
+              {/* Base domain override */}
+              {selectedProfileData.base_domains?.allowed && (
+                <div className="space-y-2">
+                  <Label htmlFor="cluster_base_domain">Base Domain</Label>
+                  <Select value={clusterBaseDomain} onValueChange={setClusterBaseDomain}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Use profile default (${selectedProfileData.base_domains.default})`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedProfileData.base_domains.allowed.map((domain: string) => (
+                        <SelectItem key={domain} value={domain}>
+                          {domain}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Override base domain for all clusters in this pool
+                  </p>
+                </div>
+              )}
+
+              {/* Extra tags */}
+              <div className="space-y-2">
+                <Label htmlFor="extra_tags">Extra Tags (JSON)</Label>
+                <Textarea
+                  id="extra_tags"
+                  placeholder='{"team": "platform-eng", "environment": "ci"}'
+                  rows={3}
+                  value={clusterExtraTags}
+                  onChange={(e) => setClusterExtraTags(e.target.value)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Additional AWS tags as JSON (e.g., {`{"key": "value"}`})
+                </p>
+              </div>
+
+              {/* Work hours and credentials */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Work Hours Hibernation</Label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="work_hours_on"
+                        checked={workHoursEnabled === true}
+                        onCheckedChange={(checked) => setWorkHoursEnabled(checked ? true : undefined)}
+                      />
+                      <label htmlFor="work_hours_on" className="text-sm">
+                        Enable work hours
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="work_hours_off"
+                        checked={workHoursEnabled === false}
+                        onCheckedChange={(checked) => setWorkHoursEnabled(checked ? false : undefined)}
+                      />
+                      <label htmlFor="work_hours_off" className="text-sm">
+                        Disable work hours
+                      </label>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Override hibernation schedule
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="credentials_mode">Credentials Mode</Label>
+                  <Select value={credentialsMode} onValueChange={setCredentialsMode}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Use profile default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Auto">Auto</SelectItem>
+                      <SelectItem value="Manual">Manual</SelectItem>
+                      <SelectItem value="Passthrough">Passthrough</SelectItem>
+                      <SelectItem value="Mint">Mint</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Cloud credentials handling mode
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Pool Sizing */}
         <Card className="mb-6">

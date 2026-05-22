@@ -64,7 +64,17 @@ func (s *PoolStore) Create(ctx context.Context, tx pgx.Tx, pool *types.ClusterPo
 
 // GetByID retrieves a pool by ID
 func (s *PoolStore) GetByID(ctx context.Context, poolID string) (*types.ClusterPool, error) {
-	query := `SELECT * FROM cluster_pools WHERE id = $1`
+	query := `
+		SELECT
+			id, name, display_name, description, profile,
+			target_size, min_size, max_size,
+			max_lease_duration_hours, auto_release_enabled,
+			max_cluster_age_days, auto_refresh_enabled,
+			scheduled_mode, schedule_timezone, schedule_start_hour, schedule_end_hour, schedule_days_of_week,
+			cluster_config, enabled, created_at, updated_at, created_by
+		FROM cluster_pools
+		WHERE id = $1
+	`
 
 	pool := &types.ClusterPool{}
 	row := s.pool.QueryRow(ctx, query, poolID)
@@ -90,7 +100,17 @@ func (s *PoolStore) GetByID(ctx context.Context, poolID string) (*types.ClusterP
 
 // GetByName retrieves a pool by name
 func (s *PoolStore) GetByName(ctx context.Context, name string) (*types.ClusterPool, error) {
-	query := `SELECT * FROM cluster_pools WHERE name = $1`
+	query := `
+		SELECT
+			id, name, display_name, description, profile,
+			target_size, min_size, max_size,
+			max_lease_duration_hours, auto_release_enabled,
+			max_cluster_age_days, auto_refresh_enabled,
+			scheduled_mode, schedule_timezone, schedule_start_hour, schedule_end_hour, schedule_days_of_week,
+			cluster_config, enabled, created_at, updated_at, created_by
+		FROM cluster_pools
+		WHERE name = $1
+	`
 
 	pool := &types.ClusterPool{}
 	row := s.pool.QueryRow(ctx, query, name)
@@ -116,14 +136,25 @@ func (s *PoolStore) GetByName(ctx context.Context, name string) (*types.ClusterP
 
 // List retrieves all pools with optional filtering
 func (s *PoolStore) List(ctx context.Context, enabledOnly bool) ([]*types.ClusterPool, error) {
-	query := `SELECT * FROM cluster_pools`
+	query := `
+		SELECT
+			cp.id, cp.name, cp.display_name, cp.description, cp.profile,
+			cp.target_size, cp.min_size, cp.max_size,
+			cp.max_lease_duration_hours, cp.auto_release_enabled,
+			cp.max_cluster_age_days, cp.auto_refresh_enabled,
+			cp.scheduled_mode, cp.schedule_timezone, cp.schedule_start_hour, cp.schedule_end_hour, cp.schedule_days_of_week,
+			cp.cluster_config, cp.enabled, cp.created_at, cp.updated_at,
+			COALESCE(u.username, cp.created_by) as created_by
+		FROM cluster_pools cp
+		LEFT JOIN users u ON cp.created_by = u.id::text
+	`
 	args := []interface{}{}
 
 	if enabledOnly {
-		query += ` WHERE enabled = true`
+		query += ` WHERE cp.enabled = true`
 	}
 
-	query += ` ORDER BY name ASC`
+	query += ` ORDER BY cp.name ASC`
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -208,23 +239,25 @@ func (s *PoolStore) Delete(ctx context.Context, poolID string) error {
 func (s *PoolStore) GetStats(ctx context.Context, poolID string) (*types.ClusterPoolStats, error) {
 	query := `
 		SELECT
-			$1 AS pool_id,
-			(SELECT name FROM cluster_pools WHERE id = $1) AS pool_name,
+			$1::uuid AS pool_id,
+			(SELECT name FROM cluster_pools WHERE id = $1::uuid) AS pool_name,
 			COUNT(*) AS total_clusters,
 			COUNT(*) FILTER (WHERE pool_state = 'READY') AS ready_clusters,
 			COUNT(*) FILTER (WHERE pool_state = 'LEASED') AS leased_clusters,
 			COUNT(*) FILTER (WHERE pool_state = 'PROVISIONING') AS provisioning_clusters,
 			COUNT(*) FILTER (WHERE pool_state = 'CLEANING') AS cleaning_clusters,
 			COUNT(*) FILTER (WHERE pool_state = 'EXPIRED') AS expired_clusters,
-			MAX(NOW() - created_at) AS oldest_cluster_age,
-			AVG(NOW() - created_at) AS avg_cluster_age,
+			EXTRACT(EPOCH FROM MAX(NOW() - created_at)) AS oldest_cluster_age_secs,
+			EXTRACT(EPOCH FROM AVG(NOW() - created_at)) AS avg_cluster_age_secs,
 			COUNT(*) FILTER (WHERE leased_by IS NOT NULL) AS active_leases,
 			AVG(EXTRACT(EPOCH FROM (COALESCE(lease_expires_at, NOW()) - leased_at))) AS avg_lease_duration
 		FROM clusters
-		WHERE pool_id = $1 AND status != 'DESTROYED'
+		WHERE pool_id = $1::uuid AND pool_state IS NOT NULL
 	`
 
 	stats := &types.ClusterPoolStats{ComputedAt: time.Now()}
+	var oldestClusterAgeSecs sql.NullFloat64
+	var avgClusterAgeSecs sql.NullFloat64
 	var avgLeaseDurationSecs sql.NullFloat64
 
 	err := s.pool.QueryRow(ctx, query, poolID).Scan(
@@ -236,14 +269,22 @@ func (s *PoolStore) GetStats(ctx context.Context, poolID string) (*types.Cluster
 		&stats.ProvisioningClusters,
 		&stats.CleaningClusters,
 		&stats.ExpiredClusters,
-		&stats.OldestClusterAge,
-		&stats.AvgClusterAge,
+		&oldestClusterAgeSecs,
+		&avgClusterAgeSecs,
 		&stats.ActiveLeases,
 		&avgLeaseDurationSecs,
 	)
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Convert seconds to time.Duration
+	if oldestClusterAgeSecs.Valid {
+		stats.OldestClusterAge = time.Duration(oldestClusterAgeSecs.Float64) * time.Second
+	}
+	if avgClusterAgeSecs.Valid {
+		stats.AvgClusterAge = time.Duration(avgClusterAgeSecs.Float64) * time.Second
 	}
 
 	// Calculate utilization percentage

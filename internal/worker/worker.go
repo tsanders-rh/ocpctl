@@ -409,19 +409,50 @@ func (w *Worker) poll() {
 		clusterMap[cluster.ID] = cluster
 	}
 
+	// Check if there's already a CREATE job running (to prevent resource exhaustion)
+	// CREATE jobs spawn heavy processes (Cluster API control plane) that can overwhelm the server
+	w.jobsMu.RLock()
+	hasRunningCreateJob := false
+	for _, activeJob := range w.activeJobs {
+		if activeJob.JobType == string(types.JobTypeCreate) {
+			hasRunningCreateJob = true
+			break
+		}
+	}
+	w.jobsMu.RUnlock()
+
 	// Process jobs concurrently with pre-fetched cluster data
 	// Pass worker context so jobs can be cancelled on shutdown
 	// Use WaitGroup to track running jobs for graceful shutdown
 	for _, job := range jobs {
-		cluster := clusterMap[job.ClusterID]
-		if cluster == nil {
-			log.Printf("Cluster %s not found for job %s, skipping", job.ClusterID, job.ID)
-			// Mark job as failed since cluster doesn't exist
-			errorMsg := "Cluster not found"
-			if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_NOT_FOUND", errorMsg); markErr != nil {
-				log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
-			}
+		// Limit CREATE jobs to 1 at a time to prevent resource exhaustion
+		// (each CREATE job spawns Cluster API control plane: etcd, kube-apiserver, etc.)
+		if job.JobType == types.JobTypeCreate && hasRunningCreateJob {
+			log.Printf("Skipping CREATE job %s - another CREATE job is already running", job.ID)
 			continue
+		}
+
+		// Some job types don't require a cluster (pool-level jobs)
+		// POOL_REPLENISH: Creates new clusters for a pool (operates on pool, not cluster)
+		requiresCluster := job.JobType != types.JobTypePoolReplenish
+
+		var cluster *types.Cluster
+		if requiresCluster {
+			cluster = clusterMap[job.ClusterID]
+			if cluster == nil {
+				log.Printf("Cluster %s not found for job %s, skipping", job.ClusterID, job.ID)
+				// Mark job as failed since cluster doesn't exist
+				errorMsg := "Cluster not found"
+				if markErr := w.store.Jobs.MarkFailed(ctx, job.ID, "CLUSTER_NOT_FOUND", errorMsg); markErr != nil {
+					log.Printf("Failed to mark job %s as failed: %v", job.ID, markErr)
+				}
+				continue
+			}
+		}
+
+		// Mark that we now have a CREATE job running if this is one
+		if job.JobType == types.JobTypeCreate {
+			hasRunningCreateJob = true
 		}
 
 		// Track this job goroutine
@@ -446,18 +477,26 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	defer span.End()
 
 	// Add job metadata to span
-	span.SetAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String("job.id", job.ID),
 		attribute.String("job.type", string(job.JobType)),
 		attribute.String("job.status", string(job.Status)),
 		attribute.Int("job.attempt", job.Attempt),
 		attribute.Int("job.max_attempts", job.MaxAttempts),
-		attribute.String("cluster.id", cluster.ID),
-		attribute.String("cluster.name", cluster.Name),
-		attribute.String("cluster.platform", string(cluster.Platform)),
-		attribute.String("cluster.profile", cluster.Profile),
-		attribute.String("cluster.region", cluster.Region),
-	)
+	}
+
+	// Only add cluster attributes if cluster is provided (pool-level jobs don't have clusters)
+	if cluster != nil {
+		attrs = append(attrs,
+			attribute.String("cluster.id", cluster.ID),
+			attribute.String("cluster.name", cluster.Name),
+			attribute.String("cluster.platform", string(cluster.Platform)),
+			attribute.String("cluster.profile", cluster.Profile),
+			attribute.String("cluster.region", cluster.Region),
+		)
+	}
+
+	span.SetAttributes(attrs...)
 
 	// Check if context is already cancelled (worker shutting down)
 	select {
@@ -489,7 +528,8 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	defer w.releaseLock(ctx, job.ClusterID, job.ID)
 
 	// Auto-cancel jobs for DESTROYED clusters (except DESTROY jobs themselves)
-	if cluster.Status == types.ClusterStatusDestroyed && job.JobType != types.JobTypeDestroy {
+	// Skip this check for pool-level jobs that don't have a cluster
+	if cluster != nil && cluster.Status == types.ClusterStatusDestroyed && job.JobType != types.JobTypeDestroy {
 		log.Printf("Auto-cancelling job %s (type=%s): cluster %s is already DESTROYED",
 			job.ID, job.JobType, cluster.Name)
 		errorMsg := fmt.Sprintf("Cluster %s was destroyed before job could execute", cluster.Name)
@@ -506,7 +546,11 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	}
 
 	// Register job as active (for health endpoint and monitoring)
-	w.registerJob(job.ID, string(job.JobType), job.ClusterID, cluster.Name)
+	clusterName := ""
+	if cluster != nil {
+		clusterName = cluster.Name
+	}
+	w.registerJob(job.ID, string(job.JobType), job.ClusterID, clusterName)
 
 	// Delete old deployment logs from previous attempts
 	// This ensures each retry starts with a clean slate and sequence numbers start from 0
@@ -610,9 +654,13 @@ func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job, cluster *
 	// Publish CloudWatch metrics for job success
 	if w.metrics != nil {
 		dimensions := map[string]string{
-			"JobType":  string(job.JobType),
-			"Platform": string(cluster.Platform),
-			"Profile":  cluster.Profile,
+			"JobType": string(job.JobType),
+		}
+
+		// Only add cluster dimensions if cluster is provided (pool-level jobs don't have clusters)
+		if cluster != nil {
+			dimensions["Platform"] = string(cluster.Platform)
+			dimensions["Profile"] = cluster.Profile
 		}
 
 		// Publish success count
@@ -625,8 +673,13 @@ func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job, cluster *
 			log.Printf("Warning: Failed to publish JobDuration metric: %v", err)
 		}
 
-		log.Printf("Published CloudWatch metrics: JobSucceeded=1, JobDuration=%v (type=%s, platform=%s)",
-			duration, job.JobType, cluster.Platform)
+		if cluster != nil {
+			log.Printf("Published CloudWatch metrics: JobSucceeded=1, JobDuration=%v (type=%s, platform=%s)",
+				duration, job.JobType, cluster.Platform)
+		} else {
+			log.Printf("Published CloudWatch metrics: JobSucceeded=1, JobDuration=%v (type=%s)",
+				duration, job.JobType)
+		}
 	}
 }
 
@@ -654,9 +707,11 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 			log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
 		}
 
-		// Update cluster status to FAILED
-		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
-			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+		// Update cluster status to FAILED (skip for pool-level jobs without cluster)
+		if cluster != nil {
+			if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+				log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+			}
 		}
 
 		// Publish CloudWatch metrics for job failure
@@ -676,9 +731,11 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 			log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
 		}
 
-		// Update cluster status to FAILED
-		if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
-			log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+		// Update cluster status to FAILED (skip for pool-level jobs without cluster)
+		if cluster != nil {
+			if err := w.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+				log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+			}
 		}
 
 		// Publish CloudWatch metrics for job failure
@@ -723,9 +780,13 @@ func (w *Worker) publishJobFailureMetrics(ctx context.Context, job *types.Job, c
 
 	dimensions := map[string]string{
 		"JobType":       string(job.JobType),
-		"Platform":      string(cluster.Platform),
-		"Profile":       cluster.Profile,
 		"FailureReason": failureReason,
+	}
+
+	// Only add cluster dimensions if cluster is provided (pool-level jobs don't have clusters)
+	if cluster != nil {
+		dimensions["Platform"] = string(cluster.Platform)
+		dimensions["Profile"] = cluster.Profile
 	}
 
 	// Publish failure count

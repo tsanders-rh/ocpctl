@@ -212,8 +212,8 @@ func (s *Scheduler) checkPoolReplenishment(ctx context.Context) error {
 			continue
 		}
 
-		// Check if pool needs replenishment (total < min_size)
-		if stats.TotalClusters < pool.MinSize {
+		// Check if pool needs replenishment (total < target_size)
+		if stats.TotalClusters < pool.TargetSize {
 			log.Printf("Pool %s needs replenishment: total=%d, min=%d, target=%d",
 				pool.Name, stats.TotalClusters, pool.MinSize, pool.TargetSize)
 
@@ -232,7 +232,7 @@ func (s *Scheduler) checkPoolReplenishment(ctx context.Context) error {
 			// Create POOL_REPLENISH job
 			replenishJob := &types.Job{
 				ID:          uuid.New().String(),
-				ClusterID:   pool.ID, // Use pool ID as cluster ID
+				ClusterID:   "",  // POOL_REPLENISH jobs don't have a cluster_id (pool_id is in metadata)
 				JobType:     types.JobTypePoolReplenish,
 				Status:      types.JobStatusPending,
 				Attempt:     1,

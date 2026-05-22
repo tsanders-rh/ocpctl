@@ -1,25 +1,26 @@
 "use client";
 
-import { use } from "react";
 import { useRouter } from "next/navigation";
-import { usePoolStats } from "@/lib/hooks/usePools";
+import { usePool } from "@/lib/hooks/usePools";
+import { useProfile } from "@/lib/hooks/useProfiles";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Server, Clock, Database, TrendingUp } from "lucide-react";
+import { ArrowLeft, Server, Clock, Database, TrendingUp, Settings, Info } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { poolsApi } from "@/lib/api";
 import { toast } from "sonner";
 
 interface PoolDetailPageProps {
-  params: Promise<{ name: string }>;
+  params: { name: string };
 }
 
 export default function PoolDetailPage({ params }: PoolDetailPageProps) {
-  const { name } = use(params);
+  const { name } = params;
   const router = useRouter();
-  const { data, isLoading, error } = usePoolStats(name, { refetchInterval: 10000 }); // Refresh every 10s
+  const { data: pool, isLoading, error } = usePool(name, { refetchInterval: 10000 }); // Refresh every 10s
+  const { data: profile } = useProfile(pool?.profile || "", { refetchInterval: 30000 }); // Fetch profile for version info
   const [isLeasing, setIsLeasing] = useState(false);
 
   const handleLeaseCluster = async () => {
@@ -56,7 +57,7 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
     );
   }
 
-  if (error || !data) {
+  if (error || !pool) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-lg text-red-600">
@@ -66,7 +67,29 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
     );
   }
 
-  const stats = data;
+  const stats = pool.stats;
+
+  // Get cluster version from pool config or profile default
+  const getClusterVersion = () => {
+    // Check if pool has a version override in cluster_config
+    if (pool.cluster_config?.version) {
+      return pool.cluster_config.version;
+    }
+    // Otherwise use profile default
+    if (profile) {
+      if (profile.openshift_versions) {
+        return profile.openshift_versions.default || 'Latest';
+      } else if (profile.kubernetes_versions) {
+        return profile.kubernetes_versions.default || 'Latest';
+      }
+    }
+    return 'Default';
+  };
+
+  const clusterVersion = getClusterVersion();
+  const isOpenShift = profile?.openshift_versions !== undefined;
+  const platform = profile?.platform || 'aws';
+  const region = pool.cluster_config?.region || profile?.regions?.default || 'us-east-1';
 
   return (
     <div className="space-y-6">
@@ -79,10 +102,76 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
         </Link>
       </div>
 
-      <div>
-        <h1 className="text-3xl font-bold">{name}</h1>
-        <p className="text-muted-foreground">Real-time pool statistics and cluster availability</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{pool.display_name}</h1>
+          <p className="text-muted-foreground mt-1">{pool.description || "Pre-provisioned cluster pool"}</p>
+        </div>
+        <div className="flex gap-2">
+          <Badge variant="outline" className="text-base px-4 py-1">
+            {platform.toUpperCase()}
+          </Badge>
+          <Badge variant="outline" className="text-base px-4 py-1">
+            {pool.profile}
+          </Badge>
+        </div>
       </div>
+
+      {/* Pool Configuration */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            <CardTitle>Pool Configuration</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">
+                {isOpenShift ? 'OpenShift Version' : 'Kubernetes Version'}
+              </p>
+              <p className="font-medium">{clusterVersion}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Region</p>
+              <p className="font-medium">{region}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Max Lease Duration</p>
+              <p className="font-medium">{pool.max_lease_duration_hours} hours</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Target Size</p>
+              <p className="font-medium">{pool.target_size} clusters</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Pool Range</p>
+              <p className="font-medium">{pool.min_size} - {pool.max_size} clusters</p>
+            </div>
+            {pool.auto_refresh_enabled && (
+              <div>
+                <p className="text-muted-foreground">Auto Refresh</p>
+                <p className="font-medium">Every {pool.max_cluster_age_days} days</p>
+              </div>
+            )}
+            {pool.scheduled_mode && (
+              <>
+                <div>
+                  <p className="text-muted-foreground">Active Hours</p>
+                  <p className="font-medium">
+                    {pool.schedule_start_hour}:00 - {pool.schedule_end_hour}:00
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Timezone</p>
+                  <p className="font-medium">{pool.schedule_timezone}</p>
+                </div>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card>

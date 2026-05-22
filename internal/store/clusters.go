@@ -26,10 +26,12 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
 			offhours_opt_in, work_hours_enabled, work_hours_start, work_hours_end, work_days,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			pool_id, pool_state
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+			$16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+			$31, $32
 		)
 	`
 
@@ -64,6 +66,8 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.PreserveOnFailure,
 		cluster.CredentialsMode,
 		cluster.CustomPullSecret,
+		cluster.PoolID,    // Pool ID for cluster pools
+		cluster.PoolState, // Pool state for cluster pools
 	)
 
 	if err != nil {
@@ -443,19 +447,26 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 // Can be called with or without a transaction (tx can be nil for non-transactional updates).
 // Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, status types.ClusterStatus) error {
+	// When cluster becomes READY, update pool_state from PROVISIONING to READY (for pool clusters)
+	// When cluster is CREATING/FAILED/DESTROYED, pool_state management is handled elsewhere
 	query := `
 		UPDATE clusters
-		SET status = $1, updated_at = NOW()
-		WHERE id = $2
+		SET status = $1,
+			pool_state = CASE
+				WHEN $1 = $2 AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
+				ELSE pool_state
+			END,
+			updated_at = NOW()
+		WHERE id = $3
 	`
 
 	var result pgconn.CommandTag
 	var err error
 
 	if tx != nil {
-		result, err = tx.Exec(ctx, query, status, id)
+		result, err = tx.Exec(ctx, query, status, types.ClusterStatusReady, id)
 	} else {
-		result, err = s.pool.Exec(ctx, query, status, id)
+		result, err = s.pool.Exec(ctx, query, status, types.ClusterStatusReady, id)
 	}
 
 	if err != nil {

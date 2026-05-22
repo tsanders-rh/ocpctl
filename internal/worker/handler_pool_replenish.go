@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +66,47 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 	log.Printf("Pool %s stats: total=%d, ready=%d, provisioning=%d, target=%d",
 		pool.Name, stats.TotalClusters, stats.ReadyClusters, stats.ProvisioningClusters, pool.TargetSize)
 
+	// Check for recent cluster failures - if multiple clusters failed recently, there's likely
+	// a systemic issue (AWS quota, network, profile misconfiguration, etc.) and we should stop
+	var recentFailureCount int
+	err = h.store.Pool().QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM clusters
+		WHERE pool_id = $1
+		AND status = 'FAILED'
+		AND created_at > NOW() - INTERVAL '1 hour'
+	`, poolID).Scan(&recentFailureCount)
+	if err != nil {
+		log.Printf("Warning: Failed to check recent cluster failures: %v", err)
+	} else if recentFailureCount >= 2 {
+		// Disable the pool to prevent continuous failure loop
+		log.Printf("ERROR: Pool %s has %d cluster(s) that failed in the last hour - disabling pool to prevent continuous failures",
+			pool.Name, recentFailureCount)
+
+		updateErr := h.store.Pool().QueryRow(ctx, `
+			UPDATE cluster_pools
+			SET enabled = false
+			WHERE id = $1
+			RETURNING id
+		`, poolID).Scan(&poolID)
+
+		if updateErr != nil {
+			log.Printf("ERROR: Failed to disable pool %s: %v", pool.Name, updateErr)
+		} else {
+			log.Printf("Pool %s has been DISABLED due to repeated cluster failures. Admin intervention required.", pool.Name)
+		}
+
+		return fmt.Errorf("pool %s disabled due to %d recent cluster failures - admin intervention required", pool.Name, recentFailureCount)
+	}
+
+	// Don't create new clusters if there are already clusters being provisioned
+	// This prevents creating too many clusters when provisioning is slow
+	if stats.ProvisioningClusters > 0 {
+		log.Printf("Pool %s has %d cluster(s) still provisioning, waiting for them to complete before creating more",
+			pool.Name, stats.ProvisioningClusters)
+		return nil
+	}
+
 	// Calculate how many clusters we need to provision
 	// Total includes READY, LEASED, PROVISIONING, CLEANING, EXPIRED
 	// We want to provision enough to reach target_size
@@ -91,6 +133,15 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 	log.Printf("Provisioning %d cluster(s) for pool %s (current: %d, target: %d, max: %d)",
 		clustersNeeded, pool.Name, stats.TotalClusters, pool.TargetSize, pool.MaxSize)
 
+	// Get pool creator username for cluster ownership
+	var ownerUsername string
+	err = h.store.Pool().QueryRow(ctx, "SELECT username FROM users WHERE id = $1", pool.CreatedBy).Scan(&ownerUsername)
+	if err != nil {
+		// If username not found, use the user ID as fallback
+		log.Printf("Warning: Could not fetch username for user %s: %v", pool.CreatedBy, err)
+		ownerUsername = pool.CreatedBy
+	}
+
 	// Get profile details for cluster creation
 	profileRegistry, err := h.loadProfileRegistry()
 	if err != nil {
@@ -114,6 +165,13 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 		}
 	}
 
+	// Get base domain from environment or use default
+	baseDomainStr := os.Getenv("BASE_DOMAIN")
+	if baseDomainStr == "" {
+		baseDomainStr = "mg.dog8code.com" // Default domain
+	}
+	baseDomain := &baseDomainStr
+
 	// Provision clusters
 	for i := 0; i < clustersNeeded; i++ {
 		clusterName := fmt.Sprintf("%s-%s", pool.Name, uuid.New().String()[:8])
@@ -127,7 +185,8 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 			Version:     defaultVersion,
 			Profile:     pool.Profile,
 			Region:      prof.Regions.Default,
-			Owner:       pool.CreatedBy,
+			BaseDomain:  baseDomain, // Required for OpenShift clusters
+			Owner:       ownerUsername,  // Use username for display
 			OwnerID:     pool.CreatedBy, // Pool creator owns pool clusters
 			Team:        "pool-managed",
 			CostCenter:  "pool-" + pool.Name,
@@ -187,7 +246,11 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 
 // loadProfileRegistry loads the profile registry
 func (h *PoolReplenishHandler) loadProfileRegistry() (*profile.Registry, error) {
-	profilesDir := h.config.WorkDir + "/profiles"
+	// Get profiles directory from environment (same as API and other workers)
+	profilesDir := os.Getenv("PROFILES_DIR")
+	if profilesDir == "" {
+		profilesDir = "/opt/ocpctl/profiles" // Default path
+	}
 	loader := profile.NewLoader(profilesDir)
 	return profile.NewRegistry(loader)
 }
