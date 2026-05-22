@@ -9,6 +9,7 @@ import { UserRole } from "@/types/api";
 
 const navigation = [
   { name: "Clusters", href: "/clusters", icon: Layers },
+  { name: "Cluster Pools", href: "/pools", icon: Database },
   { name: "Profiles", href: "/profiles", icon: FileCode },
   { name: "User Guide", href: "/docs", icon: BookText },
 ];

@@ -320,9 +320,10 @@ func (s *Server) setupRoutes() {
 	// Cluster pool lease/release routes (CI/CD integration, requires auth)
 	poolLeaseHandler := NewPoolLeaseHandler(s.store)
 	poolsGroup := v1.Group("/pools", auth.RequireAuthDual(s.auth, s.iamAuth))
+	poolsGroup.GET("", poolHandler.ListPools)                                                                        // List enabled pools (all authenticated users)
+	poolsGroup.GET("/:pool_name/stats", poolLeaseHandler.GetPoolStats)
 	poolsGroup.POST("/:pool_name/lease", poolLeaseHandler.LeaseCluster, apimiddleware.StrictRateLimit(20))           // 20 requests/minute
 	poolsGroup.POST("/clusters/:cluster_id/release", poolLeaseHandler.ReleaseCluster, apimiddleware.StrictRateLimit(20)) // 20 requests/minute
-	poolsGroup.GET("/:pool_name/stats", poolLeaseHandler.GetPoolStats)
 
 	// Cluster routes (all require authentication)
 	clusterHandler := NewClusterHandler(s.store, s.policy, s.registry)

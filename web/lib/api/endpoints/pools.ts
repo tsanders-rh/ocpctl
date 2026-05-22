@@ -11,6 +11,11 @@ import type {
 } from "@/types/api";
 
 export const poolsApi = {
+  // Public: List enabled pools (all authenticated users)
+  list: async (): Promise<ListPoolsResponse> => {
+    return apiClient.get<ListPoolsResponse>("/pools?enabled_only=true");
+  },
+
   // Admin: Pool Management
   listPools: async (): Promise<ListPoolsResponse> => {
     return apiClient.get<ListPoolsResponse>("/admin/pools");
