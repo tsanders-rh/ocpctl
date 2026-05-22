@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/janitor"
+	"github.com/tsanders-rh/ocpctl/internal/poolscheduler"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/secrets"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -343,6 +344,10 @@ func main() {
 	janitorConfig := janitor.DefaultConfig()
 	j := janitor.NewJanitor(janitorConfig, st, workDir)
 
+	// Create pool scheduler
+	poolSchedulerConfig := poolscheduler.DefaultConfig()
+	ps := poolscheduler.NewScheduler(poolSchedulerConfig, st)
+
 	// Start health check server
 	healthCheck := &HealthCheckServer{
 		store:  st,
@@ -354,9 +359,10 @@ func main() {
 	// Use WaitGroup to track goroutines for graceful shutdown
 	var wg sync.WaitGroup
 
-	// Start worker and janitor in separate goroutines
+	// Start worker, janitor, and pool scheduler in separate goroutines
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
+	poolSchedulerCtx, poolSchedulerCancel := context.WithCancel(context.Background())
 
 	// Start worker
 	wg.Add(1)
@@ -378,7 +384,17 @@ func main() {
 		log.Println("Janitor goroutine exiting")
 	}()
 
-	log.Println("Worker and janitor started successfully")
+	// Start pool scheduler
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := ps.Start(poolSchedulerCtx); err != nil && err != context.Canceled {
+			log.Printf("Pool scheduler error: %v", err)
+		}
+		log.Println("Pool scheduler goroutine exiting")
+	}()
+
+	log.Println("Worker, janitor, and pool scheduler started successfully")
 
 	// Mark health check as ready (thread-safe atomic store)
 	healthCheck.ready.Store(true)
@@ -388,7 +404,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down worker and janitor...")
+	log.Println("Shutting down worker, janitor, and pool scheduler...")
 
 	// Mark as not ready during shutdown (thread-safe atomic store)
 	healthCheck.ready.Store(false)
@@ -399,6 +415,7 @@ func main() {
 	// Cancel contexts to signal goroutines to exit
 	workerCancel()
 	janitorCancel()
+	poolSchedulerCancel()
 
 	// Wait for all goroutines to complete with timeout
 	done := make(chan struct{})
