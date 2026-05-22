@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { Layers, FileCode, Home, Shield, Users, BookOpen, BookText, Clock, PackageCheck, UsersRound, Activity } from "lucide-react";
+import { Layers, FileCode, Home, Shield, Users, BookOpen, BookText, Clock, PackageCheck, UsersRound, Activity, Database } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { UserRole } from "@/types/api";
 
@@ -27,6 +27,7 @@ const adminNavigation = [
   { name: "System Monitoring", href: "/admin/monitoring", icon: Activity },
   { name: "User Management", href: "/admin/users", icon: Users },
   { name: "Team Management", href: "/admin/teams", icon: UsersRound },
+  { name: "Cluster Pools", href: "/admin/pools", icon: Database },
   { name: "Profile Updates", href: "/admin/profile-updates", icon: PackageCheck },
   { name: "Long-Running Clusters", href: "/admin/long-running-clusters", icon: Clock },
 ];
