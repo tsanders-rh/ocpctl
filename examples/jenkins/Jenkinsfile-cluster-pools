@@ -1,0 +1,389 @@
+#!/usr/bin/env groovy
+
+/**
+ * OCPCTL Cluster Pools - Jenkins Pipeline Example
+ *
+ * This pipeline demonstrates how to use OCPCTL Cluster Pools for fast,
+ * ephemeral cluster testing in Jenkins pipelines.
+ *
+ * Prerequisites:
+ * 1. Jenkins credential 'ocpctl-api-token' containing your OCPCTL API token
+ * 2. Jenkins credential 'aws-credentials' for downloading kubeconfig from S3
+ * 3. kubectl installed on Jenkins agents
+ *
+ * Features:
+ * - Instant cluster access (< 5 seconds vs 30-60 minutes)
+ * - Automatic retry if pool is empty
+ * - Guaranteed cluster release via try/finally
+ * - Parallel test execution
+ * - Detailed logging and error handling
+ */
+
+pipeline {
+    agent any
+
+    environment {
+        // OCPCTL Configuration
+        OCPCTL_URL = 'https://ocpctl.mg.dog8code.com'
+        POOL_NAME = 'ci-pool'  // Change to your pool name
+
+        // Cluster lease variables (set during execution)
+        CLUSTER_ID = ''
+        CLUSTER_NAME = ''
+        KUBECONFIG_PATH = ''
+        KUBECONFIG_FILE = "${WORKSPACE}/kubeconfig"
+    }
+
+    options {
+        timeout(time: 2, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check Pool Availability') {
+            steps {
+                script {
+                    echo "Checking pool '${POOL_NAME}' availability..."
+
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        def statsResponse = sh(
+                            script: """
+                                curl -s -X GET \
+                                  -H "Authorization: Bearer ${TOKEN}" \
+                                  ${OCPCTL_URL}/api/v1/pools/${POOL_NAME}/stats
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        def stats = readJSON text: statsResponse
+
+                        echo """
+                        Pool Statistics:
+                        ================
+                        Total Clusters:        ${stats.total_clusters}
+                        Ready Clusters:        ${stats.ready_clusters}
+                        Leased Clusters:       ${stats.leased_clusters}
+                        Provisioning Clusters: ${stats.provisioning_clusters}
+                        """.stripIndent()
+
+                        if (stats.ready_clusters == 0) {
+                            echo "⚠️  WARNING: No clusters currently available in pool"
+                            echo "Will attempt to lease with retry logic..."
+                        } else {
+                            echo "✓ Pool has ${stats.ready_clusters} clusters available"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Lease Cluster from Pool') {
+            steps {
+                script {
+                    echo "Leasing cluster from pool '${POOL_NAME}'..."
+
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        // Retry logic for when pool is temporarily empty
+                        def maxRetries = 3
+                        def retryDelay = 60 // seconds
+                        def leaseResponse = null
+
+                        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                            try {
+                                echo "Lease attempt ${attempt}/${maxRetries}..."
+
+                                leaseResponse = sh(
+                                    script: """
+                                        curl -s -w "\\n%{http_code}" -X POST \
+                                          -H "Authorization: Bearer ${TOKEN}" \
+                                          -H "Content-Type: application/json" \
+                                          -d '{
+                                            "leased_by": "jenkins-${env.JOB_NAME}-${env.BUILD_NUMBER}",
+                                            "metadata": {
+                                              "jenkins_job": "${env.JOB_NAME}",
+                                              "build_number": "${env.BUILD_NUMBER}",
+                                              "build_url": "${env.BUILD_URL}",
+                                              "git_commit": "${env.GIT_COMMIT ?: 'unknown'}",
+                                              "git_branch": "${env.GIT_BRANCH ?: 'unknown'}"
+                                            }
+                                          }' \
+                                          ${OCPCTL_URL}/api/v1/pools/${POOL_NAME}/lease
+                                    """,
+                                    returnStdout: true
+                                ).trim()
+
+                                // Split response and HTTP code
+                                def lines = leaseResponse.split('\n')
+                                def httpCode = lines[-1]
+                                def responseBody = lines[0..-2].join('\n')
+
+                                if (httpCode == '200' || httpCode == '201') {
+                                    def lease = readJSON text: responseBody
+
+                                    // Store cluster information
+                                    env.CLUSTER_ID = lease.cluster_id
+                                    env.CLUSTER_NAME = lease.cluster_name
+                                    env.KUBECONFIG_PATH = lease.kubeconfig_path
+
+                                    echo """
+                                    ✓ Cluster Leased Successfully!
+                                    =================================
+                                    Cluster ID:       ${lease.cluster_id}
+                                    Cluster Name:     ${lease.cluster_name}
+                                    API URL:          ${lease.api_url}
+                                    Console URL:      ${lease.console_url}
+                                    Leased At:        ${lease.leased_at}
+                                    Lease Expires:    ${lease.lease_expires_at}
+                                    Kubeconfig Path:  ${lease.kubeconfig_path}
+                                    """.stripIndent()
+
+                                    break // Success, exit retry loop
+
+                                } else if (httpCode == '503') {
+                                    echo "Pool is empty (HTTP ${httpCode})"
+
+                                    if (attempt < maxRetries) {
+                                        echo "Waiting ${retryDelay} seconds before retry..."
+                                        sleep(retryDelay)
+                                    } else {
+                                        error("Failed to lease cluster after ${maxRetries} attempts - pool empty")
+                                    }
+                                } else {
+                                    error("Lease failed with HTTP ${httpCode}: ${responseBody}")
+                                }
+
+                            } catch (Exception e) {
+                                if (attempt < maxRetries) {
+                                    echo "Lease attempt failed: ${e.message}"
+                                    echo "Waiting ${retryDelay} seconds before retry..."
+                                    sleep(retryDelay)
+                                } else {
+                                    throw e
+                                }
+                            }
+                        }
+
+                        if (!env.CLUSTER_ID) {
+                            error("Failed to lease cluster from pool")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Download Kubeconfig') {
+            steps {
+                script {
+                    echo "Downloading kubeconfig from: ${env.KUBECONFIG_PATH}"
+
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-credentials',
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh """
+                            aws s3 cp ${env.KUBECONFIG_PATH} ${env.KUBECONFIG_FILE}
+                            chmod 600 ${env.KUBECONFIG_FILE}
+                        """
+                    }
+
+                    echo "✓ Kubeconfig downloaded successfully"
+                }
+            }
+        }
+
+        stage('Verify Cluster Access') {
+            environment {
+                KUBECONFIG = "${KUBECONFIG_FILE}"
+            }
+            steps {
+                script {
+                    echo "Verifying cluster access..."
+
+                    sh """
+                        # Test basic connectivity
+                        kubectl cluster-info
+
+                        # Get cluster version
+                        kubectl version
+
+                        # List nodes
+                        echo "\\nCluster Nodes:"
+                        kubectl get nodes -o wide
+
+                        # Check cluster health
+                        echo "\\nCluster Health:"
+                        kubectl get clusterversion 2>/dev/null || echo "Not an OpenShift cluster"
+                    """
+
+                    echo "✓ Cluster access verified"
+                }
+            }
+        }
+
+        stage('Run Tests') {
+            environment {
+                KUBECONFIG = "${KUBECONFIG_FILE}"
+            }
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        script {
+                            echo "Running unit tests..."
+                            // Your unit tests here
+                            sh """
+                                # Example: Run your test suite
+                                # ./scripts/run-unit-tests.sh
+                                echo "✓ Unit tests passed"
+                            """
+                        }
+                    }
+                }
+
+                stage('Integration Tests') {
+                    steps {
+                        script {
+                            echo "Running integration tests on cluster..."
+                            // Your integration tests here
+                            sh """
+                                # Example: Deploy test workload
+                                kubectl create namespace test-${env.BUILD_NUMBER} || true
+
+                                # Example: Run integration tests
+                                # ./scripts/run-integration-tests.sh
+
+                                echo "✓ Integration tests passed"
+
+                                # Cleanup
+                                kubectl delete namespace test-${env.BUILD_NUMBER} --wait=false || true
+                            """
+                        }
+                    }
+                }
+
+                stage('E2E Tests') {
+                    steps {
+                        script {
+                            echo "Running end-to-end tests..."
+                            // Your E2E tests here
+                            sh """
+                                # Example: Deploy full application stack
+                                # kubectl apply -f manifests/
+
+                                # Example: Run E2E test suite
+                                # ./scripts/run-e2e-tests.sh
+
+                                echo "✓ E2E tests passed"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Collect Artifacts') {
+            when {
+                expression { env.CLUSTER_ID != null }
+            }
+            environment {
+                KUBECONFIG = "${KUBECONFIG_FILE}"
+            }
+            steps {
+                script {
+                    echo "Collecting cluster artifacts and logs..."
+
+                    sh """
+                        mkdir -p artifacts
+
+                        # Collect cluster info
+                        kubectl cluster-info dump --output-directory=artifacts/cluster-dump 2>/dev/null || true
+
+                        # Collect pod logs from test namespaces
+                        kubectl logs --all-containers --prefix -l app=test -n test-${env.BUILD_NUMBER} \
+                          > artifacts/test-logs.txt 2>/dev/null || true
+
+                        # Collect events
+                        kubectl get events -A --sort-by='.lastTimestamp' \
+                          > artifacts/events.txt 2>/dev/null || true
+                    """
+                }
+
+                archiveArtifacts artifacts: 'artifacts/**/*', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                if (env.CLUSTER_ID) {
+                    echo "Releasing cluster ${env.CLUSTER_NAME} (${env.CLUSTER_ID}) back to pool..."
+
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        try {
+                            def releaseResponse = sh(
+                                script: """
+                                    curl -s -w "\\n%{http_code}" -X POST \
+                                      -H "Authorization: Bearer ${TOKEN}" \
+                                      ${OCPCTL_URL}/api/v1/pools/clusters/${env.CLUSTER_ID}/release
+                                """,
+                                returnStdout: true
+                            ).trim()
+
+                            def lines = releaseResponse.split('\n')
+                            def httpCode = lines[-1]
+
+                            if (httpCode == '200' || httpCode == '204') {
+                                echo "✓ Cluster released successfully and returned to pool"
+                            } else {
+                                echo "⚠️  Failed to release cluster (HTTP ${httpCode})"
+                                echo "Cluster will auto-release when lease expires"
+                            }
+
+                        } catch (Exception e) {
+                            echo "⚠️  Error releasing cluster: ${e.message}"
+                            echo "Cluster will auto-release when lease expires"
+                        }
+                    }
+                } else {
+                    echo "No cluster to release (lease may have failed)"
+                }
+
+                // Cleanup workspace
+                sh "rm -f ${env.KUBECONFIG_FILE}"
+            }
+        }
+
+        success {
+            echo """
+            ========================================
+            ✓ Pipeline succeeded!
+            ========================================
+            Build:    ${env.BUILD_NUMBER}
+            Cluster:  ${env.CLUSTER_NAME ?: 'N/A'}
+            Duration: ${currentBuild.durationString}
+            ========================================
+            """.stripIndent()
+        }
+
+        failure {
+            echo """
+            ========================================
+            ✗ Pipeline failed!
+            ========================================
+            Build:    ${env.BUILD_NUMBER}
+            Cluster:  ${env.CLUSTER_NAME ?: 'N/A'}
+            Duration: ${currentBuild.durationString}
+
+            Check the logs above for details.
+            ========================================
+            """.stripIndent()
+        }
+
+        unstable {
+            echo "⚠️  Pipeline completed with warnings"
+        }
+    }
+}

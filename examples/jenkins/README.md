@@ -1,10 +1,125 @@
-# Jenkins Pipeline for OCPCTL Automated Testing
+# Jenkins Pipeline Examples for OCPCTL
 
-This directory contains a complete Jenkins pipeline implementation for provisioning OpenShift clusters via the ocpctl API and running automated tests against them.
+This directory contains Jenkins pipeline examples for OCPCTL cluster provisioning and testing.
 
-## Overview
+## 🚀 Choose Your Approach
 
-The pipeline:
+### **Option 1: Cluster Pools** (Recommended for CI/CD) ⚡
+
+**Instant cluster access** - Get a cluster in < 5 seconds instead of waiting 30-60 minutes!
+
+- ✅ **[Jenkinsfile-cluster-pools](Jenkinsfile-cluster-pools)** - Production-ready with retry logic
+- ✅ **[Jenkinsfile-cluster-pools-simple](Jenkinsfile-cluster-pools-simple)** - Minimal example
+
+**Perfect for:**
+- Automated testing in CI/CD pipelines
+- Rapid development iterations
+- Integration and E2E tests
+- Any scenario where speed matters
+
+**Timeline:** Lease cluster (< 5s) → Run tests (varies) → Release cluster (instant)
+
+---
+
+### **Option 2: Traditional Provisioning** (For custom configurations)
+
+Full cluster provisioning when you need specific customizations not available in pools.
+
+- ✅ **[Jenkinsfile](Jenkinsfile)** - Complete provisioning pipeline
+
+**Use when:**
+- You need custom cluster configurations
+- Testing specific cluster profiles not in pools
+- Long-running tests requiring dedicated clusters
+
+**Timeline:** Create (30-60 min) → Run tests (varies) → Destroy (5-10 min)
+
+---
+
+## Quick Start: Cluster Pools
+
+The fastest way to run tests on OpenShift clusters in Jenkins.
+
+### Prerequisites
+1. Jenkins credential `ocpctl-api-token` (Secret text with your API token)
+2. AWS credentials for downloading kubeconfigs from S3
+3. `kubectl` installed on Jenkins agents
+
+### Minimal Example
+
+```groovy
+pipeline {
+    agent any
+    environment {
+        OCPCTL_URL = 'https://ocpctl.mg.dog8code.com'
+        POOL_NAME = 'ci-pool'
+    }
+    stages {
+        stage('Lease & Test') {
+            steps {
+                script {
+                    // Lease cluster (< 5 seconds!)
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        def lease = sh(returnStdout: true, script: """
+                            curl -s -X POST \
+                              -H "Authorization: Bearer \${TOKEN}" \
+                              -d '{"leased_by":"jenkins-${BUILD_NUMBER}"}' \
+                              ${OCPCTL_URL}/api/v1/pools/${POOL_NAME}/lease
+                        """).trim()
+                        def json = readJSON text: lease
+                        env.CLUSTER_ID = json.cluster_id
+                    }
+
+                    // Download kubeconfig and run tests
+                    sh """
+                        aws s3 cp \${KUBECONFIG_PATH} ./kubeconfig
+                        export KUBECONFIG=./kubeconfig
+                        kubectl get nodes
+                        ./run-tests.sh
+                    """
+                }
+            }
+        }
+    }
+    post {
+        always {
+            // Release cluster back to pool
+            script {
+                withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                    sh "curl -X POST -H 'Authorization: Bearer \${TOKEN}' \
+                        ${OCPCTL_URL}/api/v1/pools/clusters/${CLUSTER_ID}/release"
+                }
+            }
+        }
+    }
+}
+```
+
+**Full examples with error handling, retries, and best practices:**
+- **[Jenkinsfile-cluster-pools](Jenkinsfile-cluster-pools)** - Production-ready (recommended)
+- **[Jenkinsfile-cluster-pools-simple](Jenkinsfile-cluster-pools-simple)** - Simplified version
+
+---
+
+## Files in This Directory
+
+| File | Description | Use Case |
+|------|-------------|----------|
+| **Jenkinsfile-cluster-pools** | Production cluster pools pipeline with retry logic, error handling, and parallel tests | **Recommended for CI/CD** - Fast, reliable, production-ready |
+| **Jenkinsfile-cluster-pools-simple** | Minimal cluster pools example | Quick start, learning, simple use cases |
+| **Jenkinsfile** | Traditional cluster provisioning pipeline | Custom configurations, long-running tests |
+| **run-tests.sh** | Example test script with cluster validation | Reference implementation for test suites |
+| **README.md** | This documentation | Setup and usage guide |
+
+---
+
+## Traditional Provisioning Pipeline
+
+For scenarios requiring custom cluster configurations or long-running dedicated clusters.
+
+### Overview
+
+The traditional pipeline:
 1. **Provisions** OpenShift clusters on AWS using ocpctl REST API
 2. **Waits** for cluster to reach READY status (30-60 minutes typically)
 3. **Retrieves** kubeconfig and cluster credentials
@@ -447,14 +562,6 @@ The pipeline supports all AWS OpenShift profiles:
 | `aws-standard-ga` | 3-node HA cluster | 1 control + 2 workers | Production-like |
 | `aws-minimal-ga` | Minimal 3-node HA | 3 combined | Cost-optimized |
 | `aws-virt-windows-minimal-ga` | With OpenShift Virtualization | 3 nodes | Windows VM testing |
-
-## Files in This Directory
-
-| File | Description |
-|------|-------------|
-| `Jenkinsfile` | Main pipeline implementation (declarative pipeline) |
-| `run-tests.sh` | Example test script with comprehensive cluster validation |
-| `README.md` | This file - setup and usage documentation |
 
 ## Additional Resources
 

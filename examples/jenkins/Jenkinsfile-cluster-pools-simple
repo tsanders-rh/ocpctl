@@ -1,0 +1,101 @@
+#!/usr/bin/env groovy
+
+/**
+ * OCPCTL Cluster Pools - Simple Jenkins Pipeline
+ *
+ * Minimal example showing the essential steps to use cluster pools in Jenkins.
+ * Perfect for getting started quickly.
+ *
+ * Prerequisites:
+ * - Jenkins credential 'ocpctl-api-token' with your OCPCTL API token
+ * - AWS credentials configured for S3 access (or use Jenkins AWS plugin)
+ */
+
+pipeline {
+    agent any
+
+    environment {
+        OCPCTL_URL = 'https://ocpctl.mg.dog8code.com'
+        POOL_NAME = 'ci-pool'
+    }
+
+    stages {
+        stage('Lease Cluster') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        def response = sh(
+                            script: """
+                                curl -s -X POST \
+                                  -H "Authorization: Bearer \${TOKEN}" \
+                                  -H "Content-Type: application/json" \
+                                  -d '{
+                                    "leased_by": "jenkins-${env.BUILD_NUMBER}",
+                                    "metadata": {
+                                      "job": "${env.JOB_NAME}",
+                                      "build": "${env.BUILD_NUMBER}"
+                                    }
+                                  }' \
+                                  ${OCPCTL_URL}/api/v1/pools/${POOL_NAME}/lease
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        def lease = readJSON text: response
+                        env.CLUSTER_ID = lease.cluster_id
+                        env.KUBECONFIG_PATH = lease.kubeconfig_path
+
+                        echo "✓ Leased cluster: ${lease.cluster_name}"
+                        echo "  API: ${lease.api_url}"
+                        echo "  Console: ${lease.console_url}"
+                    }
+                }
+            }
+        }
+
+        stage('Download Kubeconfig') {
+            steps {
+                sh """
+                    aws s3 cp ${env.KUBECONFIG_PATH} ./kubeconfig
+                    export KUBECONFIG=./kubeconfig
+                """
+                echo "✓ Kubeconfig downloaded"
+            }
+        }
+
+        stage('Run Tests') {
+            environment {
+                KUBECONFIG = "${WORKSPACE}/kubeconfig"
+            }
+            steps {
+                sh """
+                    # Verify cluster access
+                    kubectl get nodes
+
+                    # Run your tests here
+                    echo "Running tests on cluster..."
+                    # ./run-tests.sh
+
+                    echo "✓ Tests completed"
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                if (env.CLUSTER_ID) {
+                    withCredentials([string(credentialsId: 'ocpctl-api-token', variable: 'TOKEN')]) {
+                        sh """
+                            curl -s -X POST \
+                              -H "Authorization: Bearer \${TOKEN}" \
+                              ${OCPCTL_URL}/api/v1/pools/clusters/${env.CLUSTER_ID}/release
+                        """
+                        echo "✓ Cluster released back to pool"
+                    }
+                }
+            }
+        }
+    }
+}
