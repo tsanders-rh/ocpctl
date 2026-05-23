@@ -451,9 +451,9 @@ func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, s
 	// When cluster is CREATING/FAILED/DESTROYED, pool_state management is handled elsewhere
 	query := `
 		UPDATE clusters
-		SET status = $1::cluster_status,
+		SET status = $1::varchar,
 			pool_state = CASE
-				WHEN $1::cluster_status = 'READY' AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
+				WHEN $1::varchar = 'READY' AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
 				ELSE pool_state
 			END,
 			updated_at = NOW()
