@@ -169,7 +169,7 @@ spec:
   source:
     s3:
       # S3 URL format: s3://bucket-name/path/to/object
-      url: "s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+      url: "https://ocpctl-binaries.s3.us-east-1.amazonaws.com/windows-images/windows-10-oadp.qcow2"
       # Use IRSA instead of secretRef - credentials come from ServiceAccount
       # No secretRef needed!
   storage:
