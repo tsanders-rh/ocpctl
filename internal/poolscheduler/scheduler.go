@@ -105,6 +105,11 @@ func (s *Scheduler) run() {
 			log.Printf("Error checking expired clusters: %v", err)
 		}
 	}
+
+	// 3. Clean up expired failed clusters
+	if err := s.checkExpiredFailedClusters(ctx); err != nil {
+		log.Printf("Error checking expired failed clusters: %v", err)
+	}
 }
 
 // checkExpiredLeases checks for and releases expired leases
@@ -357,6 +362,91 @@ func (s *Scheduler) checkExpiredClusters(ctx context.Context) error {
 
 			log.Printf("Created POOL_REFRESH job %s for expired cluster %s", refreshJob.ID, cluster.Name)
 		}
+	}
+
+	return nil
+}
+
+// checkExpiredFailedClusters finds and destroys EXPIRED clusters that are in FAILED status
+func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
+	// Find all EXPIRED clusters that are FAILED
+	query := `
+		SELECT c.id, c.name, c.pool_id, p.name as pool_name
+		FROM clusters c
+		JOIN cluster_pools p ON c.pool_id = p.id
+		WHERE c.pool_state = 'EXPIRED'
+		  AND c.status = 'FAILED'
+		  AND c.pool_id IS NOT NULL
+	`
+
+	rows, err := s.store.Pool().Query(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	expiredFailedClusters := []struct {
+		ClusterID   string
+		ClusterName string
+		PoolID      string
+		PoolName    string
+	}{}
+
+	for rows.Next() {
+		var cluster struct {
+			ClusterID   string
+			ClusterName string
+			PoolID      string
+			PoolName    string
+		}
+		if err := rows.Scan(&cluster.ClusterID, &cluster.ClusterName, &cluster.PoolID, &cluster.PoolName); err != nil {
+			log.Printf("Error scanning expired failed cluster: %v", err)
+			continue
+		}
+		expiredFailedClusters = append(expiredFailedClusters, cluster)
+	}
+
+	for _, cluster := range expiredFailedClusters {
+		// Check if there's already a pending DESTROY job for this cluster
+		existingJobQuery := `
+			SELECT id FROM jobs
+			WHERE cluster_id = $1
+			  AND job_type = 'DESTROY'
+			  AND status IN ('PENDING', 'RUNNING')
+			LIMIT 1
+		`
+		var existingJobID string
+		err := s.store.Pool().QueryRow(ctx, existingJobQuery, cluster.ClusterID).Scan(&existingJobID)
+		if err == nil {
+			// Job already exists, skip
+			continue
+		}
+
+		log.Printf("Creating DESTROY job for expired failed cluster %s (pool=%s)",
+			cluster.ClusterName, cluster.PoolName)
+
+		// Create DESTROY job
+		destroyJob := &types.Job{
+			ID:          uuid.New().String(),
+			ClusterID:   cluster.ClusterID,
+			JobType:     types.JobTypeDestroy,
+			Status:      types.JobStatusPending,
+			Attempt:     1,
+			MaxAttempts: 3,
+			Metadata: types.JobMetadata{
+				"pool_id":      cluster.PoolID,
+				"pool_name":    cluster.PoolName,
+				"triggered_by": "pool_scheduler",
+				"reason":       "expired_failed_cleanup",
+			},
+		}
+
+		if err := s.store.Jobs.Create(ctx, nil, destroyJob); err != nil {
+			log.Printf("Error creating DESTROY job for cluster %s: %v", cluster.ClusterName, err)
+			continue
+		}
+
+		log.Printf("Created DESTROY job %s for expired failed cluster %s", destroyJob.ID, cluster.ClusterName)
 	}
 
 	return nil
