@@ -328,15 +328,21 @@ func (h *StorageHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 		return nil
 	}
 
-	// Check if user owns this cluster
+	// Check if user owns this cluster or has leased it from a pool
 	userID, err := auth.GetUserID(c)
 	if err != nil {
 		return err
 	}
 
-	if cluster.OwnerID != userID {
-		return ErrorForbidden(c, "You do not have access to this cluster")
+	// Allow access if user owns the cluster
+	if cluster.OwnerID == userID {
+		return nil
 	}
 
-	return nil
+	// Allow access if user has leased the cluster from a pool
+	if cluster.LeasedBy != nil && *cluster.LeasedBy == userID {
+		return nil
+	}
+
+	return ErrorForbidden(c, "You do not have access to this cluster")
 }
