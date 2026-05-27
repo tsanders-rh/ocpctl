@@ -371,10 +371,14 @@ func (s *PoolStore) LeaseCluster(ctx context.Context, poolName string, request *
 
 // ReleaseCluster releases a leased cluster back to the pool
 func (s *PoolStore) ReleaseCluster(ctx context.Context, clusterID string) error {
-	// Transition cluster to CLEANING state (worker will sanitize it)
+	// Transition cluster to CLEANING state and clear lease information
 	query := `
 		UPDATE clusters
 		SET pool_state = 'CLEANING',
+			leased_by = NULL,
+			leased_at = NULL,
+			lease_expires_at = NULL,
+			lease_metadata = NULL,
 			updated_at = NOW()
 		WHERE id = $1
 		AND pool_state = 'LEASED'
