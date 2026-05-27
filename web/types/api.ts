@@ -798,7 +798,7 @@ export interface UpdatePoolRequest {
 }
 
 export interface LeaseRequest {
-  leased_by: string;
+  leased_by?: string;
   duration?: number;
   metadata?: Record<string, any>;
 }

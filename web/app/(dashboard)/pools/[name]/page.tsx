@@ -52,7 +52,6 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
     try {
       setIsLeasing(true);
       const response = await poolsApi.leaseCluster(name, {
-        leased_by: "Web UI User",
         metadata: {
           source: "web-ui",
           timestamp: new Date().toISOString(),
