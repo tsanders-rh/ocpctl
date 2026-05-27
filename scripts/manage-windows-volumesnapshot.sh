@@ -324,7 +324,7 @@ echo "$SNAP_MANIFEST" | oc apply -f -
 # ---------------------------------------------------------------------------
 # Create flow: wait for snapshot
 # ---------------------------------------------------------------------------
-wait_for_snapshot 1800 5 || die "VolumeSnapshot '${SNAP_NAME}' did not become ready within 1800s."
+wait_for_snapshot 7200 10 || die "VolumeSnapshot '${SNAP_NAME}' did not become ready within 7200s."
 success "VolumeSnapshot '${SNAP_NAME}' is ready."
 
 SNAP_SIZE=$(snap_field '{.status.restoreSize}' "unknown")
