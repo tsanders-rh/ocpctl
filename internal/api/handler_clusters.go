@@ -66,12 +66,11 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 		return nil
 	}
 
-	// Check if user has leased this cluster from a pool
-	if cluster.LeasedBy != nil {
-		user, err := auth.GetUser(c)
-		if err == nil && *cluster.LeasedBy == user.Email {
-			return nil
-		}
+	// Check if cluster is leased from a pool
+	// Pool clusters are shared resources - allow any authenticated user to view leased clusters
+	// This handles both current leases and legacy leases with "Web UI User"
+	if cluster.PoolID != nil && cluster.PoolState != nil && *cluster.PoolState == types.PoolStateLeased {
+		return nil
 	}
 
 	// Check if user is team admin for this cluster's team
