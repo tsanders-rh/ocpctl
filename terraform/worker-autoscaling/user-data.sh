@@ -76,77 +76,17 @@ mkdir -p /opt/ocpctl/profiles/definitions
 aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/definitions/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
 
-# Download OpenShift installer binaries for all supported versions
-echo "Downloading OpenShift installer binaries..."
-cd /tmp
+# Download ensure-installers script (installs OpenShift/eksctl/gcloud/etc. CLIs)
+# This runs asynchronously AFTER the worker starts to avoid blocking worker startup
+echo "Downloading ensure-installers.sh script"
+aws s3 cp s3://ocpctl-binaries/scripts/ensure-installers.sh /usr/local/bin/ensure-installers.sh
+chmod +x /usr/local/bin/ensure-installers.sh
 
-# 4.18 (latest stable in 4.18 series)
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.18.35/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-mv openshift-install /usr/local/bin/openshift-install-4.18
-chmod +x /usr/local/bin/openshift-install-4.18
-rm openshift-install-linux.tar.gz README.md
-
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.18.35/ccoctl-linux.tar.gz
-tar -xzf ccoctl-linux.tar.gz
-mv ccoctl /usr/local/bin/ccoctl-4.18
-chmod +x /usr/local/bin/ccoctl-4.18
-rm ccoctl-linux.tar.gz
-
-# 4.19 (latest stable in 4.19 series)
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.19.23/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-mv openshift-install /usr/local/bin/openshift-install-4.19
-chmod +x /usr/local/bin/openshift-install-4.19
-rm openshift-install-linux.tar.gz README.md
-
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.19.23/ccoctl-linux.tar.gz
-tar -xzf ccoctl-linux.tar.gz
-mv ccoctl /usr/local/bin/ccoctl-4.19
-chmod +x /usr/local/bin/ccoctl-4.19
-rm ccoctl-linux.tar.gz
-
-# 4.20 (latest stable in 4.20 series)
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.20.5/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-mv openshift-install /usr/local/bin/openshift-install-4.20
-chmod +x /usr/local/bin/openshift-install-4.20
-rm openshift-install-linux.tar.gz README.md
-
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.20.5/ccoctl-linux.tar.gz
-tar -xzf ccoctl-linux.tar.gz
-mv ccoctl /usr/local/bin/ccoctl-4.20
-chmod +x /usr/local/bin/ccoctl-4.20
-rm ccoctl-linux.tar.gz
-
-# 4.21 (latest stable in 4.21 series)
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.21.10/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-mv openshift-install /usr/local/bin/openshift-install-4.21
-chmod +x /usr/local/bin/openshift-install-4.21
-rm openshift-install-linux.tar.gz README.md
-
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.21.10/ccoctl-linux.tar.gz
-tar -xzf ccoctl-linux.tar.gz
-mv ccoctl /usr/local/bin/ccoctl-4.21
-chmod +x /usr/local/bin/ccoctl-4.21
-rm ccoctl-linux.tar.gz
-
-# 4.22 (pre-release - use RHEL9 version for FIPS compatibility)
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/latest-4.22/openshift-install-linux.tar.gz
-tar -xzf openshift-install-linux.tar.gz
-mv openshift-install /usr/local/bin/openshift-install-4.22
-chmod +x /usr/local/bin/openshift-install-4.22
-rm openshift-install-linux.tar.gz README.md
-
-wget -q https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/latest-4.22/ccoctl-rhel9-linux.tar.gz
-tar -xzf ccoctl-rhel9-linux.tar.gz
-mv ccoctl /usr/local/bin/ccoctl-4.22-rhel9
-chmod +x /usr/local/bin/ccoctl-4.22-rhel9
-rm ccoctl-rhel9-linux.tar.gz
-
-cd -
-echo "OpenShift installer binaries installed"
+# Run ensure-installers in background (non-blocking)
+# Installer binaries will be available when needed by first CREATE job
+# The script has retry logic and won't fail the entire worker if one download fails
+echo "Running ensure-installers.sh in background (will complete after worker starts)..."
+nohup /usr/local/bin/ensure-installers.sh > /var/log/ensure-installers.log 2>&1 &
 
 # Create config directory and environment file
 mkdir -p /etc/ocpctl

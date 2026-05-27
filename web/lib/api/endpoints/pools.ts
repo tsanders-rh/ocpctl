@@ -52,4 +52,9 @@ export const poolsApi = {
   getPoolStats: async (poolName: string): Promise<PoolStats> => {
     return apiClient.get<PoolStats>(`/pools/${encodeURIComponent(poolName)}/stats`);
   },
+
+  getPoolClusters: async (poolName: string, poolState?: string): Promise<{ clusters: any[]; count: number }> => {
+    const params = poolState ? `?pool_state=${poolState}` : "";
+    return apiClient.get<{ clusters: any[]; count: number }>(`/pools/${encodeURIComponent(poolName)}/clusters${params}`);
+  },
 };

@@ -443,17 +443,112 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 	return clusters, total, nil
 }
 
+// GetPoolClusters retrieves all clusters in a specific pool
+func (s *ClusterStore) GetPoolClusters(ctx context.Context, poolID string, poolState *types.PoolState) ([]*types.Cluster, error) {
+	query := `
+		SELECT c.id, c.name, c.platform, c.cluster_type, c.version, c.profile, c.region, c.base_domain,
+			c.owner, c.owner_id, c.team, c.cost_center, c.status, c.requested_by, c.ttl_hours,
+			c.destroy_at, c.created_at, c.updated_at, c.destroyed_at,
+			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
+			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
+			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status, c.preserve_on_failure, c.credentials_mode, c.custom_pull_secret,
+			c.pool_id, c.pool_state, c.leased_by, c.leased_at, c.lease_expires_at, c.lease_metadata,
+			c.pool_generation, c.last_cleaned_at,
+			co.api_url, co.console_url
+		FROM clusters c
+		LEFT JOIN cluster_outputs co ON c.id = co.cluster_id
+		WHERE c.pool_id = $1
+	`
+
+	args := []interface{}{poolID}
+
+	if poolState != nil {
+		query += " AND c.pool_state = $2"
+		args = append(args, *poolState)
+	}
+
+	query += " ORDER BY c.created_at DESC"
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query pool clusters: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		var cluster types.Cluster
+		err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.Platform,
+			&cluster.ClusterType,
+			&cluster.Version,
+			&cluster.Profile,
+			&cluster.Region,
+			&cluster.BaseDomain,
+			&cluster.Owner,
+			&cluster.OwnerID,
+			&cluster.Team,
+			&cluster.CostCenter,
+			&cluster.Status,
+			&cluster.RequestedBy,
+			&cluster.TTLHours,
+			&cluster.DestroyAt,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.DestroyedAt,
+			&cluster.RequestTags,
+			&cluster.EffectiveTags,
+			&cluster.SSHPublicKey,
+			&cluster.OffhoursOptIn,
+			&cluster.WorkHoursEnabled,
+			&cluster.WorkHoursStart,
+			&cluster.WorkHoursEnd,
+			&cluster.WorkDays,
+			&cluster.LastWorkHoursCheck,
+			&cluster.SkipPostDeployment,
+			&cluster.CustomPostConfig,
+			&cluster.PostDeployStatus,
+			&cluster.PreserveOnFailure,
+			&cluster.CredentialsMode,
+			&cluster.CustomPullSecret,
+			&cluster.PoolID,
+			&cluster.PoolState,
+			&cluster.LeasedBy,
+			&cluster.LeasedAt,
+			&cluster.LeaseExpiresAt,
+			&cluster.LeaseMetadata,
+			&cluster.PoolGeneration,
+			&cluster.LastCleanedAt,
+			&cluster.APIURL,
+			&cluster.ConsoleURL,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan cluster: %w", err)
+		}
+		clusters = append(clusters, &cluster)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters: %w", err)
+	}
+
+	return clusters, nil
+}
+
 // UpdateStatus updates a cluster's status and automatically updates the updated_at timestamp.
 // Can be called with or without a transaction (tx can be nil for non-transactional updates).
 // Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, status types.ClusterStatus) error {
 	// When cluster becomes READY, update pool_state from PROVISIONING to READY (for pool clusters)
-	// When cluster is CREATING/FAILED/DESTROYED, pool_state management is handled elsewhere
+	// When cluster is DESTROYED or FAILED, clear pool_state (remove from pool statistics)
 	query := `
 		UPDATE clusters
 		SET status = $1::varchar,
 			pool_state = CASE
 				WHEN $1::varchar = 'READY' AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
+				WHEN $1::varchar IN ('DESTROYED', 'FAILED') AND pool_id IS NOT NULL THEN NULL
 				ELSE pool_state
 			END,
 			updated_at = NOW()
@@ -486,7 +581,10 @@ func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, s
 func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 	query := `
 		UPDATE clusters
-		SET status = $1, destroyed_at = NOW(), updated_at = NOW()
+		SET status = $1,
+			destroyed_at = NOW(),
+			updated_at = NOW(),
+			pool_state = NULL
 		WHERE id = $2
 	`
 

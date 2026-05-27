@@ -322,6 +322,7 @@ func (s *Server) setupRoutes() {
 	poolsGroup := v1.Group("/pools", auth.RequireAuthDual(s.auth, s.iamAuth))
 	poolsGroup.GET("", poolHandler.ListPools)                                                                        // List enabled pools (all authenticated users)
 	poolsGroup.GET("/:pool_name/stats", poolLeaseHandler.GetPoolStats)
+	poolsGroup.GET("/:pool_name/clusters", poolLeaseHandler.GetPoolClusters)                                         // Get clusters in pool
 	poolsGroup.POST("/:pool_name/lease", poolLeaseHandler.LeaseCluster, apimiddleware.StrictRateLimit(20))           // 20 requests/minute
 	poolsGroup.POST("/clusters/:cluster_id/release", poolLeaseHandler.ReleaseCluster, apimiddleware.StrictRateLimit(20)) // 20 requests/minute
 

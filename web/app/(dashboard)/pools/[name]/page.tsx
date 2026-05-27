@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Server, Clock, Database, TrendingUp, Settings, Info } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { poolsApi } from "@/lib/api";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 interface PoolDetailPageProps {
   params: { name: string };
@@ -22,6 +23,30 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
   const { data: pool, isLoading, error } = usePool(name, { refetchInterval: 10000 }); // Refresh every 10s
   const { data: profile } = useProfile(pool?.profile || "", { refetchInterval: 30000 }); // Fetch profile for version info
   const [isLeasing, setIsLeasing] = useState(false);
+  const [leasedClusters, setLeasedClusters] = useState<any[]>([]);
+  const [loadingClusters, setLoadingClusters] = useState(false);
+
+  // Fetch leased clusters
+  useEffect(() => {
+    if (!name) return;
+
+    const fetchLeasedClusters = async () => {
+      try {
+        setLoadingClusters(true);
+        const response = await poolsApi.getPoolClusters(name, "LEASED");
+        setLeasedClusters(response.clusters);
+      } catch (err) {
+        console.error("Failed to fetch leased clusters:", err);
+      } finally {
+        setLoadingClusters(false);
+      }
+    };
+
+    fetchLeasedClusters();
+    const interval = setInterval(fetchLeasedClusters, 10000); // Refresh every 10s
+
+    return () => clearInterval(interval);
+  }, [name]);
 
   const handleLeaseCluster = async () => {
     try {
@@ -283,6 +308,65 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Leased Clusters */}
+      {leasedClusters.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Leased Clusters</CardTitle>
+            <CardDescription>
+              Clusters currently in use from this pool
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {leasedClusters.map((cluster) => (
+                <div
+                  key={cluster.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href={`/clusters/${cluster.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {cluster.name}
+                      </Link>
+                      <Badge variant="outline" className="text-xs">
+                        {cluster.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        <span>
+                          Leased {cluster.leased_at ? formatDistanceToNow(new Date(cluster.leased_at), { addSuffix: true }) : "unknown"}
+                        </span>
+                      </div>
+                      {cluster.leased_by && (
+                        <div>
+                          By: <span className="font-medium">{cluster.leased_by}</span>
+                        </div>
+                      )}
+                      {cluster.lease_expires_at && (
+                        <div>
+                          Expires: {formatDistanceToNow(new Date(cluster.lease_expires_at), { addSuffix: true })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <Link href={`/clusters/${cluster.id}`}>
+                    <Button variant="outline" size="sm">
+                      View Details
+                    </Button>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

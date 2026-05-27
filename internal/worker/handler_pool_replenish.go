@@ -99,14 +99,6 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 		return fmt.Errorf("pool %s disabled due to %d recent cluster failures - admin intervention required", pool.Name, recentFailureCount)
 	}
 
-	// Don't create new clusters if there are already clusters being provisioned
-	// This prevents creating too many clusters when provisioning is slow
-	if stats.ProvisioningClusters > 0 {
-		log.Printf("Pool %s has %d cluster(s) still provisioning, waiting for them to complete before creating more",
-			pool.Name, stats.ProvisioningClusters)
-		return nil
-	}
-
 	// Calculate how many clusters we need to provision
 	// Total includes READY, LEASED, PROVISIONING, CLEANING, EXPIRED
 	// We want to provision enough to reach target_size

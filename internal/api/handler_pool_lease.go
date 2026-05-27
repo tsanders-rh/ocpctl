@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -136,6 +137,26 @@ func (h *PoolLeaseHandler) ReleaseCluster(c echo.Context) error {
 	ctx := c.Request().Context()
 	clusterID := c.Param("cluster_id")
 
+	// Get cluster to retrieve pool information
+	cluster, err := h.store.Clusters.GetByID(ctx, clusterID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrorNotFound(c, "cluster not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Verify cluster belongs to a pool
+	if cluster.PoolID == nil {
+		return ErrorBadRequest(c, "cluster does not belong to a pool")
+	}
+
+	// Get pool details
+	pool, err := h.store.Pools.GetByID(ctx, *cluster.PoolID)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
 	// Release cluster (transitions to CLEANING state)
 	if err := h.store.Pools.ReleaseCluster(ctx, clusterID); err != nil {
 		if err.Error() == "cluster "+clusterID+" is not leased or does not exist" {
@@ -144,12 +165,43 @@ func (h *PoolLeaseHandler) ReleaseCluster(c echo.Context) error {
 		return LogAndReturnGenericError(c, err)
 	}
 
-	LogInfo(c, "Cluster released back to pool", "cluster_id", clusterID)
+	// Get current user for audit trail
+	user, _ := auth.GetUser(c)
+	releasedBy := "unknown"
+	if user != nil {
+		releasedBy = user.Email
+	}
+
+	// Create POOL_CLEAN job to sanitize the cluster
+	cleanJob := &types.Job{
+		ID:          uuid.New().String(),
+		ClusterID:   clusterID,
+		JobType:     types.JobTypePoolClean,
+		Status:      types.JobStatusPending,
+		Attempt:     1,
+		MaxAttempts: 3,
+		Metadata: types.JobMetadata{
+			"pool_id":      *cluster.PoolID,
+			"pool_name":    pool.Name,
+			"triggered_by": "api",
+			"released_by":  releasedBy,
+		},
+	}
+
+	if err := h.store.Jobs.Create(ctx, nil, cleanJob); err != nil {
+		LogWarning(c, "Failed to create POOL_CLEAN job", "cluster_id", clusterID, "error", err)
+		// Don't fail the release if job creation fails - cluster is already in CLEANING state
+	} else {
+		LogInfo(c, "Created POOL_CLEAN job", "cluster_id", clusterID, "job_id", cleanJob.ID)
+	}
+
+	LogInfo(c, "Cluster released back to pool", "cluster_id", clusterID, "pool_name", pool.Name)
 
 	return SuccessOK(c, map[string]string{
 		"message":    "cluster released successfully",
 		"cluster_id": clusterID,
 		"next_state": "CLEANING",
+		"job_id":     cleanJob.ID,
 	})
 }
 
@@ -186,4 +238,50 @@ func (h *PoolLeaseHandler) GetPoolStats(c echo.Context) error {
 	}
 
 	return SuccessOK(c, stats)
+}
+
+// GetPoolClusters returns all clusters in a pool (optionally filtered by pool state)
+//
+//	@Summary		Get clusters in pool
+//	@Description	Returns all clusters in a specific pool, optionally filtered by pool state (READY, LEASED, etc.)
+//	@Tags			Pools
+//	@Accept			json
+//	@Produce		json
+//	@Param			pool_name	path		string	true	"Pool name"
+//	@Param			pool_state	query		string	false	"Filter by pool state: READY, LEASED, PROVISIONING, CLEANING"
+//	@Success		200			{object}	map[string]interface{}	"Returns clusters array"
+//	@Failure		404			{object}	map[string]string		"Pool not found"
+//	@Failure		500			{object}	map[string]string		"Failed to get clusters"
+//	@Security		BearerAuth
+//	@Router			/pools/{pool_name}/clusters [get]
+func (h *PoolLeaseHandler) GetPoolClusters(c echo.Context) error {
+	ctx := c.Request().Context()
+	poolName := c.Param("pool_name")
+
+	// Get pool to verify it exists and get ID
+	pool, err := h.store.Pools.GetByName(ctx, poolName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrorNotFound(c, "pool not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Parse optional pool_state filter
+	var poolState *types.PoolState
+	if stateParam := c.QueryParam("pool_state"); stateParam != "" {
+		state := types.PoolState(stateParam)
+		poolState = &state
+	}
+
+	// Get clusters
+	clusters, err := h.store.Clusters.GetPoolClusters(ctx, pool.ID, poolState)
+	if err != nil {
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return SuccessOK(c, map[string]interface{}{
+		"clusters": clusters,
+		"count":    len(clusters),
+	})
 }

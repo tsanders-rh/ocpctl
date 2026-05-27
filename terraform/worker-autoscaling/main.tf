@@ -54,6 +54,22 @@ resource "aws_launch_template" "worker" {
 
   vpc_security_group_ids = [data.aws_security_group.worker.id]
 
+  # Root volume configuration - need sufficient space for:
+  # - OS and packages (~2GB)
+  # - OpenShift installer binaries for multiple versions (~3GB)
+  # - Cluster work directories (~5GB per concurrent cluster)
+  # - Journal logs and temp files (~2GB)
+  # Minimum: 30GB for workers running up to 3 concurrent clusters
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 30
+      volume_type           = "gp3"
+      delete_on_termination = true
+      encrypted             = true
+    }
+  }
+
   # Use spot instances for cost savings (workers are stateless)
   instance_market_options {
     market_type = "spot"

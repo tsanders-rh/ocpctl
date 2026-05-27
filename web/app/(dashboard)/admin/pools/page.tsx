@@ -34,6 +34,29 @@ export default function PoolsPage() {
     },
   });
 
+  const toggleEnabledMutation = useMutation({
+    mutationFn: ({ poolName, enabled }: { poolName: string; enabled: boolean }) =>
+      poolsApi.updatePool(poolName, { enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pools"] });
+    },
+    onError: (error: any) => {
+      alert(`Failed to update pool: ${error.message || 'Unknown error'}`);
+    },
+  });
+
+  const handleToggleEnabled = async (pool: PoolWithStats) => {
+    const action = pool.enabled ? "disable" : "enable";
+    if (!confirm(`Are you sure you want to ${action} pool "${pool.display_name}"?`)) {
+      return;
+    }
+
+    toggleEnabledMutation.mutate({
+      poolName: pool.name,
+      enabled: !pool.enabled,
+    });
+  };
+
   const handleDelete = async (pool: PoolWithStats) => {
     if (pool.stats.total_clusters > 0) {
       alert(
@@ -243,14 +266,30 @@ export default function PoolsPage() {
                       )}
                     </td>
                     <td className="p-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(pool)}
-                        disabled={deletingPool === pool.name}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleEnabled(pool)}
+                          disabled={toggleEnabledMutation.isPending}
+                          title={pool.enabled ? "Disable pool" : "Enable pool"}
+                        >
+                          {pool.enabled ? (
+                            <PowerOff className="h-4 w-4 text-orange-600" />
+                          ) : (
+                            <Power className="h-4 w-4 text-green-600" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(pool)}
+                          disabled={deletingPool === pool.name}
+                          title="Delete pool"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
