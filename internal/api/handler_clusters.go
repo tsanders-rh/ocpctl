@@ -66,6 +66,14 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 		return nil
 	}
 
+	// Check if user has leased this cluster from a pool
+	if cluster.LeasedBy != nil {
+		user, err := auth.GetUser(c)
+		if err == nil && *cluster.LeasedBy == user.Email {
+			return nil
+		}
+	}
+
 	// Check if user is team admin for this cluster's team
 	user, err := auth.GetUser(c)
 	if err == nil && user.Role == types.RoleTeamAdmin {
