@@ -343,7 +343,16 @@ func (s *PoolStore) LeaseCluster(ctx context.Context, poolName string, request *
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED  -- Skip locked rows to avoid contention
 		)
-		RETURNING *
+		RETURNING id, name, platform, cluster_type, version, profile, region, base_domain,
+			owner, owner_id, team, cost_center, status, requested_by, ttl_hours, destroy_at,
+			created_at, updated_at, destroyed_at,
+			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
+			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
+			post_deploy_status, post_deploy_completed_at,
+			skip_post_deployment, custom_post_config, storage_config,
+			preserve_on_failure, credentials_mode, custom_pull_secret,
+			pool_id, pool_state, leased_by, leased_at, lease_expires_at, lease_metadata,
+			pool_generation, last_cleaned_at
 	`
 
 	cluster := &types.Cluster{}
