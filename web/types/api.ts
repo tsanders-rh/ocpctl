@@ -209,6 +209,15 @@ export interface Cluster {
   skip_post_deployment?: boolean;
   custom_post_config?: CustomPostConfig;
   post_deploy_status?: string;
+  // Pool tracking fields
+  pool_id?: string | null;
+  pool_state?: "READY" | "LEASED" | "PROVISIONING" | "CLEANING" | "EXPIRED" | null;
+  leased_by?: string | null;
+  leased_at?: string | null;
+  lease_expires_at?: string | null;
+  lease_metadata?: Record<string, any>;
+  pool_generation?: number;
+  last_cleaned_at?: string | null;
 }
 
 // Task execution info for UI visualization

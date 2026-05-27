@@ -16,11 +16,14 @@ import { EC2InstancesCard } from "@/components/clusters/EC2InstancesCard";
 import { AddonExecutionOrder } from "@/components/clusters/AddonExecutionOrder";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CustomManifestConfig } from "@/types/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { poolsApi } from "@/lib/api";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 // Helper to convert work_days bitmask to day names
 function workDaysBitmaskToNames(mask: number): string[] {
@@ -228,6 +231,7 @@ export default function ClusterDetailPage() {
   const [extendHours, setExtendHours] = useState<number>(24);
   const [selectedManifest, setSelectedManifest] = useState<CustomManifestConfig | null>(null);
   const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [isReleasing, setIsReleasing] = useState<boolean>(false);
 
   if (isLoading) {
     return <div>Loading cluster...</div>;
@@ -278,6 +282,28 @@ export default function ClusterDetailPage() {
     }
   };
 
+  const handleReleaseCluster = async () => {
+    if (!confirm(`Release cluster "${cluster.name}" back to the pool?\n\nThe cluster will be cleaned and made available for others to use.`)) {
+      return;
+    }
+
+    try {
+      setIsReleasing(true);
+      await poolsApi.releaseCluster(id);
+      toast.success("Cluster released successfully", {
+        description: "The cluster is being cleaned and will return to the pool shortly",
+      });
+      // Refresh cluster data
+      router.push("/pools");
+    } catch (err) {
+      toast.error("Failed to release cluster", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setIsReleasing(false);
+    }
+  };
+
   const jobs = jobsData?.data || [];
 
   return (
@@ -306,6 +332,38 @@ export default function ClusterDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+      {/* Pool Lease Information */}
+      {cluster.pool_id && cluster.pool_state === "LEASED" && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-blue-900">Pool Lease Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <div className="text-blue-700 font-medium">Leased By</div>
+                <div className="text-blue-900">{cluster.leased_by || "Unknown"}</div>
+              </div>
+              <div>
+                <div className="text-blue-700 font-medium">Leased</div>
+                <div className="text-blue-900">
+                  {cluster.leased_at ? formatDistanceToNow(new Date(cluster.leased_at), { addSuffix: true }) : "Unknown"}
+                </div>
+              </div>
+              <div>
+                <div className="text-blue-700 font-medium">Expires</div>
+                <div className="text-blue-900">
+                  {cluster.lease_expires_at ? formatDistanceToNow(new Date(cluster.lease_expires_at), { addSuffix: true }) : "Unknown"}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-blue-700 mt-3">
+              This cluster was leased from a pool. You can release it early using the "Release to Pool" button, or it will automatically be released when the lease expires.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Overview Card */}
         <Card className="md:col-span-2">
@@ -457,6 +515,18 @@ export default function ClusterDetailPage() {
               >
                 <ExternalLink className="mr-2 h-4 w-4" />
                 View in AWS Console
+              </Button>
+            )}
+
+            {cluster.pool_id && cluster.pool_state === "LEASED" && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleReleaseCluster}
+                disabled={isReleasing}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {isReleasing ? "Releasing..." : "Release to Pool"}
               </Button>
             )}
 
