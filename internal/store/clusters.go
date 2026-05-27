@@ -572,13 +572,13 @@ func (s *ClusterStore) GetPoolClusters(ctx context.Context, poolID string, poolS
 // Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateStatus(ctx context.Context, tx pgx.Tx, id string, status types.ClusterStatus) error {
 	// When cluster becomes READY, update pool_state from PROVISIONING to READY (for pool clusters)
-	// When cluster is DESTROYED or FAILED, clear pool_state (remove from pool statistics)
+	// When cluster is DESTROYING, DESTROYED or FAILED, clear pool_state (remove from pool statistics)
 	query := `
 		UPDATE clusters
 		SET status = $1::varchar,
 			pool_state = CASE
 				WHEN $1::varchar = 'READY' AND pool_id IS NOT NULL AND pool_state = 'PROVISIONING' THEN 'READY'
-				WHEN $1::varchar IN ('DESTROYED', 'FAILED') AND pool_id IS NOT NULL THEN NULL
+				WHEN $1::varchar IN ('DESTROYING', 'DESTROYED', 'FAILED') AND pool_id IS NOT NULL THEN NULL
 				ELSE pool_state
 			END,
 			updated_at = NOW()
