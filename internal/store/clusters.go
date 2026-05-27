@@ -308,11 +308,12 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 	return &cluster, nil
 }
 
-// OwnerIDOrTeamsFilter allows filtering by owner ID OR team membership
-// Used for team admin role to show clusters they own or manage
+// OwnerIDOrTeamsFilter allows filtering by owner ID OR team membership OR leased_by
+// Used for team admin role to show clusters they own, manage, or have leased
 type OwnerIDOrTeamsFilter struct {
-	OwnerID string
-	Teams   []string
+	OwnerID       string
+	Teams         []string
+	LeasedByEmail string
 }
 
 // OwnerIDOrLeasedByFilter allows filtering by owner ID OR leased_by email
@@ -329,7 +330,7 @@ type ListFilters struct {
 	Owner              *string                      // Filter by owner email
 	OwnerID            *string                      // Filter by owner user ID
 	Team               *string                      // Filter by specific team
-	OwnerIDOrTeams     *OwnerIDOrTeamsFilter        // Filter by owner ID OR team membership (for team admins)
+	OwnerIDOrTeams     *OwnerIDOrTeamsFilter        // Filter by owner ID OR team membership OR leased (for team admins)
 	OwnerIDOrLeasedBy  *OwnerIDOrLeasedByFilter     // Filter by owner ID OR leased_by email (for regular users)
 	Profile            *string
 	Limit              int
@@ -388,12 +389,12 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 		argPos++
 	}
 
-	// Team admin filtering: owner_id = X OR team IN (...)
+	// Team admin filtering: owner_id = X OR team IN (...) OR leased_by = Y
 	if filters.OwnerIDOrTeams != nil {
-		query += fmt.Sprintf(" AND (c.owner_id = $%d OR c.team = ANY($%d))", argPos, argPos+1)
-		countQuery += fmt.Sprintf(" AND (owner_id = $%d OR team = ANY($%d))", argPos, argPos+1)
-		args = append(args, filters.OwnerIDOrTeams.OwnerID, filters.OwnerIDOrTeams.Teams)
-		argPos += 2
+		query += fmt.Sprintf(" AND (c.owner_id = $%d OR c.team = ANY($%d) OR c.leased_by = $%d)", argPos, argPos+1, argPos+2)
+		countQuery += fmt.Sprintf(" AND (owner_id = $%d OR team = ANY($%d) OR leased_by = $%d)", argPos, argPos+1, argPos+2)
+		args = append(args, filters.OwnerIDOrTeams.OwnerID, filters.OwnerIDOrTeams.Teams, filters.OwnerIDOrTeams.LeasedByEmail)
+		argPos += 3
 	}
 
 	// Regular user filtering: owner_id = X OR leased_by = Y

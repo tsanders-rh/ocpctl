@@ -649,6 +649,7 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		// Team admins see:
 		// 1. Clusters they own
 		// 2. Clusters from teams they manage
+		// 3. Clusters they have leased
 		if filters.Team != "" {
 			// If filtering by team, ensure it's one they manage
 			canAccessTeam := false
@@ -659,17 +660,25 @@ func (h *ClusterHandler) List(c echo.Context) error {
 				}
 			}
 			if canAccessTeam {
-				// Filter by the requested team (they can access it)
-				listFilters.Team = &filters.Team
+				// Filter by the requested team OR owned OR leased
+				listFilters.OwnerIDOrTeams = &store.OwnerIDOrTeamsFilter{
+					OwnerID:       userID,
+					Teams:         []string{filters.Team}, // Only the filtered team
+					LeasedByEmail: user.Email,
+				}
 			} else {
-				// Can't filter by team they don't manage, show only owned clusters
-				listFilters.OwnerID = &userID
+				// Can't filter by team they don't manage, show only owned or leased clusters
+				listFilters.OwnerIDOrLeasedBy = &store.OwnerIDOrLeasedByFilter{
+					OwnerID:       userID,
+					LeasedByEmail: user.Email,
+				}
 			}
 		} else {
-			// No team filter: show owned clusters OR managed team clusters
+			// No team filter: show owned clusters OR managed team clusters OR leased clusters
 			listFilters.OwnerIDOrTeams = &store.OwnerIDOrTeamsFilter{
-				OwnerID: userID,
-				Teams:   user.ManagedTeams,
+				OwnerID:       userID,
+				Teams:         user.ManagedTeams,
+				LeasedByEmail: user.Email,
 			}
 		}
 
