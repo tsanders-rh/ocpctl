@@ -86,7 +86,9 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			pool_id, pool_state, leased_by, leased_at, lease_expires_at, lease_metadata,
+			pool_generation, last_cleaned_at
 		FROM clusters
 		WHERE id = $1
 	`
@@ -127,6 +129,14 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.PreserveOnFailure,
 		&cluster.CredentialsMode,
 		&cluster.CustomPullSecret,
+		&cluster.PoolID,
+		&cluster.PoolState,
+		&cluster.LeasedBy,
+		&cluster.LeasedAt,
+		&cluster.LeaseExpiresAt,
+		&cluster.LeaseMetadata,
+		&cluster.PoolGeneration,
+		&cluster.LastCleanedAt,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -152,7 +162,9 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			pool_id, pool_state, leased_by, leased_at, lease_expires_at, lease_metadata,
+			pool_generation, last_cleaned_at
 		FROM clusters
 		WHERE id = ANY($1)
 	`
@@ -201,6 +213,14 @@ func (s *ClusterStore) GetByIDs(ctx context.Context, ids []string) ([]*types.Clu
 			&cluster.PreserveOnFailure,
 			&cluster.CredentialsMode,
 			&cluster.CustomPullSecret,
+			&cluster.PoolID,
+			&cluster.PoolState,
+			&cluster.LeasedBy,
+			&cluster.LeasedAt,
+			&cluster.LeaseExpiresAt,
+			&cluster.LeaseMetadata,
+			&cluster.PoolGeneration,
+			&cluster.LastCleanedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)
@@ -224,7 +244,9 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret
+			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			pool_id, pool_state, leased_by, leased_at, lease_expires_at, lease_metadata,
+			pool_generation, last_cleaned_at
 		FROM clusters
 		WHERE id = $1
 		FOR UPDATE
@@ -266,6 +288,14 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.PreserveOnFailure,
 		&cluster.CredentialsMode,
 		&cluster.CustomPullSecret,
+		&cluster.PoolID,
+		&cluster.PoolState,
+		&cluster.LeasedBy,
+		&cluster.LeasedAt,
+		&cluster.LeaseExpiresAt,
+		&cluster.LeaseMetadata,
+		&cluster.PoolGeneration,
+		&cluster.LastCleanedAt,
 	)
 
 	if err == pgx.ErrNoRows {
