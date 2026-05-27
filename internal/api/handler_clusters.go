@@ -674,8 +674,11 @@ func (h *ClusterHandler) List(c echo.Context) error {
 		}
 
 	default:
-		// Regular users and viewers see only their own clusters
-		listFilters.OwnerID = &userID
+		// Regular users and viewers see clusters they own OR have leased from pools
+		listFilters.OwnerIDOrLeasedBy = &store.OwnerIDOrLeasedByFilter{
+			OwnerID:       userID,
+			LeasedByEmail: user.Email,
+		}
 	}
 
 	// Apply platform/profile/status filters (all roles)

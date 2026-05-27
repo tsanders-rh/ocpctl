@@ -315,17 +315,25 @@ type OwnerIDOrTeamsFilter struct {
 	Teams   []string
 }
 
+// OwnerIDOrLeasedByFilter allows filtering by owner ID OR leased_by email
+// Used for regular users to show clusters they own or have leased from pools
+type OwnerIDOrLeasedByFilter struct {
+	OwnerID       string
+	LeasedByEmail string
+}
+
 // ListFilters contains filter options for listing clusters
 type ListFilters struct {
-	Status          *types.ClusterStatus
-	Platform        *types.Platform
-	Owner           *string                   // Filter by owner email
-	OwnerID         *string                   // Filter by owner user ID
-	Team            *string                   // Filter by specific team
-	OwnerIDOrTeams  *OwnerIDOrTeamsFilter     // Filter by owner ID OR team membership (for team admins)
-	Profile         *string
-	Limit           int
-	Offset          int
+	Status             *types.ClusterStatus
+	Platform           *types.Platform
+	Owner              *string                      // Filter by owner email
+	OwnerID            *string                      // Filter by owner user ID
+	Team               *string                      // Filter by specific team
+	OwnerIDOrTeams     *OwnerIDOrTeamsFilter        // Filter by owner ID OR team membership (for team admins)
+	OwnerIDOrLeasedBy  *OwnerIDOrLeasedByFilter     // Filter by owner ID OR leased_by email (for regular users)
+	Profile            *string
+	Limit              int
+	Offset             int
 }
 
 // List retrieves clusters with optional filtering and pagination.
@@ -340,6 +348,8 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			c.request_tags, c.effective_tags, c.ssh_public_key, c.offhours_opt_in,
 			c.work_hours_enabled, c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
 			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status, c.preserve_on_failure, c.credentials_mode, c.custom_pull_secret,
+			c.pool_id, c.pool_state, c.leased_by, c.leased_at, c.lease_expires_at, c.lease_metadata,
+			c.pool_generation, c.last_cleaned_at,
 			co.api_url, co.console_url
 		FROM clusters c
 		LEFT JOIN cluster_outputs co ON c.id = co.cluster_id
@@ -383,6 +393,14 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 		query += fmt.Sprintf(" AND (c.owner_id = $%d OR c.team = ANY($%d))", argPos, argPos+1)
 		countQuery += fmt.Sprintf(" AND (owner_id = $%d OR team = ANY($%d))", argPos, argPos+1)
 		args = append(args, filters.OwnerIDOrTeams.OwnerID, filters.OwnerIDOrTeams.Teams)
+		argPos += 2
+	}
+
+	// Regular user filtering: owner_id = X OR leased_by = Y
+	if filters.OwnerIDOrLeasedBy != nil {
+		query += fmt.Sprintf(" AND (c.owner_id = $%d OR c.leased_by = $%d)", argPos, argPos+1)
+		countQuery += fmt.Sprintf(" AND (owner_id = $%d OR leased_by = $%d)", argPos, argPos+1)
+		args = append(args, filters.OwnerIDOrLeasedBy.OwnerID, filters.OwnerIDOrLeasedBy.LeasedByEmail)
 		argPos += 2
 	}
 
@@ -457,6 +475,14 @@ func (s *ClusterStore) List(ctx context.Context, filters ListFilters) ([]*types.
 			&cluster.PreserveOnFailure,
 			&cluster.CredentialsMode,
 			&cluster.CustomPullSecret,
+			&cluster.PoolID,
+			&cluster.PoolState,
+			&cluster.LeasedBy,
+			&cluster.LeasedAt,
+			&cluster.LeaseExpiresAt,
+			&cluster.LeaseMetadata,
+			&cluster.PoolGeneration,
+			&cluster.LastCleanedAt,
 			&cluster.APIURL,
 			&cluster.ConsoleURL,
 		)
