@@ -166,85 +166,6 @@ func (h *PoolCleanHandler) cleanupCluster(ctx context.Context, cluster *types.Cl
 func (h *PoolCleanHandler) deleteUserNamespaces(ctx context.Context, cli, kubeconfigPath string, cluster *types.Cluster) error {
 	log.Printf("Deleting user-created namespaces from cluster %s", cluster.Name)
 
-	// System namespaces to preserve
-	systemNamespaces := map[string]bool{
-		"default":                       true,
-		"kube-system":                   true,
-		"kube-public":                   true,
-		"kube-node-lease":               true,
-		// OpenShift system namespaces
-		"openshift":                     true,
-		"openshift-apiserver":           true,
-		"openshift-apiserver-operator":  true,
-		"openshift-authentication":      true,
-		"openshift-authentication-operator": true,
-		"openshift-cloud-controller-manager": true,
-		"openshift-cloud-credential-operator": true,
-		"openshift-cloud-network-config-controller": true,
-		"openshift-cluster-csi-drivers": true,
-		"openshift-cluster-machine-approver": true,
-		"openshift-cluster-node-tuning-operator": true,
-		"openshift-cluster-samples-operator": true,
-		"openshift-cluster-storage-operator": true,
-		"openshift-cluster-version":     true,
-		"openshift-config":              true,
-		"openshift-config-managed":      true,
-		"openshift-config-operator":     true,
-		"openshift-console":             true,
-		"openshift-console-operator":    true,
-		"openshift-console-user-settings": true,
-		"openshift-controller-manager":  true,
-		"openshift-dns":                 true,
-		"openshift-dns-operator":        true,
-		"openshift-etcd":                true,
-		"openshift-etcd-operator":       true,
-		"openshift-host-network":        true,
-		"openshift-image-registry":      true,
-		"openshift-infra":               true,
-		"openshift-ingress":             true,
-		"openshift-ingress-canary":      true,
-		"openshift-ingress-operator":    true,
-		"openshift-insights":            true,
-		"openshift-kni-infra":           true,
-		"openshift-kube-apiserver":      true,
-		"openshift-kube-apiserver-operator": true,
-		"openshift-kube-controller-manager": true,
-		"openshift-kube-controller-manager-operator": true,
-		"openshift-kube-scheduler":      true,
-		"openshift-kube-scheduler-operator": true,
-		"openshift-kube-storage-version-migrator": true,
-		"openshift-kube-storage-version-migrator-operator": true,
-		"openshift-machine-api":         true,
-		"openshift-machine-config-operator": true,
-		"openshift-marketplace":         true,
-		"openshift-monitoring":          true,
-		"openshift-multus":              true,
-		"openshift-network-diagnostics": true,
-		"openshift-network-operator":    true,
-		"openshift-node":                true,
-		"openshift-nutanix-infra":       true,
-		"openshift-oauth-apiserver":     true,
-		"openshift-openstack-infra":     true,
-		"openshift-operator-lifecycle-manager": true,
-		"openshift-operators":           true,
-		"openshift-ovirt-infra":         true,
-		"openshift-ovn-kubernetes":      true,
-		"openshift-route-controller-manager": true,
-		"openshift-sdn":                 true,
-		"openshift-service-ca":          true,
-		"openshift-service-ca-operator": true,
-		"openshift-user-workload-monitoring": true,
-		"openshift-vsphere-infra":       true,
-		// CNV/virtualization namespaces
-		"openshift-cnv":                 true,
-		// Migration toolkit namespaces
-		"openshift-migration":           true,
-		"openshift-mtc":                 true,
-		"openshift-mta":                 true,
-		// OADP namespace
-		"openshift-adp":                 true,
-	}
-
 	// Get all namespaces
 	cmd := exec.CommandContext(ctx, cli, "--kubeconfig", kubeconfigPath, "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
 	output, err := cmd.CombinedOutput()
@@ -256,8 +177,10 @@ func (h *PoolCleanHandler) deleteUserNamespaces(ctx context.Context, cli, kubeco
 	deletedCount := 0
 
 	for _, ns := range namespaces {
-		// Skip system namespaces
-		if systemNamespaces[ns] {
+		// Skip system namespaces:
+		// - default, kube-* (Kubernetes core)
+		// - openshift-* (OpenShift platform and operators)
+		if ns == "default" || strings.HasPrefix(ns, "kube-") || strings.HasPrefix(ns, "openshift-") {
 			continue
 		}
 
