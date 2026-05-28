@@ -409,29 +409,11 @@ func (w *Worker) poll() {
 		clusterMap[cluster.ID] = cluster
 	}
 
-	// Check if there's already a CREATE job running (to prevent resource exhaustion)
-	// CREATE jobs spawn heavy processes (Cluster API control plane) that can overwhelm the server
-	w.jobsMu.RLock()
-	hasRunningCreateJob := false
-	for _, activeJob := range w.activeJobs {
-		if activeJob.JobType == string(types.JobTypeCreate) {
-			hasRunningCreateJob = true
-			break
-		}
-	}
-	w.jobsMu.RUnlock()
-
 	// Process jobs concurrently with pre-fetched cluster data
 	// Pass worker context so jobs can be cancelled on shutdown
 	// Use WaitGroup to track running jobs for graceful shutdown
+	// MaxConcurrent setting controls total concurrent jobs (including CREATE jobs)
 	for _, job := range jobs {
-		// Limit CREATE jobs to 1 at a time to prevent resource exhaustion
-		// (each CREATE job spawns Cluster API control plane: etcd, kube-apiserver, etc.)
-		if job.JobType == types.JobTypeCreate && hasRunningCreateJob {
-			log.Printf("Skipping CREATE job %s - another CREATE job is already running", job.ID)
-			continue
-		}
-
 		// Some job types don't require a cluster (pool-level jobs)
 		// POOL_REPLENISH: Creates new clusters for a pool (operates on pool, not cluster)
 		requiresCluster := job.JobType != types.JobTypePoolReplenish
@@ -448,11 +430,6 @@ func (w *Worker) poll() {
 				}
 				continue
 			}
-		}
-
-		// Mark that we now have a CREATE job running if this is one
-		if job.JobType == types.JobTypeCreate {
-			hasRunningCreateJob = true
 		}
 
 		// Track this job goroutine
