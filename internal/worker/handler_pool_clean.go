@@ -175,7 +175,9 @@ func (h *PoolCleanHandler) deleteUserNamespaces(ctx context.Context, cli, kubeco
 		// OpenShift system namespaces
 		"openshift":                     true,
 		"openshift-apiserver":           true,
+		"openshift-apiserver-operator":  true,
 		"openshift-authentication":      true,
+		"openshift-authentication-operator": true,
 		"openshift-cloud-controller-manager": true,
 		"openshift-cloud-credential-operator": true,
 		"openshift-cloud-network-config-controller": true,
