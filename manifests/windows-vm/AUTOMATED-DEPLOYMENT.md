@@ -43,9 +43,54 @@ The `auto-setup-irsa.sh` script runs automatically and:
    - Duration: 5-10 minutes
    - Security: IRSA (no credentials stored)
 
-### 3. Ready to Use! (25-35 minutes total)
+### 3. Ready to Use!
 
 Once the cluster is ready, Windows VMs can be created instantly.
+
+## Deployment Performance
+
+### Snapshot-Based Import (Fast Path)
+- **Duration**: 2-3 minutes
+- **Availability**: Regions with pre-created EBS snapshots
+- **Enabled Regions**: us-east-1, us-west-2, us-east-2, eu-west-1, ap-southeast-1
+- **Automatic**: No configuration needed - automatically detected and used
+- **Total Cluster Time**: ~20-25 minutes (cluster provisioning + fast image import)
+
+### S3 Fallback (Slow Path)
+- **Duration**: 30-50 minutes
+- **Triggers**: Regions without pre-existing EBS snapshot
+- **Self-Healing**: Creates regional snapshot for future deployments
+- **Fallback**: Automatic if snapshot import fails (graceful degradation)
+- **Total Cluster Time**: ~50-70 minutes (cluster provisioning + S3 download)
+
+### How It Works
+1. Script checks for EBS snapshot in current region (SSM Parameter Store → EC2 tags)
+2. If found: Creates DataVolume from snapshot (2-3 min) - **Fast Path**
+3. If not found: Downloads from S3 (30-50 min) and creates snapshot for next time - **Slow Path**
+4. Snapshot creation is non-blocking and continues in background
+5. Future Windows VM deployments in the same region automatically use the snapshot
+
+### Snapshot Maintenance
+Snapshots are automatically:
+- Tagged with version and source information
+- Stored in SSM Parameter Store for fast discovery
+- Created on first Windows VM deployment in each region
+- Shared across all clusters in the same AWS region and account
+- Managed with `ocpctl:managed=true` tag for lifecycle management
+
+### Regional Coverage
+- **Primary Regions** (pre-created snapshots): us-east-1, us-west-2, us-east-2, eu-west-1, ap-southeast-1
+- **Expanding Regions** (auto-created on first use): All other AWS regions
+- **Check Snapshot Availability**:
+  ```bash
+  # Via SSM Parameter Store
+  aws ssm get-parameter --name /ocpctl/windows-snapshots/1.0/us-east-1 --region us-east-1
+
+  # Via EC2 tags
+  aws ec2 describe-snapshots --region us-east-1 \
+    --filters "Name=tag:ocpctl:managed,Values=true" \
+              "Name=tag:ocpctl:image-version,Values=1.0"
+  ```
 
 ## Usage
 

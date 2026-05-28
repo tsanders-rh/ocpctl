@@ -284,6 +284,50 @@ if [ $ELAPSED -ge $MAX_WAIT ]; then
     exit 1
 fi
 
+##############################################################################
+# Snapshot-Based Import (Fast Path - 2-3 minutes)
+##############################################################################
+
+log_info "Checking for pre-created Windows image EBS snapshot in region $REGION..."
+
+# Detect cluster region from infrastructure if not already set
+if [ -z "$REGION" ]; then
+    REGION=$(oc --kubeconfig="$KUBECONFIG" get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "us-east-1")
+    log_info "Auto-detected region: $REGION"
+fi
+
+SNAPSHOT_VERSION="1.0"  # Could be parameterized in future
+SNAPSHOT_ID=""
+IMPORT_METHOD="s3"  # Default to S3 fallback
+
+# Try SSM Parameter Store first
+if command -v aws &> /dev/null; then
+    SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
+    SNAPSHOT_ID=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+
+    # Fallback: Query snapshots by tags
+    if [ -z "$SNAPSHOT_ID" ] || [ "$SNAPSHOT_ID" = "None" ]; then
+        log_info "SSM parameter not found, checking EBS snapshots by tags..."
+        SNAPSHOT_ID=$(aws ec2 describe-snapshots \
+            --region "$REGION" \
+            --filters "Name=tag:ocpctl:managed,Values=true" \
+                      "Name=tag:ocpctl:image-version,Values=${SNAPSHOT_VERSION}" \
+            --owner-ids self \
+            --query 'Snapshots[0].SnapshotId' \
+            --output text 2>/dev/null || echo "")
+    fi
+fi
+
+if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
+    IMPORT_METHOD="snapshot"
+    log_info "✓ Found pre-created snapshot: $SNAPSHOT_ID"
+    log_info "  Using fast snapshot-based import (expected: 2-3 minutes)"
+else
+    log_info "⚠ No pre-created snapshot found in $REGION"
+    log_info "  Using S3 download fallback (expected: 30-50 minutes)"
+    log_info "  Note: First VM deployment will create snapshot for future use"
+fi
+
 # Auto-detect best storage class for Windows VMs
 log_info "Detecting available storage class..."
 if oc --kubeconfig="$KUBECONFIG" get storageclass ocs-storagecluster-ceph-rbd-virtualization &>/dev/null; then
@@ -410,14 +454,26 @@ elif [ "$EXISTING_DV_PHASE" != "NotFound" ]; then
 fi
 
 if [ "$EXISTING_DV_PHASE" != "Succeeded" ]; then
-    log_info "Creating DataVolume for Windows image download (using $STORAGE_CLASS)"
+    log_info "Creating DataVolume for Windows image (method: $IMPORT_METHOD, storage: $STORAGE_CLASS)"
 
-    if [ "$CREDENTIALS_MODE" = "manual" ]; then
-        # Manual mode: Use HTTP with presigned URL (IRSA doesn't work with CDI S3 imports)
-        log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
-        # IMPORTANT: Use bucket region (us-east-1), not cluster region, to avoid 301 redirects
-        PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
+    if [ "$IMPORT_METHOD" = "snapshot" ]; then
+        # Fast path: Use EBS snapshot via VolumeSnapshot
+        log_info "Creating DataVolume from EBS snapshot $SNAPSHOT_ID..."
 
+        # Create VolumeSnapshot pointing to EBS snapshot
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: windows-source-snapshot
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+spec:
+  volumeSnapshotClassName: csi-aws-vsc
+  source:
+    snapshotHandle: ${SNAPSHOT_ID}
+EOF
+
+        # Create DataVolume using VolumeSnapshot as source
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
@@ -426,6 +482,44 @@ metadata:
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   annotations:
     cdi.kubevirt.io/storage.usePopulator: "false"
+    ocpctl.io/import-method: "snapshot"
+    ocpctl.io/snapshot-id: "${SNAPSHOT_ID}"
+    ocpctl.io/snapshot-version: "${SNAPSHOT_VERSION}"
+spec:
+  contentType: kubevirt
+  source:
+    snapshot:
+      namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+      name: windows-source-snapshot
+  storage:
+    accessModes:
+      - ${ACCESS_MODE}
+    resources:
+      requests:
+        storage: 70Gi
+    storageClassName: ${STORAGE_CLASS}
+EOF
+
+        log_info "✓ DataVolume created from snapshot (import starting - 2-3 minutes)"
+
+    else
+        # Slow path: S3 download
+        if [ "$CREDENTIALS_MODE" = "manual" ]; then
+            # Manual mode: Use HTTP with presigned URL (IRSA doesn't work with CDI S3 imports)
+            log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
+            # IMPORTANT: Use bucket region (us-east-1), not cluster region, to avoid 301 redirects
+            PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
+
+            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  annotations:
+    cdi.kubevirt.io/storage.usePopulator: "false"
+    ocpctl.io/import-method: "s3"
+    ocpctl.io/create-snapshot: "true"
 spec:
   contentType: kubevirt
   source:
@@ -439,10 +533,10 @@ spec:
         storage: 70Gi
     storageClassName: ${STORAGE_CLASS}
 EOF
-    else
-        # Mint mode: Use S3 source with credentials from Secret
-        log_info "Using S3 source with credentials from Secret"
-        cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+        else
+            # Mint mode: Use S3 source with credentials from Secret
+            log_info "Using S3 source with credentials from Secret"
+            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
@@ -450,6 +544,8 @@ metadata:
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   annotations:
     cdi.kubevirt.io/storage.usePopulator: "false"
+    ocpctl.io/import-method: "s3"
+    ocpctl.io/create-snapshot: "true"
 spec:
   contentType: kubevirt
   source:
@@ -464,9 +560,11 @@ spec:
         storage: 70Gi
     storageClassName: ${STORAGE_CLASS}
 EOF
-    fi
+        fi
 
-    log_info "✓ DataVolume created (import starting - this will take 5-10 minutes)"
+        log_info "✓ DataVolume created (S3 import starting - 30-50 minutes)"
+        log_info "  Snapshot will be created automatically for future deployments"
+    fi
 fi
 
 # Apply DataSource
@@ -479,26 +577,113 @@ log_info "✓ DataSource created"
 
 # Wait for DataVolume to complete before creating VM
 log_info ""
-log_info "Waiting for Windows image download to complete before creating test VM..."
+log_info "Waiting for Windows image import to complete before creating test VM..."
 log_info "(This ensures the snapshot is created during deployment, making future VM creation faster)"
-log_info "Note: Image import can take 2-4 hours depending on download speed and conversion time"
 
-# Wait up to 4 hours for DataVolume to succeed (handles downloads, conversions, and restarts)
+# Adjust timeout and progress logging based on import method
+if [ "$IMPORT_METHOD" = "snapshot" ]; then
+    MAX_WAIT=900  # 15 minutes for snapshot restore (expected 2-3 min)
+    PROGRESS_LOG_INTERVAL=30  # Log every 30 seconds
+    log_info "Note: Snapshot-based import typically completes in 2-3 minutes"
+else
+    MAX_WAIT=14400  # 4 hours for S3 download
+    PROGRESS_LOG_INTERVAL=300  # Log every 5 minutes
+    log_info "Note: S3 import can take 30-50 minutes depending on download speed and conversion time"
+fi
+
+# Wait for DataVolume to succeed
 WAIT_TIME=0
-MAX_WAIT=14400  # 4 hours (enough for full import + cluster restart scenarios)
-PROGRESS_LOG_INTERVAL=300  # Log progress every 5 minutes
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
     DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
     DV_PROGRESS=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
 
     if [ "$DV_PHASE" = "Succeeded" ]; then
-        log_info "✓ Windows image download completed"
+        log_info "✓ Windows image import completed"
         break
     elif [ "$DV_PHASE" = "Failed" ]; then
-        log_error "DataVolume import failed"
-        # Get more details about failure
-        oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o yaml | grep -A10 "conditions:" || true
-        exit 1
+        # If snapshot import failed, fall back to S3
+        if [ "$IMPORT_METHOD" = "snapshot" ]; then
+            log_warn "⚠ Snapshot-based import failed, falling back to S3..."
+            log_warn "Error details: $(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Running")].message}' 2>/dev/null || echo 'N/A')"
+
+            # Clean up failed resources
+            log_info "Cleaning up failed snapshot import..."
+            oc --kubeconfig="$KUBECONFIG" delete datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true 2>/dev/null || true
+            oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-source-snapshot -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true
+
+            # Retry with S3 method
+            IMPORT_METHOD="s3"
+            log_info "Retrying with S3 download method..."
+
+            # Re-create DataVolume with S3 method
+            if [ "$CREDENTIALS_MODE" = "manual" ]; then
+                log_info "Generating presigned URL for Windows image (valid for 24 hours)..."
+                PRESIGNED_URL=$(aws s3 presign s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 --expires-in 86400 --region us-east-1)
+
+                cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  annotations:
+    cdi.kubevirt.io/storage.usePopulator: "false"
+    ocpctl.io/import-method: "s3"
+    ocpctl.io/create-snapshot: "true"
+spec:
+  contentType: kubevirt
+  source:
+    http:
+      url: "${PRESIGNED_URL}"
+  storage:
+    accessModes:
+      - ${ACCESS_MODE}
+    resources:
+      requests:
+        storage: 70Gi
+    storageClassName: ${STORAGE_CLASS}
+EOF
+            else
+                cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  annotations:
+    cdi.kubevirt.io/storage.usePopulator: "false"
+    ocpctl.io/import-method: "s3"
+    ocpctl.io/create-snapshot: "true"
+spec:
+  contentType: kubevirt
+  source:
+    s3:
+      url: "https://s3.us-east-1.amazonaws.com/ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+      secretRef: "cdi-s3-import-creds"
+  storage:
+    accessModes:
+      - ${ACCESS_MODE}
+    resources:
+      requests:
+        storage: 70Gi
+    storageClassName: ${STORAGE_CLASS}
+EOF
+            fi
+
+            log_info "✓ DataVolume recreated with S3 method"
+
+            # Update timeout for S3 download
+            MAX_WAIT=14400
+            PROGRESS_LOG_INTERVAL=300
+            WAIT_TIME=0
+            log_info "Resetting wait timer for S3 import (up to 4 hours)"
+            continue
+        else
+            log_error "DataVolume import failed"
+            # Get more details about failure
+            oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o yaml | grep -A10 "conditions:" || true
+            exit 1
+        fi
     fi
 
     # Log progress at intervals
@@ -513,11 +698,61 @@ while [ $WAIT_TIME -lt $MAX_WAIT ]; do
 done
 
 if [ $WAIT_TIME -ge $MAX_WAIT ]; then
-    log_error "DataVolume import timed out after ${MAX_WAIT}s (4 hours)"
-    log_error "This likely indicates a problem with the S3 presigned URL or network connectivity"
+    log_error "DataVolume import timed out after ${MAX_WAIT}s"
+    log_error "This likely indicates a problem with the import source or network connectivity"
     log_error "Current DataVolume status:"
     oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o yaml | grep -A20 "status:" || true
     exit 1
+fi
+
+# If we used S3 import, create snapshot for future use
+if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ]; then
+    log_info ""
+    log_info "DataVolume import succeeded - creating EBS snapshot for future deployments..."
+
+    # Get the PVC backing the DataVolume
+    PVC_NAME="windows"
+    PV_NAME=$(oc --kubeconfig="$KUBECONFIG" get pvc $PVC_NAME -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+
+    if [ -n "$PV_NAME" ]; then
+        # Extract EBS volume ID from PV
+        VOLUME_ID=$(oc --kubeconfig="$KUBECONFIG" get pv $PV_NAME -o jsonpath='{.spec.csi.volumeHandle}' 2>/dev/null)
+
+        if [ -n "$VOLUME_ID" ]; then
+            log_info "Creating snapshot from EBS volume: $VOLUME_ID"
+
+            # Create snapshot with tags
+            SNAPSHOT_DESCRIPTION="ocpctl Windows 10 OADP v${SNAPSHOT_VERSION} (auto-created)"
+            NEW_SNAPSHOT_ID=$(aws ec2 create-snapshot \
+                --region "$REGION" \
+                --volume-id "$VOLUME_ID" \
+                --description "$SNAPSHOT_DESCRIPTION" \
+                --tag-specifications "ResourceType=snapshot,Tags=[{Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}},{Key=ocpctl:managed,Value=true},{Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}},{Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2},{Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)},{Key=ocpctl:region,Value=${REGION}}]" \
+                --query 'SnapshotId' \
+                --output text 2>/dev/null || echo "")
+
+            if [ -n "$NEW_SNAPSHOT_ID" ]; then
+                log_info "✓ Created snapshot: $NEW_SNAPSHOT_ID (will be used for future Windows VM deployments in $REGION)"
+                log_info "  Snapshot will complete in background (20-30 minutes)"
+                log_info "  Future deployments in $REGION will complete in 2-3 minutes using this snapshot"
+
+                # Optionally store in SSM Parameter Store (requires additional IAM permissions)
+                SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
+                if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$NEW_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
+                    log_info "✓ Stored snapshot ID in SSM Parameter Store: $SNAPSHOT_PARAM"
+                else
+                    log_warn "Could not store snapshot ID in SSM Parameter Store (may lack permissions)"
+                    log_info "Snapshot can still be discovered via EC2 tags"
+                fi
+            else
+                log_warn "Failed to create snapshot - future deployments will use S3 fallback"
+            fi
+        else
+            log_warn "Could not extract EBS volume ID from PV - skipping snapshot creation"
+        fi
+    else
+        log_warn "Could not find PV for DataVolume - skipping snapshot creation"
+    fi
 fi
 
 # Create initial test VM (this triggers snapshot creation for faster subsequent clones)

@@ -27,6 +27,25 @@
       "Resource": [
         "arn:aws:s3:::ocpctl-binaries/windows-images/*"
       ]
+    },
+    {
+      "Sid": "AllowSnapshotOperations",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeSnapshots",
+        "ec2:CreateSnapshot",
+        "ec2:CreateTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowSSMParameterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:PutParameter"
+      ],
+      "Resource": "arn:aws:ssm:*:*:parameter/ocpctl/windows-snapshots/*"
     }
   ]
 }
