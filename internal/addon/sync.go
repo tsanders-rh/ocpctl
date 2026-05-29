@@ -118,7 +118,7 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 		})
 	}
 
-	// Create new record
+	// Create new record - mark as system addon
 	return s.store.Create(ctx, &types.PostConfigAddon{
 		AddonID:            addon.ID,
 		Name:               addon.Name,
@@ -131,5 +131,9 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 		DisplayName:        version.DisplayName,
 		IsDefault:          version.IsDefault,
 		MetadataJSON:       metadataJSON,
+		AddonSource:        "system",     // YAML-sourced addons are system addons
+		IsPublished:        false,         // System addons don't use published status
+		IsImmutable:        false,         // System addons are updateable when YAML changes
+		VersionNumber:      1,             // Initial version
 	})
 }

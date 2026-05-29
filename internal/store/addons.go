@@ -334,20 +334,24 @@ func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string)
 	return versions, nil
 }
 
-// Update modifies an existing add-on (only if not immutable)
+// Update modifies an existing add-on (only if not published and immutable)
 func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *types.PostConfigAddon) error {
-	// First check if addon is immutable
+	// Check if addon is a published user addon (which are immutable)
+	var isPublished bool
 	var isImmutable bool
-	checkQuery := `SELECT is_immutable FROM post_config_addons WHERE id = $1`
-	if err := s.pool.QueryRow(ctx, checkQuery, id).Scan(&isImmutable); err != nil {
+	var addonSource string
+	checkQuery := `SELECT is_published, is_immutable, addon_source FROM post_config_addons WHERE id = $1`
+	if err := s.pool.QueryRow(ctx, checkQuery, id).Scan(&isPublished, &isImmutable, &addonSource); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
-		return fmt.Errorf("check immutability: %w", err)
+		return fmt.Errorf("check addon status: %w", err)
 	}
 
-	if isImmutable {
-		return fmt.Errorf("cannot update immutable addon")
+	// Only block updates for published user addons (which are immutable for version control)
+	// System addons can always be updated when YAML changes
+	if addonSource == "user" && isPublished && isImmutable {
+		return fmt.Errorf("cannot update published addon (clone to create new version)")
 	}
 
 	query := `
