@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import Link from "next/link";
+import { DependencyGraph } from "@/components/addons/DependencyGraph";
 
 export default function AddonDetailPage() {
   const params = useParams();
@@ -181,6 +182,7 @@ export default function AddonDetailPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
+          <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
           <TabsTrigger value="metadata">Metadata</TabsTrigger>
           <TabsTrigger value="history">Version History</TabsTrigger>
         </TabsList>
@@ -306,6 +308,11 @@ export default function AddonDetailPage() {
         {/* Configuration Tab */}
         <TabsContent value="configuration" className="space-y-4">
           <ConfigurationView config={addon.config} />
+        </TabsContent>
+
+        {/* Dependencies Tab */}
+        <TabsContent value="dependencies" className="space-y-4">
+          <DependencyGraph config={addon.config} />
         </TabsContent>
 
         {/* Metadata Tab */}
