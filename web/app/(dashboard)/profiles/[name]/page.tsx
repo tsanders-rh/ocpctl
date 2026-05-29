@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfiles";
+import { useAddons } from "@/lib/hooks/useAddons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export default function ProfileDetailPage() {
   const router = useRouter();
   const profileName = params.name as string;
   const { data: profile, isLoading, error } = useProfile(profileName);
+  const { data: addons } = useAddons();
 
   if (isLoading) {
     return (
@@ -218,27 +220,57 @@ export default function ProfileDetailPage() {
             <CardTitle>Features</CardTitle>
             <CardDescription>Cluster capabilities and options</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {profile.features.off_hours_scaling && (
-                <Badge variant="secondary">Off-hours Scaling</Badge>
-              )}
-              {profile.features.fips_mode && (
-                <Badge variant="secondary">FIPS Mode</Badge>
-              )}
-              {profile.features.private_cluster && (
-                <Badge variant="secondary">Private Cluster</Badge>
-              )}
-              {profile.compute.workers?.autoscaling && (
-                <Badge variant="secondary">Worker Autoscaling</Badge>
-              )}
-            </div>
+          <CardContent>
+            <dl className="space-y-2">
+              <div className="flex justify-between items-center">
+                <dt className="text-sm text-muted-foreground">Off-hours Scaling</dt>
+                <dd className="text-sm">
+                  {profile.features.off_hours_scaling ? (
+                    <Badge variant="default" className="text-xs">Enabled</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between items-center">
+                <dt className="text-sm text-muted-foreground">FIPS Mode</dt>
+                <dd className="text-sm">
+                  {profile.features.fips_mode ? (
+                    <Badge variant="default" className="text-xs">Enabled</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between items-center">
+                <dt className="text-sm text-muted-foreground">Private Cluster</dt>
+                <dd className="text-sm">
+                  {profile.features.private_cluster ? (
+                    <Badge variant="default" className="text-xs">Enabled</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between items-center">
+                <dt className="text-sm text-muted-foreground">Worker Autoscaling</dt>
+                <dd className="text-sm">
+                  {profile.compute.workers?.autoscaling ? (
+                    <Badge variant="default" className="text-xs">Enabled</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                  )}
+                </dd>
+              </div>
+            </dl>
 
             {profile.credentials_mode && (
-              <div className="border-t pt-4">
-                <div className="text-sm font-medium mb-2">Credentials Mode</div>
-                <div className="text-sm">
-                  <Badge variant="outline">{profile.credentials_mode}</Badge>
+              <div className="border-t pt-4 mt-4">
+                <div className="flex justify-between items-center">
+                  <dt className="text-sm text-muted-foreground">Credentials Mode</dt>
+                  <dd className="text-sm">
+                    <Badge variant="outline">{profile.credentials_mode}</Badge>
+                  </dd>
                 </div>
               </div>
             )}
@@ -280,8 +312,71 @@ export default function ProfileDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Post-Deployment */}
-        {profile.post_deployment?.enabled && (
+        {/* Default Addons */}
+        {profile.default_addons && profile.default_addons.length > 0 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Post-Deployment Addons</CardTitle>
+              <CardDescription>
+                Automatically installed after cluster creation
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {profile.default_addons.map((addonRef) => {
+                  // Find the actual addon by matching addon_id and channel
+                  const matchedAddon = addons?.find(
+                    (a) =>
+                      a.addonId === addonRef.addon_id &&
+                      (!addonRef.channel || a.version === addonRef.channel)
+                  );
+
+                  if (!matchedAddon) {
+                    return (
+                      <div
+                        key={addonRef.addon_id}
+                        className="p-3 bg-muted rounded-md opacity-50"
+                      >
+                        <div className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Addon</Badge>
+                          {addonRef.addon_id}
+                          {addonRef.channel && (
+                            <Badge variant="secondary" className="text-xs">{addonRef.channel}</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Addon not found in catalog
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Link
+                      key={addonRef.addon_id}
+                      href={`/addons/${matchedAddon.id}`}
+                      className="block p-3 bg-muted rounded-md hover:bg-muted/80 transition-colors"
+                    >
+                      <div className="font-medium flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">Addon</Badge>
+                        {matchedAddon.name}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {matchedAddon.displayName || matchedAddon.version}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Click to view configuration and dependencies
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Post-Deployment (Legacy - for inline configurations) */}
+        {profile.post_deployment?.enabled && !profile.default_addons?.length && (
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Post-Deployment Configuration</CardTitle>

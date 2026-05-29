@@ -952,15 +952,15 @@ export default function NewClusterPage() {
                   </div>
                 </div>
 
-                {/* User-Defined Post-Configuration */}
+                {/* Post-Deployment Configuration */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    User-Defined Post-Configuration
+                    Post-Deployment Configuration
                   </h3>
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      Customize cluster post-deployment with add-ons, templates, or custom configurations.
-                      Configure operators, scripts, manifests, and Helm charts to be installed after cluster creation.
+                      Extend cluster capabilities after deployment. Select pre-approved add-ons from our curated library,
+                      or create custom configurations with operators, scripts, manifests, and Helm charts.
                     </p>
                     <CustomPostConfigEditor
                       platform={watchedValues.cluster_type}

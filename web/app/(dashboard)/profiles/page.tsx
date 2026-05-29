@@ -216,77 +216,54 @@ export default function ProfilesPage() {
 
               <div className="border-t pt-4">
                 <div className="text-sm text-muted-foreground mb-2">Features</div>
-                <div className="flex flex-wrap gap-1">
-                  {profile.features.off_hours_scaling && (
-                    <Badge variant="secondary">Off-hours Scaling</Badge>
-                  )}
-                  {profile.features.fips_mode && (
-                    <Badge variant="secondary">FIPS Mode</Badge>
-                  )}
-                  {profile.features.private_cluster && (
-                    <Badge variant="secondary">Private</Badge>
-                  )}
-                  {profile.compute.workers?.autoscaling && (
-                    <Badge variant="secondary">Autoscaling</Badge>
-                  )}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Off-hours Scaling</span>
+                    <Badge variant={profile.features.off_hours_scaling ? "default" : "secondary"} className="text-xs">
+                      {profile.features.off_hours_scaling ? "On" : "Off"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">FIPS Mode</span>
+                    <Badge variant={profile.features.fips_mode ? "default" : "secondary"} className="text-xs">
+                      {profile.features.fips_mode ? "On" : "Off"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Private Cluster</span>
+                    <Badge variant={profile.features.private_cluster ? "default" : "secondary"} className="text-xs">
+                      {profile.features.private_cluster ? "On" : "Off"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Autoscaling</span>
+                    <Badge variant={profile.compute.workers?.autoscaling ? "default" : "secondary"} className="text-xs">
+                      {profile.compute.workers?.autoscaling ? "On" : "Off"}
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
-              {profile.post_deployment?.enabled && (
+              {profile.default_addons && profile.default_addons.length > 0 && (
                 <div className="border-t pt-4">
                   <div className="text-sm text-muted-foreground mb-2">
-                    Post-Deployment
-                  </div>
-                  <div className="text-xs text-muted-foreground mb-2">
-                    Automatically installed after cluster creation:
+                    Post-Deployment Addons
                   </div>
                   <div className="space-y-2">
-                    {profile.post_deployment.operators?.map((operator) => (
-                      <div key={operator.name} className="text-sm">
+                    {profile.default_addons.map((addon) => (
+                      <div key={addon.addon_id} className="text-sm">
                         <div className="font-medium flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">Operator</Badge>
-                          {operator.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground ml-16">
-                          Namespace: {operator.namespace} • Channel: {operator.channel}
-                        </div>
-                      </div>
-                    ))}
-                    {profile.post_deployment.scripts?.map((script) => (
-                      <div key={script.name} className="text-sm">
-                        <div className="font-medium flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">Script</Badge>
-                          {script.name}
-                        </div>
-                        {script.description && (
-                          <div className="text-xs text-muted-foreground ml-14">
-                            {script.description}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {profile.post_deployment.manifests?.map((manifest) => (
-                      <div key={manifest.name} className="text-sm">
-                        <div className="font-medium flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">Manifest</Badge>
-                          {manifest.name}
-                        </div>
-                      </div>
-                    ))}
-                    {profile.post_deployment.helm_charts?.map((chart) => (
-                      <div key={chart.name} className="text-sm">
-                        <div className="font-medium flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">Helm</Badge>
-                          {chart.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground ml-12">
-                          Chart: {chart.chart} • Namespace: {chart.namespace}
+                          <Badge variant="outline" className="text-xs">Addon</Badge>
+                          {addon.addon_id}
+                          {addon.channel && (
+                            <Badge variant="secondary" className="text-xs">{addon.channel}</Badge>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                   <div className="text-xs text-muted-foreground mt-2">
-                    💡 Can be skipped during cluster creation
+                    Automatically installed after cluster creation
                   </div>
                 </div>
               )}
