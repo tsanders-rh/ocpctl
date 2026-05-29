@@ -17,8 +17,8 @@ import (
 
 // HandleGKECreate handles GKE cluster creation using gcloud CLI
 func (h *CreateHandler) HandleGKECreate(ctx context.Context, job *types.Job, cluster *types.Cluster, prof *profile.Profile, workDir string) error {
-	log.Printf("Starting GKE cluster creation for %s in project %s, region %s",
-		cluster.Name, prof.PlatformConfig.GKE, cluster.Region)
+	log.Printf("Starting GKE cluster creation for %s in region %s",
+		cluster.Name, cluster.Region)
 
 	// Verify GCP authentication
 	if err := VerifyGCPAuthentication(ctx, getGCPProject(prof)); err != nil {
