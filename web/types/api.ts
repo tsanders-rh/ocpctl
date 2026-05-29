@@ -323,6 +323,11 @@ export interface HelmChartConfig {
   values?: Record<string, any>;
 }
 
+export interface AddonReference {
+  addon_id: string;
+  channel?: string;
+}
+
 // Profile Deployment Metrics
 export interface ProfileDeploymentMetrics {
   profile: string;
@@ -413,6 +418,7 @@ export interface Profile {
     gcp?: Record<string, any>;
   };
   post_deployment?: PostDeploymentConfig;
+  default_addons?: AddonReference[];
   deployment_metrics?: ProfileDeploymentMetrics;
 }
 
