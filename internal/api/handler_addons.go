@@ -56,9 +56,66 @@ type AddonsListResponse struct {
 	Total      int                            `json:"total" example:"3"`
 }
 
-// List returns all enabled add-ons, optionally filtered by category, platform, profile capabilities, and search query
+// ListAll returns all system addons and published user addons as individual records
 //
-//	@Summary		List add-ons
+//	@Summary		List all addons
+//	@Description	Returns all system addons and published user addons. Supports filtering by category, platform, and search query.
+//	@Tags			post-config
+//	@Produce		json
+//	@Param			category	query		string	false	"Filter by category"
+//	@Param			platform	query		string	false	"Filter by platform"
+//	@Param			search		query		string	false	"Search in name and description"
+//	@Success		200			{array}		types.PostConfigAddon
+//	@Failure		401			{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons [get]
+func (h *AddonsHandler) ListAll(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// Get query parameters
+	category := c.QueryParam("category")
+	platform := c.QueryParam("platform")
+	search := c.QueryParam("search")
+
+	var categoryPtr *string
+	var platformPtr *string
+
+	if category != "" {
+		categoryPtr = &category
+	}
+
+	if platform != "" {
+		platformPtr = &platform
+	}
+
+	// Retrieve add-ons from database (system + published user addons)
+	addons, err := h.store.PostConfigAddons.List(ctx, categoryPtr, platformPtr)
+	if err != nil {
+		log.Printf("Error listing add-ons: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Client-side search filtering if search parameter is provided
+	if search != "" {
+		filteredAddons := make([]types.PostConfigAddon, 0)
+		searchLower := toLower(search)
+		for _, addon := range addons {
+			if contains(toLower(addon.Name), searchLower) ||
+			   contains(toLower(addon.Description), searchLower) ||
+			   contains(toLower(addon.AddonID), searchLower) {
+				filteredAddons = append(filteredAddons, addon)
+			}
+		}
+		addons = filteredAddons
+	}
+
+	return c.JSON(200, addons)
+}
+
+// List returns all enabled add-ons, optionally filtered by category, platform, profile capabilities, and search query
+// DEPRECATED: Use ListAll instead
+//
+//	@Summary		List add-ons (grouped by version)
 //	@Description	Lists all enabled post-config add-ons with version information. Supports filtering by category, platform, profile capabilities, and search query. Each add-on includes multiple versions with one marked as default.
 //	@Tags			post-config
 //	@Produce		json
@@ -69,7 +126,7 @@ type AddonsListResponse struct {
 //	@Success		200			{object}	AddonsListResponse
 //	@Failure		401			{object}	ErrorResponse
 //	@Security		BearerAuth
-//	@Router			/post-config/addons [get]
+//	@Router			/post-config/addons/grouped [get]
 func (h *AddonsHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
