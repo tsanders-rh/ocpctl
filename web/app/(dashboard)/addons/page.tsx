@@ -78,7 +78,7 @@ export default function AddonsPage() {
     return allAddons.filter(
       (addon) =>
         addon.name.toLowerCase().includes(query) ||
-        addon.addon_id.toLowerCase().includes(query) ||
+        addon.addonId.toLowerCase().includes(query) ||
         addon.description.toLowerCase().includes(query)
     );
   }, [allAddons, searchQuery]);
@@ -91,19 +91,19 @@ export default function AddonsPage() {
     return myAddons.filter(
       (addon) =>
         addon.name.toLowerCase().includes(query) ||
-        addon.addon_id.toLowerCase().includes(query) ||
+        addon.addonId.toLowerCase().includes(query) ||
         addon.description.toLowerCase().includes(query)
     );
   }, [myAddons, searchQuery]);
 
   // Separate system and user addons
   const systemAddons = useMemo(
-    () => filteredAllAddons.filter((a) => a.addon_source === "system"),
+    () => filteredAllAddons.filter((a) => a.addonSource === "system"),
     [filteredAllAddons]
   );
 
   const userAddons = useMemo(
-    () => filteredAllAddons.filter((a) => a.addon_source === "user"),
+    () => filteredAllAddons.filter((a) => a.addonSource === "user"),
     [filteredAllAddons]
   );
 
@@ -332,19 +332,19 @@ function AddonCard({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <h3 className="font-semibold">{addon.name}</h3>
-            <p className="text-sm text-muted-foreground">{addon.addon_id}</p>
+            <p className="text-sm text-muted-foreground">{addon.addonId}</p>
           </div>
-          {addon.addon_source === "system" && (
+          {addon.addonSource === "system" && (
             <Badge variant="secondary" className="text-xs">
               System
             </Badge>
           )}
-          {addon.is_published && addon.addon_source === "user" && (
+          {addon.isPublished && addon.addonSource === "user" && (
             <Badge variant="default" className="text-xs">
               Published
             </Badge>
           )}
-          {!addon.is_published && addon.addon_source === "user" && (
+          {!addon.isPublished && addon.addonSource === "user" && (
             <Badge variant="outline" className="text-xs">
               Draft
             </Badge>
@@ -361,23 +361,23 @@ function AddonCard({
           <Badge className={getCategoryColor(addon.category)}>
             {addon.category}
           </Badge>
-          {addon.supported_platforms?.slice(0, 2).map((platform: string) => (
+          {addon.supportedPlatforms?.slice(0, 2).map((platform: string) => (
             <Badge key={platform} variant="outline" className="text-xs">
               {platform}
             </Badge>
           ))}
-          {(addon.supported_platforms?.length || 0) > 2 && (
+          {(addon.supportedPlatforms?.length || 0) > 2 && (
             <Badge variant="outline" className="text-xs">
-              +{(addon.supported_platforms?.length || 0) - 2}
+              +{(addon.supportedPlatforms?.length || 0) - 2}
             </Badge>
           )}
         </div>
 
         {/* Version Info */}
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{addon.display_name || addon.version}</span>
-          {addon.version_number && (
-            <span>v{addon.version_number}</span>
+          <span>{addon.displayName || addon.version}</span>
+          {addon.versionNumber && (
+            <span>v{addon.versionNumber}</span>
           )}
         </div>
       </div>

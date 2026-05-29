@@ -2,24 +2,24 @@ import { apiClient } from "../client";
 
 export interface PostConfigAddon {
   id: string;
-  addon_id: string;
+  addonId: string;
   name: string;
   description: string;
   category: string;
-  supported_platforms: string[];
+  supportedPlatforms: string[];
   enabled: boolean;
   version: string;
-  display_name: string;
-  is_default: boolean;
-  addon_source: "system" | "user";
-  created_by_user_id?: string;
-  is_published: boolean;
-  is_immutable: boolean;
-  published_at?: string;
-  parent_version_id?: string;
-  version_number: number;
-  created_at: string;
-  updated_at: string;
+  displayName: string;
+  isDefault: boolean;
+  addonSource: "system" | "user";
+  createdByUserId?: string;
+  isPublished: boolean;
+  isImmutable: boolean;
+  publishedAt?: string;
+  parentVersionId?: string;
+  versionNumber: number;
+  createdAt: string;
+  updatedAt: string;
   metadata?: {
     requires_bare_metal?: boolean;
     required_capabilities?: string[];
@@ -65,14 +65,14 @@ export interface ListAddonsParams {
 }
 
 export interface CreateAddonRequest {
-  addon_id: string;
+  addonId: string;
   name: string;
   description: string;
   category: string;
-  supported_platforms: string[];
+  supportedPlatforms: string[];
   enabled?: boolean;
   version: string;
-  display_name: string;
+  displayName: string;
   config: PostConfigAddon["config"];
   metadata?: PostConfigAddon["metadata"];
 }
@@ -82,7 +82,7 @@ export interface UpdateAddonRequest {
   description?: string;
   category?: string;
   enabled?: boolean;
-  display_name?: string;
+  displayName?: string;
   config?: PostConfigAddon["config"];
   metadata?: PostConfigAddon["metadata"];
 }

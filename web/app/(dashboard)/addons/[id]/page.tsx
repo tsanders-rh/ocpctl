@@ -103,9 +103,9 @@ export default function AddonDetailPage() {
     );
   }
 
-  const isUserAddon = addon.addon_source === "user";
-  const canEdit = isUserAddon && !addon.is_published;
-  const canPublish = isUserAddon && !addon.is_published;
+  const isUserAddon = addon.addonSource === "user";
+  const canEdit = isUserAddon && !addon.isPublished;
+  const canPublish = isUserAddon && !addon.isPublished;
   const canDelete = isUserAddon;
 
   return (
@@ -121,7 +121,7 @@ export default function AddonDetailPage() {
               <PackageCheck className="h-6 w-6" />
               <h1 className="text-3xl font-bold">{addon.name}</h1>
             </div>
-            <p className="text-muted-foreground mt-1">{addon.addon_id}</p>
+            <p className="text-muted-foreground mt-1">{addon.addonId}</p>
           </div>
         </div>
 
@@ -159,22 +159,22 @@ export default function AddonDetailPage() {
 
       {/* Status Badges */}
       <div className="flex gap-2">
-        {addon.addon_source === "system" && (
+        {addon.addonSource === "system" && (
           <Badge variant="secondary">System Addon</Badge>
         )}
-        {addon.is_published && addon.addon_source === "user" && (
+        {addon.isPublished && addon.addonSource === "user" && (
           <Badge variant="default">
             <CheckCircle className="h-3 w-3 mr-1" />
             Published
           </Badge>
         )}
-        {!addon.is_published && addon.addon_source === "user" && (
+        {!addon.isPublished && addon.addonSource === "user" && (
           <Badge variant="outline">
             <Clock className="h-3 w-3 mr-1" />
             Draft
           </Badge>
         )}
-        {addon.is_immutable && <Badge variant="secondary">Immutable</Badge>}
+        {addon.isImmutable && <Badge variant="secondary">Immutable</Badge>}
       </div>
 
       {/* Main Content */}
@@ -204,11 +204,11 @@ export default function AddonDetailPage() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Version</dt>
-                  <dd className="text-sm font-medium">{addon.display_name || addon.version}</dd>
+                  <dd className="text-sm font-medium">{addon.displayName || addon.version}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Version Number</dt>
-                  <dd className="text-sm font-medium">v{addon.version_number}</dd>
+                  <dd className="text-sm font-medium">v{addon.versionNumber}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Enabled</dt>
@@ -226,7 +226,7 @@ export default function AddonDetailPage() {
             <Card className="p-6">
               <h3 className="font-semibold mb-3">Supported Platforms</h3>
               <div className="flex flex-wrap gap-2">
-                {addon.supported_platforms.map((platform) => (
+                {addon.supportedPlatforms.map((platform) => (
                   <Badge key={platform} variant="outline">
                     {platform}
                   </Badge>
@@ -284,20 +284,20 @@ export default function AddonDetailPage() {
               <div className="flex justify-between">
                 <dt className="text-sm text-muted-foreground">Created</dt>
                 <dd className="text-sm font-medium">
-                  {new Date(addon.created_at).toLocaleString()}
+                  {new Date(addon.createdAt).toLocaleString()}
                 </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-sm text-muted-foreground">Updated</dt>
                 <dd className="text-sm font-medium">
-                  {new Date(addon.updated_at).toLocaleString()}
+                  {new Date(addon.updatedAt).toLocaleString()}
                 </dd>
               </div>
-              {addon.published_at && (
+              {addon.publishedAt && (
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Published</dt>
                   <dd className="text-sm font-medium">
-                    {new Date(addon.published_at).toLocaleString()}
+                    {new Date(addon.publishedAt).toLocaleString()}
                   </dd>
                 </div>
               )}
@@ -331,14 +331,14 @@ export default function AddonDetailPage() {
             <dl className="space-y-2">
               <div className="flex justify-between">
                 <dt className="text-sm text-muted-foreground">Version Number</dt>
-                <dd className="text-sm font-medium">v{addon.version_number}</dd>
+                <dd className="text-sm font-medium">v{addon.versionNumber}</dd>
               </div>
-              {addon.parent_version_id && (
+              {addon.parentVersionId && (
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Parent Version</dt>
                   <dd className="text-sm font-medium">
                     <Link
-                      href={`/addons/${addon.parent_version_id}`}
+                      href={`/addons/${addon.parentVersionId}`}
                       className="text-blue-600 hover:underline"
                     >
                       View Parent

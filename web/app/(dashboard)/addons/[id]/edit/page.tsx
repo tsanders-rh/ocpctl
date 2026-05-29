@@ -94,9 +94,9 @@ export default function EditAddonPage() {
         name: addon.name,
         description: addon.description,
         category: addon.category as any,
-        supported_platforms: addon.supported_platforms,
+        supported_platforms: addon.supportedPlatforms,
         enabled: addon.enabled,
-        display_name: addon.display_name,
+        display_name: addon.displayName,
       });
 
       // Load configuration
@@ -166,7 +166,7 @@ export default function EditAddonPage() {
   }
 
   // Check if addon can be edited
-  if (addon.is_published || addon.addon_source === "system") {
+  if (addon.isPublished || addon.addonSource === "system") {
     return (
       <div className="space-y-6">
         <Button variant="ghost" onClick={() => router.back()}>
@@ -179,7 +179,7 @@ export default function EditAddonPage() {
             <div>
               <p className="font-semibold">This addon cannot be edited</p>
               <p className="text-sm mt-1">
-                {addon.is_published
+                {addon.isPublished
                   ? "Published addons are immutable. Clone this addon to create a new editable version."
                   : "System addons cannot be edited through the UI."}
               </p>
@@ -203,7 +203,7 @@ export default function EditAddonPage() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold">Edit Addon</h1>
-          <p className="text-muted-foreground mt-1">{addon.addon_id}</p>
+          <p className="text-muted-foreground mt-1">{addon.addonId}</p>
         </div>
       </div>
 
@@ -217,7 +217,7 @@ export default function EditAddonPage() {
                 <Label htmlFor="addon_id">Addon ID</Label>
                 <Input
                   id="addon_id"
-                  value={addon.addon_id}
+                  value={addon.addonId}
                   disabled
                   className="bg-muted"
                 />

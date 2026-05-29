@@ -37,17 +37,17 @@ const PLATFORMS = ["openshift", "eks", "gke", "iks"];
 
 // Form schema
 const addonSchema = z.object({
-  addon_id: z
+  addonId: z
     .string()
     .min(2, "Addon ID must be at least 2 characters")
     .regex(/^[a-z0-9-]+$/, "Addon ID must contain only lowercase letters, numbers, and hyphens"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
   category: z.enum(CATEGORIES as [string, ...string[]]),
-  supported_platforms: z.array(z.string()).min(1, "Select at least one platform"),
+  supportedPlatforms: z.array(z.string()).min(1, "Select at least one platform"),
   enabled: z.boolean(),
   version: z.string().min(1, "Version is required"),
-  display_name: z.string().min(1, "Display name is required"),
+  displayName: z.string().min(1, "Display name is required"),
 });
 
 type AddonFormData = z.infer<typeof addonSchema>;
@@ -85,18 +85,18 @@ export default function NewAddonPage() {
     resolver: zodResolver(addonSchema),
     defaultValues: {
       enabled: true,
-      supported_platforms: [],
+      supportedPlatforms: [],
     },
   });
 
-  const selectedPlatforms = watch("supported_platforms") || [];
+  const selectedPlatforms = watch("supportedPlatforms") || [];
 
   const togglePlatform = (platform: string) => {
     const current = selectedPlatforms;
     const updated = current.includes(platform)
       ? current.filter((p) => p !== platform)
       : [...current, platform];
-    setValue("supported_platforms", updated);
+    setValue("supportedPlatforms", updated);
   };
 
   const onSubmit = async (data: AddonFormData) => {
@@ -140,16 +140,16 @@ export default function NewAddonPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="addon_id">
+                <Label htmlFor="addonId">
                   Addon ID <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="addon_id"
+                  id="addonId"
                   placeholder="my-custom-addon"
-                  {...register("addon_id")}
+                  {...register("addonId")}
                 />
-                {errors.addon_id && (
-                  <p className="text-sm text-red-600">{errors.addon_id.message}</p>
+                {errors.addonId && (
+                  <p className="text-sm text-red-600">{errors.addonId.message}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
                   Lowercase letters, numbers, and hyphens only
@@ -229,9 +229,9 @@ export default function NewAddonPage() {
                     </div>
                   ))}
                 </div>
-                {errors.supported_platforms && (
+                {errors.supportedPlatforms && (
                   <p className="text-sm text-red-600">
-                    {errors.supported_platforms.message}
+                    {errors.supportedPlatforms.message}
                   </p>
                 )}
               </div>
@@ -253,16 +253,16 @@ export default function NewAddonPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="display_name">
+                <Label htmlFor="displayName">
                   Display Name <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="display_name"
+                  id="displayName"
                   placeholder="My Addon v1.0"
-                  {...register("display_name")}
+                  {...register("displayName")}
                 />
-                {errors.display_name && (
-                  <p className="text-sm text-red-600">{errors.display_name.message}</p>
+                {errors.displayName && (
+                  <p className="text-sm text-red-600">{errors.displayName.message}</p>
                 )}
               </div>
             </div>
