@@ -361,14 +361,14 @@ function AddonCard({
           <Badge className={getCategoryColor(addon.category)}>
             {addon.category}
           </Badge>
-          {addon.supported_platforms.slice(0, 2).map((platform: string) => (
+          {addon.supported_platforms?.slice(0, 2).map((platform: string) => (
             <Badge key={platform} variant="outline" className="text-xs">
               {platform}
             </Badge>
           ))}
-          {addon.supported_platforms.length > 2 && (
+          {(addon.supported_platforms?.length || 0) > 2 && (
             <Badge variant="outline" className="text-xs">
-              +{addon.supported_platforms.length - 2}
+              +{(addon.supported_platforms?.length || 0) - 2}
             </Badge>
           )}
         </div>
