@@ -46,8 +46,8 @@ const PLATFORMS = [
 export default function AddonsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [platformFilter, setPlatformFilter] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("all");
 
   // Fetch addons
@@ -57,8 +57,8 @@ export default function AddonsPage() {
     error: errorAll,
     refetch: refetchAll,
   } = useAddons({
-    category: categoryFilter || undefined,
-    platform: platformFilter || undefined,
+    category: categoryFilter !== "all" ? categoryFilter : undefined,
+    platform: platformFilter !== "all" ? platformFilter : undefined,
     search: searchQuery || undefined,
   });
 
@@ -159,7 +159,7 @@ export default function AddonsPage() {
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Categories</SelectItem>
+            <SelectItem value="all">All Categories</SelectItem>
             {CATEGORIES.map((cat) => (
               <SelectItem key={cat.value} value={cat.value}>
                 {cat.label}
@@ -173,7 +173,7 @@ export default function AddonsPage() {
             <SelectValue placeholder="Platform" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Platforms</SelectItem>
+            <SelectItem value="all">All Platforms</SelectItem>
             {PLATFORMS.map((plat) => (
               <SelectItem key={plat.value} value={plat.value}>
                 {plat.label}
