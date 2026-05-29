@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 00058: Addon System Enhancements
 -- Add support for user-created addons, versioning, and immutability
 
@@ -39,16 +40,16 @@ SET addon_source = 'system',
     is_immutable = true
 WHERE addon_source IS NULL;
 
--- Rollback SQL (for reference, not executed):
--- ALTER TABLE post_config_addons DROP CONSTRAINT IF EXISTS published_addons_immutable;
--- ALTER TABLE post_config_addons DROP CONSTRAINT IF EXISTS system_addons_immutable;
--- DROP INDEX IF EXISTS idx_post_config_addons_parent;
--- DROP INDEX IF EXISTS idx_post_config_addons_user;
--- ALTER TABLE post_config_addons
---   DROP COLUMN IF EXISTS is_immutable,
---   DROP COLUMN IF EXISTS version_number,
---   DROP COLUMN IF EXISTS parent_version_id,
---   DROP COLUMN IF EXISTS published_at,
---   DROP COLUMN IF EXISTS is_published,
---   DROP COLUMN IF EXISTS created_by_user_id,
---   DROP COLUMN IF EXISTS addon_source;
+-- +goose Down
+ALTER TABLE post_config_addons DROP CONSTRAINT IF EXISTS published_addons_immutable;
+ALTER TABLE post_config_addons DROP CONSTRAINT IF EXISTS system_addons_immutable;
+DROP INDEX IF EXISTS idx_post_config_addons_parent;
+DROP INDEX IF EXISTS idx_post_config_addons_user;
+ALTER TABLE post_config_addons
+  DROP COLUMN IF EXISTS is_immutable,
+  DROP COLUMN IF EXISTS version_number,
+  DROP COLUMN IF EXISTS parent_version_id,
+  DROP COLUMN IF EXISTS published_at,
+  DROP COLUMN IF EXISTS is_published,
+  DROP COLUMN IF EXISTS created_by_user_id,
+  DROP COLUMN IF EXISTS addon_source;

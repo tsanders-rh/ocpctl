@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 00059: Cluster Addon References
 -- Add selected addon IDs to clusters table for tracking which addons are enabled per cluster
 
@@ -22,8 +23,8 @@ ALTER TABLE clusters
 ALTER TABLE clusters
   ALTER COLUMN selected_addon_ids SET NOT NULL;
 
--- Rollback SQL (for reference, not executed):
--- ALTER TABLE clusters ALTER COLUMN selected_addon_ids DROP NOT NULL;
--- ALTER TABLE clusters ALTER COLUMN selected_addon_ids DROP DEFAULT;
--- DROP INDEX IF EXISTS idx_clusters_selected_addons;
--- ALTER TABLE clusters DROP COLUMN IF EXISTS selected_addon_ids;
+-- +goose Down
+ALTER TABLE clusters ALTER COLUMN selected_addon_ids DROP NOT NULL;
+ALTER TABLE clusters ALTER COLUMN selected_addon_ids DROP DEFAULT;
+DROP INDEX IF EXISTS idx_clusters_selected_addons;
+ALTER TABLE clusters DROP COLUMN IF EXISTS selected_addon_ids;
