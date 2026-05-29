@@ -25,7 +25,10 @@ func NewPostConfigAddonStore(pool *pgxpool.Pool) *PostConfigAddonStore {
 func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platform *string) ([]types.PostConfigAddon, error) {
 	query := `
 		SELECT id, addon_id, name, description, category, config, supported_platforms,
-		       enabled, version, display_name, is_default, metadata, created_at, updated_at
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
 		FROM post_config_addons
 		WHERE enabled = TRUE
 	`
@@ -72,6 +75,13 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 			&addon.DisplayName,
 			&addon.IsDefault,
 			&metadataJSON,
+			&addon.AddonSource,
+			&addon.CreatedByUserID,
+			&addon.IsPublished,
+			&addon.PublishedAt,
+			&addon.ParentVersionID,
+			&addon.VersionNumber,
+			&addon.IsImmutable,
 			&addon.CreatedAt,
 			&addon.UpdatedAt,
 		)
@@ -187,9 +197,11 @@ func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConf
 	query := `
 		INSERT INTO post_config_addons (
 			addon_id, name, description, category, config, supported_platforms,
-			enabled, version, display_name, is_default, metadata
+			enabled, version, display_name, is_default, metadata,
+			addon_source, created_by_user_id, is_published, published_at,
+			parent_version_id, version_number, is_immutable
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -205,6 +217,13 @@ func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConf
 		addon.DisplayName,
 		addon.IsDefault,
 		addon.MetadataJSON,
+		addon.AddonSource,
+		addon.CreatedByUserID,
+		addon.IsPublished,
+		addon.PublishedAt,
+		addon.ParentVersionID,
+		addon.VersionNumber,
+		addon.IsImmutable,
 	).Scan(&addon.ID, &addon.CreatedAt, &addon.UpdatedAt)
 
 	if err != nil {
@@ -315,8 +334,22 @@ func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string)
 	return versions, nil
 }
 
-// Update modifies an existing add-on
+// Update modifies an existing add-on (only if not immutable)
 func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *types.PostConfigAddon) error {
+	// First check if addon is immutable
+	var isImmutable bool
+	checkQuery := `SELECT is_immutable FROM post_config_addons WHERE id = $1`
+	if err := s.pool.QueryRow(ctx, checkQuery, id).Scan(&isImmutable); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("check immutability: %w", err)
+	}
+
+	if isImmutable {
+		return fmt.Errorf("cannot update immutable addon")
+	}
+
 	query := `
 		UPDATE post_config_addons
 		SET name = $2, description = $3, category = $4, config = $5,
@@ -348,4 +381,135 @@ func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *typ
 	}
 
 	return nil
+}
+
+// GetUserAddons retrieves all addons created by a specific user
+func (s *PostConfigAddonStore) GetUserAddons(ctx context.Context, userID string) ([]types.PostConfigAddon, error) {
+	query := `
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
+		FROM post_config_addons
+		WHERE addon_source = 'user' AND created_by_user_id = $1
+		ORDER BY updated_at DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("query user addons: %w", err)
+	}
+	defer rows.Close()
+
+	var addons []types.PostConfigAddon
+	for rows.Next() {
+		var addon types.PostConfigAddon
+		var configJSON []byte
+		var metadataJSON []byte
+
+		err := rows.Scan(
+			&addon.ID, &addon.AddonID, &addon.Name, &addon.Description,
+			&addon.Category, &configJSON, &addon.SupportedPlatforms,
+			&addon.Enabled, &addon.Version, &addon.DisplayName,
+			&addon.IsDefault, &metadataJSON,
+			&addon.AddonSource, &addon.CreatedByUserID, &addon.IsPublished,
+			&addon.PublishedAt, &addon.ParentVersionID, &addon.VersionNumber,
+			&addon.IsImmutable, &addon.CreatedAt, &addon.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan addon: %w", err)
+		}
+
+		if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
+			return nil, fmt.Errorf("unmarshal config: %w", err)
+		}
+
+		if len(metadataJSON) > 0 {
+			addon.Metadata = &types.AddonMetadata{}
+			if err := json.Unmarshal(metadataJSON, addon.Metadata); err != nil {
+				return nil, fmt.Errorf("unmarshal metadata: %w", err)
+			}
+		}
+
+		addons = append(addons, addon)
+	}
+
+	return addons, rows.Err()
+}
+
+// PublishAddon marks an addon as published and immutable
+func (s *PostConfigAddonStore) PublishAddon(ctx context.Context, id string) error {
+	query := `
+		UPDATE post_config_addons
+		SET is_published = TRUE,
+		    is_immutable = TRUE,
+		    published_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1 AND addon_source = 'user' AND is_published = FALSE
+	`
+
+	result, err := s.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("publish addon: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("addon not found, not a user addon, or already published")
+	}
+
+	return nil
+}
+
+// CloneAddon creates a new draft addon based on a parent version
+func (s *PostConfigAddonStore) CloneAddon(ctx context.Context, parentID string, userID string) (*types.PostConfigAddon, error) {
+	// First, get the parent addon
+	parent, err := s.GetByID(ctx, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("get parent addon: %w", err)
+	}
+
+	// Create new addon as a clone
+	clone := &types.PostConfigAddon{
+		AddonID:            fmt.Sprintf("%s-v%d", parent.AddonID, parent.VersionNumber+1),
+		Name:               parent.Name,
+		Description:        parent.Description,
+		Category:           parent.Category,
+		Config:             parent.Config,
+		SupportedPlatforms: parent.SupportedPlatforms,
+		Enabled:            parent.Enabled,
+		Version:            parent.Version,
+		DisplayName:        parent.DisplayName,
+		IsDefault:          false, // Clones are never default
+		Metadata:           parent.Metadata,
+		AddonSource:        "user",
+		CreatedByUserID:    &userID,
+		IsPublished:        false,
+		ParentVersionID:    &parentID,
+		VersionNumber:      parent.VersionNumber + 1,
+		IsImmutable:        false,
+	}
+
+	// Marshal config for storage
+	configJSON, err := json.Marshal(clone.Config)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+	clone.ConfigJSON = configJSON
+
+	// Marshal metadata if present
+	if clone.Metadata != nil {
+		metadataJSON, err := json.Marshal(clone.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("marshal metadata: %w", err)
+		}
+		clone.MetadataJSON = metadataJSON
+	}
+
+	// Create the clone
+	if err := s.Create(ctx, clone); err != nil {
+		return nil, fmt.Errorf("create clone: %w", err)
+	}
+
+	return clone, nil
 }

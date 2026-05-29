@@ -117,6 +117,7 @@ type Cluster struct {
 	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
 	SkipPostDeployment  bool           `db:"skip_post_deployment" json:"skip_post_deployment"`
 	CustomPostConfig    *CustomPostConfig `db:"custom_post_config" json:"custom_post_config,omitempty"`
+	SelectedAddonIDs    []string       `db:"selected_addon_ids" json:"selected_addon_ids,omitempty"`
 	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
 	PreserveOnFailure   bool           `db:"preserve_on_failure" json:"preserve_on_failure"`
 	CredentialsMode     *string        `db:"credentials_mode" json:"credentials_mode,omitempty"`

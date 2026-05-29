@@ -18,6 +18,16 @@ type PostConfigAddon struct {
 	IsDefault          bool                `db:"is_default" json:"isDefault"`
 	Metadata           *AddonMetadata      `db:"metadata" json:"metadata,omitempty"`
 	MetadataJSON       []byte              `db:"-" json:"-"`          // For database storage
+
+	// Addon versioning and source tracking
+	AddonSource        string              `db:"addon_source" json:"addonSource"`              // 'system' or 'user'
+	CreatedByUserID    *string             `db:"created_by_user_id" json:"createdByUserId,omitempty"`
+	IsPublished        bool                `db:"is_published" json:"isPublished"`
+	PublishedAt        *time.Time          `db:"published_at" json:"publishedAt,omitempty"`
+	ParentVersionID    *string             `db:"parent_version_id" json:"parentVersionId,omitempty"`  // Version lineage
+	VersionNumber      int                 `db:"version_number" json:"versionNumber"`
+	IsImmutable        bool                `db:"is_immutable" json:"isImmutable"`
+
 	CreatedAt          time.Time           `db:"created_at" json:"createdAt"`
 	UpdatedAt          time.Time           `db:"updated_at" json:"updatedAt"`
 }

@@ -26,12 +26,12 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 			owner, owner_id, team, cost_center, status, requested_by, ttl_hours,
 			destroy_at, request_tags, effective_tags, ssh_public_key,
 			offhours_opt_in, work_hours_enabled, work_hours_start, work_hours_end, work_days,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			skip_post_deployment, custom_post_config, selected_addon_ids, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
 			pool_id, pool_state
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
 			$16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-			$31, $32
+			$31, $32, $33
 		)
 	`
 
@@ -62,6 +62,7 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.WorkDays,
 		cluster.SkipPostDeployment,
 		cluster.CustomPostConfig,
+		cluster.SelectedAddonIDs,
 		cluster.PostDeployStatus,
 		cluster.PreserveOnFailure,
 		cluster.CredentialsMode,
@@ -86,7 +87,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 			destroy_at, created_at, updated_at, destroyed_at,
 			request_tags, effective_tags, ssh_public_key, offhours_opt_in,
 			work_hours_enabled, work_hours_start, work_hours_end, work_days, last_work_hours_check,
-			skip_post_deployment, custom_post_config, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
+			skip_post_deployment, custom_post_config, selected_addon_ids, post_deploy_status, preserve_on_failure, credentials_mode, custom_pull_secret,
 			pool_id, pool_state, leased_by, leased_at, lease_expires_at, lease_metadata,
 			pool_generation, last_cleaned_at
 		FROM clusters
@@ -125,6 +126,7 @@ func (s *ClusterStore) GetByID(ctx context.Context, id string) (*types.Cluster, 
 		&cluster.LastWorkHoursCheck,
 		&cluster.SkipPostDeployment,
 		&cluster.CustomPostConfig,
+		&cluster.SelectedAddonIDs,
 		&cluster.PostDeployStatus,
 		&cluster.PreserveOnFailure,
 		&cluster.CredentialsMode,
@@ -284,6 +286,7 @@ func (s *ClusterStore) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id strin
 		&cluster.LastWorkHoursCheck,
 		&cluster.SkipPostDeployment,
 		&cluster.CustomPostConfig,
+		&cluster.SelectedAddonIDs,
 		&cluster.PostDeployStatus,
 		&cluster.PreserveOnFailure,
 		&cluster.CredentialsMode,
