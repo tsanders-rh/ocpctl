@@ -22,7 +22,14 @@ CREATE INDEX idx_post_config_addons_parent
   ON post_config_addons(parent_version_id)
   WHERE parent_version_id IS NOT NULL;
 
+-- Backfill existing addons: mark all as system and immutable
+-- MUST happen before adding constraints
+UPDATE post_config_addons
+SET addon_source = 'system',
+    is_immutable = true;
+
 -- Add check constraint: system addons must be immutable
+-- Added AFTER backfill so existing rows don't violate constraint
 ALTER TABLE post_config_addons
   ADD CONSTRAINT system_addons_immutable CHECK (
     (addon_source = 'system' AND is_immutable = true) OR addon_source = 'user'
@@ -33,12 +40,6 @@ ALTER TABLE post_config_addons
   ADD CONSTRAINT published_addons_immutable CHECK (
     (is_published = false) OR (is_published = true AND is_immutable = true)
   );
-
--- Backfill existing addons: mark all as system and immutable
-UPDATE post_config_addons
-SET addon_source = 'system',
-    is_immutable = true
-WHERE addon_source IS NULL;
 
 -- +goose Down
 ALTER TABLE post_config_addons DROP CONSTRAINT IF EXISTS published_addons_immutable;
