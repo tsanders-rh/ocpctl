@@ -71,7 +71,7 @@ export default function AddonsPage() {
 
   // Filter addons by search query (client-side for real-time feedback)
   const filteredAllAddons = useMemo(() => {
-    if (!allAddons) return [];
+    if (!allAddons || !Array.isArray(allAddons)) return [];
     if (!searchQuery) return allAddons;
 
     const query = searchQuery.toLowerCase();
@@ -84,7 +84,7 @@ export default function AddonsPage() {
   }, [allAddons, searchQuery]);
 
   const filteredMyAddons = useMemo(() => {
-    if (!myAddons) return [];
+    if (!myAddons || !Array.isArray(myAddons)) return [];
     if (!searchQuery) return myAddons;
 
     const query = searchQuery.toLowerCase();
