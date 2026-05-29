@@ -11,6 +11,7 @@ const navigation = [
   { name: "Clusters", href: "/clusters", icon: Layers },
   { name: "Cluster Pools", href: "/pools", icon: Database },
   { name: "Profiles", href: "/profiles", icon: FileCode },
+  { name: "Addons", href: "/addons", icon: PackageCheck },
   { name: "User Guide", href: "/docs", icon: BookText },
 ];
 
