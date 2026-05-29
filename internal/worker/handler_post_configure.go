@@ -94,11 +94,18 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 		return fmt.Errorf("get profile: %w", err)
 	}
 
-	// Check if post-deployment is enabled
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+	// Check if post-deployment is enabled or if addons are selected
+	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
+	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
+
+	if !hasProfileConfig && !hasSelectedAddons {
+		log.Printf("Post-deployment not enabled for profile %s and no selected addons", cluster.Profile)
 		return nil
 	}
+
+	// TODO: Addon support for EKS clusters will be added in future phase
+	// For now, EKS clusters only use profile-based post-deployment
+	_ = hasSelectedAddons // Suppress unused variable warning
 
 	// Create work directory with restrictive permissions (0700)
 	// This directory contains sensitive files like kubeconfig with cluster credentials
@@ -676,11 +683,18 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 		return fmt.Errorf("get profile: %w", err)
 	}
 
-	// Check if post-deployment is enabled
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s, skipping", cluster.Profile)
+	// Check if post-deployment is enabled or if addons are selected
+	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
+	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
+
+	if !hasProfileConfig && !hasSelectedAddons {
+		log.Printf("Post-deployment not enabled for profile %s and no selected addons, skipping", cluster.Profile)
 		return nil
 	}
+
+	// TODO: Addon support for IKS clusters will be added in future phase
+	// For now, IKS clusters only use profile-based post-deployment
+	_ = hasSelectedAddons // Suppress unused variable warning
 
 	// Create work directory with restrictive permissions (0700)
 	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
@@ -942,11 +956,18 @@ func (h *PostConfigureHandler) handleGKEPostConfigure(ctx context.Context, job *
 		return fmt.Errorf("get profile: %w", err)
 	}
 
-	// Check if post-deployment is enabled
-	if prof.PostDeployment == nil || !prof.PostDeployment.Enabled {
-		log.Printf("Post-deployment not enabled for profile %s", cluster.Profile)
+	// Check if post-deployment is enabled or if addons are selected
+	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
+	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
+
+	if !hasProfileConfig && !hasSelectedAddons {
+		log.Printf("Post-deployment not enabled for profile %s and no selected addons", cluster.Profile)
 		return nil
 	}
+
+	// TODO: Addon support for GKE clusters will be added in future phase
+	// For now, GKE clusters only use profile-based post-deployment
+	_ = hasSelectedAddons // Suppress unused variable warning
 
 	// Create work directory with restrictive permissions (0700)
 	workDir, err := ensureSecureWorkDir(h.config.WorkDir, cluster.ID)
@@ -1051,10 +1072,25 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 	// Check if post-deployment is enabled or if custom post-config exists
 	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
 	hasCustomConfig := cluster.CustomPostConfig != nil
+	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
 
-	if !hasProfileConfig && !hasCustomConfig {
-		log.Printf("Post-deployment not enabled for profile %s and no custom config, skipping (OpenShift has built-in console)", cluster.Profile)
+	if !hasProfileConfig && !hasCustomConfig && !hasSelectedAddons {
+		log.Printf("Post-deployment not enabled for profile %s, no custom config, and no selected addons, skipping (OpenShift has built-in console)", cluster.Profile)
 		return nil
+	}
+
+	// Resolve selected addons from database
+	var selectedAddons []types.PostConfigAddon
+	var selectedAddonsConfig *types.CustomPostConfig
+	if hasSelectedAddons {
+		var err error
+		selectedAddons, err = h.resolveSelectedAddons(ctx, cluster)
+		if err != nil {
+			return fmt.Errorf("resolve selected addons: %w", err)
+		}
+		if len(selectedAddons) > 0 {
+			selectedAddonsConfig = h.mergeAddonConfigs(selectedAddons)
+		}
 	}
 
 	// Update cluster post_deploy_status to 'in_progress'
@@ -1149,6 +1185,64 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
 				return fmt.Errorf("install helm chart %s: %w", chart.Name, err)
 			}
+		}
+	}
+
+	// Execute addon-based post-deployment configuration
+	if selectedAddonsConfig != nil {
+		logWriter("Executing addon-based post-deployment configuration (%d addons)", len(selectedAddons))
+
+		// Build execution DAG to resolve dependencies
+		dag, err := postconfig.BuildExecutionDAG(selectedAddonsConfig)
+		if err != nil {
+			_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+			return fmt.Errorf("build addon execution DAG: %w", err)
+		}
+
+		logWriter("Addon execution order: %v", dag.ExecutionOrder)
+
+		// Get infrastructure details for template context
+		infraID, _, err := h.getClusterInfraDetails(ctx, cluster, kubeconfigPath)
+		if err != nil {
+			log.Printf("Warning: failed to get infra details for templating: %v", err)
+			infraID = "" // Continue without infra ID
+		}
+
+		// Execute tasks in dependency order
+		for _, task := range dag.GetTasksByExecutionOrder() {
+			logWriter("[Addon DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
+
+			// Execute based on task type
+			switch task.Type {
+			case "operator":
+				op := task.Config.(types.CustomOperatorConfig)
+				if err := h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("install addon operator %s: %w", op.Name, err)
+				}
+			case "script":
+				script := task.Config.(types.CustomScriptConfig)
+				if err := h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("execute addon script %s: %w", script.Name, err)
+				}
+			case "manifest":
+				manifest := task.Config.(types.CustomManifestConfig)
+				if err := h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("apply addon manifest %s: %w", manifest.Name, err)
+				}
+			case "helmChart":
+				chart := task.Config.(types.CustomHelmChartConfig)
+				if err := h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID); err != nil {
+					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+					return fmt.Errorf("install addon helm chart %s: %w", chart.Name, err)
+				}
+			default:
+				return fmt.Errorf("unknown task type: %s", task.Type)
+			}
+
+			logWriter("[Addon DAG] Task %s completed successfully", task.Name)
 		}
 	}
 
@@ -2424,4 +2518,75 @@ func extractCRDNameFromManifest(content string) string {
 	}
 
 	return plural + "." + group
+}
+// resolveSelectedAddons fetches addon configurations for the cluster's selected addon IDs
+func (h *PostConfigureHandler) resolveSelectedAddons(ctx context.Context, cluster *types.Cluster) ([]types.PostConfigAddon, error) {
+	if len(cluster.SelectedAddonIDs) == 0 {
+		return nil, nil
+	}
+
+	log.Printf("Resolving %d selected addons for cluster %s", len(cluster.SelectedAddonIDs), cluster.Name)
+
+	addons := make([]types.PostConfigAddon, 0, len(cluster.SelectedAddonIDs))
+	for _, addonRef := range cluster.SelectedAddonIDs {
+		// Parse addon reference format: "addonID" or "addonID:channel"
+		parts := strings.SplitN(addonRef, ":", 2)
+		addonID := parts[0]
+		channel := ""
+		if len(parts) == 2 {
+			channel = parts[1]
+		}
+
+		var addon *types.PostConfigAddon
+		var err error
+
+		// Fetch addon by ID and optional channel
+		if channel != "" {
+			addon, err = h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, addonID, channel)
+		} else {
+			// Get default version for this addon
+			addon, err = h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("resolve addon %s: %w", addonRef, err)
+		}
+
+		if !addon.Enabled {
+			log.Printf("Warning: addon %s is disabled, skipping", addonRef)
+			continue
+		}
+
+		addons = append(addons, *addon)
+		log.Printf("Resolved addon: %s (version=%s, name=%s)", addonID, addon.Version, addon.Name)
+	}
+
+	return addons, nil
+}
+
+// mergeAddonConfigs combines multiple addon configs into a single CustomPostConfig
+func (h *PostConfigureHandler) mergeAddonConfigs(addons []types.PostConfigAddon) *types.CustomPostConfig {
+	if len(addons) == 0 {
+		return nil
+	}
+
+	merged := &types.CustomPostConfig{
+		Operators: []types.CustomOperatorConfig{},
+		Scripts:   []types.CustomScriptConfig{},
+		Manifests: []types.CustomManifestConfig{},
+		HelmCharts: []types.CustomHelmChartConfig{},
+	}
+
+	for _, addon := range addons {
+		// Merge operators
+		merged.Operators = append(merged.Operators, addon.Config.Operators...)
+		// Merge scripts
+		merged.Scripts = append(merged.Scripts, addon.Config.Scripts...)
+		// Merge manifests
+		merged.Manifests = append(merged.Manifests, addon.Config.Manifests...)
+		// Merge helm charts
+		merged.HelmCharts = append(merged.HelmCharts, addon.Config.HelmCharts...)
+	}
+
+	return merged
 }

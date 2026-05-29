@@ -3,7 +3,10 @@ package api
 import (
 	"log"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -251,4 +254,421 @@ func hasCapability(capabilities []string, capability string) bool {
 		}
 	}
 	return false
+}
+
+// GetByID returns a specific addon by its database ID
+//
+//	@Summary		Get addon by ID
+//	@Description	Retrieves a specific addon by its database ID. System addons are accessible to all users. User addons are only accessible to their creator or admins.
+//	@Tags			post-config
+//	@Produce		json
+//	@Param			id	path		string	true	"Addon database ID (UUID)"
+//	@Success		200	{object}	types.PostConfigAddon
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/{id} [get]
+func (h *AddonsHandler) GetByID(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	addon, err := h.store.PostConfigAddons.GetByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrorNotFound(c, "Addon not found")
+		}
+		log.Printf("Error retrieving addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Check access: system addons are public, user addons require ownership or admin
+	if addon.AddonSource == "user" {
+		userID, err := auth.GetUserID(c)
+		if err != nil {
+			return err
+		}
+
+		// Allow access if user is the creator or is an admin
+		if addon.CreatedByUserID == nil || *addon.CreatedByUserID != userID {
+			if !auth.IsAdmin(c) {
+				return ErrorForbidden(c, "You do not have access to this addon")
+			}
+		}
+	}
+
+	return c.JSON(200, addon)
+}
+
+// CreateAddonRequest represents the request to create a new user addon
+type CreateAddonRequest struct {
+	AddonID            string              `json:"addonId" validate:"required,min=1,max=100"`
+	Name               string              `json:"name" validate:"required,min=1,max=200"`
+	Description        string              `json:"description" validate:"required"`
+	Category           string              `json:"category" validate:"required,oneof=backup migration cicd monitoring security storage networking virtualization"`
+	Config             types.CustomPostConfig `json:"config" validate:"required"`
+	SupportedPlatforms []string            `json:"supportedPlatforms" validate:"required,min=1"`
+	Version            string              `json:"version" validate:"required"`
+	DisplayName        string              `json:"displayName" validate:"required"`
+	IsDefault          bool                `json:"isDefault"`
+	Metadata           *types.AddonMetadata `json:"metadata,omitempty"`
+}
+
+// Create creates a new user addon
+//
+//	@Summary		Create user addon
+//	@Description	Creates a new user-defined addon. The addon is created as a draft (unpublished) and can be edited.
+//	@Tags			post-config
+//	@Accept			json
+//	@Produce		json
+//	@Param			addon	body		CreateAddonRequest	true	"Addon creation request"
+//	@Success		201		{object}	types.PostConfigAddon
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		401		{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons [post]
+func (h *AddonsHandler) Create(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	var req CreateAddonRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "Invalid request body")
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Create addon object
+	addon := &types.PostConfigAddon{
+		ID:                 uuid.New().String(),
+		AddonID:            req.AddonID,
+		Name:               req.Name,
+		Description:        req.Description,
+		Category:           req.Category,
+		Config:             req.Config,
+		SupportedPlatforms: req.SupportedPlatforms,
+		Enabled:            true,
+		Version:            req.Version,
+		DisplayName:        req.DisplayName,
+		IsDefault:          req.IsDefault,
+		Metadata:           req.Metadata,
+		AddonSource:        "user",
+		CreatedByUserID:    &userID,
+		IsPublished:        false,
+		VersionNumber:      1,
+		IsImmutable:        false,
+	}
+
+	if err := h.store.PostConfigAddons.Create(ctx, addon); err != nil {
+		log.Printf("Error creating addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(201, addon)
+}
+
+// UpdateAddonRequest represents the request to update an addon
+type UpdateAddonRequest struct {
+	Name               *string              `json:"name,omitempty" validate:"omitempty,min=1,max=200"`
+	Description        *string              `json:"description,omitempty"`
+	Category           *string              `json:"category,omitempty" validate:"omitempty,oneof=backup migration cicd monitoring security storage networking virtualization"`
+	Config             *types.CustomPostConfig `json:"config,omitempty"`
+	SupportedPlatforms []string             `json:"supportedPlatforms,omitempty" validate:"omitempty,min=1"`
+	Version            *string              `json:"version,omitempty"`
+	DisplayName        *string              `json:"displayName,omitempty"`
+	IsDefault          *bool                `json:"isDefault,omitempty"`
+	Metadata           *types.AddonMetadata `json:"metadata,omitempty"`
+}
+
+// Update updates an existing user addon (draft only)
+//
+//	@Summary		Update user addon
+//	@Description	Updates a user addon. Only unpublished (draft) addons can be updated. Published addons are immutable.
+//	@Tags			post-config
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Addon database ID"
+//	@Param			addon	body		UpdateAddonRequest	true	"Addon update request"
+//	@Success		200		{object}	types.PostConfigAddon
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		401		{object}	ErrorResponse
+//	@Failure		403		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/{id} [put]
+func (h *AddonsHandler) Update(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Get existing addon
+	existing, err := h.store.PostConfigAddons.GetByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrorNotFound(c, "Addon not found")
+		}
+		log.Printf("Error retrieving addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Check ownership
+	if existing.AddonSource != "user" {
+		return ErrorForbidden(c, "Cannot update system addons")
+	}
+
+	if existing.CreatedByUserID == nil || *existing.CreatedByUserID != userID {
+		if !auth.IsAdmin(c) {
+			return ErrorForbidden(c, "You do not have access to this addon")
+		}
+	}
+
+	// Check if addon is published (immutable)
+	if existing.IsPublished {
+		return ErrorBadRequest(c, "Cannot update published addons. Clone the addon to create a new version.")
+	}
+
+	var req UpdateAddonRequest
+	if err := c.Bind(&req); err != nil {
+		return ErrorBadRequest(c, "Invalid request body")
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return ErrorBadRequest(c, err.Error())
+	}
+
+	// Apply updates
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Category != nil {
+		existing.Category = *req.Category
+	}
+	if req.Config != nil {
+		existing.Config = *req.Config
+	}
+	if req.SupportedPlatforms != nil {
+		existing.SupportedPlatforms = req.SupportedPlatforms
+	}
+	if req.Version != nil {
+		existing.Version = *req.Version
+	}
+	if req.DisplayName != nil {
+		existing.DisplayName = *req.DisplayName
+	}
+	if req.IsDefault != nil {
+		existing.IsDefault = *req.IsDefault
+	}
+	if req.Metadata != nil {
+		existing.Metadata = req.Metadata
+	}
+
+	if err := h.store.PostConfigAddons.Update(ctx, id, existing); err != nil {
+		log.Printf("Error updating addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(200, existing)
+}
+
+// Delete deletes a user addon
+//
+//	@Summary		Delete user addon
+//	@Description	Deletes a user addon. Only the creator or admins can delete an addon.
+//	@Tags			post-config
+//	@Produce		json
+//	@Param			id	path		string	true	"Addon database ID"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/{id} [delete]
+func (h *AddonsHandler) Delete(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Get existing addon
+	existing, err := h.store.PostConfigAddons.GetByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrorNotFound(c, "Addon not found")
+		}
+		log.Printf("Error retrieving addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Check ownership
+	if existing.AddonSource != "user" {
+		return ErrorForbidden(c, "Cannot delete system addons")
+	}
+
+	if existing.CreatedByUserID == nil || *existing.CreatedByUserID != userID {
+		if !auth.IsAdmin(c) {
+			return ErrorForbidden(c, "You do not have access to this addon")
+		}
+	}
+
+	if err := h.store.PostConfigAddons.Delete(ctx, id); err != nil {
+		log.Printf("Error deleting addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.NoContent(204)
+}
+
+// Publish publishes a user addon, making it immutable
+//
+//	@Summary		Publish user addon
+//	@Description	Publishes a user addon, making it immutable. Once published, the addon cannot be edited.
+//	@Tags			post-config
+//	@Produce		json
+//	@Param			id	path		string	true	"Addon database ID"
+//	@Success		200	{object}	types.PostConfigAddon
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/{id}/publish [post]
+func (h *AddonsHandler) Publish(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Get existing addon
+	existing, err := h.store.PostConfigAddons.GetByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrorNotFound(c, "Addon not found")
+		}
+		log.Printf("Error retrieving addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Check ownership
+	if existing.AddonSource != "user" {
+		return ErrorForbidden(c, "Cannot publish system addons")
+	}
+
+	if existing.CreatedByUserID == nil || *existing.CreatedByUserID != userID {
+		if !auth.IsAdmin(c) {
+			return ErrorForbidden(c, "You do not have access to this addon")
+		}
+	}
+
+	if existing.IsPublished {
+		return ErrorBadRequest(c, "Addon is already published")
+	}
+
+	if err := h.store.PostConfigAddons.PublishAddon(ctx, id); err != nil {
+		log.Printf("Error publishing addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Retrieve updated addon
+	updated, err := h.store.PostConfigAddons.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("Error retrieving updated addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(200, updated)
+}
+
+// Clone clones an addon to create a new version
+//
+//	@Summary		Clone addon
+//	@Description	Clones an existing addon to create a new draft version. Increments version number and creates a version lineage link.
+//	@Tags			post-config
+//	@Produce		json
+//	@Param			id	path		string	true	"Addon database ID to clone from"
+//	@Success		201	{object}	types.PostConfigAddon
+//	@Failure		401	{object}	ErrorResponse
+//	@Failure		403	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/{id}/clone [post]
+func (h *AddonsHandler) Clone(c echo.Context) error {
+	ctx := c.Request().Context()
+	parentID := c.Param("id")
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	// Verify parent exists
+	parent, err := h.store.PostConfigAddons.GetByID(ctx, parentID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrorNotFound(c, "Parent addon not found")
+		}
+		log.Printf("Error retrieving parent addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Check access to parent
+	if parent.AddonSource == "user" {
+		if parent.CreatedByUserID == nil || *parent.CreatedByUserID != userID {
+			if !auth.IsAdmin(c) {
+				return ErrorForbidden(c, "You do not have access to this addon")
+			}
+		}
+	}
+
+	cloned, err := h.store.PostConfigAddons.CloneAddon(ctx, parentID, userID)
+	if err != nil {
+		log.Printf("Error cloning addon: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(201, cloned)
+}
+
+// ListUserAddons returns all addons created by the current user
+//
+//	@Summary		List user's custom addons
+//	@Description	Returns all addons created by the current user, including drafts and published versions.
+//	@Tags			post-config
+//	@Produce		json
+//	@Success		200	{array}		types.PostConfigAddon
+//	@Failure		401	{object}	ErrorResponse
+//	@Security		BearerAuth
+//	@Router			/post-config/addons/my [get]
+func (h *AddonsHandler) ListUserAddons(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	userID, err := auth.GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	addons, err := h.store.PostConfigAddons.GetUserAddons(ctx, userID)
+	if err != nil {
+		log.Printf("Error listing user addons: %v", err)
+		return LogAndReturnGenericError(c, err)
+	}
+
+	return c.JSON(200, addons)
 }

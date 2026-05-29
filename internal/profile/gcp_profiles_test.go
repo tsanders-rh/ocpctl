@@ -54,14 +54,13 @@ func TestGCPProfiles_Load(t *testing.T) {
 		require.NotNil(t, prof.PlatformConfig)
 		require.NotNil(t, prof.PlatformConfig.GKE)
 		assert.True(t, prof.PlatformConfig.GKE.PublicAccess)
-		assert.True(t, prof.PlatformConfig.GKE.PrivateAccess)
+		assert.False(t, prof.PlatformConfig.GKE.PrivateAccess) // Must be false for AWS-based worker to reach API
 		assert.True(t, prof.PlatformConfig.GKE.EnableWorkloadIdentity)
 		assert.Equal(t, "regular", prof.PlatformConfig.GKE.ReleaseChannel)
 
-		// Verify post-deployment
-		require.NotNil(t, prof.PostDeployment)
-		assert.True(t, prof.PostDeployment.Enabled)
-		assert.NotEmpty(t, prof.PostDeployment.Manifests)
+		// Verify default addons (migrated from postDeployment)
+		require.NotEmpty(t, prof.DefaultAddons)
+		assert.Equal(t, "kubernetes-dashboard", prof.DefaultAddons[0].AddonID)
 	})
 
 	t.Run("loads gcp-standard profile (OpenShift)", func(t *testing.T) {
@@ -235,7 +234,7 @@ func TestGCPProfiles_NodePoolConfiguration(t *testing.T) {
 		require.NotEmpty(t, prof.PlatformConfig.GKE.NodePools)
 
 		nodePool := prof.PlatformConfig.GKE.NodePools[0]
-		assert.Equal(t, "default-pool", nodePool.Name)
+		assert.Equal(t, "worker-pool", nodePool.Name)
 		assert.Equal(t, "e2-medium", nodePool.MachineType)
 		assert.Equal(t, 100, nodePool.DiskSizeGB)
 		assert.Equal(t, 3, nodePool.NodeCount)

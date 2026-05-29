@@ -33,6 +33,40 @@ versions:
                   duration: 24h0m0s
                   renewBefore: 12h0m0s
 
+  - channel: stable-windows
+    displayName: "CNV Stable (4.18) + Windows VM Support"
+    isDefault: false
+    config:
+      scripts:
+        - name: setup-windows-vm-infrastructure
+          description: Setup Windows VM infrastructure with IRSA and S3 image import
+          path: windows-vm/auto-setup-irsa.sh
+          timeout: "5h"
+          dependsOn:
+            - kubevirt-hyperconverged
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
 metadata:
   requiresBareMetal: true
   notes:
@@ -41,7 +75,14 @@ metadata:
     - "Automatically creates openshift-cnv namespace"
     - "Includes HyperConverged CR with default configuration"
     - "Supports live VM migration, snapshots, and cloning"
+    - "Windows VM Support version available (stable-windows channel)"
+    - "Windows VM deployment time: 2-3 minutes in snapshot-enabled regions (fast path)"
+    - "Windows VM deployment time: 30-50 minutes in regions without snapshots (first deployment only, creates snapshot)"
+    - "Snapshot-enabled regions: us-east-1, us-west-2, us-east-2, eu-west-1, ap-southeast-1 (auto-expanding)"
+    - "Windows version creates IRSA role with snapshot and SSM permissions, imports Windows 10 image"
   warnings:
     - "Requires valid Red Hat subscription"
     - "High resource requirements - recommend 3+ worker nodes with bare metal"
     - "Not compatible with all instance types - verify nested virtualization support"
+    - "Windows VM Support: First deployment in new region takes 30-50 min (S3 download), subsequent deployments 2-3 min (snapshot)"
+    - "Windows version requires AWS (IRSA for S3, EC2 snapshots, SSM) - not supported on other clouds yet"

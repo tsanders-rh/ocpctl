@@ -33,7 +33,7 @@ func TestLoader_LoadProfile(t *testing.T) {
 
 		assert.Equal(t, "aws-standard", prof.Name)
 		assert.Equal(t, "aws", string(prof.Platform))
-		assert.True(t, prof.Enabled)
+		assert.False(t, prof.Enabled) // Disabled in profile definition
 		assert.Equal(t, 3, prof.Compute.ControlPlane.Replicas)
 		assert.Equal(t, 3, prof.Compute.Workers.Replicas)
 		assert.False(t, prof.Compute.ControlPlane.Schedulable)
@@ -60,7 +60,15 @@ func TestLoader_LoadAll(t *testing.T) {
 	for _, prof := range profiles {
 		assert.NotEmpty(t, prof.Name)
 		assert.NotEmpty(t, prof.Platform)
-		assert.NotEmpty(t, prof.OpenshiftVersions.Allowlist)
+		// OpenShift-based profiles (openshift, rosa, aro) have OpenshiftVersions
+		// Kubernetes profiles (eks, gke, iks, aks) have KubernetesVersions
+		if prof.ClusterType == "openshift" || prof.ClusterType == "rosa" || prof.ClusterType == "aro" {
+			require.NotNil(t, prof.OpenshiftVersions, "OpenShift-based profile %s should have OpenshiftVersions", prof.Name)
+			assert.NotEmpty(t, prof.OpenshiftVersions.Allowlist)
+		} else {
+			require.NotNil(t, prof.KubernetesVersions, "Kubernetes profile %s should have KubernetesVersions", prof.Name)
+			assert.NotEmpty(t, prof.KubernetesVersions.Allowlist)
+		}
 	}
 }
 

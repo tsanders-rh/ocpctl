@@ -68,7 +68,7 @@ func TestRegistry_ListByPlatform(t *testing.T) {
 		profiles := registry.ListByPlatform(types.PlatformIBMCloud)
 		// IBM profiles are now enabled
 		assert.NotEmpty(t, profiles)
-		assert.Len(t, profiles, 2) // ibmcloud-minimal-test and ibmcloud-standard
+		assert.Len(t, profiles, 4) // ibmcloud-minimal-test, ibmcloud-standard, iks-minimal, iks-standard
 
 		for _, prof := range profiles {
 			assert.Equal(t, types.PlatformIBMCloud, prof.Platform)
@@ -83,7 +83,7 @@ func TestRegistry_Exists(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, registry.Exists("aws-minimal-test"))
-	assert.True(t, registry.Exists("aws-standard"))
+	assert.False(t, registry.Exists("aws-standard")) // Disabled profile
 	assert.True(t, registry.Exists("ibmcloud-minimal-test")) // Now enabled
 	assert.True(t, registry.Exists("ibmcloud-standard"))     // Now enabled
 	assert.False(t, registry.Exists("non-existent"))

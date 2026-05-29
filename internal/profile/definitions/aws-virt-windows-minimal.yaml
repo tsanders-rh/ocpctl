@@ -95,24 +95,9 @@ platformConfig:
       iops: 3000
       throughput: 125
 
-postDeployment:
-  enabled: true
-  timeout: "5h"  # Extended for Windows image import (2-4h) + VM clone/snapshot creation (20-30min)
-  operators:
-    - name: kubevirt-hyperconverged
-      namespace: openshift-cnv
-      source: redhat-operators
-      channel: stable
-      customResource:
-        apiVersion: hco.kubevirt.io/v1beta1
-        kind: HyperConverged
-        name: kubevirt-hyperconverged
-        namespace: openshift-cnv
-        spec: {}
-  scripts:
-    - name: setup-windows-irsa
-      path: windows-vm/auto-setup-irsa.sh
-      description: "Automated IRSA setup for Windows VM image access from S3"
+defaultAddons:
+  - addonID: cnv
+    channel: stable-windows
 
 metadata:
   capabilities:

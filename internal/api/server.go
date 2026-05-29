@@ -376,6 +376,13 @@ func (s *Server) setupRoutes() {
 	addonsHandler := NewAddonsHandler(s.store, s.registry)
 	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
 	postConfigGroup.GET("/addons", addonsHandler.List)
+	postConfigGroup.GET("/addons/my", addonsHandler.ListUserAddons)     // Get user's custom addons
+	postConfigGroup.GET("/addons/:id", addonsHandler.GetByID)            // Get specific addon
+	postConfigGroup.POST("/addons", addonsHandler.Create)                // Create new addon
+	postConfigGroup.PUT("/addons/:id", addonsHandler.Update)             // Update draft addon
+	postConfigGroup.DELETE("/addons/:id", addonsHandler.Delete)          // Delete addon
+	postConfigGroup.POST("/addons/:id/publish", addonsHandler.Publish)   // Publish addon
+	postConfigGroup.POST("/addons/:id/clone", addonsHandler.Clone)       // Clone addon
 
 	// Post-config validation and templates
 	postConfigHandler := NewPostConfigHandler()

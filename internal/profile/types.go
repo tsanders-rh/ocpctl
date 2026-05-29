@@ -25,6 +25,7 @@ type Profile struct {
 	CostControls       CostControlsConfig     `yaml:"costControls"`
 	PlatformConfig     PlatformConfig         `yaml:"platformConfig"`
 	PostDeployment     *PostDeploymentConfig  `yaml:"postDeployment,omitempty"`
+	DefaultAddons      []AddonReference       `yaml:"defaultAddons,omitempty" json:"default_addons,omitempty"`
 	Metadata           *MetadataConfig        `yaml:"metadata,omitempty"`
 }
 
@@ -337,6 +338,12 @@ type HelmChartConfig struct {
 	Repo   string                 `yaml:"repo" json:"repo" validate:"required"`
 	Chart  string                 `yaml:"chart" json:"chart" validate:"required"`
 	Values map[string]interface{} `yaml:"values,omitempty" json:"values,omitempty"`
+}
+
+// AddonReference references an addon to be installed by default
+type AddonReference struct {
+	AddonID string `yaml:"addonID" json:"addon_id" validate:"required"`
+	Channel string `yaml:"channel,omitempty" json:"channel,omitempty"` // Optional, uses default version if empty
 }
 
 // MetadataConfig contains profile metadata for documentation

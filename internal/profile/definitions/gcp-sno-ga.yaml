@@ -103,9 +103,6 @@ platformConfig:
     serviceAccount: ""  # Use default compute service account
     secureBootPolicy: Disabled
 
-postDeployment:
-  enabled: false
-
 metadata:
   capabilities:
     - Single Node OpenShift on GCP

@@ -409,14 +409,44 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		}
 	}
 
-	// Set initial post_deploy_status based on profile configuration
+	// Populate selected_addon_ids from profile defaultAddons and user selections
+	selectedAddonIDs := []string{}
+
+	// Add profile's default addons
+	if len(profileForValidation.DefaultAddons) > 0 {
+		for _, addonRef := range profileForValidation.DefaultAddons {
+			// Format: "addonID" or "addonID:channel"
+			addonIDRef := addonRef.AddonID
+			if addonRef.Channel != "" {
+				addonIDRef = addonRef.AddonID + ":" + addonRef.Channel
+			}
+			selectedAddonIDs = append(selectedAddonIDs, addonIDRef)
+		}
+		log.Printf("Added %d default addons from profile %s to cluster %s", len(profileForValidation.DefaultAddons), req.Profile, req.Name)
+	}
+
+	// Add user-selected addons from request (PostConfigAddOns)
+	// These are stored in the new SelectedAddonIDs field for DAG-based execution
+	if len(req.PostConfigAddOns) > 0 {
+		for _, selection := range req.PostConfigAddOns {
+			addonIDRef := selection.ID + ":" + selection.Version
+			selectedAddonIDs = append(selectedAddonIDs, addonIDRef)
+		}
+		log.Printf("Added %d user-selected addons to cluster %s", len(req.PostConfigAddOns), req.Name)
+	}
+
+	cluster.SelectedAddonIDs = selectedAddonIDs
+
+	// Set initial post_deploy_status based on profile configuration, selected addons, or custom config
 	// This prevents hibernation from blocking clusters that don't have post-deployment config
 	// Reuse profile loaded earlier for validation
-	hasPostDeployment := profileForValidation.PostDeployment != nil && (
+	hasPostDeployment := (profileForValidation.PostDeployment != nil && (
 		len(profileForValidation.PostDeployment.Operators) > 0 ||
 		len(profileForValidation.PostDeployment.Scripts) > 0 ||
 		len(profileForValidation.PostDeployment.Manifests) > 0 ||
-		len(profileForValidation.PostDeployment.HelmCharts) > 0)
+		len(profileForValidation.PostDeployment.HelmCharts) > 0)) ||
+		len(selectedAddonIDs) > 0 ||
+		req.CustomPostConfig != nil
 
 	// Load add-ons and merge into custom post-config if specified
 	debugLog("PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))

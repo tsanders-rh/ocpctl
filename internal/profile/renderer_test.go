@@ -84,7 +84,7 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 			Name:       "prod-cluster-01",
 			Platform:   "aws",
 			Version:    "4.20.3",
-			Profile:    "aws-standard",
+			Profile:    "aws-standard-ga",
 			Region:     "us-west-2",
 			BaseDomain: "staging.example.com",
 			Owner:      "prod-team",
@@ -308,7 +308,7 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 			Name:       "test-public-cluster",
 			Platform:   "aws",
 			Version:    "4.20.3",
-			Profile:    "aws-sno-test", // Non-private cluster
+			Profile:    "aws-sno-ga", // Non-private cluster
 			Region:     "us-east-1",
 			BaseDomain: "mg.dog8code.com",
 			Owner:      "test-user",
