@@ -36,15 +36,20 @@ export interface PostConfigAddon {
     }>;
     scripts?: Array<{
       name: string;
-      path: string;
+      description?: string;
+      content?: string;
+      url?: string;
+      path?: string;
       timeout?: string;
-      depends_on?: string[];
+      dependsOn?: string[];
     }>;
     manifests?: Array<{
       name: string;
+      description?: string;
       content?: string;
-      path?: string;
-      depends_on?: string[];
+      url?: string;
+      namespace?: string;
+      dependsOn?: string[];
     }>;
     helm_charts?: Array<{
       name: string;

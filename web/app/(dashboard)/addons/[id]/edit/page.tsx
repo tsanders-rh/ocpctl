@@ -64,14 +64,18 @@ export default function EditAddonPage() {
 
   const [scripts, setScripts] = useState<Array<{
     name: string;
-    path: string;
+    description?: string;
+    content?: string;
     timeout?: string;
+    dependsOn?: string[];
   }>>([]);
 
   const [manifests, setManifests] = useState<Array<{
     name: string;
+    description?: string;
     content?: string;
-    path?: string;
+    namespace?: string;
+    dependsOn?: string[];
   }>>([]);
 
   const {
@@ -458,7 +462,7 @@ export default function EditAddonPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setScripts([...scripts, { name: "", path: "" }])}
+              onClick={() => setScripts([...scripts, { name: "", content: "" }])}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Script
@@ -486,44 +490,77 @@ export default function EditAddonPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor={`script-name-${index}`}>Name *</Label>
+                        <Input
+                          id={`script-name-${index}`}
+                          value={script.name}
+                          onChange={(e) => {
+                            const updated = [...scripts];
+                            updated[index].name = e.target.value;
+                            setScripts(updated);
+                          }}
+                          placeholder="verify-namespace"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`script-timeout-${index}`}>Timeout</Label>
+                        <Input
+                          id={`script-timeout-${index}`}
+                          value={script.timeout || ""}
+                          onChange={(e) => {
+                            const updated = [...scripts];
+                            updated[index].timeout = e.target.value;
+                            setScripts(updated);
+                          }}
+                          placeholder="60s"
+                        />
+                      </div>
+                    </div>
                     <div>
-                      <Label htmlFor={`script-name-${index}`}>Name *</Label>
+                      <Label htmlFor={`script-description-${index}`}>Description</Label>
                       <Input
-                        id={`script-name-${index}`}
-                        value={script.name}
+                        id={`script-description-${index}`}
+                        value={script.description || ""}
                         onChange={(e) => {
                           const updated = [...scripts];
-                          updated[index].name = e.target.value;
+                          updated[index].description = e.target.value;
                           setScripts(updated);
                         }}
-                        placeholder="setup-script"
+                        placeholder="Verify the namespace exists"
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`script-path-${index}`}>Path *</Label>
-                      <Input
-                        id={`script-path-${index}`}
-                        value={script.path}
+                      <Label htmlFor={`script-content-${index}`}>Content *</Label>
+                      <Textarea
+                        id={`script-content-${index}`}
+                        value={script.content || ""}
                         onChange={(e) => {
                           const updated = [...scripts];
-                          updated[index].path = e.target.value;
+                          updated[index].content = e.target.value;
                           setScripts(updated);
                         }}
-                        placeholder="/scripts/setup.sh"
+                        placeholder="#!/bin/bash&#10;set -euo pipefail&#10;&#10;echo 'Your script here...'"
+                        rows={10}
+                        className="font-mono text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`script-timeout-${index}`}>Timeout</Label>
+                      <Label htmlFor={`script-depends-on-${index}`}>Depends On (comma-separated)</Label>
                       <Input
-                        id={`script-timeout-${index}`}
-                        value={script.timeout || ""}
+                        id={`script-depends-on-${index}`}
+                        value={script.dependsOn?.join(", ") || ""}
                         onChange={(e) => {
                           const updated = [...scripts];
-                          updated[index].timeout = e.target.value;
+                          const value = e.target.value.trim();
+                          updated[index].dependsOn = value
+                            ? value.split(",").map(s => s.trim()).filter(Boolean)
+                            : [];
                           setScripts(updated);
                         }}
-                        placeholder="5m"
+                        placeholder="debug-pod-manifest, verify-namespace"
                       />
                     </div>
                   </div>
@@ -570,30 +607,76 @@ export default function EditAddonPage() {
                     </Button>
                   </div>
                   <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor={`manifest-name-${index}`}>Name *</Label>
+                        <Input
+                          id={`manifest-name-${index}`}
+                          value={manifest.name}
+                          onChange={(e) => {
+                            const updated = [...manifests];
+                            updated[index].name = e.target.value;
+                            setManifests(updated);
+                          }}
+                          placeholder="debug-pod-manifest"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`manifest-namespace-${index}`}>Namespace</Label>
+                        <Input
+                          id={`manifest-namespace-${index}`}
+                          value={manifest.namespace || ""}
+                          onChange={(e) => {
+                            const updated = [...manifests];
+                            updated[index].namespace = e.target.value;
+                            setManifests(updated);
+                          }}
+                          placeholder="dev-tools"
+                        />
+                      </div>
+                    </div>
                     <div>
-                      <Label htmlFor={`manifest-name-${index}`}>Name *</Label>
+                      <Label htmlFor={`manifest-description-${index}`}>Description</Label>
                       <Input
-                        id={`manifest-name-${index}`}
-                        value={manifest.name}
+                        id={`manifest-description-${index}`}
+                        value={manifest.description || ""}
                         onChange={(e) => {
                           const updated = [...manifests];
-                          updated[index].name = e.target.value;
+                          updated[index].description = e.target.value;
                           setManifests(updated);
                         }}
-                        placeholder="custom-manifest"
+                        placeholder="Deploy a debug pod with networking tools"
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`manifest-path-${index}`}>Path</Label>
-                      <Input
-                        id={`manifest-path-${index}`}
-                        value={manifest.path || ""}
+                      <Label htmlFor={`manifest-content-${index}`}>Content *</Label>
+                      <Textarea
+                        id={`manifest-content-${index}`}
+                        value={manifest.content || ""}
                         onChange={(e) => {
                           const updated = [...manifests];
-                          updated[index].path = e.target.value;
+                          updated[index].content = e.target.value;
                           setManifests(updated);
                         }}
-                        placeholder="/manifests/custom.yaml"
+                        placeholder="apiVersion: v1&#10;kind: Pod&#10;metadata:&#10;  name: debug-pod&#10;spec:&#10;  ..."
+                        rows={15}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`manifest-depends-on-${index}`}>Depends On (comma-separated)</Label>
+                      <Input
+                        id={`manifest-depends-on-${index}`}
+                        value={manifest.dependsOn?.join(", ") || ""}
+                        onChange={(e) => {
+                          const updated = [...manifests];
+                          const value = e.target.value.trim();
+                          updated[index].dependsOn = value
+                            ? value.split(",").map(s => s.trim()).filter(Boolean)
+                            : [];
+                          setManifests(updated);
+                        }}
+                        placeholder="verify-namespace"
                       />
                     </div>
                   </div>
