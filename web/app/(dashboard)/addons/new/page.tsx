@@ -91,7 +91,7 @@ export default function NewAddonPage() {
       addonId: "",
       name: "",
       description: "",
-      category: undefined,
+      category: "",
       supportedPlatforms: [],
       enabled: true,
       version: "",
@@ -100,6 +100,7 @@ export default function NewAddonPage() {
   });
 
   const selectedPlatforms = watch("supportedPlatforms") || [];
+  const selectedCategory = watch("category");
 
   const togglePlatform = (platform: string) => {
     const current = selectedPlatforms;
@@ -201,7 +202,10 @@ export default function NewAddonPage() {
                 <Label htmlFor="category">
                   Category <span className="text-red-500">*</span>
                 </Label>
-                <Select onValueChange={(value) => setValue("category", value as any)}>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => setValue("category", value as any)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>

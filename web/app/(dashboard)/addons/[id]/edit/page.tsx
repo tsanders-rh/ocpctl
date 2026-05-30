@@ -90,7 +90,7 @@ export default function EditAddonPage() {
     defaultValues: {
       name: "",
       description: "",
-      category: undefined,
+      category: "",
       supported_platforms: [],
       enabled: true,
       display_name: "",
