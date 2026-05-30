@@ -26,21 +26,27 @@ interface DependencyGraphProps {
     operators?: Array<{
       name: string;
       namespace: string;
-      depends_on?: string[];
+      dependsOn?: string[];
     }>;
     scripts?: Array<{
       name: string;
-      path: string;
-      depends_on?: string[];
+      description?: string;
+      content?: string;
+      path?: string;
+      timeout?: string;
+      dependsOn?: string[];
     }>;
     manifests?: Array<{
       name: string;
-      depends_on?: string[];
+      description?: string;
+      content?: string;
+      namespace?: string;
+      dependsOn?: string[];
     }>;
     helm_charts?: Array<{
       name: string;
       chart: string;
-      depends_on?: string[];
+      dependsOn?: string[];
     }>;
   };
 }
@@ -55,7 +61,7 @@ export function DependencyGraph({ config }: DependencyGraphProps) {
         id: op.name,
         name: op.name,
         type: "operator",
-        dependsOn: op.depends_on || [],
+        dependsOn: op.dependsOn || [],
         level: 0,
       });
     });
@@ -65,7 +71,7 @@ export function DependencyGraph({ config }: DependencyGraphProps) {
         id: script.name,
         name: script.name,
         type: "script",
-        dependsOn: script.depends_on || [],
+        dependsOn: script.dependsOn || [],
         level: 0,
       });
     });
@@ -75,7 +81,7 @@ export function DependencyGraph({ config }: DependencyGraphProps) {
         id: manifest.name,
         name: manifest.name,
         type: "manifest",
-        dependsOn: manifest.depends_on || [],
+        dependsOn: manifest.dependsOn || [],
         level: 0,
       });
     });
@@ -85,7 +91,7 @@ export function DependencyGraph({ config }: DependencyGraphProps) {
         id: chart.name,
         name: chart.name,
         type: "helm_chart",
-        dependsOn: chart.depends_on || [],
+        dependsOn: chart.dependsOn || [],
         level: 0,
       });
     });
