@@ -567,40 +567,72 @@ func (h *ResumeHandler) waitForRouterPods(ctx context.Context, kubeconfigPath st
 }
 
 // waitForConsoleAccessibility verifies the console route is accessible and responding
+// This function retries both route lookup (in case API server is still initializing)
+// and accessibility checks (in case console pods are still starting)
 func (h *ResumeHandler) waitForConsoleAccessibility(ctx context.Context, kubeconfigPath string) error {
 	maxAttempts := 30 // 30 attempts * 10 seconds = 5 minutes
 	retryDelay := 10 * time.Second
 
-	// Get console route URL
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"get", "route", "-n", "openshift-console", "console",
-		"-o", "jsonpath={.spec.host}")
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("get console route: %w", err)
-	}
-
-	consoleHost := strings.TrimSpace(string(output))
-	if consoleHost == "" {
-		return fmt.Errorf("console route host is empty")
-	}
-
-	consoleURL := fmt.Sprintf("https://%s", consoleHost)
-	log.Printf("Console URL: %s", consoleURL)
+	var consoleURL string
+	routeFound := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Try to get console route URL (retries if API server not ready or route not reconciled)
+		if !routeFound {
+			cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"get", "route", "-n", "openshift-console", "console",
+				"-o", "jsonpath={.spec.host}")
+			output, err := cmd.Output()
+
+			if err != nil {
+				if attempt%3 == 0 { // Log every 30 seconds
+					log.Printf("Console route not yet available (attempt %d/%d): %v", attempt, maxAttempts, err)
+				}
+
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context cancelled while waiting for console route")
+				case <-time.After(retryDelay):
+					continue // Retry getting the route
+				}
+			}
+
+			consoleHost := strings.TrimSpace(string(output))
+			if consoleHost == "" {
+				if attempt%3 == 0 {
+					log.Printf("Console route host is empty (attempt %d/%d)", attempt, maxAttempts)
+				}
+
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context cancelled while waiting for console route")
+				case <-time.After(retryDelay):
+					continue
+				}
+			}
+
+			// Route found successfully
+			consoleURL = fmt.Sprintf("https://%s", consoleHost)
+			log.Printf("Console route found: %s", consoleURL)
+			routeFound = true
+		}
+
 		// Try to access the console route (expect 200 or 302 redirect to OAuth)
-		cmd := exec.CommandContext(ctx, "curl", "-k", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+		curlCmd := exec.CommandContext(ctx, "curl", "-k", "-s", "-o", "/dev/null", "-w", "%{http_code}",
 			"--max-time", "5", consoleURL)
-		output, err := cmd.Output()
+		curlOutput, err := curlCmd.Output()
 		if err == nil {
-			statusCode := strings.TrimSpace(string(output))
+			statusCode := strings.TrimSpace(string(curlOutput))
 			// Accept 200 (OK), 302 (redirect to OAuth), or 303 (redirect)
 			if statusCode == "200" || statusCode == "302" || statusCode == "303" {
 				log.Printf("Console is accessible (HTTP %s)", statusCode)
 				return nil
 			}
 			log.Printf("Console returned HTTP %s (attempt %d/%d)", statusCode, attempt, maxAttempts)
+		} else {
+			if attempt%3 == 0 {
+				log.Printf("Console accessibility check failed (attempt %d/%d): %v", attempt, maxAttempts, err)
+			}
 		}
 
 		if attempt%3 == 0 { // Log every 30 seconds
@@ -611,11 +643,11 @@ func (h *ResumeHandler) waitForConsoleAccessibility(ctx context.Context, kubecon
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled while waiting for console accessibility")
 		case <-time.After(retryDelay):
-			// Continue to next attempt
+			continue
 		}
 	}
 
-	return fmt.Errorf("console did not become accessible after %d attempts", maxAttempts)
+	return fmt.Errorf("console did not become accessible after %d attempts (5 minutes)", maxAttempts)
 }
 
 // waitForCNIPods waits for CNI networking pods (multus, OVN) to be healthy on all nodes
