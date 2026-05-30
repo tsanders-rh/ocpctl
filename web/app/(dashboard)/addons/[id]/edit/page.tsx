@@ -133,6 +133,7 @@ export default function EditAddonPage() {
   };
 
   const onSubmit = async (data: AddonFormData) => {
+    console.log("Form submitted with data:", data);
     try {
       const payload = {
         ...data,
@@ -150,6 +151,11 @@ export default function EditAddonPage() {
       toast.error("Failed to update addon");
       console.error(error);
     }
+  };
+
+  const onError = (errors: any) => {
+    console.log("Form validation errors:", errors);
+    toast.error("Please fix the validation errors before saving");
   };
 
   if (isLoading) {
@@ -219,7 +225,7 @@ export default function EditAddonPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-6">
         {/* Basic Information */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
