@@ -451,6 +451,16 @@ func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *typ
 		return fmt.Errorf("cannot update published addon (clone to create new version)")
 	}
 
+	// Use ConfigJSON if provided, otherwise marshal Config
+	configJSON := addon.ConfigJSON
+	if len(configJSON) == 0 {
+		var err error
+		configJSON, err = json.Marshal(addon.Config)
+		if err != nil {
+			return fmt.Errorf("marshal add-on config: %w", err)
+		}
+	}
+
 	query := `
 		UPDATE post_config_addons
 		SET name = $2, description = $3, category = $4, config = $5,
@@ -464,7 +474,7 @@ func (s *PostConfigAddonStore) Update(ctx context.Context, id string, addon *typ
 		addon.Name,
 		addon.Description,
 		addon.Category,
-		addon.ConfigJSON,
+		configJSON,
 		addon.SupportedPlatforms,
 		addon.Enabled,
 		addon.Version,
