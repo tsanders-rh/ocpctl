@@ -88,8 +88,14 @@ export default function NewAddonPage() {
   } = useForm<AddonFormData>({
     resolver: zodResolver(addonSchema),
     defaultValues: {
-      enabled: true,
+      addonId: "",
+      name: "",
+      description: "",
+      category: undefined,
       supportedPlatforms: [],
+      enabled: true,
+      version: "",
+      displayName: "",
     },
   });
 

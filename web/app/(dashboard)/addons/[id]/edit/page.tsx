@@ -87,6 +87,14 @@ export default function EditAddonPage() {
     formState: { errors },
   } = useForm<AddonFormData>({
     resolver: zodResolver(addonSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      category: undefined,
+      supported_platforms: [],
+      enabled: true,
+      display_name: "",
+    },
   });
 
   const selectedPlatforms = watch("supported_platforms") || [];
