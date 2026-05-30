@@ -375,7 +375,8 @@ func (s *Server) setupRoutes() {
 	// Post-config add-ons routes (require authentication)
 	addonsHandler := NewAddonsHandler(s.store, s.registry)
 	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
-	postConfigGroup.GET("/addons", addonsHandler.ListAll) // List all system + published addons as array
+	postConfigGroup.GET("/addons", addonsHandler.List)                  // List with categories (for cluster creation)
+	postConfigGroup.GET("/addons/all", addonsHandler.ListAll)           // List all as flat array (for addon management)
 	postConfigGroup.GET("/addons/my", addonsHandler.ListUserAddons)     // Get user's custom addons
 	postConfigGroup.GET("/addons/:id", addonsHandler.GetByID)            // Get specific addon
 	postConfigGroup.POST("/addons", addonsHandler.Create)                // Create new addon

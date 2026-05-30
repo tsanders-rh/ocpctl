@@ -107,7 +107,7 @@ export const addonsApi = {
     if (params?.search) queryParams.append("search", params.search);
 
     const query = queryParams.toString();
-    const endpoint = `/post-config/addons${query ? `?${query}` : ""}`;
+    const endpoint = `/post-config/addons/all${query ? `?${query}` : ""}`;
     return apiClient.get<PostConfigAddon[]>(endpoint);
   },
 
