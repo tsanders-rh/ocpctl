@@ -236,7 +236,7 @@ func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string)
 func (s *PostConfigAddonStore) Create(ctx context.Context, addon *types.PostConfigAddon) error {
 	// Use ConfigJSON if provided, otherwise marshal Config
 	configJSON := addon.ConfigJSON
-	if len(configJSON) == 0 && addon.Config.Operators != nil {
+	if len(configJSON) == 0 {
 		var err error
 		configJSON, err = json.Marshal(addon.Config)
 		if err != nil {
