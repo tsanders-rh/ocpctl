@@ -36,6 +36,8 @@ type AddonWithVersions struct {
 	Enabled            bool                  `json:"enabled" example:"true"`
 	Versions           VersionsInfo          `json:"versions"`
 	Metadata           *types.AddonMetadata  `json:"metadata,omitempty"`
+	AddonSource        string                `json:"addonSource" example:"system"`
+	IsPublished        bool                  `json:"isPublished" example:"true"`
 }
 
 // VersionsInfo contains version information
@@ -250,6 +252,8 @@ func (h *AddonsHandler) List(c echo.Context) error {
 				SupportedPlatforms: addon.SupportedPlatforms,
 				Enabled:            addon.Enabled,
 				Metadata:           addon.Metadata,
+				AddonSource:        string(addon.AddonSource),
+				IsPublished:        addon.IsPublished,
 				Versions: VersionsInfo{
 					Allowed: []VersionOption{},
 				},
