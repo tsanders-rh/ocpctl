@@ -45,6 +45,11 @@ export default function AddonDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
 
+  const formatCategoryName = (category: string) => {
+    if (category === "cicd") return "CI/CD";
+    return category.charAt(0).toUpperCase() + category.slice(1);
+  };
+
   const handleDelete = async () => {
     try {
       await deleteAddon.mutateAsync(addonId);
@@ -200,7 +205,7 @@ export default function AddonDetailPage() {
               <dl className="space-y-2">
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Category</dt>
-                  <dd className="text-sm font-medium capitalize">{addon.category}</dd>
+                  <dd className="text-sm font-medium">{formatCategoryName(addon.category)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-sm text-muted-foreground">Version</dt>
