@@ -91,6 +91,7 @@ export default function EditAddonPage() {
   });
 
   const selectedPlatforms = watch("supported_platforms") || [];
+  const [formReady, setFormReady] = useState(false);
 
   // Load addon data into form
   useEffect(() => {
@@ -114,6 +115,8 @@ export default function EditAddonPage() {
       if (addon.config.manifests) {
         setManifests(addon.config.manifests);
       }
+
+      setFormReady(true);
     }
   }, [addon, reset]);
 
@@ -151,7 +154,7 @@ export default function EditAddonPage() {
     toast.error("Please fix the validation errors before saving");
   };
 
-  if (isLoading) {
+  if (isLoading || !formReady) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-muted-foreground">Loading addon...</div>
