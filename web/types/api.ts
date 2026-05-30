@@ -613,6 +613,8 @@ export interface PostConfigAddon {
     default: string;
   };
   metadata?: AddonMetadata;
+  addonSource: "system" | "user";
+  isPublished: boolean;
 }
 
 export interface PostConfigAddonsResponse {

@@ -171,13 +171,28 @@ export function AddonBrowser({
                     </Tooltip>
                   </TooltipProvider>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Label
                         htmlFor={`addon-${addon.id}`}
                         className={`font-medium text-base ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                       >
                         {addon.name}
                       </Label>
+                      {addon.addonSource === "system" && (
+                        <span className="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-950 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-700/10">
+                          System
+                        </span>
+                      )}
+                      {addon.addonSource === "user" && addon.isPublished && (
+                        <span className="inline-flex items-center rounded-md bg-green-50 dark:bg-green-950 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-300 ring-1 ring-inset ring-green-700/10">
+                          Published
+                        </span>
+                      )}
+                      {addon.addonSource === "user" && !addon.isPublished && (
+                        <span className="inline-flex items-center rounded-md bg-orange-50 dark:bg-orange-950 px-2 py-1 text-xs font-medium text-orange-700 dark:text-orange-300 ring-1 ring-inset ring-orange-700/10">
+                          Draft
+                        </span>
+                      )}
                       {isDisabled && conflictingAddon && (
                         <span className="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-950 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-300 ring-1 ring-inset ring-yellow-700/10">
                           <AlertCircle className="h-3 w-3 mr-1" />
