@@ -202,7 +202,7 @@ export default function NewAddonPage() {
                   <SelectContent>
                     {CATEGORIES.map((cat) => (
                       <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        {cat === "cicd" ? "CI/CD" : cat.charAt(0).toUpperCase() + cat.slice(1)}
                       </SelectItem>
                     ))}
                   </SelectContent>
