@@ -148,11 +148,29 @@ func (h *AddonsHandler) List(c echo.Context) error {
 		platformPtr = &platform
 	}
 
-	// Retrieve add-ons from database
+	// Retrieve add-ons from database (system + published user addons)
 	addons, err := h.store.PostConfigAddons.List(ctx, categoryPtr, platformPtr)
 	if err != nil {
 		log.Printf("Error listing add-ons: %v", err)
 		return LogAndReturnGenericError(c, err)
+	}
+
+	// Also include current user's draft addons so they can test before publishing
+	userID, err := auth.GetUserID(c)
+	if err == nil {
+		// Only fetch user addons if we can get the user ID (logged in)
+		userAddons, err := h.store.PostConfigAddons.GetUserAddons(ctx, userID)
+		if err != nil {
+			log.Printf("Warning: failed to get user addons: %v", err)
+			// Don't fail the request, just continue without user's draft addons
+		} else {
+			// Add unpublished user addons to the list
+			for _, userAddon := range userAddons {
+				if !userAddon.IsPublished {
+					addons = append(addons, userAddon)
+				}
+			}
+		}
 	}
 
 	// Filter by profile capabilities if profile parameter is provided
