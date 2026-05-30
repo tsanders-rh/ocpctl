@@ -308,6 +308,11 @@ function AddonCard({
 }) {
   const router = useRouter();
 
+  const formatCategoryName = (category: string) => {
+    if (category === "cicd") return "CI/CD";
+    return category.charAt(0).toUpperCase() + category.slice(1);
+  };
+
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
       backup: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
@@ -359,7 +364,7 @@ function AddonCard({
         {/* Metadata */}
         <div className="flex flex-wrap gap-2">
           <Badge className={getCategoryColor(addon.category)}>
-            {addon.category}
+            {formatCategoryName(addon.category)}
           </Badge>
           {addon.supportedPlatforms?.slice(0, 2).map((platform: string) => (
             <Badge key={platform} variant="outline" className="text-xs">
