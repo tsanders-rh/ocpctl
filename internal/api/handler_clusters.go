@@ -451,6 +451,13 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Load add-ons and merge into custom post-config if specified
 	debugLog("PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
 	if len(req.PostConfigAddOns) > 0 {
+		// Get user ID to allow access to user's draft addons
+		userID, err := auth.GetUserID(c)
+		if err != nil {
+			log.Printf("[ERROR] Failed to get user ID for addon validation: %v", err)
+			return ErrorUnauthorized(c, "authentication required to use addons")
+		}
+
 		// Initialize custom post-config if it doesn't exist
 		if req.CustomPostConfig == nil {
 			req.CustomPostConfig = &types.CustomPostConfig{}
@@ -467,7 +474,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			}
 
 			debugLog("Processing add-on: %s version %s", selection.ID, selection.Version)
-			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
+			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersionForUser(ctx, selection.ID, selection.Version, userID)
 			if err != nil {
 				log.Printf("[ERROR] Failed to load add-on %s version %s: %v", selection.ID, selection.Version, err)
 				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' version '%s' not found or disabled", selection.ID, selection.Version))

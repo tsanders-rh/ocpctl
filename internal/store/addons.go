@@ -359,6 +359,68 @@ func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addon
 	return &addon, nil
 }
 
+// GetByAddonIDAndVersionForUser retrieves a specific version of an add-on, including draft addons owned by the specified user
+func (s *PostConfigAddonStore) GetByAddonIDAndVersionForUser(ctx context.Context, addonID string, version string, userID string) (*types.PostConfigAddon, error) {
+	query := `
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
+		FROM post_config_addons
+		WHERE addon_id = $1 AND version = $2
+		  AND (addon_source = 'system'
+		       OR (addon_source = 'user' AND is_published = TRUE)
+		       OR (addon_source = 'user' AND created_by_user_id = $3))
+	`
+
+	var addon types.PostConfigAddon
+	var configJSON []byte
+	var metadataJSON []byte
+
+	err := s.pool.QueryRow(ctx, query, addonID, version, userID).Scan(
+		&addon.ID,
+		&addon.AddonID,
+		&addon.Name,
+		&addon.Description,
+		&addon.Category,
+		&configJSON,
+		&addon.SupportedPlatforms,
+		&addon.Enabled,
+		&addon.Version,
+		&addon.DisplayName,
+		&addon.IsDefault,
+		&metadataJSON,
+		&addon.AddonSource,
+		&addon.CreatedByUserID,
+		&addon.IsPublished,
+		&addon.PublishedAt,
+		&addon.ParentVersionID,
+		&addon.VersionNumber,
+		&addon.IsImmutable,
+		&addon.CreatedAt,
+		&addon.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get add-on by addon_id and version for user: %w", err)
+	}
+
+	if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	if metadataJSON != nil {
+		if err := json.Unmarshal(metadataJSON, &addon.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal metadata: %w", err)
+		}
+	}
+
+	return &addon, nil
+}
+
 // ListVersions returns all versions of a specific add-on
 func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string) ([]types.PostConfigAddon, error) {
 	query := `

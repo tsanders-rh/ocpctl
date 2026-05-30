@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Book, Users, Shield, Sparkles, Database } from "lucide-react";
+import { Book, Users, Shield, Sparkles, Database, PackageCheck } from "lucide-react";
 
 const userGuides = [
   {
@@ -1843,6 +1843,1197 @@ If you lose the lease response with \`cluster_id\`:
 - Contact your OCPCTL administrator
 - Check API documentation for endpoint details
 - Review cluster logs if lease fails
+`,
+  },
+  {
+    id: "addons",
+    title: "Addons",
+    icon: PackageCheck,
+    content: `# Addons
+
+## Overview
+
+### What are Addons?
+
+Addons are pre-packaged post-deployment configurations that automatically install and configure software on your clusters after creation. They can include:
+
+- **Operators** - OpenShift Operators from catalogs (e.g., OpenShift Virtualization, Pipelines)
+- **Scripts** - Bash scripts for cluster configuration and setup tasks
+- **Manifests** - Kubernetes YAML resources (pods, services, config maps, etc.)
+- **Helm Charts** - Packaged applications from Helm repositories
+
+**Use Cases:**
+- Standardize cluster configurations across teams
+- Install common development tools automatically
+- Deploy monitoring and logging stacks
+- Configure backup and disaster recovery solutions
+- Set up CI/CD tooling (Tekton, ArgoCD, etc.)
+
+### System Addons vs User Addons
+
+**System Addons** (🔵 Blue Badge):
+- Pre-configured by OCPCTL administrators
+- Available to all users
+- Immutable (cannot be edited or deleted)
+- Production-tested and supported
+- Examples: CNV (OpenShift Virtualization), MTA, MTC, OADP
+
+**User Addons**:
+- Created by users for custom requirements
+- Two states: Draft or Published
+- Full control over configuration
+- Can be shared with team or kept private
+
+**Published User Addons** (🟢 Green Badge):
+- Visible to all users
+- Immutable (cannot be edited)
+- Production-ready
+- To make changes, clone to create a new draft version
+
+**Draft User Addons** (🟠 Orange Badge):
+- Only visible to the author
+- Can be edited and deleted
+- Can be tested in cluster creation before publishing
+- Perfect for development and testing
+
+### Addon Lifecycle
+
+\`\`\`
+1. Create → 🟠 Draft
+   ↓ (test, edit, refine)
+2. Publish → 🟢 Published
+   ↓ (immutable, visible to all)
+3. Clone → 🟠 New Draft Version
+   ↓ (make changes)
+4. Publish → 🟢 Published (new version)
+\`\`\`
+
+**Key Points:**
+- Publishing is **one-way** - you cannot unpublish
+- To update a published addon, you must **clone** it to create a new version
+- Draft addons can be used by the author for testing before publishing
+- Version history is maintained via \`parent_version_id\`
+
+### Available System Addons
+
+#### CNV (OpenShift Virtualization)
+
+Enables running virtual machines alongside containers on OpenShift.
+
+**Available Versions:**
+- **4.22 stable-stage** - Production-ready for OpenShift 4.22
+- **4.22 stable-stage + Windows VM** - Includes Windows 10 VM support with OADP
+- **4.99 nightly** - Latest development builds
+- **4.99 nightly + Windows VM** - Development builds with Windows support
+
+**Requirements:**
+- OpenShift 4.18+
+- Bare metal or nested virtualization support
+- Windows versions require Manual (IRSA) credentials mode
+
+**What Gets Installed:**
+- HyperConverged Operator
+- CNV operator and CRDs
+- Virtualization catalog source
+- Sample VMs (optional)
+
+#### MTA (Migration Toolkit for Applications)
+
+Application analysis and migration toolkit for modernizing Java applications.
+
+**Features:**
+- Analyze applications for cloud-native migration
+- Identify code changes needed for containerization
+- Generate migration reports and recommendations
+- Support for multiple frameworks (Spring, EJB, Hibernate, etc.)
+
+**Requirements:**
+- OpenShift 4.12+
+- 8GB+ memory recommended
+
+#### MTC (Migration Toolkit for Containers)
+
+Migrate applications between Kubernetes/OpenShift clusters with state preservation.
+
+**Features:**
+- Migrate workloads between clusters
+- Preserve persistent volume data
+- Support for direct and indirect migrations
+- Rollback capabilities
+
+**Requirements:**
+- OpenShift 4.12+
+- Network connectivity between source and target clusters
+
+#### OADP (OpenShift API for Data Protection)
+
+Backup and restore solution for OpenShift applications and persistent data.
+
+**Features:**
+- Backup namespaces, resources, and volumes
+- Scheduled backups
+- Restore to same or different cluster
+- S3-compatible storage backends
+
+**Built on:**
+- Velero open-source project
+- Restic for volume backups
+
+**Requirements:**
+- OpenShift 4.10+
+- S3-compatible object storage
+
+## Using Addons in Cluster Creation
+
+### Accessing the Addon Browser
+
+When creating a cluster:
+
+1. Fill in basic cluster details (name, platform, version, region, etc.)
+2. Scroll down to the **Addons** section
+3. The Addon Browser displays all available addons
+
+### Search and Filter
+
+**Search Bar:**
+- Type to search by addon name or description
+- Real-time filtering as you type
+- Case-insensitive matching
+
+**Category Filter:**
+- Dropdown to filter by functional category
+- Categories: Virtualization, Migration, Backup, Development, Monitoring, etc.
+- Select "All Categories" to see everything
+
+**Platform Filter (Automatic):**
+- Addons automatically filtered based on your selected platform and profile
+- Only shows compatible addons
+- Platform field on addon card shows: aws, gcp, ibmcloud
+
+### Understanding Addon Cards
+
+Each addon card displays:
+
+**Header:**
+- **Checkbox** - Select/deselect addon
+- **Name** - Display name with status badge
+- **Badge** - Addon type (System/Published/Draft)
+
+**Details:**
+- **Description** - What the addon does
+- **Category** - Functional grouping
+- **Platform Support** - Compatible platforms
+
+**When Selected:**
+- **Version Selector** - Choose from available versions
+- Recommended version marked with "(recommended)"
+
+### Selecting and Configuring Addons
+
+**To select an addon:**
+
+1. **Click the checkbox** next to the addon name
+2. **Version selector appears** below the addon
+3. **Choose version:**
+   - Default/recommended version pre-selected
+   - Click dropdown to see other options
+   - Each version shows: channel name, display name
+
+**Version Examples:**
+\`\`\`
+stable → "CNV 4.22 (recommended)"
+stable-stage → "CNV 4.22 Stable Stage"
+nightly → "CNV 4.99 Nightly"
+\`\`\`
+
+**To deselect:**
+- Uncheck the checkbox
+- Version selector disappears
+- Addon removed from cluster configuration
+
+### Addon Conflicts
+
+Some addons cannot be installed together due to conflicts.
+
+**How Conflicts Work:**
+
+**Scenario:** CNV 4.22 conflicts with CNV 4.99 (can't install two versions)
+
+1. **Select CNV 4.22** - Works normally
+2. **Try to select CNV 4.99:**
+   - CNV 4.99 checkbox is **disabled** (grayed out)
+   - Shows warning badge: 🟡 **Conflicts with CNV 4.22**
+   - Tooltip explains: "This addon conflicts with CNV 4.22. Deselect CNV 4.22 first."
+
+**Automatic Conflict Resolution:**
+
+Some addons use automatic resolution:
+1. Select Addon A
+2. Select Addon B (conflicts with A)
+3. Addon A is **automatically deselected**
+4. Only Addon B remains selected
+
+**Viewing Conflicts:**
+- Conflict information shown on addon card
+- Warning badge appears when conflict detected
+- Tooltip provides details
+
+### Testing Draft Addons
+
+**For Addon Authors:**
+
+If you created a custom addon but haven't published it:
+
+1. Your draft addon appears in the Addon Browser
+2. Marked with 🟠 **Draft** badge
+3. **Only YOU can see it** - other users don't see drafts
+4. You can select and test it in cluster creation
+
+**Testing Workflow:**
+
+1. Create draft addon in **Addons** page
+2. Go to **Clusters** → **Create Cluster**
+3. Find your draft addon (shows 🟠 Draft badge)
+4. Select it and create a test cluster
+5. Verify it installs correctly
+6. Review job logs for any errors
+7. Edit addon if needed
+8. Repeat until satisfied
+9. **Publish** when ready for production use
+
+**Best Practice:**
+- Always test draft addons before publishing
+- Use a dedicated test cluster
+- Check job logs for warnings/errors
+- Verify all components installed successfully
+
+### Addon Execution Order
+
+After cluster creation completes, selected addons are executed automatically:
+
+**Dependency Resolution:**
+- Items with \`dependsOn\` wait for their dependencies
+- Independent items run in parallel
+- Topological sort ensures correct ordering
+
+**Execution Flow:**
+\`\`\`
+1. Cluster reaches READY status
+2. POST_CONFIGURE job created
+3. Addon components merged with profile post-config
+4. Dependencies analyzed
+5. Execution order calculated
+6. Items executed in order
+7. Job succeeds or fails
+\`\`\`
+
+**Viewing Execution:**
+- Go to cluster details page
+- Expand **Post-Deployment Execution Order** card
+- See ordered list of operators, scripts, manifests
+- Green checkmarks for completed items
+- Red X for failed items
+
+**Debugging Failed Addons:**
+- Check job logs (filter by POST_CONFIGURE)
+- Look for error messages
+- Verify dependencies completed successfully
+- Check resource requirements (memory, CPU)
+- Ensure platform compatibility
+
+### Selection Summary
+
+At the bottom of the Addon Browser:
+
+**Summary Card:**
+\`\`\`
+✓ 2 add-ons selected
+
+Selected add-ons will be installed after cluster creation
+\`\`\`
+
+Shows:
+- Count of selected addons
+- Reminder that installation happens post-creation
+- Updates in real-time as you select/deselect
+
+## Creating Custom Addons
+
+### When to Create a Custom Addon
+
+Create custom addons when you need to:
+
+- **Standardize configurations** - Install the same tools on multiple clusters
+- **Share with team** - Distribute configurations to team members
+- **Version control** - Track changes to cluster configurations over time
+- **Package deployments** - Bundle multi-step deployments into one addon
+- **Automate setup** - Eliminate manual post-install steps
+
+**Examples:**
+- Development tooling (debugging pods, CLI tools, dashboards)
+- Monitoring stack (Prometheus, Grafana, alerts)
+- CI/CD pipelines (Tekton, ArgoCD, Jenkins)
+- Security tooling (Falco, Trivy, admission controllers)
+- Custom operators for internal services
+
+### Creating Your First Addon
+
+**Step 1: Navigate to Addons Page**
+
+1. Click **Addons** in the sidebar
+2. Click **Create Addon** button (top right)
+
+**Step 2: Fill in Basic Information**
+
+**Addon ID** (required):
+- Unique identifier across the system
+- Lowercase letters, numbers, hyphens only
+- Cannot be changed after creation
+- Examples: \`dev-tools\`, \`monitoring-stack\`, \`my-app-setup\`
+
+**Name** (required):
+- Display name shown to users
+- Can include spaces and capitals
+- Examples: "Development Tools", "Monitoring Stack"
+
+**Description** (required):
+- Brief explanation of what the addon does
+- Shown in addon browser cards
+- Keep it concise (1-2 sentences)
+- Example: "Installs debugging pods and CLI tools for development"
+
+**Category** (required):
+- Functional grouping for filtering
+- Options: Development, Monitoring, Backup, Migration, Virtualization, Networking, Security, Storage, Custom
+
+**Version** (required):
+- Version channel identifier
+- Examples: \`stable\`, \`v1.0\`, \`beta\`, \`nightly\`
+- Cannot be changed after creation
+- Use semantic versioning recommended
+
+**Display Name** (required):
+- User-friendly version name
+- Examples: "Dev Tools v1.0", "Stable Release", "Beta 2024-05"
+
+**Step 3: Platform Support**
+
+Select which platforms this addon supports:
+
+- ☐ **aws** - Works on AWS (OpenShift, EKS)
+- ☐ **gcp** - Works on GCP (OpenShift, GKE)
+- ☐ **ibmcloud** - Works on IBM Cloud (IKS)
+
+**Tips:**
+- Select all that apply
+- Test on each platform before publishing
+- Platform-specific requirements go in metadata notes
+
+**Step 4: Configure Components**
+
+Choose which components to include (at least one required):
+
+#### Operators
+
+Install OpenShift Operators from catalogs.
+
+**When to use:**
+- Installing operators from OperatorHub
+- Need operator CRDs and controllers
+- Using OpenShift operator lifecycle management
+
+**Configuration:**
+\`\`\`json
+{
+  "operators": [
+    {
+      "name": "openshift-pipelines-operator-rh",
+      "namespace": "openshift-operators",
+      "source": "redhat-operators",
+      "channel": "latest",
+      "depends_on": []
+    }
+  ]
+}
+\`\`\`
+
+**Fields:**
+- \`name\` - Package name from catalog
+- \`namespace\` - Target namespace (usually openshift-operators)
+- \`source\` - Catalog source (redhat-operators, community-operators, certified-operators)
+- \`channel\` - Update channel (stable, fast, latest, etc.)
+- \`depends_on\` - Array of component names to wait for (optional)
+
+**Finding Operator Names:**
+1. Go to OperatorHub in OpenShift console
+2. Search for operator
+3. Click on it to see package name
+4. Use exact package name in \`name\` field
+
+#### Scripts
+
+Run bash scripts for configuration tasks.
+
+**When to use:**
+- Cluster configuration (network policies, quotas, etc.)
+- Namespace creation
+- Resource validation
+- Custom installation steps
+- Waiting for resources to be ready
+
+**Configuration:**
+\`\`\`json
+{
+  "scripts": [
+    {
+      "name": "create-namespace",
+      "description": "Create dev-tools namespace",
+      "content": "#!/bin/bash\\nset -euo pipefail\\n\\nkubectl create namespace dev-tools || echo 'Namespace exists'",
+      "timeout": "60s",
+      "dependsOn": []
+    }
+  ]
+}
+\`\`\`
+
+**Fields:**
+- \`name\` - Script identifier (unique within addon)
+- \`description\` - What the script does
+- \`content\` - Inline bash script (use \`\\n\` for newlines)
+- \`url\` - OR fetch script from URL
+- \`path\` - OR path to script file
+- \`timeout\` - Max execution time (default: 300s)
+- \`dependsOn\` - Wait for these components first
+
+**Script Best Practices:**
+\`\`\`bash
+#!/bin/bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Your script here
+kubectl create namespace demo
+
+# Check results
+kubectl get namespace demo
+\`\`\`
+
+**Available Commands:**
+- \`kubectl\` - Kubernetes CLI
+- \`oc\` - OpenShift CLI (on OpenShift clusters)
+- \`curl\`, \`wget\` - HTTP clients
+- \`jq\`, \`yq\` - JSON/YAML processors
+- Standard bash utilities
+
+#### Manifests
+
+Apply Kubernetes YAML resources.
+
+**When to use:**
+- Deploying pods, services, deployments
+- Creating config maps, secrets
+- Applying CRs after operator installation
+- Setting up RBAC (roles, bindings)
+
+**Configuration:**
+\`\`\`json
+{
+  "manifests": [
+    {
+      "name": "debug-pod",
+      "description": "Deploy debug pod with network tools",
+      "content": "apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: debug-pod\\n  namespace: dev-tools\\nspec:\\n  containers:\\n  - name: debug\\n    image: nicolaka/netshoot:latest\\n    command: ['sleep', 'infinity']",
+      "namespace": "dev-tools",
+      "dependsOn": ["create-namespace"]
+    }
+  ]
+}
+\`\`\`
+
+**Fields:**
+- \`name\` - Manifest identifier
+- \`description\` - What this creates
+- \`content\` - Inline YAML (use \`\\n\` for newlines)
+- \`url\` - OR fetch YAML from URL
+- \`namespace\` - Override namespace (optional)
+- \`dependsOn\` - Wait for these components
+
+**Multi-Resource Manifests:**
+Use \`---\` to separate multiple resources:
+\`\`\`yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo
+  namespace: demo
+spec:
+  containers:
+  - name: app
+    image: nginx:alpine
+\`\`\`
+
+#### Helm Charts
+
+Install Helm charts from repositories.
+
+**When to use:**
+- Deploying packaged applications
+- Using community Helm charts
+- Installing complex multi-resource apps
+- Leveraging Helm's upgrade capabilities
+
+**Configuration:**
+\`\`\`json
+{
+  "helm_charts": [
+    {
+      "name": "grafana",
+      "repo": "https://grafana.github.io/helm-charts",
+      "chart": "grafana",
+      "version": "6.50.0",
+      "namespace": "monitoring",
+      "values": {
+        "persistence.enabled": false,
+        "adminPassword": "admin123"
+      },
+      "depends_on": ["create-monitoring-ns"]
+    }
+  ]
+}
+\`\`\`
+
+**Fields:**
+- \`name\` - Helm release name
+- \`repo\` - Helm repository URL
+- \`chart\` - Chart name in repository
+- \`version\` - Chart version (optional, uses latest if omitted)
+- \`namespace\` - Target namespace
+- \`values\` - Chart values as JSON object (optional)
+- \`depends_on\` - Wait for these components
+
+**Finding Helm Charts:**
+- Artifact Hub: https://artifacthub.io
+- Helm Hub: https://hub.helm.sh
+- Chart repository README files
+
+**Step 5: Metadata (Optional but Recommended)**
+
+**Conflicts With:**
+- List addon IDs that conflict with this one
+- Example: \`["other-monitoring-stack", "legacy-tools"]\`
+- Prevents users from selecting conflicting addons
+
+**Required Capabilities:**
+- Platform features needed for this addon
+- Examples: \`["efs-storage"]\`, \`["bare-metal"]\`, \`["gpu-nodes"]\`
+- Shown as warnings to users
+
+**Requires Bare Metal:**
+- Check if addon needs bare metal nodes
+- Common for: virtualization, high-performance workloads
+
+**Notes:**
+- Usage instructions for users
+- How to access deployed applications
+- Configuration options
+- Example:
+  \`\`\`
+  Access Grafana at: https://grafana-route-monitoring.apps.<cluster-domain>
+  Default credentials: admin / admin123
+  Change password after first login
+  \`\`\`
+
+**Warnings:**
+- Important caveats users should know
+- Resource requirements
+- Cost implications
+- Example:
+  \`\`\`
+  - Requires 16GB+ worker nodes
+  - Uses 50GB persistent storage
+  - Increases cluster cost by ~$50/month
+  \`\`\`
+
+**Step 6: Save Draft**
+
+1. Click **Save Draft** button
+2. Addon saved with 🟠 Draft status
+3. Only you can see and use it
+4. Redirected to addon details page
+
+### Complete Example: Development Tools Addon
+
+\`\`\`json
+{
+  "addon_id": "dev-tools",
+  "name": "Development Tools",
+  "description": "Debugging pod with network tools and sample ConfigMap",
+  "category": "development",
+  "version": "stable",
+  "display_name": "Dev Tools v1.0",
+  "supported_platforms": ["aws", "gcp"],
+  "config": {
+    "scripts": [
+      {
+        "name": "verify-namespace",
+        "description": "Ensure dev-tools namespace exists",
+        "content": "#!/bin/bash\\nset -euo pipefail\\n\\nif kubectl get namespace dev-tools; then\\n  echo 'Namespace exists'\\nelse\\n  kubectl create namespace dev-tools\\nfi",
+        "timeout": "60s"
+      },
+      {
+        "name": "wait-for-pod",
+        "description": "Wait for debug pod to be ready",
+        "content": "#!/bin/bash\\nkubectl wait --for=condition=ready pod/debug-pod -n dev-tools --timeout=120s",
+        "timeout": "180s",
+        "dependsOn": ["debug-pod-manifest"]
+      }
+    ],
+    "manifests": [
+      {
+        "name": "debug-pod-manifest",
+        "description": "Deploy debug pod with network tools",
+        "content": "apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: debug-pod\\n  namespace: dev-tools\\nspec:\\n  containers:\\n  - name: debug\\n    image: nicolaka/netshoot:latest\\n    command: ['sleep', 'infinity']",
+        "namespace": "dev-tools",
+        "dependsOn": ["verify-namespace"]
+      },
+      {
+        "name": "configmap-example",
+        "description": "Sample ConfigMap with debug commands",
+        "content": "apiVersion: v1\\nkind: ConfigMap\\nmetadata:\\n  name: debug-commands\\n  namespace: dev-tools\\ndata:\\n  test-dns.sh: |\\n    #!/bin/bash\\n    dig kubernetes.default.svc.cluster.local",
+        "namespace": "dev-tools",
+        "dependsOn": ["verify-namespace"]
+      }
+    ]
+  },
+  "metadata": {
+    "notes": [
+      "Access debug pod: kubectl exec -it debug-pod -n dev-tools -- bash",
+      "Available tools: curl, wget, dig, ping, traceroute, netstat"
+    ],
+    "warnings": [
+      "Debug pod runs with default service account",
+      "For production, configure RBAC appropriately"
+    ]
+  }
+}
+\`\`\`
+
+**Execution Order for This Addon:**
+\`\`\`
+1. verify-namespace (no dependencies)
+2. debug-pod-manifest (depends on verify-namespace)
+3. configmap-example (depends on verify-namespace)
+4. wait-for-pod (depends on debug-pod-manifest)
+\`\`\`
+
+### Dependency Management
+
+Use \`dependsOn\` / \`depends_on\` to control execution order.
+
+**Rules:**
+- Components with no dependencies run first
+- Components wait for all dependencies to complete
+- Independent components run in parallel
+- Circular dependencies cause validation errors
+
+**Common Patterns:**
+
+**Pattern 1: Namespace First**
+\`\`\`json
+{
+  "scripts": [
+    {"name": "create-ns", "content": "kubectl create ns demo"}
+  ],
+  "manifests": [
+    {
+      "name": "pod",
+      "namespace": "demo",
+      "dependsOn": ["create-ns"]
+    }
+  ]
+}
+\`\`\`
+
+**Pattern 2: Operator → Custom Resource**
+\`\`\`json
+{
+  "operators": [
+    {"name": "prometheus-operator", "namespace": "operators"}
+  ],
+  "manifests": [
+    {
+      "name": "prometheus-instance",
+      "content": "apiVersion: monitoring.coreos.com/v1...",
+      "dependsOn": []  // Operator installation includes wait
+    }
+  ]
+}
+\`\`\`
+
+**Pattern 3: Sequential Scripts**
+\`\`\`json
+{
+  "scripts": [
+    {"name": "step1", "content": "..."},
+    {"name": "step2", "content": "...", "dependsOn": ["step1"]},
+    {"name": "step3", "content": "...", "dependsOn": ["step2"]}
+  ]
+}
+\`\`\`
+
+**Pattern 4: Parallel with Final Validation**
+\`\`\`json
+{
+  "manifests": [
+    {"name": "pod-a"},
+    {"name": "pod-b"},
+    {"name": "service"}
+  ],
+  "scripts": [
+    {
+      "name": "verify-all",
+      "dependsOn": ["pod-a", "pod-b", "service"]
+    }
+  ]
+}
+\`\`\`
+
+## Managing Your Addons
+
+### Viewing Addons
+
+**All Addons Tab:**
+- System addons (🔵 System badge)
+- Published user addons from all users (🟢 Published badge)
+- Your unpublished addons (🟠 Draft badge)
+- Search and filter available
+
+**My Addons Tab:**
+- Only addons you created
+- Both draft and published versions
+- Quick access to edit/manage
+
+### Addon Status Badges
+
+- 🔵 **System** - Built-in system addon (read-only, cannot edit or delete)
+- 🟢 **Published** - Published addon (yours or someone else's, immutable)
+- 🟠 **Draft** - Your unpublished addon (editable, deletable)
+
+### Editing Draft Addons
+
+**Only draft addons can be edited.**
+
+1. Go to **My Addons** tab
+2. Click on a 🟠 Draft addon card
+3. Click **Edit** button on details page
+4. Make your changes
+5. Click **Save Changes**
+
+**Editable Fields:**
+- Name, description, category
+- Display name
+- Platform support
+- All configuration (operators, scripts, manifests, helm charts)
+- Metadata (conflicts, notes, warnings)
+
+**Non-Editable Fields:**
+- Addon ID (immutable after creation)
+- Version (immutable after creation)
+- Created by, created at
+
+**Published addons cannot be edited.** To make changes, you must clone the addon to create a new draft version.
+
+### Publishing Addons
+
+When your addon is tested and production-ready:
+
+**Steps:**
+1. Go to **My Addons** tab
+2. Click on your 🟠 Draft addon
+3. Review all configuration one final time
+4. Click **Publish** button
+5. Confirm the action in the dialog
+
+**What Happens:**
+- Status changes from 🟠 Draft → 🟢 Published
+- Addon becomes **immutable** (cannot be edited)
+- Addon becomes **visible to all users**
+- Anyone can use it in cluster creation
+- \`published_at\` timestamp recorded
+- \`is_immutable\` flag set to true
+
+**Important:**
+- **Publishing is one-way** - you cannot unpublish
+- Test thoroughly before publishing
+- Ensure all metadata is complete
+- Verify platform support is correct
+
+**Best Practices Before Publishing:**
+- Test on a development cluster
+- Review all notes and warnings
+- Check for typos in descriptions
+- Validate all scripts run successfully
+- Verify operator names are correct
+- Ensure dependencies are properly set
+
+### Creating New Versions (Cloning)
+
+To update a published addon, clone it to create a new version.
+
+**Steps:**
+1. Go to **My Addons** tab
+2. Click on your 🟢 Published addon
+3. Click **Clone** button
+4. New draft is created with:
+   - Same addon ID
+   - New version (increment yourself)
+   - All configuration copied
+   - \`parent_version_id\` links to original
+
+**After Cloning:**
+1. Edit the draft to update version field
+2. Make your changes
+3. Test thoroughly
+4. Publish when ready
+
+**Version Strategy:**
+\`\`\`
+v1.0 (published)
+  ↓ clone
+v1.0-draft (draft)
+  ↓ edit → change version to "v1.1"
+v1.1 (draft)
+  ↓ test
+v1.1 (published)
+\`\`\`
+
+**Semantic Versioning Example:**
+- \`v1.0.0\` → \`v1.0.1\` (bug fix)
+- \`v1.0.0\` → \`v1.1.0\` (new features)
+- \`v1.0.0\` → \`v2.0.0\` (breaking changes)
+
+**Multiple Versions:**
+- Same addon ID, different versions
+- All versions available in addon browser
+- Users choose which version to install
+- Older versions remain available
+
+### Deleting Addons
+
+**Draft addons can be deleted:**
+
+1. Go to **My Addons** tab
+2. Click on 🟠 Draft addon
+3. Click **Delete** button
+4. Confirm the action
+
+**What happens:**
+- Addon permanently deleted from database
+- Cannot be recovered
+- Other users never saw it (was draft)
+
+**Published addons CANNOT be deleted:**
+- Ensures clusters using the addon continue to work
+- Ensures version history is preserved
+- Prevents breaking changes for other users
+
+**To deprecate a published addon:**
+- Create a new version without the deprecated functionality
+- Add warning in notes
+- Document migration path
+- Publish new version
+
+### Addon Details Page
+
+Click any addon to view comprehensive details:
+
+**Basic Information:**
+- Name, display name, description
+- Category, version
+- Platform support
+- Status badge (System/Published/Draft)
+
+**Configuration:**
+- **Operators** - List with name, namespace, channel, source
+- **Scripts** - With descriptions and dependencies
+- **Manifests** - With descriptions and dependencies
+- **Helm Charts** - With repo, chart name, version
+
+**Metadata:**
+- Conflicts with (other addon IDs)
+- Required capabilities
+- Requires bare metal
+- Notes (usage instructions)
+- Warnings (important caveats)
+
+**Audit Information:**
+- Created by (user email)
+- Created at (timestamp)
+- Updated at (timestamp)
+- Published at (if published)
+- Parent version (if cloned)
+
+**Actions:**
+- **Edit** (🟠 Draft only)
+- **Publish** (🟠 Draft only)
+- **Clone** (🟢 Published or 🔵 System)
+- **Delete** (🟠 Draft only)
+
+## Best Practices
+
+### Naming Conventions
+
+**Addon IDs:**
+- Use lowercase with hyphens: \`my-dev-tools\`
+- Make descriptive: \`openshift-pipelines-setup\`
+- Include purpose: \`monitoring-stack\`
+- Avoid generic: \`test\`, \`addon1\`, \`temp\`
+
+**Display Names:**
+- Use title case: "Development Tools"
+- Include version info: "Dev Tools v1.0"
+- Be descriptive: "CNV 4.22 with Windows VM Support"
+
+**Versions:**
+- Semantic versioning: \`v1.0\`, \`v1.1\`, \`v2.0\`
+- Channel names: \`stable\`, \`nightly\`, \`beta\`
+- Be consistent across your addons
+
+### Testing Guidelines
+
+**Before Publishing:**
+
+1. **Create test cluster with draft addon**
+   - Select your draft in cluster creation
+   - Monitor cluster creation logs
+   - Check POST_CONFIGURE job
+
+2. **Verify all components installed**
+   - Check operator CSVs reached Succeeded state
+   - Verify pods are running
+   - Test scripts completed successfully
+   - Validate manifests were applied
+
+3. **Review job logs**
+   - Look for errors or warnings
+   - Check execution order was correct
+   - Verify timeouts were sufficient
+
+4. **Test on all supported platforms**
+   - If platform: ["aws", "gcp"], test on both
+   - Verify platform-specific resources work
+   - Check for platform-dependent issues
+
+5. **Test with different OpenShift versions**
+   - Minimum supported version
+   - Maximum supported version
+   - Latest stable release
+
+**Edge Cases to Test:**
+- Empty clusters (no prior configuration)
+- Clusters with existing namespaces
+- Slow network conditions (timeout handling)
+- Resource constrained clusters
+- Multiple addon conflicts
+
+### Security Best Practices
+
+**Scripts:**
+- Always use \`set -euo pipefail\` for bash safety
+- Never hardcode secrets (use environment variables or secrets)
+- Validate inputs before use
+- Use HTTPS for downloads, never HTTP
+- Avoid \`curl | bash\` patterns
+- Use explicit versions for images and packages
+
+**Images:**
+- Use trusted registries (quay.io, docker.io official images)
+- Pin image tags - never use \`:latest\`
+- Scan images for vulnerabilities before use
+- Use minimal base images (alpine, distroless)
+- Verify image signatures when possible
+
+**Permissions:**
+- Request minimum required permissions
+- Document why elevated permissions are needed
+- Use namespace-scoped resources when possible
+- Avoid cluster-admin role unless absolutely necessary
+- Use RBAC to limit service account permissions
+
+**Secrets Management:**
+- Use Kubernetes secrets for sensitive data
+- Never include secrets in addon configuration
+- Reference external secret managers (Vault, AWS Secrets Manager)
+- Document secret requirements in addon notes
+- Provide example secret templates
+
+**Example Secure Script:**
+\`\`\`bash
+#!/bin/bash
+set -euo pipefail
+
+# Validate required environment
+if [ -z "\${NAMESPACE:-}" ]; then
+  echo "ERROR: NAMESPACE not set"
+  exit 1
+fi
+
+# Use specific versions
+IMAGE="registry.access.redhat.com/ubi9/ubi-minimal:9.1"
+
+# Avoid running as root
+kubectl create serviceaccount myapp -n "\$NAMESPACE"
+
+# Apply resource limits
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+  namespace: \$NAMESPACE
+spec:
+  serviceAccountName: myapp
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: app
+    image: \$IMAGE
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "100m"
+      limits:
+        memory: "128Mi"
+        cpu: "200m"
+EOF
+\`\`\`
+
+### Performance Optimization
+
+**Parallel Execution:**
+- Independent items run concurrently automatically
+- Only use \`dependsOn\` when truly necessary
+- Group related operations for efficiency
+
+**Resource Limits:**
+- Set appropriate CPU/memory requests and limits
+- Avoid resource-intensive operations during install
+- Use node selectors for large workloads
+- Consider cluster size variations
+
+**Timeout Tuning:**
+- Start with conservative timeouts
+- Reduce after testing confirms faster completion
+- Account for slow networks and large images
+- Consider cluster load variations
+
+**Recommended Timeouts:**
+- Simple scripts (kubectl get/create): 60s
+- Namespace creation: 30s
+- Operator installation: 600s (10 minutes)
+- Large image pulls: 900s (15 minutes)
+- Complex deployments: 1800s (30 minutes)
+
+### Documentation in Addons
+
+**Always include comprehensive metadata:**
+
+**Description:**
+- What the addon installs
+- When to use it
+- What gets deployed
+
+**Notes:**
+- Post-install access instructions
+- Configuration options
+- Usage examples
+- Troubleshooting tips
+
+**Example Notes:**
+\`\`\`
+- Access Grafana at: https://grafana-route-monitoring.apps.<cluster-domain>
+- Default credentials: admin / (check secret monitoring/grafana-admin)
+- Change password after first login
+- To configure data sources: oc edit configmap grafana-datasources -n monitoring
+- Dashboards: Import from https://grafana.com/grafana/dashboards
+\`\`\`
+
+**Warnings:**
+- Resource requirements
+- Platform limitations
+- Compatibility constraints
+- Cost implications
+- Security considerations
+
+**Example Warnings:**
+\`\`\`
+- Requires worker nodes with 16GB+ memory
+- Uses 50GB persistent storage per Prometheus instance
+- Increases cluster cost by approximately $50-75/month
+- Default retention is 7 days (configurable)
+- Bare metal or nested virtualization required
+\`\`\`
+
+### Common Pitfalls to Avoid
+
+❌ **Don't:**
+- Publish without thorough testing
+- Use \`:latest\` image tags
+- Hardcode cluster-specific values
+- Create circular dependencies
+- Set timeouts too short
+- Forget to document breaking changes
+- Skip platform compatibility testing
+- Ignore error handling in scripts
+- Use insecure HTTP downloads
+- Run containers as root unnecessarily
+
+✅ **Do:**
+- Test extensively before publishing
+- Pin specific image versions
+- Use variables and parameters
+- Validate dependency order
+- Set reasonable timeouts with buffer
+- Maintain clear version history
+- Test on all supported platforms
+- Add proper error handling
+- Use HTTPS for all downloads
+- Follow security best practices
+
+### Version Management Strategy
+
+**Semantic Versioning:**
+- **Patch** (v1.0.0 → v1.0.1): Bug fixes, no new features
+- **Minor** (v1.0.0 → v1.1.0): New features, backward compatible
+- **Major** (v1.0.0 → v2.0.0): Breaking changes
+
+**Channel Strategy:**
+- \`stable\` - Production-ready, well-tested
+- \`beta\` - Feature-complete, testing phase
+- \`alpha\` / \`nightly\` - Development, unstable
+
+**Migration Path:**
+1. Document breaking changes in notes
+2. Provide migration scripts if needed
+3. Test migration thoroughly
+4. Communicate changes to users
+5. Keep old version available
+
+**Example Version Progression:**
+\`\`\`
+v1.0 → Initial release (stable)
+v1.1 → Add monitoring dashboard (stable)
+v1.2 → Bug fixes (stable)
+v2.0 → Migrate to new API (stable)
+v2.0-beta → Testing phase
+v2.1-nightly → Development builds
+\`\`\`
 `,
   },
   {
