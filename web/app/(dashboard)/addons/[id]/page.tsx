@@ -239,16 +239,16 @@ export default function AddonDetailPage() {
             <Card className="p-6">
               <h3 className="font-semibold mb-3">Requirements & Notes</h3>
               <div className="space-y-4">
-                {addon.metadata.requires_bare_metal && (
+                {addon.metadata.requiresBareMetal && (
                   <div>
                     <Badge variant="secondary">Requires Bare Metal</Badge>
                   </div>
                 )}
-                {addon.metadata.required_capabilities && addon.metadata.required_capabilities.length > 0 && (
+                {addon.metadata.requiredCapabilities && addon.metadata.requiredCapabilities.length > 0 && (
                   <div>
                     <h4 className="text-sm font-medium mb-2">Required Capabilities</h4>
                     <div className="flex flex-wrap gap-2">
-                      {addon.metadata.required_capabilities.map((cap) => (
+                      {addon.metadata.requiredCapabilities.map((cap) => (
                         <Badge key={cap} variant="outline">{cap}</Badge>
                       ))}
                     </div>
@@ -441,9 +441,9 @@ function ConfigurationView({ config }: { config: any }) {
       {hasScripts && (
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Scripts ({config.scripts.length})</h3>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {config.scripts.map((script: any, i: number) => (
-              <div key={i} className="border-l-2 border-green-500 pl-4">
+              <div key={i} className="border-l-2 border-green-500 pl-4 space-y-2">
                 <div className="font-medium">{script.name}</div>
                 <div className="text-sm text-muted-foreground">Path: {script.path}</div>
                 {script.timeout && (
@@ -452,6 +452,14 @@ function ConfigurationView({ config }: { config: any }) {
                 {script.depends_on && script.depends_on.length > 0 && (
                   <div className="text-sm text-muted-foreground">
                     Depends on: {script.depends_on.join(", ")}
+                  </div>
+                )}
+                {script.content && (
+                  <div className="mt-2">
+                    <div className="text-xs text-muted-foreground mb-1">Content:</div>
+                    <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-96">
+                      <code>{script.content}</code>
+                    </pre>
                   </div>
                 )}
               </div>
@@ -463,9 +471,9 @@ function ConfigurationView({ config }: { config: any }) {
       {hasManifests && (
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Manifests ({config.manifests.length})</h3>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {config.manifests.map((manifest: any, i: number) => (
-              <div key={i} className="border-l-2 border-purple-500 pl-4">
+              <div key={i} className="border-l-2 border-purple-500 pl-4 space-y-2">
                 <div className="font-medium">{manifest.name}</div>
                 {manifest.path && (
                   <div className="text-sm text-muted-foreground">Path: {manifest.path}</div>
@@ -473,6 +481,14 @@ function ConfigurationView({ config }: { config: any }) {
                 {manifest.depends_on && manifest.depends_on.length > 0 && (
                   <div className="text-sm text-muted-foreground">
                     Depends on: {manifest.depends_on.join(", ")}
+                  </div>
+                )}
+                {manifest.content && (
+                  <div className="mt-2">
+                    <div className="text-xs text-muted-foreground mb-1">Content:</div>
+                    <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-96">
+                      <code>{manifest.content}</code>
+                    </pre>
                   </div>
                 )}
               </div>

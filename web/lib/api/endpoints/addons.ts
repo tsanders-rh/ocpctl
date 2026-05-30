@@ -21,8 +21,8 @@ export interface PostConfigAddon {
   createdAt: string;
   updatedAt: string;
   metadata?: {
-    requires_bare_metal?: boolean;
-    required_capabilities?: string[];
+    requiresBareMetal?: boolean;
+    requiredCapabilities?: string[];
     notes?: string[];
     warnings?: string[];
   };

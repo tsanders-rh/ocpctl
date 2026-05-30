@@ -593,6 +593,14 @@ export interface AddonSelection {
   version: string;
 }
 
+export interface AddonMetadata {
+  requiresBareMetal?: boolean;
+  requiredCapabilities?: string[];
+  conflictsWith?: string[];
+  notes?: string[];
+  warnings?: string[];
+}
+
 export interface PostConfigAddon {
   id: string;
   name: string;
@@ -604,6 +612,7 @@ export interface PostConfigAddon {
     allowed: AddonVersionOption[];
     default: string;
   };
+  metadata?: AddonMetadata;
 }
 
 export interface PostConfigAddonsResponse {

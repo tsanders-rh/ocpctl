@@ -343,6 +343,8 @@ versions:
 
 metadata:
   requiresBareMetal: true
+  conflictsWith:
+    - cnv
   notes:
     - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
     - "Stable-Stage (CNV 4.22): Pre-production stable builds for testing before GA release"

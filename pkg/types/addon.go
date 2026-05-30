@@ -36,6 +36,7 @@ type PostConfigAddon struct {
 type AddonMetadata struct {
 	RequiresBareMetal    bool     `json:"requiresBareMetal,omitempty"`
 	RequiredCapabilities []string `json:"requiredCapabilities,omitempty"`
+	ConflictsWith        []string `json:"conflictsWith,omitempty"`        // List of addon IDs that conflict with this addon
 	Notes                []string `json:"notes,omitempty"`
 	Warnings             []string `json:"warnings,omitempty"`
 }

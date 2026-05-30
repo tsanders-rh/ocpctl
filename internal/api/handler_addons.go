@@ -28,13 +28,14 @@ func NewAddonsHandler(store *store.Store, registry *profile.Registry) *AddonsHan
 
 // AddonWithVersions represents an add-on with all its versions
 type AddonWithVersions struct {
-	ID                 string       `json:"id" example:"oadp"`
-	Name               string       `json:"name" example:"OpenShift API for Data Protection (OADP)"`
-	Description        string       `json:"description" example:"Backup and restore OpenShift clusters and applications"`
-	Category           string       `json:"category" example:"backup"`
-	SupportedPlatforms []string     `json:"supportedPlatforms" example:"openshift"`
-	Enabled            bool         `json:"enabled" example:"true"`
-	Versions           VersionsInfo `json:"versions"`
+	ID                 string                `json:"id" example:"oadp"`
+	Name               string                `json:"name" example:"OpenShift API for Data Protection (OADP)"`
+	Description        string                `json:"description" example:"Backup and restore OpenShift clusters and applications"`
+	Category           string                `json:"category" example:"backup"`
+	SupportedPlatforms []string              `json:"supportedPlatforms" example:"openshift"`
+	Enabled            bool                  `json:"enabled" example:"true"`
+	Versions           VersionsInfo          `json:"versions"`
+	Metadata           *types.AddonMetadata  `json:"metadata,omitempty"`
 }
 
 // VersionsInfo contains version information
@@ -230,6 +231,7 @@ func (h *AddonsHandler) List(c echo.Context) error {
 				Category:           addon.Category,
 				SupportedPlatforms: addon.SupportedPlatforms,
 				Enabled:            addon.Enabled,
+				Metadata:           addon.Metadata,
 				Versions: VersionsInfo{
 					Allowed: []VersionOption{},
 				},

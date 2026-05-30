@@ -16,10 +16,11 @@ type AddonDefinition struct {
 
 // AddonMetadata contains additional metadata about addon requirements and notes
 type AddonMetadata struct {
-	RequiresBareMetal bool     `yaml:"requiresBareMetal,omitempty" json:"requiresBareMetal,omitempty"`
+	RequiresBareMetal    bool     `yaml:"requiresBareMetal,omitempty" json:"requiresBareMetal,omitempty"`
 	RequiredCapabilities []string `yaml:"requiredCapabilities,omitempty" json:"requiredCapabilities,omitempty"`
-	Notes             []string `yaml:"notes,omitempty" json:"notes,omitempty"`
-	Warnings          []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
+	ConflictsWith        []string `yaml:"conflictsWith,omitempty" json:"conflictsWith,omitempty"`
+	Notes                []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+	Warnings             []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 }
 
 // AddonVersionConfig defines a specific version of an add-on

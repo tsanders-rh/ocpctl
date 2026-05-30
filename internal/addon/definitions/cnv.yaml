@@ -69,6 +69,8 @@ versions:
 
 metadata:
   requiresBareMetal: true
+  conflictsWith:
+    - cnv-nightly
   notes:
     - "Requires bare metal instances (AWS: *.metal, GCP: custom nested virt enabled)"
     - "Production-ready GA release"

@@ -31,6 +31,7 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 		       created_at, updated_at
 		FROM post_config_addons
 		WHERE enabled = TRUE
+		  AND (addon_source = 'system' OR (addon_source = 'user' AND is_published = TRUE))
 	`
 
 	args := []interface{}{}
@@ -115,13 +116,18 @@ func (s *PostConfigAddonStore) List(ctx context.Context, category *string, platf
 // GetByID retrieves an add-on by its UUID
 func (s *PostConfigAddonStore) GetByID(ctx context.Context, id string) (*types.PostConfigAddon, error) {
 	query := `
-		SELECT id, addon_id, name, description, category, config, supported_platforms, enabled, created_at, updated_at
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
 		FROM post_config_addons
 		WHERE id = $1
 	`
 
 	var addon types.PostConfigAddon
 	var configJSON []byte
+	var metadataJSON []byte
 
 	err := s.pool.QueryRow(ctx, query, id).Scan(
 		&addon.ID,
@@ -132,6 +138,17 @@ func (s *PostConfigAddonStore) GetByID(ctx context.Context, id string) (*types.P
 		&configJSON,
 		&addon.SupportedPlatforms,
 		&addon.Enabled,
+		&addon.Version,
+		&addon.DisplayName,
+		&addon.IsDefault,
+		&metadataJSON,
+		&addon.AddonSource,
+		&addon.CreatedByUserID,
+		&addon.IsPublished,
+		&addon.PublishedAt,
+		&addon.ParentVersionID,
+		&addon.VersionNumber,
+		&addon.IsImmutable,
 		&addon.CreatedAt,
 		&addon.UpdatedAt,
 	)
@@ -144,19 +161,33 @@ func (s *PostConfigAddonStore) GetByID(ctx context.Context, id string) (*types.P
 		return nil, fmt.Errorf("unmarshal add-on config: %w", err)
 	}
 
+	// Unmarshal metadata JSONB if present
+	if len(metadataJSON) > 0 {
+		addon.Metadata = &types.AddonMetadata{}
+		if err := json.Unmarshal(metadataJSON, addon.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal add-on metadata: %w", err)
+		}
+	}
+
 	return &addon, nil
 }
 
 // GetByAddonID retrieves an add-on by its addon_id (e.g., "oadp")
 func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string) (*types.PostConfigAddon, error) {
 	query := `
-		SELECT id, addon_id, name, description, category, config, supported_platforms, enabled, created_at, updated_at
+		SELECT id, addon_id, name, description, category, config, supported_platforms,
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
 		FROM post_config_addons
 		WHERE addon_id = $1 AND enabled = TRUE
+		  AND (addon_source = 'system' OR (addon_source = 'user' AND is_published = TRUE))
 	`
 
 	var addon types.PostConfigAddon
 	var configJSON []byte
+	var metadataJSON []byte
 
 	err := s.pool.QueryRow(ctx, query, addonID).Scan(
 		&addon.ID,
@@ -167,6 +198,17 @@ func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string)
 		&configJSON,
 		&addon.SupportedPlatforms,
 		&addon.Enabled,
+		&addon.Version,
+		&addon.DisplayName,
+		&addon.IsDefault,
+		&metadataJSON,
+		&addon.AddonSource,
+		&addon.CreatedByUserID,
+		&addon.IsPublished,
+		&addon.PublishedAt,
+		&addon.ParentVersionID,
+		&addon.VersionNumber,
+		&addon.IsImmutable,
 		&addon.CreatedAt,
 		&addon.UpdatedAt,
 	)
@@ -177,6 +219,14 @@ func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string)
 	// Unmarshal config JSONB
 	if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
 		return nil, fmt.Errorf("unmarshal add-on config: %w", err)
+	}
+
+	// Unmarshal metadata JSONB if present
+	if len(metadataJSON) > 0 {
+		addon.Metadata = &types.AddonMetadata{}
+		if err := json.Unmarshal(metadataJSON, addon.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal add-on metadata: %w", err)
+		}
 	}
 
 	return &addon, nil
@@ -253,13 +303,18 @@ func (s *PostConfigAddonStore) Delete(ctx context.Context, id string) error {
 func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addonID string, version string) (*types.PostConfigAddon, error) {
 	query := `
 		SELECT id, addon_id, name, description, category, config, supported_platforms,
-		       enabled, version, display_name, is_default, created_at, updated_at
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
 		FROM post_config_addons
 		WHERE addon_id = $1 AND version = $2
+		  AND (addon_source = 'system' OR (addon_source = 'user' AND is_published = TRUE))
 	`
 
 	var addon types.PostConfigAddon
 	var configJSON []byte
+	var metadataJSON []byte
 
 	err := s.pool.QueryRow(ctx, query, addonID, version).Scan(
 		&addon.ID,
@@ -273,6 +328,14 @@ func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addon
 		&addon.Version,
 		&addon.DisplayName,
 		&addon.IsDefault,
+		&metadataJSON,
+		&addon.AddonSource,
+		&addon.CreatedByUserID,
+		&addon.IsPublished,
+		&addon.PublishedAt,
+		&addon.ParentVersionID,
+		&addon.VersionNumber,
+		&addon.IsImmutable,
 		&addon.CreatedAt,
 		&addon.UpdatedAt,
 	)
@@ -287,6 +350,12 @@ func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addon
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	if metadataJSON != nil {
+		if err := json.Unmarshal(metadataJSON, &addon.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal metadata: %w", err)
+		}
+	}
+
 	return &addon, nil
 }
 
@@ -294,9 +363,13 @@ func (s *PostConfigAddonStore) GetByAddonIDAndVersion(ctx context.Context, addon
 func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string) ([]types.PostConfigAddon, error) {
 	query := `
 		SELECT id, addon_id, name, description, category, config, supported_platforms,
-		       enabled, version, display_name, is_default, created_at, updated_at
+		       enabled, version, display_name, is_default, metadata,
+		       addon_source, created_by_user_id, is_published, published_at,
+		       parent_version_id, version_number, is_immutable,
+		       created_at, updated_at
 		FROM post_config_addons
 		WHERE addon_id = $1 AND enabled = TRUE
+		  AND (addon_source = 'system' OR (addon_source = 'user' AND is_published = TRUE))
 		ORDER BY is_default DESC, version DESC
 	`
 
@@ -310,18 +383,42 @@ func (s *PostConfigAddonStore) ListVersions(ctx context.Context, addonID string)
 	for rows.Next() {
 		var addon types.PostConfigAddon
 		var configJSON []byte
+		var metadataJSON []byte
 
 		if err := rows.Scan(
-			&addon.ID, &addon.AddonID, &addon.Name, &addon.Description,
-			&addon.Category, &configJSON, &addon.SupportedPlatforms,
-			&addon.Enabled, &addon.Version, &addon.DisplayName,
-			&addon.IsDefault, &addon.CreatedAt, &addon.UpdatedAt,
+			&addon.ID,
+			&addon.AddonID,
+			&addon.Name,
+			&addon.Description,
+			&addon.Category,
+			&configJSON,
+			&addon.SupportedPlatforms,
+			&addon.Enabled,
+			&addon.Version,
+			&addon.DisplayName,
+			&addon.IsDefault,
+			&metadataJSON,
+			&addon.AddonSource,
+			&addon.CreatedByUserID,
+			&addon.IsPublished,
+			&addon.PublishedAt,
+			&addon.ParentVersionID,
+			&addon.VersionNumber,
+			&addon.IsImmutable,
+			&addon.CreatedAt,
+			&addon.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan version: %w", err)
 		}
 
 		if err := json.Unmarshal(configJSON, &addon.Config); err != nil {
 			return nil, fmt.Errorf("unmarshal config: %w", err)
+		}
+
+		if metadataJSON != nil {
+			if err := json.Unmarshal(metadataJSON, &addon.Metadata); err != nil {
+				return nil, fmt.Errorf("unmarshal metadata: %w", err)
+			}
 		}
 
 		versions = append(versions, addon)
