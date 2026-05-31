@@ -170,23 +170,24 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 
 		// Create cluster record
 		cluster := &types.Cluster{
-			ID:          uuid.New().String(),
-			Name:        clusterName,
-			Platform:    prof.Platform,
-			ClusterType: prof.ClusterType,
-			Version:     defaultVersion,
-			Profile:     pool.Profile,
-			Region:      prof.Regions.Default,
-			BaseDomain:  baseDomain, // Required for OpenShift clusters
-			Owner:       ownerUsername,  // Use username for display
-			OwnerID:     pool.CreatedBy, // Pool creator owns pool clusters
-			Team:        "pool-managed",
-			CostCenter:  "pool-" + pool.Name,
-			Status:      types.ClusterStatusPending,
-			RequestedBy: "pool-replenish-job",
-			TTLHours:    pool.MaxClusterAgeDays * 24, // Use pool max age as TTL
-			PoolID:      &pool.ID,
-			PoolState:   (*types.PoolState)(&[]types.PoolState{types.PoolStateProvisioning}[0]),
+			ID:               uuid.New().String(),
+			Name:             clusterName,
+			Platform:         prof.Platform,
+			ClusterType:      prof.ClusterType,
+			Version:          defaultVersion,
+			Profile:          pool.Profile,
+			Region:           prof.Regions.Default,
+			BaseDomain:       baseDomain, // Required for OpenShift clusters
+			Owner:            ownerUsername,  // Use username for display
+			OwnerID:          pool.CreatedBy, // Pool creator owns pool clusters
+			Team:             "pool-managed",
+			CostCenter:       "pool-" + pool.Name,
+			Status:           types.ClusterStatusPending,
+			RequestedBy:      "pool-replenish-job",
+			TTLHours:         pool.MaxClusterAgeDays * 24, // Use pool max age as TTL
+			PoolID:           &pool.ID,
+			PoolState:        (*types.PoolState)(&[]types.PoolState{types.PoolStateProvisioning}[0]),
+			SelectedAddonIDs: []string{}, // Pool clusters don't use addons by default
 		}
 
 		// Apply pool cluster configuration overrides
