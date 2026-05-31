@@ -46,7 +46,7 @@ resource "aws_launch_template" "worker" {
   description   = "Launch template for OCPCTL worker instances"
   image_id      = var.ami_id
   instance_type = var.instance_type
-  key_name      = "ocpctl-test-key"
+  key_name      = "ocpctl-production-key"
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.worker.arn

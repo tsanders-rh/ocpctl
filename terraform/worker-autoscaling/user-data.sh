@@ -16,18 +16,8 @@ OPENSHIFT_PULL_SECRET='${openshift_pull_secret}'
 yum update -y
 yum install -y wget postgresql15 awscli jq
 
-# Configure systemd-resolved to use external DNS for faster propagation of new Route53 records
-echo "Configuring DNS resolution with external DNS servers..."
-mkdir -p /etc/systemd/resolved.conf.d/
-cat > /etc/systemd/resolved.conf.d/dns_servers.conf <<'DNSEOF'
-[Resolve]
-DNS=8.8.8.8 1.1.1.1
-FallbackDNS=8.8.4.4 1.0.0.1
-CacheFromLocalhost=no
-DNSEOF
-
-systemctl restart systemd-resolved
-echo "DNS configuration applied - using Google/Cloudflare DNS for faster Route53 propagation"
+# Use VPC DNS resolver for proper resolution of RDS endpoints and other VPC resources
+# (External DNS like 8.8.8.8 would resolve RDS to public IPs, breaking VPC connectivity)
 
 # Install kubectl (required for IKS/GKE post-config)
 echo "Installing kubectl..."
