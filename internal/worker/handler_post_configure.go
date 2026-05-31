@@ -2520,12 +2520,13 @@ func extractCRDNameFromManifest(content string) string {
 	return plural + "." + group
 }
 // resolveSelectedAddons fetches addon configurations for the cluster's selected addon IDs
+// This includes draft addons owned by the cluster owner, allowing users to test their addons
 func (h *PostConfigureHandler) resolveSelectedAddons(ctx context.Context, cluster *types.Cluster) ([]types.PostConfigAddon, error) {
 	if len(cluster.SelectedAddonIDs) == 0 {
 		return nil, nil
 	}
 
-	log.Printf("Resolving %d selected addons for cluster %s", len(cluster.SelectedAddonIDs), cluster.Name)
+	log.Printf("Resolving %d selected addons for cluster %s (owner: %s)", len(cluster.SelectedAddonIDs), cluster.Name, cluster.OwnerID)
 
 	addons := make([]types.PostConfigAddon, 0, len(cluster.SelectedAddonIDs))
 	for _, addonRef := range cluster.SelectedAddonIDs {
@@ -2541,8 +2542,9 @@ func (h *PostConfigureHandler) resolveSelectedAddons(ctx context.Context, cluste
 		var err error
 
 		// Fetch addon by ID and optional channel
+		// Use ForUser variant to allow cluster owners to use their draft addons
 		if channel != "" {
-			addon, err = h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, addonID, channel)
+			addon, err = h.store.PostConfigAddons.GetByAddonIDAndVersionForUser(ctx, addonID, channel, cluster.OwnerID)
 		} else {
 			// Get default version for this addon
 			addon, err = h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
