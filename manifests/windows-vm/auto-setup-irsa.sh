@@ -305,30 +305,39 @@ fi
 ##############################################################################
 
 log_info "Checking for pre-created Windows image EBS snapshot in region $REGION..."
+log_info "[DEBUG] Step 1: Starting snapshot detection"
 
 # Detect cluster region from infrastructure if not already set
 if [ -z "$REGION" ]; then
     REGION=$(oc --kubeconfig="$KUBECONFIG" get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "us-east-1")
     log_info "Auto-detected region: $REGION"
 fi
+log_info "[DEBUG] Step 2: Region set to: $REGION"
 
 SNAPSHOT_VERSION="1.0"  # Could be parameterized in future
 SNAPSHOT_ID=""
 IMPORT_METHOD="s3"  # Default to S3 fallback
+log_info "[DEBUG] Step 3: Variables initialized (SNAPSHOT_VERSION=$SNAPSHOT_VERSION)"
 
 # Try SSM Parameter Store first with retry logic
+log_info "[DEBUG] Step 4: Checking if AWS CLI is available"
 if command -v aws &> /dev/null; then
+    log_info "[DEBUG] Step 5: AWS CLI found, proceeding with SSM lookup"
     SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
 
     # Retry SSM lookup up to 3 times with exponential backoff
     SSM_ATTEMPTS=0
     SSM_MAX_ATTEMPTS=3
+    log_info "[DEBUG] Step 5a: Starting SSM retry loop (max attempts: $SSM_MAX_ATTEMPTS)"
     while [ $SSM_ATTEMPTS -lt $SSM_MAX_ATTEMPTS ]; do
         SSM_ATTEMPTS=$((SSM_ATTEMPTS + 1))
+        log_info "[DEBUG] Step 5b: SSM attempt $SSM_ATTEMPTS of $SSM_MAX_ATTEMPTS"
 
         # Capture both stdout and stderr
+        log_info "[DEBUG] Step 5c: Running AWS SSM command"
         SSM_OUTPUT=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>&1)
         SSM_EXIT_CODE=$?
+        log_info "[DEBUG] Step 5d: AWS SSM command completed (exit code: $SSM_EXIT_CODE)"
 
         if [ $SSM_EXIT_CODE -eq 0 ] && [ -n "$SSM_OUTPUT" ] && [ "$SSM_OUTPUT" != "None" ]; then
             SNAPSHOT_ID="$SSM_OUTPUT"
@@ -394,7 +403,10 @@ if command -v aws &> /dev/null; then
             fi
         done
     fi
+else
+    log_warn "[DEBUG] AWS CLI not found - skipping snapshot lookup"
 fi
+log_info "[DEBUG] Step 6: Finished snapshot lookup attempt (SNAPSHOT_ID='$SNAPSHOT_ID')"
 
 # Validate snapshot exists and is completed before using it
 if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
