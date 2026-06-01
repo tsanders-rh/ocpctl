@@ -213,14 +213,30 @@ else
         log_info "✓ IAM user created"
     fi
 
-    # Attach S3 read-only policy to user
+    # Attach S3 read-only policy to user (check if already attached first)
     log_info "Attaching S3 read-only policy to IAM user"
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    aws iam put-user-policy \
-        --user-name "$IAM_USER_NAME" \
-        --policy-name S3WindowsImageReadOnly \
-        --policy-document file://${SCRIPT_DIR}/iam-policy.json
-    log_info "✓ Policy attached to IAM user"
+
+    # Check if policy is already attached
+    if aws iam get-user-policy --user-name "$IAM_USER_NAME" --policy-name S3WindowsImageReadOnly &>/dev/null; then
+        log_info "✓ Policy already attached to IAM user"
+    else
+        # Policy doesn't exist, try to attach it
+        if aws iam put-user-policy \
+            --user-name "$IAM_USER_NAME" \
+            --policy-name S3WindowsImageReadOnly \
+            --policy-document file://${SCRIPT_DIR}/iam-policy.json 2>&1; then
+            log_info "✓ Policy attached to IAM user"
+        else
+            # If we don't have permission to attach, check if it was already attached by someone else
+            if aws iam get-user-policy --user-name "$IAM_USER_NAME" --policy-name S3WindowsImageReadOnly &>/dev/null; then
+                log_warn "Policy already exists (attached by external process)"
+            else
+                log_error "Failed to attach policy and policy doesn't exist - manual intervention required"
+                exit 1
+            fi
+        fi
+    fi
 
     # Create access keys (delete old ones first if they exist)
     log_info "Creating access keys for IAM user"
