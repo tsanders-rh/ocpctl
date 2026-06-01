@@ -300,30 +300,104 @@ SNAPSHOT_VERSION="1.0"  # Could be parameterized in future
 SNAPSHOT_ID=""
 IMPORT_METHOD="s3"  # Default to S3 fallback
 
-# Try SSM Parameter Store first
+# Try SSM Parameter Store first with retry logic
 if command -v aws &> /dev/null; then
     SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
-    SNAPSHOT_ID=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
-    # Fallback: Query snapshots by tags
+    # Retry SSM lookup up to 3 times with exponential backoff
+    SSM_ATTEMPTS=0
+    SSM_MAX_ATTEMPTS=3
+    while [ $SSM_ATTEMPTS -lt $SSM_MAX_ATTEMPTS ]; do
+        SSM_ATTEMPTS=$((SSM_ATTEMPTS + 1))
+
+        # Capture both stdout and stderr
+        SSM_OUTPUT=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>&1)
+        SSM_EXIT_CODE=$?
+
+        if [ $SSM_EXIT_CODE -eq 0 ] && [ -n "$SSM_OUTPUT" ] && [ "$SSM_OUTPUT" != "None" ]; then
+            SNAPSHOT_ID="$SSM_OUTPUT"
+            log_info "✓ Found snapshot via SSM Parameter Store: $SNAPSHOT_ID (attempt $SSM_ATTEMPTS)"
+            break
+        fi
+
+        # Log the error if not a simple "parameter not found"
+        if [[ "$SSM_OUTPUT" != *"ParameterNotFound"* ]]; then
+            log_warn "SSM lookup attempt $SSM_ATTEMPTS failed: $SSM_OUTPUT"
+        fi
+
+        # Don't retry if parameter genuinely doesn't exist
+        if [[ "$SSM_OUTPUT" == *"ParameterNotFound"* ]]; then
+            log_info "SSM parameter $SNAPSHOT_PARAM does not exist (not an error)"
+            break
+        fi
+
+        # Exponential backoff before retry
+        if [ $SSM_ATTEMPTS -lt $SSM_MAX_ATTEMPTS ]; then
+            BACKOFF=$((2 ** SSM_ATTEMPTS))
+            log_info "Retrying SSM lookup in ${BACKOFF}s..."
+            sleep $BACKOFF
+        fi
+    done
+
+    # Fallback: Query snapshots by tags (with sorting by StartTime DESC to get newest)
     if [ -z "$SNAPSHOT_ID" ] || [ "$SNAPSHOT_ID" = "None" ]; then
         log_info "SSM parameter not found, checking EBS snapshots by tags..."
-        SNAPSHOT_ID=$(aws ec2 describe-snapshots \
-            --region "$REGION" \
-            --filters "Name=tag:ocpctl:managed,Values=true" \
-                      "Name=tag:ocpctl:image-version,Values=${SNAPSHOT_VERSION}" \
-            --owner-ids self \
-            --query 'Snapshots[0].SnapshotId' \
-            --output text 2>/dev/null || echo "")
+
+        EC2_ATTEMPTS=0
+        EC2_MAX_ATTEMPTS=3
+        while [ $EC2_ATTEMPTS -lt $EC2_MAX_ATTEMPTS ]; do
+            EC2_ATTEMPTS=$((EC2_ATTEMPTS + 1))
+
+            # Query with proper sorting to get NEWEST snapshot (not random)
+            EC2_OUTPUT=$(aws ec2 describe-snapshots \
+                --region "$REGION" \
+                --filters "Name=tag:ocpctl:managed,Values=true" \
+                          "Name=tag:ocpctl:image-version,Values=${SNAPSHOT_VERSION}" \
+                          "Name=status,Values=completed" \
+                --owner-ids self \
+                --query 'reverse(sort_by(Snapshots, &StartTime))[0].SnapshotId' \
+                --output text 2>&1)
+            EC2_EXIT_CODE=$?
+
+            if [ $EC2_EXIT_CODE -eq 0 ] && [ -n "$EC2_OUTPUT" ] && [ "$EC2_OUTPUT" != "None" ]; then
+                SNAPSHOT_ID="$EC2_OUTPUT"
+                log_info "✓ Found snapshot via EC2 tags (newest): $SNAPSHOT_ID (attempt $EC2_ATTEMPTS)"
+                break
+            fi
+
+            # Log the error
+            if [ $EC2_EXIT_CODE -ne 0 ]; then
+                log_warn "EC2 snapshot query attempt $EC2_ATTEMPTS failed: $EC2_OUTPUT"
+            fi
+
+            # Exponential backoff before retry
+            if [ $EC2_ATTEMPTS -lt $EC2_MAX_ATTEMPTS ]; then
+                BACKOFF=$((2 ** EC2_ATTEMPTS))
+                log_info "Retrying EC2 snapshot query in ${BACKOFF}s..."
+                sleep $BACKOFF
+            fi
+        done
     fi
 fi
 
+# Validate snapshot exists and is completed before using it
 if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
-    IMPORT_METHOD="snapshot"
-    log_info "✓ Found pre-created snapshot: $SNAPSHOT_ID"
-    log_info "  Using fast snapshot-based import (expected: 2-3 minutes)"
-else
-    log_info "⚠ No pre-created snapshot found in $REGION"
+    # Verify snapshot is actually available
+    SNAPSHOT_STATE=$(aws ec2 describe-snapshots --snapshot-ids "$SNAPSHOT_ID" --region "$REGION" --query 'Snapshots[0].State' --output text 2>&1 || echo "error")
+
+    if [ "$SNAPSHOT_STATE" = "completed" ]; then
+        IMPORT_METHOD="snapshot"
+        log_info "✓ Validated snapshot is ready: $SNAPSHOT_ID (state: completed)"
+        log_info "  Using fast snapshot-based import (expected: 2-3 minutes)"
+    else
+        log_warn "Snapshot $SNAPSHOT_ID exists but is not completed (state: $SNAPSHOT_STATE)"
+        log_warn "Falling back to S3 import"
+        SNAPSHOT_ID=""
+    fi
+fi
+
+if [ -z "$SNAPSHOT_ID" ] || [ "$SNAPSHOT_ID" = "None" ]; then
+    log_info "⚠ No usable snapshot found in $REGION"
     log_info "  Using S3 download fallback (expected: 30-50 minutes)"
     log_info "  Note: First VM deployment will create snapshot for future use"
 fi
