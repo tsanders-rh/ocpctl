@@ -460,7 +460,28 @@ if [ "$EXISTING_DV_PHASE" != "Succeeded" ]; then
         # Fast path: Use EBS snapshot via VolumeSnapshot
         log_info "Creating DataVolume from EBS snapshot $SNAPSHOT_ID..."
 
-        # Create VolumeSnapshot pointing to EBS snapshot
+        # Step 1: Create VolumeSnapshotContent pointing to pre-existing EBS snapshot
+        # This is required for importing external snapshots into Kubernetes
+        log_info "Creating VolumeSnapshotContent for snapshot $SNAPSHOT_ID..."
+        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotContent
+metadata:
+  name: windows-source-snapshot-content
+spec:
+  deletionPolicy: Delete
+  driver: ebs.csi.aws.com
+  source:
+    snapshotHandle: ${SNAPSHOT_ID}
+  sourceVolumeMode: Filesystem
+  volumeSnapshotClassName: csi-aws-vsc
+  volumeSnapshotRef:
+    name: windows-source-snapshot
+    namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+EOF
+
+        # Step 2: Create VolumeSnapshot that references the VolumeSnapshotContent
+        log_info "Creating VolumeSnapshot bound to VolumeSnapshotContent..."
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
@@ -470,7 +491,7 @@ metadata:
 spec:
   volumeSnapshotClassName: csi-aws-vsc
   source:
-    snapshotHandle: ${SNAPSHOT_ID}
+    volumeSnapshotContentName: windows-source-snapshot-content
 EOF
 
         # Create DataVolume using VolumeSnapshot as source
@@ -610,6 +631,7 @@ while [ $WAIT_TIME -lt $MAX_WAIT ]; do
             log_info "Cleaning up failed snapshot import..."
             oc --kubeconfig="$KUBECONFIG" delete datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true 2>/dev/null || true
             oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-source-snapshot -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true
+            oc --kubeconfig="$KUBECONFIG" delete volumesnapshotcontent windows-source-snapshot-content --ignore-not-found=true
 
             # Retry with S3 method
             IMPORT_METHOD="s3"
