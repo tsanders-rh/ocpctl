@@ -410,9 +410,10 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	}
 
 	// Populate selected_addon_ids from profile defaultAddons and user selections
-	selectedAddonIDs := []string{}
+	// Use a map to deduplicate (frontend may send back defaults that were pre-checked)
+	addonMap := make(map[string]bool)
 
-	// Add profile's default addons
+	// Add profile's default addons (for API compatibility)
 	if len(profileForValidation.DefaultAddons) > 0 {
 		for _, addonRef := range profileForValidation.DefaultAddons {
 			// Format: "addonID" or "addonID:channel"
@@ -420,19 +421,34 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			if addonRef.Channel != "" {
 				addonIDRef = addonRef.AddonID + ":" + addonRef.Channel
 			}
-			selectedAddonIDs = append(selectedAddonIDs, addonIDRef)
+			addonMap[addonIDRef] = true
 		}
-		log.Printf("Added %d default addons from profile %s to cluster %s", len(profileForValidation.DefaultAddons), req.Profile, req.Name)
+		log.Printf("Added %d default addons from profile %s", len(profileForValidation.DefaultAddons), req.Profile)
 	}
 
-	// Add user-selected addons from request (PostConfigAddOns)
-	// These are stored in the new SelectedAddonIDs field for DAG-based execution
+	// Add user-selected addons from request (duplicates automatically skipped)
 	if len(req.PostConfigAddOns) > 0 {
+		userAddedCount := 0
 		for _, selection := range req.PostConfigAddOns {
 			addonIDRef := selection.ID + ":" + selection.Version
-			selectedAddonIDs = append(selectedAddonIDs, addonIDRef)
+			if !addonMap[addonIDRef] {
+				addonMap[addonIDRef] = true
+				userAddedCount++
+			}
 		}
-		log.Printf("Added %d user-selected addons to cluster %s", len(req.PostConfigAddOns), req.Name)
+		if userAddedCount > 0 {
+			log.Printf("Added %d user-selected addons to cluster %s", userAddedCount, req.Name)
+		}
+		duplicateCount := len(req.PostConfigAddOns) - userAddedCount
+		if duplicateCount > 0 {
+			log.Printf("Skipped %d duplicate addon(s) already in profile defaults", duplicateCount)
+		}
+	}
+
+	// Convert map to slice
+	selectedAddonIDs := make([]string, 0, len(addonMap))
+	for addonID := range addonMap {
+		selectedAddonIDs = append(selectedAddonIDs, addonID)
 	}
 
 	cluster.SelectedAddonIDs = selectedAddonIDs
