@@ -607,13 +607,12 @@ spec:
     volumeSnapshotContentName: windows-source-snapshot-content
 EOF
 
-        # Create DataVolume using VolumeSnapshot as source
-        # IMPORTANT: Do NOT set cdi.kubevirt.io/storage.usePopulator=false
-        # This allows CDI to use CSI snapshot populators for fast restore (2-3 min)
-        # instead of host-assisted copy (30-50 min)
+        # Create PVC directly with dataSourceRef pointing to VolumeSnapshot
+        # This uses native CSI snapshot restore (fast) instead of CDI's DataVolume (slow)
+        # CDI will automatically create a DataVolume wrapper for this PVC
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
   name: windows
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
@@ -622,21 +621,19 @@ metadata:
     ocpctl.io/snapshot-id: "${SNAPSHOT_ID}"
     ocpctl.io/snapshot-version: "${SNAPSHOT_VERSION}"
 spec:
-  contentType: kubevirt
-  source:
-    snapshot:
-      namespace: ${SERVICE_ACCOUNT_NAMESPACE}
-      name: windows-source-snapshot
-  storage:
-    accessModes:
-      - ${ACCESS_MODE}
-    resources:
-      requests:
-        storage: 70Gi
-    storageClassName: ${STORAGE_CLASS}
+  accessModes:
+    - ${ACCESS_MODE}
+  resources:
+    requests:
+      storage: 70Gi
+  storageClassName: ${STORAGE_CLASS}
+  dataSourceRef:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: windows-source-snapshot
 EOF
 
-        log_info "✓ DataVolume created from snapshot (import starting - 2-3 minutes)"
+        log_info "✓ PVC created from snapshot (CSI restore starting - 2-3 minutes)"
 
     else
         # Slow path: S3 download
