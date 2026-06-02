@@ -335,9 +335,15 @@ if command -v aws &> /dev/null; then
 
         # Capture both stdout and stderr
         log_info "[DEBUG] Step 5c: Running AWS SSM command"
-        SSM_OUTPUT=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>&1)
+        log_info "[DEBUG] Step 5c1: PATH=$PATH"
+        log_info "[DEBUG] Step 5c2: AWS binary location: $(which aws 2>&1 || echo 'aws not found in PATH')"
+        log_info "[DEBUG] Step 5c3: Command: aws ssm get-parameter --name $SNAPSHOT_PARAM --region $REGION"
+
+        SSM_OUTPUT=$(aws ssm get-parameter --name "$SNAPSHOT_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>&1) || true
         SSM_EXIT_CODE=$?
+
         log_info "[DEBUG] Step 5d: AWS SSM command completed (exit code: $SSM_EXIT_CODE)"
+        log_info "[DEBUG] Step 5d1: Output length: ${#SSM_OUTPUT} chars"
 
         if [ $SSM_EXIT_CODE -eq 0 ] && [ -n "$SSM_OUTPUT" ] && [ "$SSM_OUTPUT" != "None" ]; then
             SNAPSHOT_ID="$SSM_OUTPUT"
