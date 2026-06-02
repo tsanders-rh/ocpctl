@@ -271,6 +271,11 @@ stringData:
   secretKey: ${AWS_SECRET_ACCESS_KEY}
 EOF
     log_info "✓ Secret created with AWS credentials"
+
+    # Unset credentials so they don't interfere with snapshot detection
+    # (SSM/EC2 API calls should use worker's EC2 instance role, not S3 user credentials)
+    unset AWS_ACCESS_KEY_ID
+    unset AWS_SECRET_ACCESS_KEY
 fi
 
 # Wait for CDI API to be ready
