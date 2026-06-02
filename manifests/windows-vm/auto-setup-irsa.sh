@@ -608,6 +608,9 @@ spec:
 EOF
 
         # Create DataVolume using VolumeSnapshot as source
+        # IMPORTANT: Do NOT set cdi.kubevirt.io/storage.usePopulator=false
+        # This allows CDI to use CSI snapshot populators for fast restore (2-3 min)
+        # instead of host-assisted copy (30-50 min)
         cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
@@ -615,7 +618,6 @@ metadata:
   name: windows
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   annotations:
-    cdi.kubevirt.io/storage.usePopulator: "false"
     ocpctl.io/import-method: "snapshot"
     ocpctl.io/snapshot-id: "${SNAPSHOT_ID}"
     ocpctl.io/snapshot-version: "${SNAPSHOT_VERSION}"
