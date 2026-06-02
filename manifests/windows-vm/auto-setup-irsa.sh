@@ -607,10 +607,24 @@ spec:
     volumeSnapshotContentName: windows-source-snapshot-content
 EOF
 
-        # Create PVC directly with dataSourceRef pointing to VolumeSnapshot
-        # This uses native CSI snapshot restore (fast) instead of CDI's DataVolume (slow)
-        # CDI will automatically create a DataVolume wrapper for this PVC
-        cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+        # Check if PVC already exists (for retry scenarios)
+        EXISTING_PVC=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+
+        if [ "$EXISTING_PVC" = "Bound" ]; then
+            log_info "PVC 'windows' already exists and is Bound - skipping creation"
+        elif [ "$EXISTING_PVC" != "NotFound" ]; then
+            log_warn "PVC 'windows' exists with phase: $EXISTING_PVC - deleting and recreating"
+            oc --kubeconfig="$KUBECONFIG" delete pvc windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true
+            log_info "✓ Old PVC deleted"
+            # Reset variable after successful deletion
+            EXISTING_PVC="NotFound"
+        fi
+
+        if [ "$EXISTING_PVC" != "Bound" ]; then
+            # Create PVC directly with dataSourceRef pointing to VolumeSnapshot
+            # This uses native CSI snapshot restore (fast) instead of CDI's DataVolume (slow)
+            # CDI will automatically create a DataVolume wrapper for this PVC
+            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -633,7 +647,8 @@ spec:
     name: windows-source-snapshot
 EOF
 
-        log_info "✓ PVC created from snapshot (CSI restore starting - 2-3 minutes)"
+            log_info "✓ PVC created from snapshot (CSI restore starting - 2-3 minutes)"
+        fi
 
     else
         # Slow path: S3 download
