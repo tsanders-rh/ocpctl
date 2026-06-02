@@ -1065,6 +1065,34 @@ with open(vm_yaml_file, 'w') as f:
     yaml.dump(doc, f, default_flow_style=False)
 EOF_PYTHON
 
+# Wait for kubemacpool webhook service to be ready before creating VMs
+# This prevents "no endpoints available for service kubemacpool-service" errors
+log_info "Waiting for kubemacpool webhook service to be ready..."
+WEBHOOK_WAIT=0
+WEBHOOK_MAX_WAIT=300  # 5 minutes
+while [ $WEBHOOK_WAIT -lt $WEBHOOK_MAX_WAIT ]; do
+    if oc --kubeconfig="$KUBECONFIG" get endpoints kubemacpool-service -n openshift-cnv &>/dev/null; then
+        ENDPOINTS=$(oc --kubeconfig="$KUBECONFIG" get endpoints kubemacpool-service -n openshift-cnv -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+        if [ -n "$ENDPOINTS" ]; then
+            log_info "✓ kubemacpool webhook service is ready"
+            break
+        fi
+    fi
+
+    if [ $((WEBHOOK_WAIT % 30)) -eq 0 ]; then
+        log_info "  Still waiting for kubemacpool-service endpoints... (${WEBHOOK_WAIT}s elapsed)"
+    fi
+
+    sleep 5
+    WEBHOOK_WAIT=$((WEBHOOK_WAIT + 5))
+done
+
+if [ $WEBHOOK_WAIT -ge $WEBHOOK_MAX_WAIT ]; then
+    log_error "Timeout waiting for kubemacpool-service to be ready after ${WEBHOOK_MAX_WAIT}s"
+    log_error "The CNV operator may still be deploying. Try retrying this configuration in a few minutes."
+    exit 1
+fi
+
 # Apply the modified VM YAML
 oc --kubeconfig="$KUBECONFIG" apply -f "$VM_YAML"
 rm -f "$VM_YAML"
