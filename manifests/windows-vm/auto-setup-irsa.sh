@@ -591,7 +591,7 @@ spec:
   driver: ebs.csi.aws.com
   source:
     snapshotHandle: ${SNAPSHOT_ID}
-  sourceVolumeMode: Filesystem
+  sourceVolumeMode: Block
   volumeSnapshotClassName: csi-aws-vsc
   volumeSnapshotRef:
     name: windows-source-snapshot
