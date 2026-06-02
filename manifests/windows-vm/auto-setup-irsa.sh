@@ -724,11 +724,27 @@ else
     log_info "Note: S3 import can take 30-50 minutes depending on download speed and conversion time"
 fi
 
-# Wait for DataVolume to succeed
+# Wait for import to succeed
 WAIT_TIME=0
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-    DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-    DV_PROGRESS=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
+    if [ "$IMPORT_METHOD" = "snapshot" ]; then
+        # For snapshot import, check PVC status (we create PVC directly, not DataVolume)
+        PVC_PHASE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+
+        if [ "$PVC_PHASE" = "Bound" ]; then
+            log_info "✓ Windows image restored from snapshot"
+            break
+        elif [ "$PVC_PHASE" = "Failed" ] || [ "$PVC_PHASE" = "Lost" ]; then
+            DV_PHASE="Failed"  # Trigger fallback logic below
+        else
+            DV_PHASE="$PVC_PHASE"
+        fi
+        DV_PROGRESS="N/A"
+    else
+        # For S3 import, check DataVolume status
+        DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+        DV_PROGRESS=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.progress}' 2>/dev/null || echo "N/A")
+    fi
 
     if [ "$DV_PHASE" = "Succeeded" ]; then
         log_info "✓ Windows image import completed"
@@ -741,6 +757,7 @@ while [ $WAIT_TIME -lt $MAX_WAIT ]; do
 
             # Clean up failed resources
             log_info "Cleaning up failed snapshot import..."
+            oc --kubeconfig="$KUBECONFIG" delete pvc windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true 2>/dev/null || true
             oc --kubeconfig="$KUBECONFIG" delete datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE --wait=true 2>/dev/null || true
             oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-source-snapshot -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true
             oc --kubeconfig="$KUBECONFIG" delete volumesnapshotcontent windows-source-snapshot-content --ignore-not-found=true
