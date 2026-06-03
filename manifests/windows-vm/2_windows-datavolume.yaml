@@ -31,4 +31,4 @@ spec:
     resources:
       requests:
         storage: 70Gi
-    storageClassName: gp3-csi-immediate-us-west-2a
+    volumeMode: Block

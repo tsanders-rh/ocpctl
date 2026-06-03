@@ -165,7 +165,7 @@ objects:
             - name: rootdisk
               dataVolume:
                 name: ${VM_NAME}-disk
-
+              volumeMode: Block
 parameters:
   - name: VM_NAME
     description: "Name of the Virtual Machine"
@@ -176,7 +176,4 @@ parameters:
     description: "Namespace to create the VM in"
     value: "default"
     required: true
-  - name: STORAGE_CLASS
-    description: "Storage class for the VM disk"
-    value: "gp3-csi-wfc"
-    required: true
+  # use defaults for sc

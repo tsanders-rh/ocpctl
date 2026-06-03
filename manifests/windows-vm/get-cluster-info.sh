@@ -44,11 +44,23 @@ CLUSTER_NAME=$(oc get infrastructure cluster -o jsonpath='{.status.apiServerURL}
 # Get OIDC provider info
 OIDC_ISSUER=$(oc get authentication.config.openshift.io cluster -o jsonpath='{.spec.serviceAccountIssuer}')
 
+# Detect availability zone from default storage class
+DEFAULT_SC=$(oc get storageclass -o json | jq -r '.items[] | select(.metadata.annotations."storageclass.kubernetes.io/is-default-class" == "true") | .metadata.name' | head -1)
+DETECTED_AZ=""
+if [[ -n "$DEFAULT_SC" ]]; then
+  # Try to extract AZ from storage class name (common pattern: *-us-east-1b)
+  if [[ "$DEFAULT_SC" =~ -([a-z]+-[a-z]+-[0-9]+[a-z])$ ]]; then
+    DETECTED_AZ="${BASH_REMATCH[1]}"
+  fi
+fi
+
 echo "Cluster Information:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Cluster Name: $CLUSTER_NAME"
 echo "Infrastructure ID: $INFRA_ID"
 echo "Region: $REGION"
+echo "Availability Zone: ${DETECTED_AZ:-<will be detected from PVC>}"
+echo "Default StorageClass: ${DEFAULT_SC:-<none>}"
 echo "OIDC Issuer: ${OIDC_ISSUER:-<not configured>}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
