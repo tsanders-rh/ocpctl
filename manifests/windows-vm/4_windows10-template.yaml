@@ -84,6 +84,8 @@ objects:
       dataVolumeTemplates:
         - metadata:
             name: ${VM_NAME}-disk
+            annotations:
+              cdi.kubevirt.io/storage.usePopulator: "false"
           spec:
             sourceRef:
               kind: DataSource
@@ -114,7 +116,7 @@ objects:
               interfaces:
                 - name: default
                   masquerade: {}
-                  model: virtio
+                  model: e1000
               networkInterfaceMultiqueue: true
               rng: {}
             features:

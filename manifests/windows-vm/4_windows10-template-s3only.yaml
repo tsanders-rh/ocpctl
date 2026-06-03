@@ -116,7 +116,7 @@ objects:
               interfaces:
                 - name: default
                   masquerade: {}
-                  model: virtio
+                  model: e1000
               networkInterfaceMultiqueue: true
               rng: {}
             features:
