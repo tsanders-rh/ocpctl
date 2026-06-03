@@ -614,7 +614,7 @@ log_info "✓ VM clone will be constrained to availability zone: $SOURCE_ZONE"
 log_info "Creating Windows VM template with zone-specific storage class..."
 export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
-cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
+cat "${SCRIPT_DIR}/4_windows10-template-s3only.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
 log_info "✓ VM Template created (default storage class: ${CLONE_STORAGE_CLASS})"
 log_info "✓ Future VMs created from template will use the correct zone-specific class"
 
