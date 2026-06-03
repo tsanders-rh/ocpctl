@@ -587,7 +587,7 @@ kind: VolumeSnapshotContent
 metadata:
   name: windows-source-snapshot-content
 spec:
-  deletionPolicy: Delete
+  deletionPolicy: Retain
   driver: ebs.csi.aws.com
   source:
     snapshotHandle: ${SNAPSHOT_ID}
