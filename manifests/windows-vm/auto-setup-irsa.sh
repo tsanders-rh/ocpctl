@@ -877,10 +877,11 @@ if [ $WAIT_TIME -ge $MAX_WAIT ]; then
     exit 1
 fi
 
-# If we used S3 import, create snapshot for future use
-if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ]; then
+# If we used S3 import, create snapshot for future use (only if none exists)
+if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -z "$SNAPSHOT_ID" ]; then
     log_info ""
     log_info "DataVolume import succeeded - creating EBS snapshot for future deployments..."
+    log_info "Using enhanced snapshot consistency process to ensure data integrity..."
 
     # Get the PVC backing the DataVolume
     PVC_NAME="windows"
@@ -891,24 +892,83 @@ if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ]; then
         VOLUME_ID=$(oc --kubeconfig="$KUBECONFIG" get pv $PV_NAME -o jsonpath='{.spec.csi.volumeHandle}' 2>/dev/null)
 
         if [ -n "$VOLUME_ID" ]; then
-            log_info "Creating snapshot from EBS volume: $VOLUME_ID"
+            log_info "Target EBS volume: $VOLUME_ID"
 
-            # Create snapshot with tags
-            SNAPSHOT_DESCRIPTION="ocpctl Windows 10 OADP v${SNAPSHOT_VERSION} (auto-created)"
+            # Step 1: Wait for CDI importer pod to fully terminate
+            log_info "Step 1: Waiting for CDI importer pod to terminate..."
+            WAIT_TIME=0
+            MAX_WAIT=300  # 5 minutes
+            while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+                IMPORTER_PODS=$(oc --kubeconfig="$KUBECONFIG" get pods -n $SERVICE_ACCOUNT_NAMESPACE -l cdi.kubevirt.io/dataVolume=windows --no-headers 2>/dev/null | wc -l)
+                if [ "$IMPORTER_PODS" -eq 0 ]; then
+                    log_info "✓ CDI importer pod terminated"
+                    break
+                fi
+                sleep 5
+                WAIT_TIME=$((WAIT_TIME + 5))
+            done
+
+            # Step 2: Wait additional time for filesystem writes to settle
+            log_info "Step 2: Waiting 2 minutes for filesystem writes to settle..."
+            sleep 120
+
+            # Step 3: Create helper pod to sync the volume
+            log_info "Step 3: Creating helper pod to sync volume..."
+            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: windows-snapshot-helper
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+spec:
+  restartPolicy: Never
+  containers:
+  - name: sync
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sh", "-c", "sync && sleep infinity"]
+    volumeMounts:
+    - name: windows-disk
+      mountPath: /mnt/windows
+  volumes:
+  - name: windows-disk
+    persistentVolumeClaim:
+      claimName: windows
+EOF
+
+            # Wait for helper pod to be ready
+            log_info "Waiting for helper pod to be ready..."
+            oc --kubeconfig="$KUBECONFIG" wait --for=condition=Ready pod/windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE --timeout=120s
+
+            # Step 4: Execute sync in helper pod
+            log_info "Step 4: Executing filesystem sync..."
+            oc --kubeconfig="$KUBECONFIG" exec windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE -- sync
+
+            # Step 5: Delete helper pod and wait for volume to be fully released
+            log_info "Step 5: Removing helper pod and waiting for volume idle state..."
+            oc --kubeconfig="$KUBECONFIG" delete pod windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE --wait=true
+
+            # Step 6: Wait for volume to be fully idle
+            log_info "Step 6: Waiting 30 seconds for volume to become fully idle..."
+            sleep 30
+
+            # Step 7: Create snapshot
+            log_info "Step 7: Creating EBS snapshot from volume: $VOLUME_ID"
+            SNAPSHOT_DESCRIPTION="ocpctl Windows 10 OADP v${SNAPSHOT_VERSION} (auto-created with sync)"
             NEW_SNAPSHOT_ID=$(aws ec2 create-snapshot \
                 --region "$REGION" \
                 --volume-id "$VOLUME_ID" \
                 --description "$SNAPSHOT_DESCRIPTION" \
-                --tag-specifications "ResourceType=snapshot,Tags=[{Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}},{Key=ocpctl:managed,Value=true},{Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}},{Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2},{Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)},{Key=ocpctl:region,Value=${REGION}}]" \
+                --tag-specifications "ResourceType=snapshot,Tags=[{Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}},{Key=ocpctl:managed,Value=true},{Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}},{Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2},{Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)},{Key=ocpctl:region,Value=${REGION}},{Key=ocpctl:snapshot-method,Value=synced}]" \
                 --query 'SnapshotId' \
                 --output text 2>/dev/null || echo "")
 
             if [ -n "$NEW_SNAPSHOT_ID" ]; then
                 log_info "✓ Created snapshot: $NEW_SNAPSHOT_ID (will be used for future Windows VM deployments in $REGION)"
+                log_info "  Snapshot created with enhanced consistency (synced volume)"
                 log_info "  Snapshot will complete in background (20-30 minutes)"
                 log_info "  Future deployments in $REGION will complete in 2-3 minutes using this snapshot"
 
-                # Optionally store in SSM Parameter Store (requires additional IAM permissions)
+                # Store in SSM Parameter Store (requires additional IAM permissions)
                 SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
                 if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$NEW_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
                     log_info "✓ Stored snapshot ID in SSM Parameter Store: $SNAPSHOT_PARAM"
@@ -925,6 +985,9 @@ if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ]; then
     else
         log_warn "Could not find PV for DataVolume - skipping snapshot creation"
     fi
+elif [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -n "$SNAPSHOT_ID" ]; then
+    log_info ""
+    log_info "Snapshot already exists ($SNAPSHOT_ID), skipping snapshot creation to preserve existing snapshot"
 fi
 
 # Create initial test VM (this triggers snapshot creation for faster subsequent clones)
