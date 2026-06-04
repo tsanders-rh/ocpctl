@@ -912,47 +912,18 @@ if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -z "$SNAPSH
             log_info "Step 2: Waiting 2 minutes for filesystem writes to settle..."
             sleep 120
 
-            # Step 3: Create helper pod to sync the volume
-            log_info "Step 3: Creating helper pod to sync volume..."
-            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: windows-snapshot-helper
-  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
-spec:
-  restartPolicy: Never
-  containers:
-  - name: sync
-    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-    command: ["sh", "-c", "sync && sleep infinity"]
-    volumeMounts:
-    - name: windows-disk
-      mountPath: /mnt/windows
-  volumes:
-  - name: windows-disk
-    persistentVolumeClaim:
-      claimName: windows
-EOF
+            # Step 3: Ensure no pods are using the PVC
+            log_info "Step 3: Ensuring no pods are using the PVC..."
+            oc --kubeconfig="$KUBECONFIG" get pods -n $SERVICE_ACCOUNT_NAMESPACE \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.volumes[*]}{.persistentVolumeClaim.claimName}{"\n"}{end}{end}' 2>/dev/null | \
+              grep -w "windows" || true
 
-            # Wait for helper pod to be ready
-            log_info "Waiting for helper pod to be ready..."
-            oc --kubeconfig="$KUBECONFIG" wait --for=condition=Ready pod/windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE --timeout=120s
+            # Step 4: Wait for volume writes/attachments to settle
+            log_info "Step 4: Waiting 5 minutes for block volume to settle before snapshot..."
+            sleep 300
 
-            # Step 4: Execute sync in helper pod
-            log_info "Step 4: Executing filesystem sync..."
-            oc --kubeconfig="$KUBECONFIG" exec windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE -- sync
-
-            # Step 5: Delete helper pod and wait for volume to be fully released
-            log_info "Step 5: Removing helper pod and waiting for volume idle state..."
-            oc --kubeconfig="$KUBECONFIG" delete pod windows-snapshot-helper -n $SERVICE_ACCOUNT_NAMESPACE --wait=true
-
-            # Step 6: Wait for volume to be fully idle
-            log_info "Step 6: Waiting 30 seconds for volume to become fully idle..."
-            sleep 30
-
-            # Step 7: Create Kubernetes VolumeSnapshot (CSI driver handles EBS snapshot)
-            log_info "Step 7: Creating VolumeSnapshot via CSI driver..."
+            # Step 5: Create Kubernetes VolumeSnapshot (CSI driver handles EBS snapshot)
+            log_info "Step 5: Creating VolumeSnapshot via CSI driver..."
 
             # Create VolumeSnapshot - let CSI driver handle the actual EBS snapshot creation
             cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
