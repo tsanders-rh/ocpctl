@@ -636,7 +636,6 @@ metadata:
   name: windows
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   annotations:
-    cdi.kubevirt.io/storage.usePopulator: "false"
     ocpctl.io/import-method: "snapshot"
     ocpctl.io/snapshot-id: "${SNAPSHOT_ID}"
     ocpctl.io/snapshot-version: "${SNAPSHOT_VERSION}"
