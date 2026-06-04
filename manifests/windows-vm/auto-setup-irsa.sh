@@ -951,33 +951,97 @@ EOF
             log_info "Step 6: Waiting 30 seconds for volume to become fully idle..."
             sleep 30
 
-            # Step 7: Create snapshot
-            log_info "Step 7: Creating EBS snapshot from volume: $VOLUME_ID"
-            SNAPSHOT_DESCRIPTION="ocpctl Windows 10 OADP v${SNAPSHOT_VERSION} (auto-created with sync)"
-            NEW_SNAPSHOT_ID=$(aws ec2 create-snapshot \
-                --region "$REGION" \
-                --volume-id "$VOLUME_ID" \
-                --description "$SNAPSHOT_DESCRIPTION" \
-                --tag-specifications "ResourceType=snapshot,Tags=[{Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}},{Key=ocpctl:managed,Value=true},{Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}},{Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2},{Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)},{Key=ocpctl:region,Value=${REGION}},{Key=ocpctl:snapshot-method,Value=synced}]" \
-                --query 'SnapshotId' \
-                --output text 2>/dev/null || echo "")
+            # Step 7: Create Kubernetes VolumeSnapshot (CSI driver handles EBS snapshot)
+            log_info "Step 7: Creating VolumeSnapshot via CSI driver..."
 
-            if [ -n "$NEW_SNAPSHOT_ID" ]; then
-                log_info "✓ Created snapshot: $NEW_SNAPSHOT_ID (will be used for future Windows VM deployments in $REGION)"
-                log_info "  Snapshot created with enhanced consistency (synced volume)"
-                log_info "  Snapshot will complete in background (20-30 minutes)"
-                log_info "  Future deployments in $REGION will complete in 2-3 minutes using this snapshot"
+            # Create VolumeSnapshot - let CSI driver handle the actual EBS snapshot creation
+            cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: windows-golden-snapshot
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  labels:
+    ocpctl.io/managed: "true"
+    ocpctl.io/image-version: "${SNAPSHOT_VERSION}"
+    ocpctl.io/snapshot-method: "synced"
+spec:
+  volumeSnapshotClassName: csi-aws-vsc
+  source:
+    persistentVolumeClaimName: windows
+EOF
 
-                # Store in SSM Parameter Store (requires additional IAM permissions)
-                SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
-                if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$NEW_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
-                    log_info "✓ Stored snapshot ID in SSM Parameter Store: $SNAPSHOT_PARAM"
+            log_info "Waiting for VolumeSnapshot to become ready (CSI driver creating EBS snapshot)..."
+
+            # Wait for VolumeSnapshot to be ready (up to 30 minutes)
+            SNAPSHOT_WAIT=0
+            SNAPSHOT_MAX_WAIT=1800  # 30 minutes
+            SNAPSHOT_READY="false"
+
+            while [ $SNAPSHOT_WAIT -lt $SNAPSHOT_MAX_WAIT ]; do
+                SNAPSHOT_READY=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.readyToUse}' 2>/dev/null || echo "false")
+
+                if [ "$SNAPSHOT_READY" = "true" ]; then
+                    log_info "✓ VolumeSnapshot is ready"
+                    break
+                fi
+
+                # Log progress every 60 seconds
+                if [ $((SNAPSHOT_WAIT % 60)) -eq 0 ] && [ $SNAPSHOT_WAIT -gt 0 ]; then
+                    log_info "  Still waiting for snapshot... (${SNAPSHOT_WAIT}s elapsed)"
+                fi
+
+                sleep 10
+                SNAPSHOT_WAIT=$((SNAPSHOT_WAIT + 10))
+            done
+
+            if [ "$SNAPSHOT_READY" = "true" ]; then
+                # Extract the actual EBS snapshot ID from VolumeSnapshotContent
+                VOLUME_SNAPSHOT_CONTENT=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.boundVolumeSnapshotContentName}' 2>/dev/null)
+
+                if [ -n "$VOLUME_SNAPSHOT_CONTENT" ]; then
+                    NEW_SNAPSHOT_ID=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshotcontent $VOLUME_SNAPSHOT_CONTENT -o jsonpath='{.status.snapshotHandle}' 2>/dev/null)
+
+                    if [ -n "$NEW_SNAPSHOT_ID" ]; then
+                        log_info "✓ EBS snapshot created: $NEW_SNAPSHOT_ID"
+                        log_info "  Snapshot created via CSI driver with enhanced consistency (synced volume)"
+                        log_info "  Future deployments in $REGION will complete in 2-3 minutes using this snapshot"
+
+                        # Tag the EBS snapshot for discoverability
+                        log_info "Tagging EBS snapshot for future discovery..."
+                        aws ec2 create-tags --region "$REGION" --resources "$NEW_SNAPSHOT_ID" \
+                            --tags \
+                                "Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}" \
+                                "Key=ocpctl:managed,Value=true" \
+                                "Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}" \
+                                "Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2" \
+                                "Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                                "Key=ocpctl:region,Value=${REGION}" \
+                                "Key=ocpctl:snapshot-method,Value=csi-synced" \
+                            2>/dev/null || log_warn "Could not tag snapshot (non-critical)"
+
+                        # Store in SSM Parameter Store
+                        SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
+                        if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$NEW_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
+                            log_info "✓ Stored snapshot ID in SSM Parameter Store: $SNAPSHOT_PARAM"
+                        else
+                            log_warn "Could not store snapshot ID in SSM Parameter Store (may lack permissions)"
+                            log_info "Snapshot can still be discovered via EC2 tags"
+                        fi
+
+                        # Clean up the VolumeSnapshot (but keep VolumeSnapshotContent with Retain policy)
+                        log_info "Cleaning up VolumeSnapshot resource (EBS snapshot preserved)..."
+                        oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE 2>/dev/null || true
+                    else
+                        log_warn "Could not extract EBS snapshot ID from VolumeSnapshotContent"
+                    fi
                 else
-                    log_warn "Could not store snapshot ID in SSM Parameter Store (may lack permissions)"
-                    log_info "Snapshot can still be discovered via EC2 tags"
+                    log_warn "Could not find VolumeSnapshotContent for snapshot"
                 fi
             else
-                log_warn "Failed to create snapshot - future deployments will use S3 fallback"
+                log_warn "VolumeSnapshot did not become ready within timeout - future deployments will use S3 fallback"
+                # Clean up failed snapshot
+                oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE 2>/dev/null || true
             fi
         else
             log_warn "Could not extract EBS volume ID from PV - skipping snapshot creation"
