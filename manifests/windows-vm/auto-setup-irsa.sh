@@ -1183,6 +1183,51 @@ EOF_SNAPSHOT
 
             if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
                 log_info "✓ Extracted EBS snapshot ID: $GOLDEN_SNAPSHOT_ID"
+
+                # Wait for actual EBS snapshot to complete (VolumeSnapshot.readyToUse doesn't mean EBS snapshot is done)
+                log_info ""
+                log_info "Waiting for EBS snapshot to complete..."
+                log_info "  Note: VolumeSnapshot API reports 'ready' when request is accepted,"
+                log_info "  but EBS snapshot takes 40-50 minutes to reach 100% progress"
+
+                EBS_SNAPSHOT_WAIT=0
+                EBS_SNAPSHOT_MAX_WAIT=3600  # 60 minutes
+                EBS_SNAPSHOT_COMPLETE=false
+
+                while [ $EBS_SNAPSHOT_WAIT -lt $EBS_SNAPSHOT_MAX_WAIT ]; do
+                    # Check EBS snapshot state and progress
+                    SNAPSHOT_INFO=$(aws ec2 describe-snapshots --region "$REGION" --snapshot-ids "$GOLDEN_SNAPSHOT_ID" --output json 2>/dev/null || echo "{}")
+                    SNAPSHOT_STATE=$(echo "$SNAPSHOT_INFO" | jq -r '.Snapshots[0].State // "unknown"')
+                    SNAPSHOT_PROGRESS=$(echo "$SNAPSHOT_INFO" | jq -r '.Snapshots[0].Progress // "0%"')
+
+                    if [ "$SNAPSHOT_STATE" = "completed" ]; then
+                        log_info "✓ EBS snapshot completed: $GOLDEN_SNAPSHOT_ID (progress: $SNAPSHOT_PROGRESS)"
+                        EBS_SNAPSHOT_COMPLETE=true
+                        break
+                    fi
+
+                    if [ "$SNAPSHOT_STATE" = "error" ]; then
+                        log_error "EBS snapshot failed: $GOLDEN_SNAPSHOT_ID"
+                        GOLDEN_SNAPSHOT_ID=""
+                        break
+                    fi
+
+                    # Log progress every 5 minutes
+                    if [ $((EBS_SNAPSHOT_WAIT % 300)) -eq 0 ]; then
+                        ELAPSED_MIN=$((EBS_SNAPSHOT_WAIT / 60))
+                        REMAINING_MIN=$(((EBS_SNAPSHOT_MAX_WAIT - EBS_SNAPSHOT_WAIT) / 60))
+                        log_info "  Snapshot state: $SNAPSHOT_STATE | Progress: $SNAPSHOT_PROGRESS | Elapsed: ${ELAPSED_MIN}m | Timeout in: ${REMAINING_MIN}m"
+                    fi
+
+                    sleep 30
+                    EBS_SNAPSHOT_WAIT=$((EBS_SNAPSHOT_WAIT + 30))
+                done
+
+                if [ "$EBS_SNAPSHOT_COMPLETE" != "true" ]; then
+                    log_error "EBS snapshot did not complete within timeout"
+                    log_error "Continuing without snapshot optimization"
+                    GOLDEN_SNAPSHOT_ID=""
+                fi
             else
                 log_warn "Could not extract EBS snapshot ID"
                 GOLDEN_SNAPSHOT_ID=""
