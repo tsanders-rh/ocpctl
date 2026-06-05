@@ -383,9 +383,9 @@ func (j *Janitor) cleanupIncompleteFailedJobs(ctx context.Context) error {
 // detectStuckLocks detects locks held for an unusually long time and publishes alerts
 // This runs BEFORE cleanupExpiredLocks to catch deadlocks before they auto-expire
 func (j *Janitor) detectStuckLocks(ctx context.Context) error {
-	// Detect locks held for 80% of their expected lifetime (worker timeout is 90 minutes)
-	// Stuck threshold: 72 minutes (80% of 90 minutes)
-	stuckThreshold := 72 * time.Minute
+	// Detect locks held for 80% of their expected lifetime (worker timeout is 2 hours)
+	// Stuck threshold: 96 minutes (80% of 120 minutes)
+	stuckThreshold := 96 * time.Minute
 
 	locks, err := j.store.JobLocks.GetStuckLocks(ctx, stuckThreshold)
 	if err != nil {
