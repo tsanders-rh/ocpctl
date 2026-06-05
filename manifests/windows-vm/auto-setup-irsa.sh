@@ -1265,6 +1265,11 @@ if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
     log_info "✓ Source volume mode: $SOURCE_VOLUME_MODE"
     log_info "✓ Source availability zone: $SOURCE_ZONE"
 
+    if [ -z "$SOURCE_ZONE" ]; then
+        log_error "Could not detect source PVC zone"
+        exit 1
+    fi
+
     # Create zone-specific storage class for validation PVC
     CLONE_STORAGE_CLASS="gp3-csi-${INFRA_ID}-${SOURCE_ZONE}"
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass "${CLONE_STORAGE_CLASS}" &>/dev/null; then
@@ -1290,13 +1295,14 @@ EOF_SC
     fi
 
     # Create validation PVC by restoring from golden snapshot
+    # IMPORTANT: PVC must be in same namespace as snapshot (dataSource is namespace-local)
     log_info "Creating validation PVC from golden snapshot..."
     cat <<EOF_VAL_PVC | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: windows-validation-disk
-  namespace: default
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
 spec:
   accessModes:
   - ReadWriteOnce
@@ -1306,7 +1312,6 @@ spec:
     kind: VolumeSnapshot
     apiGroup: snapshot.storage.k8s.io
     name: windows-golden-snapshot
-    namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   resources:
     requests:
       storage: 70Gi
@@ -1319,7 +1324,7 @@ EOF_VAL_PVC
     VAL_PVC_WAIT=0
     VAL_PVC_MAX_WAIT=600  # 10 minutes (snapshot restore is fast)
     while [ $VAL_PVC_WAIT -lt $VAL_PVC_MAX_WAIT ]; do
-        VAL_PVC_PHASE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows-validation-disk -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+        VAL_PVC_PHASE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
 
         if [ "$VAL_PVC_PHASE" = "Bound" ]; then
             log_info "✓ Validation PVC bound (snapshot restored successfully)"
@@ -1346,7 +1351,7 @@ apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   name: windows-validation-vm
-  namespace: default
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
 spec:
   running: false
   template:
@@ -1405,7 +1410,7 @@ fi
 # Step 7.5: Boot the restored snapshot validation VM
 if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
     log_info "  Starting snapshot restore validation VM..."
-    if ! oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n default --type merge -p '{"spec":{"running":true}}' 2>/dev/null; then
+    if ! oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":true}}' 2>/dev/null; then
         log_error "Failed to start snapshot validation VM"
         GOLDEN_SNAPSHOT_ID=""
     else
@@ -1418,7 +1423,7 @@ if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
         log_info "  Waiting for snapshot restore VM to reach Running and stabilize..."
 
         while [ $SNAP_VM_WAIT -lt $SNAP_VM_MAX_WAIT ]; do
-            VM_STATUS=$(oc --kubeconfig="$KUBECONFIG" get virtualmachine windows-validation-vm -n default \
+            VM_STATUS=$(oc --kubeconfig="$KUBECONFIG" get virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE \
                 -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
 
             # Check if VM failed
@@ -1480,9 +1485,9 @@ if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
             log_info "  Snapshot is verified safe to publish"
             log_info ""
             log_info "  Cleaning up validation resources..."
-            oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n default --type merge -p '{"spec":{"running":false}}' 2>/dev/null || true
+            oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":false}}' 2>/dev/null || true
             sleep 5
-            oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n default --ignore-not-found=true 2>/dev/null || true
+            oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
             oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n default --ignore-not-found=true 2>/dev/null || true
             log_info "✓ Validation resources cleaned up"
         fi
