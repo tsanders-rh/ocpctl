@@ -428,14 +428,14 @@ func (s *JobStore) IncrementAttempt(ctx context.Context, id string) error {
 }
 
 // MarkFailedForRetry marks a job as failed but resets it to RETRYING status for automatic retry.
-// This increments the attempt counter, records the error details, and resets timing fields.
+// This records the error details and resets timing fields WITHOUT incrementing attempt.
+// The worker will increment attempt when it picks up the retry (avoiding double-increment).
 // Used when a job fails due to transient errors (worker crashes, timeouts) that are worth retrying.
 // Returns ErrNotFound if the job does not exist.
 func (s *JobStore) MarkFailedForRetry(ctx context.Context, id string, errorCode, errorMessage string) error {
 	query := `
 		UPDATE jobs
-		SET attempt = attempt + 1,
-			status = $1,
+		SET status = $1,
 			error_code = $2,
 			error_message = $3,
 			started_at = NULL,
