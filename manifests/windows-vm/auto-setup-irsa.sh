@@ -1109,6 +1109,20 @@ if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -z "$SNAPSH
     # Clean up any leftover snapshot resources
     log_info "Cleaning up any existing snapshot resources..."
     oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+
+    # Wait for deletion to complete (VolumeSnapshots have finalizers and take time to delete)
+    CLEANUP_WAIT=0
+    CLEANUP_MAX_WAIT=120  # 2 minutes
+    while oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE &>/dev/null; do
+        if [ $CLEANUP_WAIT -ge $CLEANUP_MAX_WAIT ]; then
+            log_error "VolumeSnapshot deletion timed out after ${CLEANUP_MAX_WAIT}s"
+            log_error "Manual cleanup required: oc delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE"
+            exit 1
+        fi
+        sleep 2
+        CLEANUP_WAIT=$((CLEANUP_WAIT + 2))
+    done
+
     log_info "✓ Cleanup complete"
 
     # Create VolumeSnapshot of the validated pristine PVC

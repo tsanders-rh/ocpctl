@@ -32,7 +32,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		CheckInterval:                 5 * time.Minute,
-		StuckJobThreshold:             90 * time.Minute, // 1.5 hours to allow Windows virtual clusters to complete
+		StuckJobThreshold:             120 * time.Minute, // 2 hours to allow Windows VM snapshot creation to complete
 		ExpiredLockCleanup:            true,
 		ExpiredKeyCleanup:             true,
 		OrphanDetection:               true,
