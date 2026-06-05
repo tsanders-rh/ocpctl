@@ -835,6 +835,7 @@ export default function ClusterDetailPage() {
           executionOrder={executionOrder}
           configurations={configurations?.configurations}
           customPostConfig={cluster?.custom_post_config}
+          jobRetryInfo={configurations?.job_retry_info}
         />
       )}
 

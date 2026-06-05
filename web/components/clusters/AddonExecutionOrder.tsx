@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CheckCircle2, Clock, Loader2, XCircle, ArrowRight } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { CheckCircle2, Clock, Loader2, XCircle, ArrowRight, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import type { CustomPostConfig, CustomScriptConfig, CustomManifestConfig, CustomOperatorConfig, CustomHelmChartConfig } from "@/types/api";
+import type { CustomPostConfig, CustomScriptConfig, CustomManifestConfig, CustomOperatorConfig, CustomHelmChartConfig, JobRetryInfo } from "@/types/api";
 
 interface TaskExecutionInfo {
   name: string;
@@ -26,6 +27,7 @@ interface AddonExecutionOrderProps {
   executionOrder: TaskExecutionInfo[];
   configurations?: Configuration[];
   customPostConfig?: CustomPostConfig;
+  jobRetryInfo?: JobRetryInfo;
 }
 
 const typeColors: Record<string, string> = {
@@ -81,12 +83,16 @@ function getTaskErrorMessage(taskName: string, configurations?: Configuration[])
   return config?.error_message;
 }
 
-export function AddonExecutionOrder({ executionOrder, configurations, customPostConfig }: AddonExecutionOrderProps) {
+export function AddonExecutionOrder({ executionOrder, configurations, customPostConfig, jobRetryInfo }: AddonExecutionOrderProps) {
   const [selectedTask, setSelectedTask] = useState<TaskExecutionInfo | null>(null);
 
   if (!executionOrder || executionOrder.length === 0) {
     return null;
   }
+
+  // Determine if job is retrying
+  const isRetrying = jobRetryInfo && jobRetryInfo.attempt > 1 && (jobRetryInfo.status === "RUNNING" || jobRetryInfo.status === "RETRYING");
+  const hasFailed = jobRetryInfo && jobRetryInfo.status === "FAILED" && jobRetryInfo.attempt >= jobRetryInfo.max_attempts;
 
   // Get task details from customPostConfig
   const getTaskDetails = (task: TaskExecutionInfo): any => {
@@ -257,6 +263,44 @@ export function AddonExecutionOrder({ executionOrder, configurations, customPost
         <p className="text-sm text-muted-foreground">
           Tasks are executed in dependency order. Each task waits for its dependencies to complete before starting.
         </p>
+
+        {/* Show retry status if job is retrying */}
+        {isRetrying && (
+          <Alert className="mt-4">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <AlertDescription>
+              <span className="font-semibold">Retrying</span> (Attempt {jobRetryInfo.attempt} of {jobRetryInfo.max_attempts})
+              {jobRetryInfo.retry_history && jobRetryInfo.retry_history.length > 0 && (
+                <div className="mt-2 text-sm">
+                  <p className="font-medium">Previous attempt failed:</p>
+                  <p className="text-muted-foreground mt-1">
+                    {jobRetryInfo.retry_history[jobRetryInfo.retry_history.length - 1].error_message || "Unknown error"}
+                  </p>
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Show final failure if all retries exhausted */}
+        {hasFailed && (
+          <Alert variant="destructive" className="mt-4">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>
+              <span className="font-semibold">Failed after {jobRetryInfo.max_attempts} attempts</span>
+              {jobRetryInfo.retry_history && jobRetryInfo.retry_history.length > 0 && (
+                <div className="mt-2 text-sm">
+                  <p className="font-medium">Error history:</p>
+                  {jobRetryInfo.retry_history.map((retry, idx) => (
+                    <p key={idx} className="mt-1">
+                      <span className="font-medium">Attempt {retry.attempt}:</span> {retry.error_message || "Unknown error"}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
       </CardHeader>
       <CardContent>
         <div className="space-y-3">

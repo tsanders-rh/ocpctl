@@ -448,11 +448,29 @@ export interface ClusterConfiguration {
   metadata?: Record<string, any>;
 }
 
+export interface JobRetryHistory {
+  id: number;
+  job_id: string;
+  attempt: number;
+  error_code?: string;
+  error_message?: string;
+  failed_at: string;
+}
+
+export interface JobRetryInfo {
+  job_id?: string;
+  status?: JobStatus;
+  attempt: number;
+  max_attempts: number;
+  retry_history?: JobRetryHistory[];
+}
+
 export interface ClusterConfigurationsResponse {
   cluster_id: string;
   cluster_name: string;
   configurations: ClusterConfiguration[];
   total: number;
+  job_retry_info?: JobRetryInfo;
 }
 
 // Job Types

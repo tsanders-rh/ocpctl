@@ -22,10 +22,19 @@ func NewConfigurationHandler(store *store.Store) *ConfigurationHandler {
 	}
 }
 
+// JobRetryInfo contains retry information for a POST_CONFIGURE job
+type JobRetryInfo struct {
+	JobID           string                     `json:"job_id,omitempty"`
+	Status          types.JobStatus            `json:"status,omitempty"`
+	Attempt         int                        `json:"attempt"`
+	MaxAttempts     int                        `json:"max_attempts"`
+	RetryHistory    []*store.JobRetryHistory   `json:"retry_history,omitempty"`
+}
+
 // ListClusterConfigurations handles GET /api/v1/clusters/:id/configurations
 //
 //	@Summary		List cluster configurations
-//	@Description	Returns all post-deployment configurations for a cluster
+//	@Description	Returns all post-deployment configurations for a cluster with job retry information
 //	@Tags			Configurations
 //	@Accept			json
 //	@Produce		json
@@ -56,11 +65,44 @@ func (h *ConfigurationHandler) ListClusterConfigurations(c echo.Context) error {
 		configs = []*types.ClusterConfiguration{}
 	}
 
+	// Get POST_CONFIGURE job retry information
+	var jobRetryInfo *JobRetryInfo
+	jobs, err := h.store.Jobs.ListByClusterID(ctx, clusterID)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("list jobs: %w", err))
+	}
+
+	// Find the most recent POST_CONFIGURE job
+	for i := len(jobs) - 1; i >= 0; i-- {
+		job := jobs[i]
+		if job.JobType == types.JobTypePostConfigure {
+			jobRetryInfo = &JobRetryInfo{
+				JobID:       job.ID,
+				Status:      job.Status,
+				Attempt:     job.Attempt,
+				MaxAttempts: job.MaxAttempts,
+			}
+
+			// Get retry history if job has retried
+			if job.Attempt > 1 || job.Status == types.JobStatusFailed {
+				retryHistory, err := h.store.JobRetryHistory.GetRetryHistory(ctx, job.ID)
+				if err != nil {
+					// Log error but don't fail the request
+					fmt.Printf("Warning: failed to get retry history for job %s: %v\n", job.ID, err)
+				} else {
+					jobRetryInfo.RetryHistory = retryHistory
+				}
+			}
+			break
+		}
+	}
+
 	return SuccessOK(c, map[string]interface{}{
 		"cluster_id":      cluster.ID,
 		"cluster_name":    cluster.Name,
 		"configurations":  configs,
 		"total":           len(configs),
+		"job_retry_info":  jobRetryInfo,
 	})
 }
 

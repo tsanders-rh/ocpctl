@@ -125,3 +125,16 @@ func (s *ClusterConfigurationStore) UpdateStatus(ctx context.Context, id string,
 
 	return nil
 }
+
+// DeleteByClusterID deletes all configurations for a cluster
+// Used when retrying POST_CONFIGURE jobs to prevent duplicate config records
+func (s *ClusterConfigurationStore) DeleteByClusterID(ctx context.Context, clusterID string) error {
+	query := `DELETE FROM cluster_configurations WHERE cluster_id = $1`
+
+	_, err := s.pool.Exec(ctx, query, clusterID)
+	if err != nil {
+		return fmt.Errorf("delete configurations: %w", err)
+	}
+
+	return nil
+}

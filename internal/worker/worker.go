@@ -741,6 +741,26 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 		w.cleanupPartialDeployment(ctx, job)
 	}
 
+	// Delete deployment logs from previous attempt to avoid unique constraint violations
+	// The unique constraint is on (cluster_id, job_id, sequence), and retries restart sequence from 0
+	if err := w.store.DeploymentLogs.DeleteByJobID(ctx, job.ID); err != nil {
+		log.Printf("Warning: Failed to delete deployment logs for retry of job %s: %v", job.ID, err)
+		// Non-fatal - log flushing will warn about constraint violations but won't break the job
+	} else {
+		log.Printf("Cleared previous deployment logs for job %s before retry", job.ID)
+	}
+
+	// For POST_CONFIGURE jobs, delete configuration records from previous attempt
+	// This prevents duplicate config tasks showing in the UI (failed attempt 1 + successful attempt 2)
+	if job.JobType == types.JobTypePostConfigure {
+		if err := w.store.ClusterConfigurations.DeleteByClusterID(ctx, job.ClusterID); err != nil {
+			log.Printf("Warning: Failed to delete configurations for retry of job %s: %v", job.ID, err)
+			// Non-fatal - duplicate configs will just show in UI
+		} else {
+			log.Printf("Cleared previous configuration records for cluster %s before POST_CONFIGURE retry", job.ClusterID)
+		}
+	}
+
 	// Update job status back to PENDING for retry
 	if err := w.store.Jobs.UpdateStatus(ctx, job.ID, types.JobStatusPending); err != nil {
 		log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
