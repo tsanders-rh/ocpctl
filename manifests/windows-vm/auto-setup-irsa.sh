@@ -1458,7 +1458,7 @@ if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
             oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":false}}' 2>/dev/null || true
             sleep 5
             oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
-            oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n default --ignore-not-found=true 2>/dev/null || true
+            oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
             log_info "✓ Validation resources cleaned up"
         fi
     fi
