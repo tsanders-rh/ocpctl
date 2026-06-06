@@ -691,7 +691,6 @@ metadata:
 spec:
   accessModes:
     - ${ACCESS_MODE}
-  volumeMode: Block
   resources:
     requests:
       storage: 70Gi
@@ -731,7 +730,6 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
-    volumeMode: Block
     resources:
       requests:
         storage: 70Gi
@@ -759,7 +757,6 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
-    volumeMode: Block
     resources:
       requests:
         storage: 70Gi
@@ -861,7 +858,6 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
-    volumeMode: Block
     resources:
       requests:
         storage: 70Gi
@@ -887,7 +883,6 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
-    volumeMode: Block
     resources:
       requests:
         storage: 70Gi
@@ -1276,7 +1271,6 @@ metadata:
 spec:
   accessModes:
   - ReadWriteOnce
-  volumeMode: ${SOURCE_VOLUME_MODE}
   storageClassName: ${CLONE_STORAGE_CLASS}
   dataSource:
     kind: VolumeSnapshot
@@ -1611,7 +1605,7 @@ fi
 log_info "ServiceAccount: $SERVICE_ACCOUNT_NAMESPACE/$SERVICE_ACCOUNT_NAME"
 log_info ""
 log_info "Windows VM Resources:"
-log_info "  Base Image: windows (70GB Windows 10 QCOW2) - volumeMode: Block"
+log_info "  Base Image: windows (70GB Windows 10 QCOW2)"
 log_info "  Default VM: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE, 4 cores, 8GB RAM)"
 log_info "  Template: windows10-oadp-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  Storage Class: ${CLONE_STORAGE_CLASS} (zone: ${SOURCE_ZONE})"

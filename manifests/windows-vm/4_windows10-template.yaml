@@ -94,6 +94,7 @@ objects:
                 requests:
                   storage: 70Gi
               storageClassName: ${STORAGE_CLASS}
+              volumeMode: Filesystem
       template:
         metadata:
           annotations:
