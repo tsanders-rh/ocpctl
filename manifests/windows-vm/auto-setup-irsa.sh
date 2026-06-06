@@ -971,10 +971,10 @@ spec:
         devices:
           disks:
           - disk:
-              bus: virtio
+              bus: sata
             name: rootdisk
           - disk:
-              bus: virtio
+              bus: sata
             name: cloudinitdisk
           interfaces:
           - masquerade: {}
@@ -1335,10 +1335,10 @@ spec:
         devices:
           disks:
           - disk:
-              bus: virtio
+              bus: sata
             name: rootdisk
           - disk:
-              bus: virtio
+              bus: sata
             name: cloudinitdisk
           interfaces:
           - masquerade: {}
@@ -1542,10 +1542,10 @@ spec:
         devices:
           disks:
           - disk:
-              bus: virtio
+              bus: sata
             name: rootdisk
           - disk:
-              bus: virtio
+              bus: sata
             name: cloudinitdisk
           interfaces:
           - masquerade: {}
