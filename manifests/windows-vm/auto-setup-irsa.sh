@@ -1498,80 +1498,10 @@ elif [ "$IMPORT_METHOD" = "s3" ] && [ -z "$GOLDEN_SNAPSHOT_ID" ]; then
     log_info "Future deployments will use S3 import (30-50 minutes)"
 fi
 
-# Step 8: Create default Windows VM for immediate use
+# Step 8: Create VM template for users
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
-log_info "Step 8: Creating default Windows VM for testing..."
-log_info "═══════════════════════════════════════════════════════════════"
-
-# Get source PVC info for VM creation
-SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
-SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
-if [ -z "$SOURCE_ZONE" ]; then
-    SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
-fi
-
-log_info "Creating Windows VM (zone: $SOURCE_ZONE)..."
-cat <<EOF_DEFAULT_VM | oc --kubeconfig="$KUBECONFIG" apply -f -
-apiVersion: kubevirt.io/v1
-kind: VirtualMachine
-metadata:
-  name: windows-vm
-  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
-  labels:
-    app: windows-vm
-    ocpctl.mg.dog8code.com/managed: "true"
-spec:
-  running: false
-  template:
-    metadata:
-      labels:
-        kubevirt.io/vm: windows-vm
-    spec:
-      domain:
-        cpu:
-          cores: 4
-          sockets: 1
-          threads: 1
-        devices:
-          disks:
-          - disk:
-              bus: sata
-            name: rootdisk
-          - disk:
-              bus: sata
-            name: cloudinitdisk
-          interfaces:
-          - masquerade: {}
-            name: default
-            model: e1000
-        machine:
-          type: pc-q35-rhel9.2.0
-        resources:
-          requests:
-            memory: 8Gi
-      networks:
-      - name: default
-        pod: {}
-      volumes:
-      - name: rootdisk
-        persistentVolumeClaim:
-          claimName: windows
-      - cloudInitNoCloud:
-          userData: |
-            #cloud-config
-            hostname: windows-vm
-        name: cloudinitdisk
-EOF_DEFAULT_VM
-
-log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
-log_info "  VM is created but not started - start via OpenShift Console or CLI"
-log_info ""
-
-# Step 9: Create VM template for users
-log_info ""
-log_info "═══════════════════════════════════════════════════════════════"
-log_info "Step 9: Creating Windows VM template for users..."
+log_info "Step 8: Creating Windows VM template for users..."
 log_info "═══════════════════════════════════════════════════════════════"
 
 # Get source PVC info for template
@@ -1588,6 +1518,21 @@ export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
 cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
 log_info "✓ VM Template created: windows10-oadp-vm"
+
+# Step 9: Create default Windows VM from template
+log_info ""
+log_info "═══════════════════════════════════════════════════════════════"
+log_info "Step 9: Creating default Windows VM from template..."
+log_info "═══════════════════════════════════════════════════════════════"
+
+log_info "Creating default Windows VM: windows-vm (storage class: ${CLONE_STORAGE_CLASS})..."
+oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
+    -p VM_NAME=windows-vm \
+    -p VM_NAMESPACE=$SERVICE_ACCOUNT_NAMESPACE \
+    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
+
+log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
+log_info "  VM is created but not started - start via OpenShift Console or CLI"
 
 log_info "✓ Setup complete - VM resources ready for use"
 
