@@ -84,6 +84,8 @@ objects:
       dataVolumeTemplates:
         - metadata:
             name: ${VM_NAME}-disk
+            annotations:
+              cdi.kubevirt.io/storage.usePopulator: "false"
           spec:
             sourceRef:
               kind: DataSource
@@ -94,7 +96,6 @@ objects:
                 requests:
                   storage: 70Gi
               storageClassName: ${STORAGE_CLASS}
-              volumeMode: Filesystem
       template:
         metadata:
           annotations:
