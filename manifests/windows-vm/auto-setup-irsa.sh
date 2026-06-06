@@ -1504,6 +1504,76 @@ elif [ "$IMPORT_METHOD" = "s3" ] && [ -z "$GOLDEN_SNAPSHOT_ID" ]; then
     log_info "Future deployments will use S3 import (30-50 minutes)"
 fi
 
+# Step 8: Create default Windows VM for immediate use
+log_info ""
+log_info "═══════════════════════════════════════════════════════════════"
+log_info "Step 8: Creating default Windows VM for testing..."
+log_info "═══════════════════════════════════════════════════════════════"
+
+# Get source PVC info for VM creation
+SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
+if [ -z "$SOURCE_ZONE" ]; then
+    SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
+fi
+
+log_info "Creating Windows VM (zone: $SOURCE_ZONE)..."
+cat <<EOF_DEFAULT_VM | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows-vm
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  labels:
+    app: windows-vm
+    ocpctl.mg.dog8code.com/managed: "true"
+spec:
+  running: false
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: windows-vm
+    spec:
+      domain:
+        cpu:
+          cores: 4
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: rootdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - masquerade: {}
+            name: default
+            model: e1000
+        machine:
+          type: pc-q35-rhel9.2.0
+        resources:
+          requests:
+            memory: 8Gi
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - name: rootdisk
+        persistentVolumeClaim:
+          claimName: windows
+      - cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            hostname: windows-vm
+        name: cloudinitdisk
+EOF_DEFAULT_VM
+
+log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
+log_info "  VM is created but not started - start via OpenShift Console or CLI"
+log_info ""
+
 # Step 9: Create VM template for users
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
@@ -1542,6 +1612,7 @@ log_info "ServiceAccount: $SERVICE_ACCOUNT_NAMESPACE/$SERVICE_ACCOUNT_NAME"
 log_info ""
 log_info "Windows VM Resources:"
 log_info "  Base Image: windows (70GB Windows 10 QCOW2) - volumeMode: Block"
+log_info "  Default VM: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE, 4 cores, 8GB RAM)"
 log_info "  Template: windows10-oadp-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  Storage Class: ${CLONE_STORAGE_CLASS} (zone: ${SOURCE_ZONE})"
 if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
@@ -1551,12 +1622,13 @@ else
 fi
 log_info ""
 log_info "Next Steps:"
-log_info "  1. Create a Windows VM (2-3 min if snapshot available):"
+log_info "  1. Start the default Windows VM:"
+log_info "     oc patch vm windows-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{\"spec\":{\"running\":true}}'"
+log_info "     OR via OpenShift Console: Virtualization → VirtualMachines → windows-vm → Start"
+log_info ""
+log_info "  2. Create additional VMs using the template (2-3 min if snapshot available):"
 log_info "     oc process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \\"
 log_info "       -p VM_NAME=my-windows-vm -p VM_NAMESPACE=default | oc apply -f -"
-log_info ""
-log_info "  2. Start the VM from OpenShift Console:"
-log_info "     Virtualization → VirtualMachines → my-windows-vm → Start"
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
 
