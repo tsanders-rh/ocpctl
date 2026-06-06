@@ -691,6 +691,7 @@ metadata:
 spec:
   accessModes:
     - ${ACCESS_MODE}
+  volumeMode: Filesystem
   resources:
     requests:
       storage: 70Gi
@@ -730,6 +731,7 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
+    volumeMode: Filesystem
     resources:
       requests:
         storage: 70Gi
@@ -757,6 +759,7 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
+    volumeMode: Filesystem
     resources:
       requests:
         storage: 70Gi
@@ -858,6 +861,7 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
+    volumeMode: Filesystem
     resources:
       requests:
         storage: 70Gi
@@ -883,6 +887,7 @@ spec:
   storage:
     accessModes:
       - ${ACCESS_MODE}
+    volumeMode: Filesystem
     resources:
       requests:
         storage: 70Gi
@@ -1271,6 +1276,7 @@ metadata:
 spec:
   accessModes:
   - ReadWriteOnce
+  volumeMode: Filesystem
   storageClassName: ${CLONE_STORAGE_CLASS}
   dataSource:
     kind: VolumeSnapshot
