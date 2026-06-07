@@ -53,7 +53,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		WorkerID:      workerID,
 		PollInterval:  10 * time.Second,
-		LockTimeout:   2 * time.Hour, // Must be longer than longest operation (Windows VM: 110min, eksctl: 60min)
+		LockTimeout:   3 * time.Hour, // Must be longer than longest operation (Windows VM golden snapshot: 30-50min S3 + 60-80min EBS snapshot + 5-10min validation = 95-140min worst case)
 		WorkDir:       "/tmp/ocpctl",
 		S3BucketName:  s3Bucket,
 		MaxConcurrent: 3,

@@ -1193,6 +1193,15 @@ EOF_SNAPSHOT
             if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
                 log_info "✓ Extracted EBS snapshot ID: $GOLDEN_SNAPSHOT_ID"
                 log_info "  (VolumeSnapshot.readyToUse=true confirms EBS snapshot is 100% complete)"
+
+                # Add required annotation for K8s 1.30+ snapshot restore
+                log_info "Adding volume-mode-change annotation to VolumeSnapshotContent..."
+                if oc --kubeconfig="$KUBECONFIG" annotate volumesnapshotcontent "$VOLUME_SNAPSHOT_CONTENT" \
+                    snapshot.storage.kubernetes.io/allow-volume-mode-change=true --overwrite 2>/dev/null; then
+                    log_info "✓ Annotation added (enables PVC creation from snapshot)"
+                else
+                    log_warn "Failed to add annotation (may cause validation PVC creation to fail)"
+                fi
             else
                 log_warn "Could not extract EBS snapshot ID"
                 GOLDEN_SNAPSHOT_ID=""
