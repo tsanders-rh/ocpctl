@@ -1522,6 +1522,30 @@ fi
 
 # Create VM template
 CLONE_STORAGE_CLASS="gp3-csi-${INFRA_ID}-${SOURCE_ZONE}"
+
+# Ensure zone-specific storage class exists (needed for template/VM clones)
+if ! oc --kubeconfig="$KUBECONFIG" get storageclass "${CLONE_STORAGE_CLASS}" &>/dev/null; then
+    log_info "Creating zone-specific storage class: ${CLONE_STORAGE_CLASS}..."
+    cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ${CLONE_STORAGE_CLASS}
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: Immediate
+allowedTopologies:
+- matchLabelExpressions:
+  - key: topology.ebs.csi.aws.com/zone
+    values:
+    - ${SOURCE_ZONE}
+reclaimPolicy: Delete
+EOF_SC
+    log_info "✓ Created storage class: ${CLONE_STORAGE_CLASS}"
+fi
+
 log_info "Creating Windows VM template (storage class: ${CLONE_STORAGE_CLASS})..."
 export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
