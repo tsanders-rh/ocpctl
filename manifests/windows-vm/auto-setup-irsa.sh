@@ -635,6 +635,8 @@ apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotContent
 metadata:
   name: windows-source-snapshot-content
+  annotations:
+    snapshot.storage.kubernetes.io/allow-volume-mode-change: "true"
 spec:
   deletionPolicy: Retain
   driver: ebs.csi.aws.com
