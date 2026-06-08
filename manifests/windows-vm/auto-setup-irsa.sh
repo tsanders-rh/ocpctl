@@ -1554,40 +1554,21 @@ log_info "═══════════════════════�
 log_info "Step 8: Creating Windows VM template for users..."
 log_info "═══════════════════════════════════════════════════════════════"
 
-# Get source PVC info for template
+# Get source PVC storage class for template (enables fast CSI snapshot-based cloning)
+# Using the same storage class as the source PVC allows CDI to use CSI clone instead of host-assisted copy
+SOURCE_STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.storageClassName}' 2>/dev/null)
 SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
 SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
 if [ -z "$SOURCE_ZONE" ]; then
     SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
 fi
 
-# Create VM template
-CLONE_STORAGE_CLASS="gp3-csi-${INFRA_ID}-${SOURCE_ZONE}"
-
-# Ensure zone-specific storage class exists (needed for template/VM clones)
-if ! oc --kubeconfig="$KUBECONFIG" get storageclass "${CLONE_STORAGE_CLASS}" &>/dev/null; then
-    log_info "Creating zone-specific storage class: ${CLONE_STORAGE_CLASS}..."
-    cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: ${CLONE_STORAGE_CLASS}
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-  encrypted: "true"
-volumeBindingMode: Immediate
-allowedTopologies:
-- matchLabelExpressions:
-  - key: topology.ebs.csi.aws.com/zone
-    values:
-    - ${SOURCE_ZONE}
-reclaimPolicy: Delete
-EOF_SC
-    log_info "✓ Created storage class: ${CLONE_STORAGE_CLASS}"
-fi
+# Use the same storage class as source PVC to enable CSI snapshot-based cloning (fast)
+# This is much faster than creating a different storage class which forces host-assisted copy (slow)
+CLONE_STORAGE_CLASS="${SOURCE_STORAGE_CLASS}"
 
 log_info "Creating Windows VM template (storage class: ${CLONE_STORAGE_CLASS})..."
+log_info "  Using same storage class as source PVC enables CSI snapshot-based cloning (~1 min vs ~20 min)"
 export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
 cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
