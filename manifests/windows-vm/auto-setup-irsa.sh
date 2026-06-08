@@ -1280,6 +1280,7 @@ metadata:
 spec:
   accessModes:
   - ReadWriteOnce
+  volumeMode: ${SOURCE_VOLUME_MODE}
   storageClassName: ${CLONE_STORAGE_CLASS}
   dataSource:
     kind: VolumeSnapshot
@@ -1335,6 +1336,8 @@ spec:
       domain:
         cpu:
           cores: 4
+          sockets: 1
+          threads: 1
         devices:
           disks:
           - disk:
@@ -1347,8 +1350,43 @@ spec:
           - masquerade: {}
             name: default
             model: e1000
+          networkInterfaceMultiqueue: true
+          rng: {}
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            frequencies: {}
+            ipi: {}
+            reenlightenment: {}
+            relaxed: {}
+            reset: {}
+            runtime: {}
+            spinlocks:
+              spinlocks: 8191
+            synic: {}
+            synictimer:
+              direct: {}
+            tlbflush: {}
+            vapic: {}
+            vpindex: {}
+        clock:
+          timer:
+            hyperv: {}
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+            hpet:
+              present: false
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
         machine:
           type: pc-q35-rhel9.2.0
+        memory:
+          guest: 8Gi
         resources:
           requests:
             memory: 8Gi
