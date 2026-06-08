@@ -27,6 +27,7 @@ func (s *DeploymentLogStore) AppendLogs(ctx context.Context, logs []*types.Deplo
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7
 		)
+		ON CONFLICT (cluster_id, job_id, sequence) DO NOTHING
 	`
 
 	batch := &pgx.Batch{}
