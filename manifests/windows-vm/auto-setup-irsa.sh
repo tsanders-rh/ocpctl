@@ -1142,7 +1142,7 @@ EOF_SNAPSHOT
 
     # Wait for VolumeSnapshot to become ready
     SNAPSHOT_WAIT=0
-    SNAPSHOT_MAX_WAIT=3600  # 60 minutes
+    SNAPSHOT_MAX_WAIT=7200  # 120 minutes (EBS snapshots of 70GB can take 60-80 minutes)
     SNAPSHOT_READY=false
 
     while [ $SNAPSHOT_WAIT -lt $SNAPSHOT_MAX_WAIT ]; do
