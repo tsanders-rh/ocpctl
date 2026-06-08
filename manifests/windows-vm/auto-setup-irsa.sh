@@ -693,6 +693,7 @@ metadata:
 spec:
   accessModes:
     - ${ACCESS_MODE}
+  volumeMode: Block
   resources:
     requests:
       storage: 70Gi
