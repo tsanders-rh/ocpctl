@@ -9,8 +9,8 @@ credentialsMode: Auto
 
 openshiftVersions:
   allowlist:
-    - "4.22.0-ec.5"   # Early Candidate 5 (RHEL9 FIPS)
-  default: "4.22.0-ec.5"
+    - "4.22.0"   # GA (RHEL9 FIPS)
+  default: "4.22.0"
 
 regions:
   allowlist:

@@ -53,6 +53,7 @@ pipeline {
         choice(
             name: 'OPENSHIFT_VERSION',
             choices: [
+                '4.22.0',
                 '4.21.10',
                 '4.21.9',
                 '4.21.8',

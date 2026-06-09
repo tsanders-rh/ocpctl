@@ -237,7 +237,7 @@ func TestEngine_GetDefaults(t *testing.T) {
 	t.Run("gets default version", func(t *testing.T) {
 		version, err := engine.GetDefaultVersion("aws-minimal-test")
 		require.NoError(t, err)
-		assert.Equal(t, "4.20.3", version)
+		assert.Equal(t, "4.22.0", version)
 	})
 
 	t.Run("gets default region", func(t *testing.T) {
