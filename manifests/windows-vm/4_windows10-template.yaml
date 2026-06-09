@@ -87,10 +87,13 @@ objects:
             annotations:
               cdi.kubevirt.io/storage.usePopulator: "false"
           spec:
-            sourceRef:
-              kind: DataSource
-              name: windows10-datasource
-              namespace: openshift-virtualization-os-images
+            # Use explicit VolumeSnapshot → PVC restore (fast CSI snapshot path)
+            # This ensures ~1 minute disk creation via CSI snapshot restore
+            # instead of slow host-assisted PVC cloning
+            source:
+              snapshot:
+                name: ${SNAPSHOT_NAME}
+                namespace: openshift-virtualization-os-images
             storage:
               accessModes:
                 - ReadWriteOnce
@@ -181,4 +184,8 @@ parameters:
   - name: STORAGE_CLASS
     description: "Storage class for the VM disk"
     value: "gp3-csi-wfc"
+    required: true
+  - name: SNAPSHOT_NAME
+    description: "VolumeSnapshot name to restore VM disk from (enables fast CSI snapshot restore)"
+    value: "windows-golden-snapshot-v1.0"
     required: true

@@ -772,15 +772,10 @@ EOF
     fi
 fi
 
-# Apply DataSource
-log_info "Creating DataSource (windows10-datasource)"
-oc --kubeconfig="$KUBECONFIG" apply -f "${SCRIPT_DIR}/3_datasource-windows.yaml"
-log_info "✓ DataSource created"
+# Note: DataSource removed - using explicit VolumeSnapshot → PVC restore path for all VMs
+# This ensures consistent, fast CSI snapshot restore behavior
 
-# Note: VM Template creation moved to after zone detection
-# so it defaults to the correct zone-specific storage class
-
-# Wait for DataVolume to complete before creating VM
+# Wait for pristine PVC to complete before creating cluster-local snapshot
 log_info ""
 log_info "Waiting for Windows image import to complete before creating test VM..."
 log_info "(This ensures the snapshot is created during deployment, making future VM creation faster)"
@@ -1096,82 +1091,139 @@ EOF_SOURCE_VM
 
 fi
 
-# Step 6: Create golden snapshot from validated source PVC
-if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -z "$SNAPSHOT_ID" ]; then
+# ═══════════════════════════════════════════════════════════════
+# REFACTORED WORKFLOW: Explicit VolumeSnapshot → PVC Fast Path
+# ═══════════════════════════════════════════════════════════════
+#
+# This workflow creates a cluster-local VolumeSnapshot from the pristine PVC
+# and validates it by restoring a PVC FROM that VolumeSnapshot (not cloning
+# from pristine PVC). This ensures all VMs use the fast CSI snapshot restore
+# path instead of slow CDI PVC cloning.
+#
+# Architecture:
+# 1. Pristine PVC (from S3 or EBS snapshot import)
+# 2. Create cluster-local VolumeSnapshot from pristine PVC
+# 3. Restore validation PVC FROM VolumeSnapshot (tests fast path!)
+# 4. Boot validation VM from restored PVC
+# 5. Mark VolumeSnapshot as active only after boot validation passes
+# 6. Future VMs restore FROM VolumeSnapshot (fast CSI restore ~1 min)
+
+# Initialize cluster-local snapshot name variable (used by template later)
+CLUSTER_SNAPSHOT_NAME=""
+
+# Step 6: Create and validate cluster-local VolumeSnapshot (S3 import path only)
+if [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ]; then
     log_info ""
     log_info "═══════════════════════════════════════════════════════════════"
-    log_info "Step 6: Creating golden snapshot from validated source PVC..."
-    log_info "This will enable 2-3 minute VM deployments in future"
+    log_info "Creating cluster-local golden VolumeSnapshot..."
+    log_info "This snapshot will be used for all future VM disk restores"
     log_info "═══════════════════════════════════════════════════════════════"
 
-    # Clean up any leftover snapshot resources
-    log_info "Cleaning up any existing snapshot resources..."
-    oc --kubeconfig="$KUBECONFIG" delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+    # Discover VolumeSnapshotClass (don't hardcode)
+    log_info "Discovering VolumeSnapshotClass for EBS CSI driver..."
+    SNAPSHOT_CLASS=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshotclass -o jsonpath='{.items[?(@.driver=="ebs.csi.aws.com")].metadata.name}' 2>/dev/null | awk '{print $1}')
 
-    # Wait for deletion to complete (VolumeSnapshots have finalizers and take time to delete)
-    CLEANUP_WAIT=0
-    CLEANUP_MAX_WAIT=120  # 2 minutes
-    while oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE &>/dev/null; do
-        if [ $CLEANUP_WAIT -ge $CLEANUP_MAX_WAIT ]; then
-            log_error "VolumeSnapshot deletion timed out after ${CLEANUP_MAX_WAIT}s"
-            log_error "Manual cleanup required: oc delete volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE"
-            exit 1
-        fi
-        sleep 2
-        CLEANUP_WAIT=$((CLEANUP_WAIT + 2))
-    done
+    if [ -z "$SNAPSHOT_CLASS" ]; then
+        log_error "Could not find VolumeSnapshotClass for ebs.csi.aws.com driver"
+        exit 1
+    fi
+    log_info "✓ Using VolumeSnapshotClass: $SNAPSHOT_CLASS"
 
-    log_info "✓ Cleanup complete"
+    # Get source PVC details dynamically
+    log_info "Detecting source PVC configuration..."
+    SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+    SOURCE_SIZE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.resources.requests.storage}' 2>/dev/null)
+    SOURCE_STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.storageClassName}' 2>/dev/null)
+    SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
+    if [ -z "$SOURCE_ZONE" ]; then
+        SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
+    fi
 
-    # Create VolumeSnapshot of the validated pristine PVC
-    log_info "Creating VolumeSnapshot from source PVC..."
-    cat <<EOF_SNAPSHOT | oc --kubeconfig="$KUBECONFIG" apply -f -
+    if [ -z "$SOURCE_ZONE" ]; then
+        log_error "Could not detect source PVC zone"
+        exit 1
+    fi
+
+    log_info "✓ Source PVC size: $SOURCE_SIZE"
+    log_info "✓ Source storage class: $SOURCE_STORAGE_CLASS"
+    log_info "✓ Source zone: $SOURCE_ZONE"
+
+    # Create versioned snapshot name (date-stamped to avoid breaking existing VMs)
+    SNAPSHOT_DATE=$(date -u +%Y%m%d)
+    CLUSTER_SNAPSHOT_NAME="windows-golden-snapshot-v${SNAPSHOT_VERSION}-${SNAPSHOT_DATE}"
+
+    log_info "Creating cluster-local VolumeSnapshot: $CLUSTER_SNAPSHOT_NAME"
+
+    # Create cluster-local VolumeSnapshot from pristine PVC
+    cat <<EOF_GOLDEN_SNAPSHOT | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
 metadata:
-  name: windows-golden-snapshot
+  name: ${CLUSTER_SNAPSHOT_NAME}
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
   labels:
     ocpctl.mg.dog8code.com/managed: "true"
     ocpctl.mg.dog8code.com/image-version: "${SNAPSHOT_VERSION}"
+    ocpctl.mg.dog8code.com/current: "candidate"  # Will change to "active" after validation
+    ocpctl.mg.dog8code.com/snapshot-type: "cluster-local-golden"
+  annotations:
+    ocpctl.mg.dog8code.com/description: "Golden snapshot for fast Windows VM provisioning via CSI snapshot restore"
 spec:
-  volumeSnapshotClassName: csi-aws-vsc
+  volumeSnapshotClassName: ${SNAPSHOT_CLASS}
   source:
     persistentVolumeClaimName: windows
-EOF_SNAPSHOT
+EOF_GOLDEN_SNAPSHOT
 
-    log_info "✓ VolumeSnapshot created: windows-golden-snapshot"
-    log_info "  Waiting for EBS snapshot creation (40-50 minutes for 70GB image)..."
+    log_info "✓ VolumeSnapshot created: $CLUSTER_SNAPSHOT_NAME"
 
-    # Wait for VolumeSnapshot to become ready
+    # Wait for cluster-local VolumeSnapshot to become ready
+    log_info "Waiting for cluster-local VolumeSnapshot to become ready..."
     SNAPSHOT_WAIT=0
-    SNAPSHOT_MAX_WAIT=7200  # 120 minutes (EBS snapshots of 70GB can take 60-80 minutes)
-    SNAPSHOT_READY=false
+    SNAPSHOT_MAX_WAIT=7200  # 120 minutes
+    CLUSTER_SNAPSHOT_READY=false
 
     while [ $SNAPSHOT_WAIT -lt $SNAPSHOT_MAX_WAIT ]; do
-        READY_TO_USE=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE \
+        READY_TO_USE=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $CLUSTER_SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
             -o jsonpath='{.status.readyToUse}' 2>/dev/null || echo "false")
 
         if [ "$READY_TO_USE" = "true" ]; then
-            log_info "✓ VolumeSnapshot is ready to use"
-            SNAPSHOT_READY=true
+            log_info "✓ Cluster-local VolumeSnapshot is ready to use (readyToUse=true)"
+            CLUSTER_SNAPSHOT_READY=true
+
+            # Get the VolumeSnapshotContent and add K8s 1.30+ annotation
+            VOLUME_SNAPSHOT_CONTENT=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $CLUSTER_SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
+                -o jsonpath='{.status.boundVolumeSnapshotContentName}' 2>/dev/null)
+
+            if [ -n "$VOLUME_SNAPSHOT_CONTENT" ]; then
+                log_info "Adding volume-mode-change annotation to VolumeSnapshotContent..."
+                if oc --kubeconfig="$KUBECONFIG" annotate volumesnapshotcontent "$VOLUME_SNAPSHOT_CONTENT" \
+                    snapshot.storage.kubernetes.io/allow-volume-mode-change=true --overwrite 2>/dev/null; then
+                    log_info "✓ Annotation added (enables PVC restore from snapshot)"
+                fi
+
+                # Extract EBS snapshot ID for SSM registration
+                GOLDEN_SNAPSHOT_ID=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshotcontent "$VOLUME_SNAPSHOT_CONTENT" \
+                    -o jsonpath='{.status.snapshotHandle}' 2>/dev/null)
+                if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
+                    log_info "✓ Extracted EBS snapshot ID: $GOLDEN_SNAPSHOT_ID"
+                fi
+            fi
             break
+        fi
+
+        # Check for errors
+        SNAPSHOT_ERROR=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $CLUSTER_SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
+            -o jsonpath='{.status.error.message}' 2>/dev/null || echo "")
+
+        if [ -n "$SNAPSHOT_ERROR" ]; then
+            log_error "VolumeSnapshot failed: $SNAPSHOT_ERROR"
+            exit 1
         fi
 
         # Log progress every 5 minutes
         if [ $((SNAPSHOT_WAIT % 300)) -eq 0 ] && [ $SNAPSHOT_WAIT -gt 0 ]; then
             ELAPSED_MIN=$((SNAPSHOT_WAIT / 60))
             REMAINING_MIN=$(((SNAPSHOT_MAX_WAIT - SNAPSHOT_WAIT) / 60))
-
-            # Check for errors
-            SNAPSHOT_ERROR=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE \
-                -o jsonpath='{.status.error.message}' 2>/dev/null || echo "")
-
-            if [ -n "$SNAPSHOT_ERROR" ]; then
-                log_error "VolumeSnapshot failed: $SNAPSHOT_ERROR"
-                exit 1
-            fi
-
             log_info "  Snapshot status: Creating | Elapsed: ${ELAPSED_MIN}m | Timeout in: ${REMAINING_MIN}m"
         fi
 
@@ -1179,151 +1231,91 @@ EOF_SNAPSHOT
         SNAPSHOT_WAIT=$((SNAPSHOT_WAIT + 10))
     done
 
-    if [ "$SNAPSHOT_READY" != "true" ]; then
-        log_error "VolumeSnapshot did not become ready within timeout"
-        log_error "Continuing without snapshot optimization - future deployments will use S3"
-        GOLDEN_SNAPSHOT_ID=""
-    else
-        # Extract EBS snapshot ID
-        log_info "Extracting EBS snapshot ID..."
-        VOLUME_SNAPSHOT_CONTENT=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot windows-golden-snapshot -n $SERVICE_ACCOUNT_NAMESPACE \
-            -o jsonpath='{.status.boundVolumeSnapshotContentName}' 2>/dev/null)
-
-        if [ -n "$VOLUME_SNAPSHOT_CONTENT" ]; then
-            GOLDEN_SNAPSHOT_ID=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshotcontent "$VOLUME_SNAPSHOT_CONTENT" \
-                -o jsonpath='{.status.snapshotHandle}' 2>/dev/null)
-
-            if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
-                log_info "✓ Extracted EBS snapshot ID: $GOLDEN_SNAPSHOT_ID"
-                log_info "  (VolumeSnapshot.readyToUse=true confirms EBS snapshot is 100% complete)"
-
-                # Add required annotation for K8s 1.30+ snapshot restore
-                log_info "Adding volume-mode-change annotation to VolumeSnapshotContent..."
-                if oc --kubeconfig="$KUBECONFIG" annotate volumesnapshotcontent "$VOLUME_SNAPSHOT_CONTENT" \
-                    snapshot.storage.kubernetes.io/allow-volume-mode-change=true --overwrite 2>/dev/null; then
-                    log_info "✓ Annotation added (enables PVC creation from snapshot)"
-                else
-                    log_warn "Failed to add annotation (may cause validation PVC creation to fail)"
-                fi
-            else
-                log_warn "Could not extract EBS snapshot ID"
-                GOLDEN_SNAPSHOT_ID=""
-            fi
-        else
-            log_warn "Could not find VolumeSnapshotContent"
-            GOLDEN_SNAPSHOT_ID=""
-        fi
-    fi
-elif [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "s3" ] && [ -n "$SNAPSHOT_ID" ]; then
-    log_info ""
-    log_info "Golden snapshot already exists ($SNAPSHOT_ID)"
-    log_info "Skipping snapshot creation"
-    GOLDEN_SNAPSHOT_ID="$SNAPSHOT_ID"
-fi
-
-# Step 7: Validate snapshot restore path (if snapshot was created)
-if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
-    log_info ""
-    log_info "═══════════════════════════════════════════════════════════════"
-    log_info "Step 7: Validating snapshot restore path..."
-    log_info "This ensures EBS snapshot $GOLDEN_SNAPSHOT_ID can be restored and booted"
-    log_info "═══════════════════════════════════════════════════════════════"
-
-    # Detect availability zone and volumeMode from source PVC
-    log_info "Detecting source PVC configuration..."
-    SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
-    SOURCE_VOLUME_MODE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeMode}' 2>/dev/null || echo "Filesystem")
-
-    SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
-    if [ -z "$SOURCE_ZONE" ]; then
-        SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
-    fi
-
-    log_info "✓ Source volume mode: $SOURCE_VOLUME_MODE"
-    log_info "✓ Source availability zone: $SOURCE_ZONE"
-
-    if [ -z "$SOURCE_ZONE" ]; then
-        log_error "Could not detect source PVC zone"
+    if [ "$CLUSTER_SNAPSHOT_READY" != "true" ]; then
+        log_error "Cluster-local VolumeSnapshot did not become ready within timeout"
         exit 1
     fi
 
-    # Create zone-specific storage class for validation PVC
-    CLONE_STORAGE_CLASS="gp3-csi-${INFRA_ID}-${SOURCE_ZONE}"
-    if ! oc --kubeconfig="$KUBECONFIG" get storageclass "${CLONE_STORAGE_CLASS}" &>/dev/null; then
-        log_info "Creating zone-specific storage class: ${CLONE_STORAGE_CLASS}..."
-        cat <<EOF_SC | oc --kubeconfig="$KUBECONFIG" apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: ${CLONE_STORAGE_CLASS}
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-  encrypted: "true"
-volumeBindingMode: Immediate
-allowedTopologies:
-- matchLabelExpressions:
-  - key: topology.ebs.csi.aws.com/zone
-    values:
-    - ${SOURCE_ZONE}
-reclaimPolicy: Delete
-EOF_SC
-        log_info "✓ Created storage class: ${CLONE_STORAGE_CLASS}"
-    fi
+    log_info ""
+    log_info "═══════════════════════════════════════════════════════════════"
+    log_info "Validating VolumeSnapshot → PVC restore path..."
+    log_info "This tests the EXACT path all future VMs will use"
+    log_info "═══════════════════════════════════════════════════════════════"
 
-    # Create validation PVC by restoring from golden snapshot
-    # IMPORTANT: PVC must be in same namespace as snapshot (dataSource is namespace-local)
-    log_info "Creating validation PVC from golden snapshot..."
+    # Clean up any existing validation resources
+    log_info "Cleaning up any existing validation resources..."
+    oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+    oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+
+    # Wait for PVC deletion to complete
+    PVC_DELETE_WAIT=0
+    PVC_DELETE_MAX_WAIT=120
+    while oc --kubeconfig="$KUBECONFIG" get pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE &>/dev/null; do
+        if [ $PVC_DELETE_WAIT -ge $PVC_DELETE_MAX_WAIT ]; then
+            log_warn "PVC deletion timeout - proceeding anyway"
+            break
+        fi
+        sleep 2
+        PVC_DELETE_WAIT=$((PVC_DELETE_WAIT + 2))
+    done
+    log_info "✓ Cleanup complete"
+
+    # Create validation PVC from cluster-local VolumeSnapshot (testing the fast path!)
+    log_info "Creating validation PVC from VolumeSnapshot $CLUSTER_SNAPSHOT_NAME..."
     cat <<EOF_VAL_PVC | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: windows-validation-disk
   namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+  labels:
+    ocpctl.mg.dog8code.com/validation: "true"
 spec:
   accessModes:
-  - ReadWriteOnce
-  volumeMode: ${SOURCE_VOLUME_MODE}
-  storageClassName: ${CLONE_STORAGE_CLASS}
-  dataSource:
-    kind: VolumeSnapshot
-    apiGroup: snapshot.storage.k8s.io
-    name: windows-golden-snapshot
+    - ReadWriteOnce
+  volumeMode: Block
+  storageClassName: ${SOURCE_STORAGE_CLASS}
   resources:
     requests:
-      storage: 70Gi
+      storage: ${SOURCE_SIZE}
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: ${CLUSTER_SNAPSHOT_NAME}
 EOF_VAL_PVC
 
-    log_info "✓ Validation PVC created from snapshot"
-    log_info "  Waiting for PVC to become Bound (restoring from EBS snapshot)..."
+    log_info "✓ Validation PVC created from VolumeSnapshot"
 
     # Wait for validation PVC to bind
+    log_info "Waiting for validation PVC to bind (CSI snapshot restore)..."
     VAL_PVC_WAIT=0
-    VAL_PVC_MAX_WAIT=600  # 10 minutes (snapshot restore is fast)
+    VAL_PVC_MAX_WAIT=300  # 5 minutes
+    VAL_PVC_BOUND=false
+
     while [ $VAL_PVC_WAIT -lt $VAL_PVC_MAX_WAIT ]; do
         VAL_PVC_PHASE=$(oc --kubeconfig="$KUBECONFIG" get pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
 
         if [ "$VAL_PVC_PHASE" = "Bound" ]; then
-            log_info "✓ Validation PVC bound (snapshot restored successfully)"
+            log_info "✓ Validation PVC bound successfully (~1 min CSI snapshot restore)"
+            VAL_PVC_BOUND=true
             break
-        fi
-
-        if [ $((VAL_PVC_WAIT % 30)) -eq 0 ] && [ $VAL_PVC_WAIT -gt 0 ]; then
-            log_info "  PVC status: $VAL_PVC_PHASE (${VAL_PVC_WAIT}s elapsed)"
+        elif [ "$VAL_PVC_PHASE" = "Failed" ] || [ "$VAL_PVC_PHASE" = "Lost" ]; then
+            log_error "Validation PVC failed to bind"
+            exit 1
         fi
 
         sleep 5
         VAL_PVC_WAIT=$((VAL_PVC_WAIT + 5))
     done
 
-    if [ $VAL_PVC_WAIT -ge $VAL_PVC_MAX_WAIT ]; then
+    if [ "$VAL_PVC_BOUND" != "true" ]; then
         log_error "Validation PVC did not bind within timeout"
-        log_error "Snapshot validation failed - will not publish snapshot"
-        GOLDEN_SNAPSHOT_ID=""
-    else
-        # Create validation VM using the restored PVC
-        log_info "Creating validation VM from restored PVC..."
-        cat <<EOF_VAL_VM | oc --kubeconfig="$KUBECONFIG" apply -f -
+        exit 1
+    fi
+
+    # Create validation VM using the PVC restored from VolumeSnapshot
+    log_info "Creating validation VM from snapshot-restored PVC..."
+    cat <<EOF_VAL_VM | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
@@ -1346,9 +1338,6 @@ spec:
           - disk:
               bus: sata
             name: rootdisk
-          - disk:
-              bus: sata
-            name: cloudinitdisk
           interfaces:
           - masquerade: {}
             name: default
@@ -1409,143 +1398,112 @@ spec:
       - name: rootdisk
         persistentVolumeClaim:
           claimName: windows-validation-disk
-      - cloudInitNoCloud:
-          userData: "#cloud-config"
-        name: cloudinitdisk
 EOF_VAL_VM
 
-        log_info "✓ Validation VM created"
-    fi
-else
-    log_info ""
-    log_info "Skipping snapshot validation (no golden snapshot to validate)"
-fi
+    log_info "✓ Validation VM created"
+    log_info "  Starting validation VM to test Windows boot..."
 
-# Step 7.5: Boot the restored snapshot validation VM
-if [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
-    log_info "  Starting snapshot restore validation VM..."
-    if ! oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":true}}' 2>/dev/null; then
-        log_error "Failed to start snapshot validation VM"
-        GOLDEN_SNAPSHOT_ID=""
-    else
-        # Wait for VM to reach Running and remain stable
-        SNAP_VM_WAIT=0
-        SNAP_VM_MAX_WAIT=600  # 10 minutes
-        SNAP_VM_RUNNING=false
-        SNAP_RUNNING_START_TIME=0
+    # Patch VM to start it
+    oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":true}}' 2>/dev/null
 
-        log_info "  Waiting for snapshot restore VM to reach Running and stabilize..."
+    # Wait for VM to reach Running state with stability checks
+    VM_WAIT=0
+    VM_MAX_WAIT=600  # 10 minutes
+    VM_VALIDATED=false
+    STABLE_COUNT=0
+    STABLE_THRESHOLD=2  # 2 consecutive checks (10 seconds apart = 20s stability)
 
-        while [ $SNAP_VM_WAIT -lt $SNAP_VM_MAX_WAIT ]; do
-            VM_STATUS=$(oc --kubeconfig="$KUBECONFIG" get virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE \
-                -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
+    while [ $VM_WAIT -lt $VM_MAX_WAIT ]; do
+        VM_STATUS=$(oc --kubeconfig="$KUBECONFIG" get vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
 
-            # Check if VM failed
-            if [ "$VM_STATUS" = "CrashLoopBackOff" ] || [ "$VM_STATUS" = "Failed" ] || [ "$VM_STATUS" = "Error" ] || [ "$VM_STATUS" = "Unschedulable" ]; then
-                log_error "Snapshot restore VM failed - snapshot restore failed basic boot validation"
-                log_error "Will not publish broken snapshot"
-                GOLDEN_SNAPSHOT_ID=""
-                break
-            fi
+        if [ "$VM_STATUS" = "Running" ]; then
+            STABLE_COUNT=$((STABLE_COUNT + 1))
+            if [ $STABLE_COUNT -ge $STABLE_THRESHOLD ]; then
+                # Additional wait for Windows boot
+                log_info "✓ VM stable in Running state - allowing 30s for Windows to complete boot..."
+                sleep 30
 
-            # Once Running, start stability timer
-            if [ "$VM_STATUS" = "Running" ]; then
-                if [ "$SNAP_VM_RUNNING" = "false" ]; then
-                    SNAP_RUNNING_START_TIME=$SNAP_VM_WAIT
-                    SNAP_VM_RUNNING=true
-                    log_info "  VM reached Running status, monitoring stability..."
-                fi
-
-                # Check if been stable for 5 minutes (300 seconds)
-                SNAP_STABLE_DURATION=$((SNAP_VM_WAIT - SNAP_RUNNING_START_TIME))
-                if [ $SNAP_STABLE_DURATION -ge 300 ]; then
-                    log_info "✓ Snapshot restore VM reached Running and remained stable for 5 minutes"
-                    log_info "  Snapshot restore passed basic boot validation"
+                # Re-check still Running
+                VM_STATUS=$(oc --kubeconfig="$KUBECONFIG" get vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.printableStatus}' 2>/dev/null || echo "Unknown")
+                if [ "$VM_STATUS" = "Running" ]; then
+                    log_info "✓ Validation VM reached Running and remained stable"
+                    VM_VALIDATED=true
                     break
-                fi
-
-                # Log stability progress every 30 seconds while running
-                if [ $((SNAP_VM_WAIT % 30)) -eq 0 ] && [ $SNAP_VM_WAIT -gt $SNAP_RUNNING_START_TIME ]; then
-                    STABLE_SEC=$SNAP_STABLE_DURATION
-                    log_info "  Stable for ${STABLE_SEC}s (need 300s)..."
-                fi
-            else
-                # Not Running yet, log progress every 30 seconds
-                if [ $((SNAP_VM_WAIT % 30)) -eq 0 ] && [ $SNAP_VM_WAIT -gt 0 ]; then
-                    ELAPSED_MIN=$((SNAP_VM_WAIT / 60))
-                    log_info "  VM status: $VM_STATUS (${ELAPSED_MIN}m elapsed)"
+                else
+                    log_error "VM became unstable after initial stability check"
+                    exit 1
                 fi
             fi
+        else
+            # Reset stability counter if status changes
+            STABLE_COUNT=0
 
-            sleep 5
-            SNAP_VM_WAIT=$((SNAP_VM_WAIT + 5))
-        done
-
-        if [ $SNAP_VM_WAIT -ge $SNAP_VM_MAX_WAIT ]; then
-            if [ "$SNAP_VM_RUNNING" = "false" ]; then
-                log_error "Snapshot restore VM did not reach Running within timeout"
-            else
-                SNAP_STABLE_DURATION=$((SNAP_VM_WAIT - SNAP_RUNNING_START_TIME))
-                log_error "Snapshot restore VM did not remain stable (only ${SNAP_STABLE_DURATION}s of 300s)"
+            if [ "$VM_STATUS" = "Failed" ] || [ "$VM_STATUS" = "Error" ] || [ "$VM_STATUS" = "CrashLoopBackOff" ]; then
+                log_error "Validation VM failed to start"
+                exit 1
             fi
-            log_error "Snapshot restore failed basic boot validation - will not publish"
-            GOLDEN_SNAPSHOT_ID=""
         fi
 
-        if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
-            log_info "✓ Both validations passed:"
-            log_info "  - Source import: VM reached Running and remained stable"
-            log_info "  - Snapshot restore: VM reached Running and remained stable"
-            log_info "  Snapshot is verified safe to publish"
-            log_info ""
-            log_info "  Cleaning up validation resources..."
-            oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":false}}' 2>/dev/null || true
-            sleep 5
-            oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
-            oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
-            log_info "✓ Validation resources cleaned up"
+        if [ $((VM_WAIT % 30)) -eq 0 ] && [ $VM_WAIT -gt 0 ]; then
+            log_info "  VM status: $VM_STATUS (${VM_WAIT}s elapsed)"
+        fi
+
+        sleep 10
+        VM_WAIT=$((VM_WAIT + 10))
+    done
+
+    if [ "$VM_VALIDATED" != "true" ]; then
+        log_error "Validation VM did not reach Running state within timeout"
+        exit 1
+    fi
+
+    log_info "✓ Validation successful: VolumeSnapshot → PVC → VM boot path confirmed"
+    log_info ""
+
+    # Mark VolumeSnapshot as active (only after validation passes)
+    log_info "Marking VolumeSnapshot as active..."
+    oc --kubeconfig="$KUBECONFIG" label volumesnapshot "$CLUSTER_SNAPSHOT_NAME" -n $SERVICE_ACCOUNT_NAMESPACE \
+        ocpctl.mg.dog8code.com/current=active --overwrite
+    log_info "✓ Cluster-local VolumeSnapshot '$CLUSTER_SNAPSHOT_NAME' is now validated and ready"
+
+    # Clean up validation resources
+    log_info "Cleaning up validation resources..."
+    oc --kubeconfig="$KUBECONFIG" patch virtualmachine windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{"spec":{"running":false}}' 2>/dev/null || true
+    sleep 5
+    oc --kubeconfig="$KUBECONFIG" delete vm windows-validation-vm -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+    oc --kubeconfig="$KUBECONFIG" delete pvc windows-validation-disk -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true 2>/dev/null || true
+    log_info "✓ Validation resources cleaned up"
+
+    # Publish EBS snapshot to SSM for regional discovery
+    if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
+        log_info ""
+        log_info "Publishing validated EBS snapshot to SSM Parameter Store..."
+
+        # Tag EBS snapshot
+        aws ec2 create-tags --region "$REGION" --resources "$GOLDEN_SNAPSHOT_ID" \
+            --tags \
+                "Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}" \
+                "Key=ocpctl:managed,Value=true" \
+                "Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}" \
+                "Key=ocpctl:validated,Value=true" \
+            2>/dev/null || true
+
+        # Store in SSM for regional discovery
+        SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
+        if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$GOLDEN_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
+            log_info "✓ Published to SSM: $SNAPSHOT_PARAM → $GOLDEN_SNAPSHOT_ID"
+            log_info "  Future deployments in $REGION will use this snapshot"
         fi
     fi
-fi
 
-# Step 8: Publish golden snapshot (only if both validations passed)
-if [ "$IMPORT_METHOD" = "s3" ] && [ -n "$GOLDEN_SNAPSHOT_ID" ] && [ -z "$SNAPSHOT_ID" ]; then
+elif [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "snapshot" ]; then
+    # Fast path: cluster already has regional EBS snapshot
+    # Use a stable snapshot name for templates (not date-stamped since it's pre-existing)
+    CLUSTER_SNAPSHOT_NAME="windows-golden-snapshot-v${SNAPSHOT_VERSION}"
     log_info ""
-    log_info "═══════════════════════════════════════════════════════════════"
-    log_info "Validation successful - Publishing golden snapshot..."
-    log_info "═══════════════════════════════════════════════════════════════"
-
-    # Tag the EBS snapshot for discoverability
-    log_info "Tagging EBS snapshot for future fast lookups..."
-    if aws ec2 create-tags --region "$REGION" --resources "$GOLDEN_SNAPSHOT_ID" \
-        --tags \
-            "Key=Name,Value=ocpctl-windows-10-oadp-v${SNAPSHOT_VERSION}" \
-            "Key=ocpctl:managed,Value=true" \
-            "Key=ocpctl:image-version,Value=${SNAPSHOT_VERSION}" \
-            "Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2" \
-            "Key=ocpctl:created-at,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            "Key=ocpctl:region,Value=${REGION}" \
-            "Key=ocpctl:snapshot-method,Value=pristine-golden" \
-            "Key=ocpctl:validated,Value=true" \
-        2>/dev/null; then
-        log_info "✓ Tagged EBS snapshot successfully"
-    else
-        log_warn "Could not tag snapshot (non-critical, may lack permissions)"
-    fi
-
-    # Store in SSM Parameter Store for fastest lookup
-    SNAPSHOT_PARAM="/ocpctl/windows-snapshots/${SNAPSHOT_VERSION}/${REGION}"
-    log_info "Storing validated snapshot ID in SSM Parameter Store..."
-    if aws ssm put-parameter --name "$SNAPSHOT_PARAM" --value "$GOLDEN_SNAPSHOT_ID" --type String --overwrite --region "$REGION" 2>/dev/null; then
-        log_info "✓ Stored snapshot ID in SSM: $SNAPSHOT_PARAM"
-        log_info "  Future deployments in $REGION will complete in 2-3 minutes using this snapshot"
-    else
-        log_warn "Could not store in SSM (non-critical, will use EC2 tag discovery)"
-    fi
-elif [ "$IMPORT_METHOD" = "s3" ] && [ -z "$GOLDEN_SNAPSHOT_ID" ]; then
-    log_info ""
-    log_info "No golden snapshot available (creation skipped or failed)"
-    log_info "Future deployments will use S3 import (30-50 minutes)"
+    log_info "Fast path deployment - using existing regional EBS snapshot"
+    log_info "Skipping cluster-local snapshot creation (pristine PVC already from snapshot)"
+    log_info "Future VMs will use direct VolumeSnapshot restore (fast path)"
 fi
 
 # Step 8: Create VM template for users
@@ -1554,8 +1512,7 @@ log_info "═══════════════════════�
 log_info "Step 8: Creating Windows VM template for users..."
 log_info "═══════════════════════════════════════════════════════════════"
 
-# Get source PVC storage class for template (enables fast CSI snapshot-based cloning)
-# Using the same storage class as the source PVC allows CDI to use CSI clone instead of host-assisted copy
+# Get source PVC storage class for template
 SOURCE_STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.storageClassName}' 2>/dev/null)
 SOURCE_PV=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.volumeName}' 2>/dev/null)
 SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.ebs.csi.aws.com/zone")].values[0]}' 2>/dev/null)
@@ -1563,16 +1520,23 @@ if [ -z "$SOURCE_ZONE" ]; then
     SOURCE_ZONE=$(oc --kubeconfig="$KUBECONFIG" get pv "$SOURCE_PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.kubernetes.io/zone")].values[0]}' 2>/dev/null)
 fi
 
-# Use the same storage class as source PVC to enable CSI snapshot-based cloning (fast)
-# This is much faster than creating a different storage class which forces host-assisted copy (slow)
+# Use the same storage class as source PVC
 CLONE_STORAGE_CLASS="${SOURCE_STORAGE_CLASS}"
 
-log_info "Creating Windows VM template (storage class: ${CLONE_STORAGE_CLASS})..."
-log_info "  Using same storage class as source PVC enables CSI snapshot-based cloning (~1 min vs ~20 min)"
+# Set default snapshot name if not already set (for fast path deployments)
+if [ -z "$CLUSTER_SNAPSHOT_NAME" ]; then
+    CLUSTER_SNAPSHOT_NAME="windows-golden-snapshot-v${SNAPSHOT_VERSION}"
+fi
+
+log_info "Creating Windows VM template..."
+log_info "  Storage class: ${CLONE_STORAGE_CLASS}"
+log_info "  Snapshot: ${CLUSTER_SNAPSHOT_NAME} (VolumeSnapshot → PVC fast restore)"
 export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
+export SNAPSHOT_NAME="${CLUSTER_SNAPSHOT_NAME}"
 export ACCESS_MODE="ReadWriteOnce"
-cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
+cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS},${SNAPSHOT_NAME}' | oc --kubeconfig="$KUBECONFIG" apply -f -
 log_info "✓ VM Template created: windows10-oadp-vm"
+log_info "  VMs created from this template will restore PVC from VolumeSnapshot (fast CSI restore)"
 
 # Step 9: Create default Windows VM from template
 log_info ""
@@ -1580,13 +1544,16 @@ log_info "═══════════════════════�
 log_info "Step 9: Creating default Windows VM from template..."
 log_info "═══════════════════════════════════════════════════════════════"
 
-log_info "Creating default Windows VM: windows-vm (storage class: ${CLONE_STORAGE_CLASS})..."
+log_info "Creating default Windows VM: windows-vm..."
+log_info "  Using VolumeSnapshot: ${CLUSTER_SNAPSHOT_NAME}"
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-vm \
     -p VM_NAMESPACE=$SERVICE_ACCOUNT_NAMESPACE \
-    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} \
+    -p SNAPSHOT_NAME=${CLUSTER_SNAPSHOT_NAME} | oc --kubeconfig="$KUBECONFIG" apply -f -
 
 log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
+log_info "  VM disk will restore from VolumeSnapshot (fast CSI restore ~1 min)"
 log_info "  VM is created but not started - start via OpenShift Console or CLI"
 
 log_info "✓ Setup complete - VM resources ready for use"
@@ -1605,24 +1572,30 @@ fi
 log_info "ServiceAccount: $SERVICE_ACCOUNT_NAMESPACE/$SERVICE_ACCOUNT_NAME"
 log_info ""
 log_info "Windows VM Resources:"
-log_info "  Base Image: windows (70GB Windows 10 QCOW2)"
+log_info "  Base Image: windows (pristine PVC, 70GB Windows 10)"
+log_info "  Cluster Snapshot: ${CLUSTER_SNAPSHOT_NAME} (validated, VolumeSnapshot → PVC fast restore)"
 log_info "  Default VM: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE, 4 cores, 8GB RAM)"
 log_info "  Template: windows10-oadp-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  Storage Class: ${CLONE_STORAGE_CLASS} (zone: ${SOURCE_ZONE})"
 if [ -n "$GOLDEN_SNAPSHOT_ID" ]; then
-    log_info "  EBS Snapshot: ${GOLDEN_SNAPSHOT_ID} (validated, ready for fast cloning)"
-else
-    log_info "  EBS Snapshot: None (deployments will clone from source PVC)"
+    log_info "  Regional EBS Snapshot: ${GOLDEN_SNAPSHOT_ID} (published to SSM for future deployments)"
 fi
+log_info ""
+log_info "Architecture:"
+log_info "  All VMs use explicit VolumeSnapshot → PVC restore (fast CSI snapshot path)"
+log_info "  Expected VM disk creation time: ~1 minute (CSI snapshot restore)"
+log_info "  Avoids slow CDI PVC cloning (20-25 minutes)"
 log_info ""
 log_info "Next Steps:"
 log_info "  1. Start the default Windows VM:"
 log_info "     oc patch vm windows-vm -n $SERVICE_ACCOUNT_NAMESPACE --type merge -p '{\"spec\":{\"running\":true}}'"
 log_info "     OR via OpenShift Console: Virtualization → VirtualMachines → windows-vm → Start"
 log_info ""
-log_info "  2. Create additional VMs using the template (2-3 min if snapshot available):"
+log_info "  2. Create additional VMs using the template (~1 min disk creation):"
 log_info "     oc process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \\"
 log_info "       -p VM_NAME=my-windows-vm -p VM_NAMESPACE=default | oc apply -f -"
+log_info ""
+log_info "  Note: All VMs restore disk from VolumeSnapshot ${CLUSTER_SNAPSHOT_NAME} (fast path)"
 log_info ""
 log_info "═══════════════════════════════════════════════════════════════"
 
