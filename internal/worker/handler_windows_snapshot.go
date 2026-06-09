@@ -148,7 +148,7 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		ClusterType:      types.ClusterTypeOpenShift,
 		Region:           region,
 		Profile:          "aws-virtualization-ga", // Use virtualization profile for CNV support
-		Version:          "4.20",                  // Use stable version
+		Version:          "4.20.4",                // Use stable version (must match profile allowlist)
 		Status:           types.ClusterStatusPending,
 		Owner:            "system",
 		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
