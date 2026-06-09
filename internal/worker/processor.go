@@ -24,6 +24,7 @@ type JobProcessor struct {
 	poolReplenishHandler            *PoolReplenishHandler
 	poolCleanHandler                *PoolCleanHandler
 	poolRefreshHandler              *PoolRefreshHandler
+	windowsSnapshotHandler          *WindowsSnapshotHandler
 }
 
 // NewJobProcessor creates a new job processor
@@ -42,6 +43,7 @@ func NewJobProcessor(config *Config, st *store.Store, profileRegistry *profile.R
 		poolReplenishHandler:          NewPoolReplenishHandler(config, st),
 		poolCleanHandler:              NewPoolCleanHandler(config, st),
 		poolRefreshHandler:            NewPoolRefreshHandler(config, st),
+		windowsSnapshotHandler:        NewWindowsSnapshotHandler(config, st),
 	}
 }
 
@@ -83,6 +85,9 @@ func (p *JobProcessor) Process(ctx context.Context, job *types.Job) error {
 
 	case types.JobTypePoolRefresh:
 		return p.poolRefreshHandler.Handle(ctx, job)
+
+	case types.JobTypeCreateWindowsSnapshot:
+		return p.windowsSnapshotHandler.Handle(ctx, job)
 
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)

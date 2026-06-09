@@ -287,6 +287,14 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)
 	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
 
+	// Windows snapshot management routes (admin only)
+	windowsSnapshotHandler := &Handler{store: s.store}
+	adminGroup.GET("/windows-snapshots", windowsSnapshotHandler.ListWindowsSnapshots)
+	adminGroup.GET("/windows-snapshots/coverage", windowsSnapshotHandler.GetWindowsSnapshotCoverage)
+	adminGroup.GET("/windows-snapshots/:id", windowsSnapshotHandler.GetWindowsSnapshot)
+	adminGroup.POST("/windows-snapshots", windowsSnapshotHandler.CreateWindowsSnapshot)
+	adminGroup.DELETE("/windows-snapshots/:id", windowsSnapshotHandler.DeleteWindowsSnapshot)
+
 	// Team management routes
 	teamHandler := NewTeamHandler(s.store)
 

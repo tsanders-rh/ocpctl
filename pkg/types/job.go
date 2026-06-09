@@ -26,6 +26,9 @@ const (
 	JobTypePoolClean     JobType = "POOL_CLEAN"     // Sanitizes cluster after release
 	JobTypePoolRefresh   JobType = "POOL_REFRESH"   // Replaces expired cluster with fresh one
 
+	// Windows snapshot job types
+	JobTypeCreateWindowsSnapshot JobType = "CREATE_WINDOWS_SNAPSHOT" // Creates regional EBS snapshot for Windows VMs
+
 	// Future job types (not yet implemented):
 	// JobTypeScaleWorkers           JobType = "SCALE_WORKERS"  // Off-hours worker scaling
 	// JobTypeOrphanSweep            JobType = "ORPHAN_SWEEP"   // Automated orphan resource cleanup
