@@ -175,8 +175,8 @@ func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 	}
 
 	if err := h.store.CreateWindowsSnapshot(ctx, snapshot); err != nil {
-		// Clean up job record
-		_ = h.store.Jobs.Delete(ctx, jobID)
+		// Clean up job record by marking it failed
+		_ = h.store.Jobs.MarkFailed(ctx, jobID, "SNAPSHOT_CREATE_FAILED", "Failed to create snapshot database record")
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to create snapshot record: %v", err))
 	}
 
