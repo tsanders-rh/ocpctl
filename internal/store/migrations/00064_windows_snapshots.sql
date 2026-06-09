@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS windows_snapshots (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     validated_at TIMESTAMP,
     error_message TEXT,
-    job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+    job_id VARCHAR(64) REFERENCES jobs(id) ON DELETE SET NULL,
 
     -- Metadata
     snapshot_size_gb INTEGER,
