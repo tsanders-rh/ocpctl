@@ -215,7 +215,7 @@ export default function WindowsSnapshotsPage() {
               </div>
 
               {/* Missing regions */}
-              {coverage.missing_regions.length > 0 && (
+              {coverage?.missing_regions && coverage.missing_regions.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">Missing regions:</p>
                   <div className="flex flex-wrap gap-2">
@@ -230,7 +230,7 @@ export default function WindowsSnapshotsPage() {
               )}
 
               {/* Outdated regions */}
-              {coverage.outdated_regions.length > 0 && (
+              {coverage?.outdated_regions && coverage.outdated_regions.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">
                     Outdated regions (need update to v{coverage.latest_version}
