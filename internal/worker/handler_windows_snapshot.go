@@ -136,7 +136,7 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 	return nil
 }
 
-// createTemporaryCluster creates a minimal SNO cluster for snapshot creation
+// createTemporaryCluster creates a virtualization cluster with bare metal for snapshot creation
 func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, region, version string) (string, error) {
 	clusterID := uuid.New().String()
 	clusterName := fmt.Sprintf("win-snap-%s", clusterID[:8])
@@ -148,11 +148,11 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Platform:    types.PlatformAWS,
 		ClusterType: types.ClusterTypeOpenShift,
 		Region:      region,
-		Profile:     "aws-sno-ga", // Use SNO profile for minimal footprint
-		Version:     "4.20",        // Use stable version
+		Profile:     "aws-virtualization-ga", // Use virtualization profile for CNV support
+		Version:     "4.20",                  // Use stable version
 		Status:      types.ClusterStatusPending,
-		OwnerID:     "system",      // System-owned cluster
-		TTLHours:    2,             // Short TTL - 2 hours max
+		OwnerID:     "system",                // System-owned cluster
+		TTLHours:    2,                       // Short TTL - 2 hours max
 		Metadata: map[string]interface{}{
 			"purpose":          "windows-snapshot-creation",
 			"snapshot_version": version,
