@@ -1,0 +1,34 @@
+---
+# Windows 10 DataVolume — Downloads from S3 using static credentials
+#
+# Process:
+# 1. CDI creates an importer pod
+# 2. Pod reads credentials from the s3-credentials Secret
+# 3. Importer downloads from S3 and converts the image
+# 4. Image is stored in a PVC (70Gi)
+# 5. DataSource references this PVC for VM cloning
+#
+# Expected Duration: 5-10 minutes (depends on S3 transfer speed)
+#
+# Monitoring:
+#   oc get datavolume windows -n openshift-virtualization-os-images -w
+#   oc get pods -n openshift-virtualization-os-images
+#
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows
+  namespace: openshift-virtualization-os-images
+spec:
+  contentType: kubevirt
+  source:
+    s3:
+      url: "https://ocpctl-binaries.s3.us-east-1.amazonaws.com/windows-images/windows-10-oadp.qcow2"
+      secretRef: s3-credentials
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 70Gi
+    volumeMode: Block

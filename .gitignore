@@ -109,3 +109,6 @@ pull-secret.txt
 !*.pub
 credentials.json
 secrets.yaml
+
+# aws
+manifests/windows-vm/accesskey
