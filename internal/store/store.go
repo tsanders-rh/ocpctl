@@ -137,6 +137,11 @@ func (s *Store) Close() {
 	s.pool.Close()
 }
 
+// DB returns the underlying database connection pool
+func (s *Store) DB() *pgxpool.Pool {
+	return s.pool
+}
+
 // Ping verifies the database connection is alive
 func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
