@@ -416,7 +416,8 @@ func (w *Worker) poll() {
 	for _, job := range jobs {
 		// Some job types don't require a cluster (pool-level jobs)
 		// POOL_REPLENISH: Creates new clusters for a pool (operates on pool, not cluster)
-		requiresCluster := job.JobType != types.JobTypePoolReplenish
+		// CREATE_WINDOWS_SNAPSHOT: Creates temporary cluster internally for snapshot creation
+		requiresCluster := job.JobType != types.JobTypePoolReplenish && job.JobType != types.JobTypeCreateWindowsSnapshot
 
 		var cluster *types.Cluster
 		if requiresCluster {
