@@ -35,6 +35,14 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		)
 	`
 
+	// Convert empty OwnerID to NULL for system-managed clusters
+	var ownerID interface{}
+	if cluster.OwnerID == "" {
+		ownerID = nil
+	} else {
+		ownerID = cluster.OwnerID
+	}
+
 	_, err := s.pool.Exec(ctx, query,
 		cluster.ID,
 		cluster.Name,
@@ -45,7 +53,7 @@ func (s *ClusterStore) Create(ctx context.Context, cluster *types.Cluster) error
 		cluster.Region,
 		cluster.BaseDomain, // nil pointer becomes NULL in database
 		cluster.Owner,
-		cluster.OwnerID,
+		ownerID,
 		cluster.Team,
 		cluster.CostCenter,
 		cluster.Status,
