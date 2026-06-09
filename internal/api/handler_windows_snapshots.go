@@ -59,7 +59,13 @@ func (h *WindowsSnapshotHandler) ListWindowsSnapshots(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to list snapshots: %v", err))
 	}
 
-	return c.JSON(http.StatusOK, snapshots)
+	// Return response with snapshots array and total count
+	response := map[string]interface{}{
+		"snapshots": snapshots,
+		"total":     len(snapshots),
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // GetWindowsSnapshot retrieves a single snapshot by ID
