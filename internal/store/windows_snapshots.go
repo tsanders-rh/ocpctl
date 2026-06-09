@@ -2,10 +2,10 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
@@ -19,7 +19,7 @@ func (s *Store) CreateWindowsSnapshot(ctx context.Context, snapshot *types.Windo
 		RETURNING created_at, updated_at
 	`
 
-	return s.db.QueryRowContext(
+	return s.pool.QueryRow(
 		ctx, query,
 		snapshot.ID,
 		snapshot.Region,
@@ -44,7 +44,7 @@ func (s *Store) GetWindowsSnapshot(ctx context.Context, id string) (*types.Windo
 		WHERE id = $1
 	`
 
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
+	err := s.pool.QueryRow(ctx, query, id).Scan(
 		&snapshot.ID,
 		&snapshot.Region,
 		&snapshot.Version,
@@ -61,7 +61,7 @@ func (s *Store) GetWindowsSnapshot(ctx context.Context, id string) (*types.Windo
 		&snapshot.ValidationVMBooted,
 	)
 
-	if err == sql.ErrNoRows {
+	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("snapshot not found: %s", id)
 	}
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Store) GetWindowsSnapshotByRegionAndVersion(ctx context.Context, region
 		WHERE region = $1 AND version = $2
 	`
 
-	err := s.db.QueryRowContext(ctx, query, region, version).Scan(
+	err := s.pool.QueryRow(ctx, query, region, version).Scan(
 		&snapshot.ID,
 		&snapshot.Region,
 		&snapshot.Version,
@@ -99,7 +99,7 @@ func (s *Store) GetWindowsSnapshotByRegionAndVersion(ctx context.Context, region
 		&snapshot.ValidationVMBooted,
 	)
 
-	if err == sql.ErrNoRows {
+	if err == pgx.ErrNoRows {
 		return nil, nil // Not found is not an error for this query
 	}
 	if err != nil {
@@ -121,7 +121,7 @@ func (s *Store) ListWindowsSnapshots(ctx context.Context, region *string, status
 		ORDER BY region, version DESC, created_at DESC
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, region, status)
+	rows, err := s.pool.Query(ctx, query, region, status)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list snapshots: %w", err)
 	}
@@ -163,15 +163,12 @@ func (s *Store) UpdateWindowsSnapshotStatus(ctx context.Context, id string, stat
 		WHERE id = $3
 	`
 
-	result, err := s.db.ExecContext(ctx, query, status, errorMessage, id)
+	result, err := s.pool.Exec(ctx, query, status, errorMessage, id)
 	if err != nil {
 		return fmt.Errorf("failed to update snapshot status: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	rows := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("snapshot not found: %s", id)
 	}
@@ -192,7 +189,7 @@ func (s *Store) UpdateWindowsSnapshotValidation(ctx context.Context, id string, 
 		WHERE id = $5
 	`
 
-	result, err := s.db.ExecContext(
+	result, err := s.pool.Exec(
 		ctx, query,
 		types.WindowsSnapshotStatusReady,
 		time.Now(),
@@ -204,10 +201,7 @@ func (s *Store) UpdateWindowsSnapshotValidation(ctx context.Context, id string, 
 		return fmt.Errorf("failed to update snapshot validation: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	rows := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("snapshot not found: %s", id)
 	}
@@ -219,15 +213,12 @@ func (s *Store) UpdateWindowsSnapshotValidation(ctx context.Context, id string, 
 func (s *Store) DeleteWindowsSnapshot(ctx context.Context, id string) error {
 	query := `DELETE FROM windows_snapshots WHERE id = $1`
 
-	result, err := s.db.ExecContext(ctx, query, id)
+	result, err := s.pool.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete snapshot: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	rows := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("snapshot not found: %s", id)
 	}
@@ -291,7 +282,7 @@ func (s *Store) CreateWindowsSnapshotAudit(ctx context.Context, audit *types.Win
 		RETURNING created_at
 	`
 
-	return s.db.QueryRowContext(
+	return s.pool.QueryRow(
 		ctx, query,
 		audit.ID,
 		audit.SnapshotID,

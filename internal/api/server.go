@@ -288,7 +288,7 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
 
 	// Windows snapshot management routes (admin only)
-	windowsSnapshotHandler := &Handler{store: s.store}
+	windowsSnapshotHandler := NewWindowsSnapshotHandler(s.store)
 	adminGroup.GET("/windows-snapshots", windowsSnapshotHandler.ListWindowsSnapshots)
 	adminGroup.GET("/windows-snapshots/coverage", windowsSnapshotHandler.GetWindowsSnapshotCoverage)
 	adminGroup.GET("/windows-snapshots/:id", windowsSnapshotHandler.GetWindowsSnapshot)

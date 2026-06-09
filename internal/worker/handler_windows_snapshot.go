@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -128,7 +127,7 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 
 	// Also update EBS snapshot ID
 	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1 WHERE id = $2`
-	if _, err := h.store.DB().ExecContext(ctx, updateQuery, ebsSnapshotID, snapshotID); err != nil {
+	if _, err := h.store.DB().Exec(ctx, updateQuery, ebsSnapshotID, snapshotID); err != nil {
 		return fmt.Errorf("failed to update EBS snapshot ID: %w", err)
 	}
 
@@ -151,13 +150,8 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Profile:     "aws-virtualization-ga", // Use virtualization profile for CNV support
 		Version:     "4.20",                  // Use stable version
 		Status:      types.ClusterStatusPending,
-		OwnerID:     "system",                // System-owned cluster
-		TTLHours:    2,                       // Short TTL - 2 hours max
-		Metadata: map[string]interface{}{
-			"purpose":          "windows-snapshot-creation",
-			"snapshot_version": version,
-			"target_region":    region,
-		},
+		OwnerID:     "system", // System-owned cluster
+		TTLHours:    2,        // Short TTL - 2 hours max
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
@@ -175,7 +169,7 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		MaxAttempts: 1, // No retries for snapshot creation
 	}
 
-	if err := h.store.CreateJob(ctx, createJob); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, createJob); err != nil {
 		return "", fmt.Errorf("create job: %w", err)
 	}
 
@@ -235,7 +229,7 @@ func (h *WindowsSnapshotHandler) installCNV(ctx context.Context, clusterID strin
 		},
 	}
 
-	if err := h.store.CreateJob(ctx, postConfigJob); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, postConfigJob); err != nil {
 		return fmt.Errorf("create POST_CONFIGURE job: %w", err)
 	}
 
@@ -344,7 +338,7 @@ func (h *WindowsSnapshotHandler) destroyTemporaryCluster(ctx context.Context, cl
 		MaxAttempts: 2,
 	}
 
-	if err := h.store.CreateJob(ctx, destroyJob); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, destroyJob); err != nil {
 		return fmt.Errorf("create destroy job: %w", err)
 	}
 
@@ -361,7 +355,7 @@ func (h *WindowsSnapshotHandler) waitForJobCompletion(ctx context.Context, jobID
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		job, err := h.store.GetJob(ctx, jobID)
+		job, err := h.store.Jobs.GetByID(ctx, jobID)
 		if err != nil {
 			return fmt.Errorf("get job: %w", err)
 		}

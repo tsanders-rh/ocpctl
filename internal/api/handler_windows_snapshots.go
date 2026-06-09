@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
@@ -20,9 +21,21 @@ var supportedAWSRegions = []string{
 
 const defaultWindowsImageVersion = "1.0"
 
+// WindowsSnapshotHandler handles Windows snapshot management endpoints
+type WindowsSnapshotHandler struct {
+	store *store.Store
+}
+
+// NewWindowsSnapshotHandler creates a new Windows snapshot handler
+func NewWindowsSnapshotHandler(st *store.Store) *WindowsSnapshotHandler {
+	return &WindowsSnapshotHandler{
+		store: st,
+	}
+}
+
 // ListWindowsSnapshots lists all regional Windows snapshots
 // GET /api/v1/windows-snapshots
-func (h *Handler) ListWindowsSnapshots(c echo.Context) error {
+func (h *WindowsSnapshotHandler) ListWindowsSnapshots(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Optional filters
@@ -51,7 +64,7 @@ func (h *Handler) ListWindowsSnapshots(c echo.Context) error {
 
 // GetWindowsSnapshot retrieves a single snapshot by ID
 // GET /api/v1/windows-snapshots/:id
-func (h *Handler) GetWindowsSnapshot(c echo.Context) error {
+func (h *WindowsSnapshotHandler) GetWindowsSnapshot(c echo.Context) error {
 	ctx := c.Request().Context()
 	id := c.Param("id")
 
@@ -65,7 +78,7 @@ func (h *Handler) GetWindowsSnapshot(c echo.Context) error {
 
 // GetWindowsSnapshotCoverage returns snapshot coverage summary across regions
 // GET /api/v1/windows-snapshots/coverage
-func (h *Handler) GetWindowsSnapshotCoverage(c echo.Context) error {
+func (h *WindowsSnapshotHandler) GetWindowsSnapshotCoverage(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get latest version from query param or use default
@@ -84,7 +97,7 @@ func (h *Handler) GetWindowsSnapshotCoverage(c echo.Context) error {
 
 // CreateWindowsSnapshot creates a new regional Windows snapshot
 // POST /api/v1/windows-snapshots
-func (h *Handler) CreateWindowsSnapshot(c echo.Context) error {
+func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Parse request
@@ -154,7 +167,7 @@ func (h *Handler) CreateWindowsSnapshot(c echo.Context) error {
 		},
 	}
 
-	if err := h.store.CreateJob(ctx, job); err != nil {
+	if err := h.store.Jobs.Create(ctx, nil, job); err != nil {
 		// Clean up snapshot record
 		_ = h.store.DeleteWindowsSnapshot(ctx, snapshotID)
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to create job: %v", err))
@@ -185,7 +198,7 @@ func (h *Handler) CreateWindowsSnapshot(c echo.Context) error {
 
 // DeleteWindowsSnapshot deletes a snapshot (and triggers EBS snapshot cleanup)
 // DELETE /api/v1/windows-snapshots/:id
-func (h *Handler) DeleteWindowsSnapshot(c echo.Context) error {
+func (h *WindowsSnapshotHandler) DeleteWindowsSnapshot(c echo.Context) error {
 	ctx := c.Request().Context()
 	id := c.Param("id")
 
