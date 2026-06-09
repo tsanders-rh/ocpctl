@@ -139,25 +139,11 @@ func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "User not found in context")
 	}
 
-	// Create snapshot record
+	// Generate IDs
 	snapshotID := uuid.New().String()
 	jobID := uuid.New().String()
 
-	snapshot := &types.WindowsSnapshot{
-		ID:            snapshotID,
-		Region:        req.Region,
-		Version:       req.Version,
-		EBSSnapshotID: "", // Will be populated by worker
-		Status:        types.WindowsSnapshotStatusCreating,
-		S3SourceURL:   req.S3SourceURL,
-		JobID:         &jobID,
-	}
-
-	if err := h.store.CreateWindowsSnapshot(ctx, snapshot); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to create snapshot record: %v", err))
-	}
-
-	// Create job
+	// Create job first (required for foreign key constraint)
 	job := &types.Job{
 		ID:          jobID,
 		ClusterID:   snapshotID, // Use snapshot ID as cluster ID for job locking
@@ -174,9 +160,24 @@ func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 	}
 
 	if err := h.store.Jobs.Create(ctx, nil, job); err != nil {
-		// Clean up snapshot record
-		_ = h.store.DeleteWindowsSnapshot(ctx, snapshotID)
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to create job: %v", err))
+	}
+
+	// Create snapshot record (references job created above)
+	snapshot := &types.WindowsSnapshot{
+		ID:            snapshotID,
+		Region:        req.Region,
+		Version:       req.Version,
+		EBSSnapshotID: "", // Will be populated by worker
+		Status:        types.WindowsSnapshotStatusCreating,
+		S3SourceURL:   req.S3SourceURL,
+		JobID:         &jobID,
+	}
+
+	if err := h.store.CreateWindowsSnapshot(ctx, snapshot); err != nil {
+		// Clean up job record
+		_ = h.store.Jobs.Delete(ctx, jobID)
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to create snapshot record: %v", err))
 	}
 
 	// Create audit log
