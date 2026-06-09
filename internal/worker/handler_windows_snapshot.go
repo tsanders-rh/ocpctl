@@ -150,9 +150,10 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Profile:          "aws-virtualization-ga", // Use virtualization profile for CNV support
 		Version:          "4.20",                  // Use stable version
 		Status:           types.ClusterStatusPending,
-		OwnerID:          "",       // System-managed cluster, no owner
-		TTLHours:         2,        // Short TTL - 2 hours max
-		SelectedAddonIDs: []string{}, // No addons for snapshot creation cluster
+		Owner:            "system",
+		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
+		TTLHours:         2,                                       // Short TTL - 2 hours max
+		SelectedAddonIDs: []string{},                              // No addons for snapshot creation cluster
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
