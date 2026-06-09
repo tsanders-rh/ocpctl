@@ -142,16 +142,17 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 
 	// Create cluster record
 	cluster := &types.Cluster{
-		ID:          clusterID,
-		Name:        clusterName,
-		Platform:    types.PlatformAWS,
-		ClusterType: types.ClusterTypeOpenShift,
-		Region:      region,
-		Profile:     "aws-virtualization-ga", // Use virtualization profile for CNV support
-		Version:     "4.20",                  // Use stable version
-		Status:      types.ClusterStatusPending,
-		OwnerID:     "",  // System-managed cluster, no owner
-		TTLHours:    2,   // Short TTL - 2 hours max
+		ID:               clusterID,
+		Name:             clusterName,
+		Platform:         types.PlatformAWS,
+		ClusterType:      types.ClusterTypeOpenShift,
+		Region:           region,
+		Profile:          "aws-virtualization-ga", // Use virtualization profile for CNV support
+		Version:          "4.20",                  // Use stable version
+		Status:           types.ClusterStatusPending,
+		OwnerID:          "",       // System-managed cluster, no owner
+		TTLHours:         2,        // Short TTL - 2 hours max
+		SelectedAddonIDs: []string{}, // No addons for snapshot creation cluster
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
