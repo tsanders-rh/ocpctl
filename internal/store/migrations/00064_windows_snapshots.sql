@@ -1,3 +1,4 @@
+-- +goose Up
 -- Windows regional snapshots tracking
 -- This table tracks pre-created EBS snapshots per region for fast Windows VM provisioning
 
@@ -56,3 +57,9 @@ CREATE TRIGGER windows_snapshots_updated_at
     BEFORE UPDATE ON windows_snapshots
     FOR EACH ROW
     EXECUTE FUNCTION update_windows_snapshots_updated_at();
+
+-- +goose Down
+DROP TRIGGER IF EXISTS windows_snapshots_updated_at ON windows_snapshots;
+DROP FUNCTION IF EXISTS update_windows_snapshots_updated_at();
+DROP TABLE IF EXISTS windows_snapshot_audit;
+DROP TABLE IF EXISTS windows_snapshots;
