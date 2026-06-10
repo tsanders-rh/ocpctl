@@ -1103,11 +1103,11 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 	var selectedAddons []types.PostConfigAddon
 	var selectedAddonsConfig *types.CustomPostConfig
 	if hasSelectedAddons {
-		// Resolve addons by ID (SelectedAddonIDs contains UUIDs, not addon_id strings)
-		for _, addonUUID := range addonNames {
-			addon, err := h.store.PostConfigAddons.GetByID(ctx, addonUUID)
+		// Resolve addons by addon_id (SelectedAddonIDs contains addon_id strings like "cnv" or "cnv:stable")
+		for _, addonRef := range addonNames {
+			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonRef)
 			if err != nil {
-				return fmt.Errorf("failed to resolve addon %s: %w", addonUUID, err)
+				return fmt.Errorf("failed to resolve addon %s: %w", addonRef, err)
 			}
 			selectedAddons = append(selectedAddons, *addon)
 		}

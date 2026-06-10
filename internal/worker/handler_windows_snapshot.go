@@ -146,9 +146,9 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Status:           types.ClusterStatusPending,
 		Owner:            "system",
 		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
-		TTLHours:         2,                                       // Short TTL - 2 hours max
+		TTLHours:         2, // Short TTL - 2 hours max
 		SelectedAddonIDs: []string{
-			"9a29130d-cfec-4234-942e-f0f65e907b09", // CNV Stable (4.18) + Windows VM Support
+			"cnv", // CNV addon (will use default version with Windows VM support)
 		},
 	}
 
