@@ -88,9 +88,9 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 		return fmt.Errorf("wait for cluster ready: %w", err)
 	}
 
-	// Step 3: Wait for CNV post-deployment to complete
-	fmt.Println("Step 3: Waiting for CNV installation to complete...")
-	if err := h.waitForPostDeployment(ctx, tempClusterID, 30*time.Minute); err != nil {
+	// Step 3: Wait for CNV operators to be ready
+	fmt.Println("Step 3: Waiting for CNV operators to be ready...")
+	if err := h.waitForCNVReady(ctx, tempClusterID, 15*time.Minute); err != nil {
 		errMsg := fmt.Sprintf("CNV installation failed: %v", err)
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
 		return fmt.Errorf("wait for CNV installation: %w", err)
@@ -206,48 +206,50 @@ func (h *WindowsSnapshotHandler) waitForClusterReady(ctx context.Context, cluste
 	return fmt.Errorf("timeout waiting for cluster to be ready")
 }
 
-// waitForPostDeployment polls until post-deployment completes
-func (h *WindowsSnapshotHandler) waitForPostDeployment(ctx context.Context, clusterID string, timeout time.Duration) error {
+// waitForCNVReady polls until CNV operators are ready by checking the cluster directly
+func (h *WindowsSnapshotHandler) waitForCNVReady(ctx context.Context, clusterID string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
-	for time.Now().Before(deadline) {
-		// Check for POST_CONFIGURE job
-		query := `SELECT id, status, error_message FROM jobs WHERE cluster_id = $1 AND job_type = 'POST_CONFIGURE' ORDER BY created_at DESC LIMIT 1`
-		var jobID string
-		var status types.JobStatus
-		var errorMessage *string
-
-		err := h.store.DB().QueryRow(ctx, query, clusterID).Scan(&jobID, &status, &errorMessage)
-		if err != nil {
-			// No post-configure job yet, wait for it to be created
-			fmt.Printf("  Waiting for post-deployment job to be created...\n")
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		switch status {
-		case types.JobStatusSucceeded:
-			fmt.Println("  ✓ Post-deployment (CNV installation) completed successfully")
-			return nil
-		case types.JobStatusFailed:
-			errMsg := "unknown error"
-			if errorMessage != nil {
-				errMsg = *errorMessage
-			}
-			return fmt.Errorf("post-deployment job failed: %s", errMsg)
-		case types.JobStatusRunning:
-			fmt.Printf("  Post-deployment job is running (job %s)...\n", jobID[:8])
-			time.Sleep(30 * time.Second)
-		case types.JobStatusPending:
-			fmt.Printf("  Post-deployment job is pending...\n")
-			time.Sleep(10 * time.Second)
-		default:
-			fmt.Printf("  Post-deployment job status: %s\n", status)
-			time.Sleep(10 * time.Second)
-		}
+	// Get cluster details
+	cluster, err := h.store.Clusters.GetByID(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("get cluster: %w", err)
 	}
 
-	return fmt.Errorf("timeout waiting for post-deployment to complete")
+	// Work directory for cluster artifacts
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Verify kubeconfig exists
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("kubeconfig not found at %s", kubeconfigPath)
+	}
+
+	for time.Now().Before(deadline) {
+		// Check if openshift-cnv namespace exists and CNV operator is ready
+		cmd := exec.CommandContext(ctx, "oc", "get", "deployment", "-n", "openshift-cnv", "virt-operator", "-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+		output, err := cmd.Output()
+		if err == nil && string(output) == "True" {
+			fmt.Println("  ✓ CNV virt-operator is available")
+
+			// Also check if CDI operator is ready (needed for Windows VM imports)
+			cmd = exec.CommandContext(ctx, "oc", "get", "deployment", "-n", "openshift-cnv", "cdi-operator", "-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
+			cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+			output, err = cmd.Output()
+			if err == nil && string(output) == "True" {
+				fmt.Println("  ✓ CNV cdi-operator is available")
+				return nil
+			}
+		}
+
+		fmt.Printf("  Waiting for CNV operators to be ready...\n")
+		time.Sleep(15 * time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for CNV operators to be ready")
 }
 
 // runSnapshotCreationScript executes the snapshot creation script and parses output
