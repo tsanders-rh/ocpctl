@@ -204,8 +204,27 @@ func (h *WindowsSnapshotHandler) runSnapshotCreationScript(ctx context.Context, 
 		return "", "", fmt.Errorf("get cluster: %w", err)
 	}
 
+	// Work directory for cluster artifacts
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	// Check if work directory exists locally, if not download from S3
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		fmt.Printf("Work directory %s not found locally, attempting to download from S3\n", workDir)
+
+		artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+		if err != nil {
+			return "", "", fmt.Errorf("create artifact storage: %w", err)
+		}
+
+		if err := artifactStorage.DownloadClusterArtifacts(ctx, cluster.ID, workDir); err != nil {
+			return "", "", fmt.Errorf("download artifacts from S3: %w", err)
+		}
+
+		fmt.Printf("✓ Downloaded cluster artifacts from S3 to %s\n", workDir)
+	}
+
 	// Get kubeconfig path
-	kubeconfigPath := filepath.Join(h.config.WorkDir, cluster.Name, "auth", "kubeconfig")
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 
 	// Get script path
 	scriptPath := filepath.Join(h.config.WorkDir, "..", "..", "manifests", "windows-vm", "create-regional-snapshot.sh")
