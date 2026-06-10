@@ -1069,10 +1069,30 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		return fmt.Errorf("get profile: %w", err)
 	}
 
+	// Check for addons in job metadata first (takes precedence over cluster.SelectedAddonIDs)
+	// This allows jobs to specify addons dynamically (e.g., Windows snapshot creation)
+	var addonNames []string
+	if addonsMetadata, ok := job.Metadata["addons"]; ok {
+		if addonsSlice, ok := addonsMetadata.([]interface{}); ok {
+			for _, addon := range addonsSlice {
+				if addonMap, ok := addon.(map[string]interface{}); ok {
+					if name, ok := addonMap["name"].(string); ok {
+						addonNames = append(addonNames, name)
+					}
+				}
+			}
+		}
+	}
+
+	// Fall back to cluster.SelectedAddonIDs if no addons in job metadata
+	if len(addonNames) == 0 {
+		addonNames = cluster.SelectedAddonIDs
+	}
+
 	// Check if post-deployment is enabled or if custom post-config exists
 	hasProfileConfig := prof.PostDeployment != nil && prof.PostDeployment.Enabled
 	hasCustomConfig := cluster.CustomPostConfig != nil
-	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
+	hasSelectedAddons := len(addonNames) > 0
 
 	if !hasProfileConfig && !hasCustomConfig && !hasSelectedAddons {
 		log.Printf("Post-deployment not enabled for profile %s, no custom config, and no selected addons, skipping (OpenShift has built-in console)", cluster.Profile)
@@ -1083,10 +1103,14 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 	var selectedAddons []types.PostConfigAddon
 	var selectedAddonsConfig *types.CustomPostConfig
 	if hasSelectedAddons {
-		var err error
-		selectedAddons, err = h.resolveSelectedAddons(ctx, cluster)
-		if err != nil {
-			return fmt.Errorf("resolve selected addons: %w", err)
+		// Resolve addons by ID (works for both cluster.SelectedAddonIDs and job metadata addons)
+		for _, addonID := range addonNames {
+			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+			if err != nil {
+				log.Printf("Warning: addon %s not found: %v", addonID, err)
+				continue
+			}
+			selectedAddons = append(selectedAddons, *addon)
 		}
 		if len(selectedAddons) > 0 {
 			selectedAddonsConfig = h.mergeAddonConfigs(selectedAddons)

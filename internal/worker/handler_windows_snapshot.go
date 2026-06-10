@@ -18,7 +18,6 @@ import (
 type WindowsSnapshotHandler struct {
 	config         *Config
 	store          *store.Store
-	createHandler  *CreateHandler
 	destroyHandler *DestroyHandler
 }
 
@@ -27,7 +26,6 @@ func NewWindowsSnapshotHandler(config *Config, st *store.Store) *WindowsSnapshot
 	return &WindowsSnapshotHandler{
 		config:         config,
 		store:          st,
-		createHandler:  NewCreateHandler(config, st),
 		destroyHandler: NewDestroyHandler(config, st),
 	}
 }
@@ -90,24 +88,8 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 		return fmt.Errorf("wait for cluster ready: %w", err)
 	}
 
-	// Step 3: Install CNV
-	fmt.Println("Step 3: Installing OpenShift Virtualization...")
-	if err := h.installCNV(ctx, tempClusterID); err != nil {
-		errMsg := fmt.Sprintf("Failed to install CNV: %v", err)
-		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("install CNV: %w", err)
-	}
-
-	// Step 4: Wait for CNV to be ready
-	fmt.Println("Step 4: Waiting for CNV installation to complete...")
-	if err := h.waitForCNVReady(ctx, tempClusterID, 30*time.Minute); err != nil {
-		errMsg := fmt.Sprintf("CNV installation failed: %v", err)
-		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("wait for CNV: %w", err)
-	}
-
-	// Step 5: Run snapshot creation script
-	fmt.Println("Step 5: Running snapshot creation script...")
+	// Step 3: Run snapshot creation script (handles CNV installation + snapshot creation)
+	fmt.Println("Step 3: Running snapshot creation script...")
 	if err := h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusValidating, nil); err != nil {
 		return fmt.Errorf("failed to update status to validating: %w", err)
 	}
@@ -140,6 +122,9 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 	clusterID := uuid.New().String()
 	clusterName := fmt.Sprintf("win-snap-%s", clusterID[:8])
 
+	// Required for OpenShift installer
+	baseDomain := "mg.dog8code.com"
+
 	// Create cluster record
 	cluster := &types.Cluster{
 		ID:               clusterID,
@@ -147,8 +132,9 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Platform:         types.PlatformAWS,
 		ClusterType:      types.ClusterTypeOpenShift,
 		Region:           region,
+		BaseDomain:       &baseDomain,             // Required for OpenShift installer
 		Profile:          "aws-virtualization-ga", // Use virtualization profile for CNV support
-		Version:          "4.20.4",                // Use stable version (must match profile allowlist)
+		Version:          "4.21.10",               // Use profile default version
 		Status:           types.ClusterStatusPending,
 		Owner:            "system",
 		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
@@ -160,7 +146,7 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		return "", fmt.Errorf("create cluster record: %w", err)
 	}
 
-	// Create cluster creation job
+	// Create cluster creation job (will be picked up by worker automatically)
 	createJobID := uuid.New().String()
 	createJob := &types.Job{
 		ID:          createJobID,
@@ -175,9 +161,9 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		return "", fmt.Errorf("create job: %w", err)
 	}
 
-	// Execute cluster creation
-	if err := h.createHandler.Handle(ctx, createJob); err != nil {
-		return "", fmt.Errorf("execute cluster creation: %w", err)
+	// Wait for CREATE job to complete (async polling instead of direct handler call)
+	if err := h.waitForJobCompletion(ctx, createJobID, 60*time.Minute); err != nil {
+		return "", fmt.Errorf("cluster creation job failed: %w", err)
 	}
 
 	return clusterID, nil
@@ -208,65 +194,6 @@ func (h *WindowsSnapshotHandler) waitForClusterReady(ctx context.Context, cluste
 	}
 
 	return fmt.Errorf("timeout waiting for cluster to be ready")
-}
-
-// installCNV triggers CNV installation via POST_CONFIGURE
-func (h *WindowsSnapshotHandler) installCNV(ctx context.Context, clusterID string) error {
-	// Create POST_CONFIGURE job with CNV addon
-	postConfigJobID := uuid.New().String()
-	postConfigJob := &types.Job{
-		ID:          postConfigJobID,
-		ClusterID:   clusterID,
-		JobType:     types.JobTypePostConfigure,
-		Status:      types.JobStatusPending,
-		Attempt:     1,
-		MaxAttempts: 3,
-		Metadata: types.JobMetadata{
-			"addons": []map[string]interface{}{
-				{
-					"name":    "cnv",
-					"version": "4.20", // Match cluster version
-				},
-			},
-		},
-	}
-
-	if err := h.store.Jobs.Create(ctx, nil, postConfigJob); err != nil {
-		return fmt.Errorf("create POST_CONFIGURE job: %w", err)
-	}
-
-	// Wait for job to complete
-	return h.waitForJobCompletion(ctx, postConfigJobID, 30*time.Minute)
-}
-
-// waitForCNVReady waits for CNV to be fully operational
-func (h *WindowsSnapshotHandler) waitForCNVReady(ctx context.Context, clusterID string, timeout time.Duration) error {
-	// Get kubeconfig
-	cluster, err := h.store.Clusters.GetByID(ctx, clusterID)
-	if err != nil {
-		return fmt.Errorf("get cluster: %w", err)
-	}
-
-	kubeconfigPath := filepath.Join(h.config.WorkDir, "clusters", cluster.Name, "auth", "kubeconfig")
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		// Check if CDI API is ready
-		cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
-			"get", "endpoints", "cdi-api", "-n", "openshift-cnv",
-			"-o", "jsonpath={.subsets[*].addresses[*].ip}")
-
-		output, err := cmd.Output()
-		if err == nil && len(output) > 0 {
-			fmt.Println("✓ CNV is ready")
-			return nil
-		}
-
-		fmt.Println("  Waiting for CNV to be ready...")
-		time.Sleep(30 * time.Second)
-	}
-
-	return fmt.Errorf("timeout waiting for CNV to be ready")
 }
 
 // runSnapshotCreationScript executes the snapshot creation script and parses output
