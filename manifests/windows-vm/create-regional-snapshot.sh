@@ -10,6 +10,7 @@
 #   - REGION: AWS region for snapshot
 #   - SNAPSHOT_VERSION: Snapshot version (e.g., "1.0")
 #   - S3_SOURCE_URL: S3 URL of Windows QCOW2 image (optional, defaults to standard path)
+#   - S3_REGION: AWS region of S3 bucket (optional, defaults to us-east-1)
 #
 # Outputs:
 #   - EBS_SNAPSHOT_ID: EBS snapshot ID (written to stdout on success)
@@ -49,6 +50,11 @@ if [ -z "$S3_SOURCE_URL" ]; then
     S3_SOURCE_URL="s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
 fi
 
+# Default S3 region (bucket region, not cluster region)
+if [ -z "$S3_REGION" ]; then
+    S3_REGION="us-east-1"
+fi
+
 SERVICE_ACCOUNT_NAMESPACE="openshift-virtualization-os-images"
 
 log_info "═══════════════════════════════════════════════════════════════"
@@ -56,6 +62,7 @@ log_info "Creating Regional Windows Snapshot"
 log_info "Region: $REGION"
 log_info "Version: $SNAPSHOT_VERSION"
 log_info "S3 Source: $S3_SOURCE_URL"
+log_info "S3 Region: $S3_REGION"
 log_info "═══════════════════════════════════════════════════════════════"
 
 # Create namespace
@@ -134,7 +141,7 @@ log_info "Importing Windows image from S3..."
 log_info "═══════════════════════════════════════════════════════════════"
 
 # Generate presigned URL
-PRESIGNED_URL=$(aws s3 presign "$S3_SOURCE_URL" --expires-in 86400 --region us-east-1)
+PRESIGNED_URL=$(aws s3 presign "$S3_SOURCE_URL" --expires-in 86400 --region "$S3_REGION")
 
 # Create DataVolume
 cat <<EOF | oc --kubeconfig="$KUBECONFIG" create -f -
@@ -208,7 +215,7 @@ fi
 log_info "✓ Using VolumeSnapshotClass: $SNAPSHOT_CLASS"
 
 # Create VolumeSnapshot
-SNAPSHOT_NAME="windows-golden-snapshot-temp"
+SNAPSHOT_NAME="windows-golden-snapshot-${SNAPSHOT_VERSION}-${REGION}"
 cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot

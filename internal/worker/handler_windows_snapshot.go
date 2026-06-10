@@ -205,7 +205,7 @@ func (h *WindowsSnapshotHandler) runSnapshotCreationScript(ctx context.Context, 
 	}
 
 	// Get kubeconfig path
-	kubeconfigPath := filepath.Join(h.config.WorkDir, "clusters", cluster.Name, "auth", "kubeconfig")
+	kubeconfigPath := filepath.Join(h.config.WorkDir, cluster.Name, "auth", "kubeconfig")
 
 	// Get script path
 	scriptPath := filepath.Join(h.config.WorkDir, "..", "..", "manifests", "windows-vm", "create-regional-snapshot.sh")
