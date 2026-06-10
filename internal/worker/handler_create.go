@@ -979,15 +979,18 @@ func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types
 		len(cluster.CustomPostConfig.Manifests) > 0 ||
 		len(cluster.CustomPostConfig.HelmCharts) > 0)
 
+	// Check if cluster has selected addons
+	hasSelectedAddons := len(cluster.SelectedAddonIDs) > 0
+
 	// Determine if post-deployment should run
 	profileHasPostDeploy := prof.PostDeployment != nil && prof.PostDeployment.Enabled
 
-	if !profileHasPostDeploy && !hasCustomPostConfig {
-		log.Printf("Post-deployment not needed for cluster %s (no profile config or custom config)", cluster.Name)
+	if !profileHasPostDeploy && !hasCustomPostConfig && !hasSelectedAddons {
+		log.Printf("Post-deployment not needed for cluster %s (no profile config, custom config, or addons)", cluster.Name)
 		return
 	}
 
-	log.Printf("Post-deployment needed for cluster %s (profile=%v, custom=%v)", cluster.Name, profileHasPostDeploy, hasCustomPostConfig)
+	log.Printf("Post-deployment needed for cluster %s (profile=%v, custom=%v, addons=%v)", cluster.Name, profileHasPostDeploy, hasCustomPostConfig, hasSelectedAddons)
 
 	// Check if user opted to skip post-deployment
 	if cluster.SkipPostDeployment {
