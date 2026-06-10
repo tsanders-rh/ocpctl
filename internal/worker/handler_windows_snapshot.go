@@ -88,8 +88,16 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 		return fmt.Errorf("wait for cluster ready: %w", err)
 	}
 
-	// Step 3: Run snapshot creation script (handles CNV installation + snapshot creation)
-	fmt.Println("Step 3: Running snapshot creation script...")
+	// Step 3: Wait for CNV post-deployment to complete
+	fmt.Println("Step 3: Waiting for CNV installation to complete...")
+	if err := h.waitForPostDeployment(ctx, tempClusterID, 30*time.Minute); err != nil {
+		errMsg := fmt.Sprintf("CNV installation failed: %v", err)
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf("wait for CNV installation: %w", err)
+	}
+
+	// Step 4: Run snapshot creation script
+	fmt.Println("Step 4: Running snapshot creation script...")
 	if err := h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusValidating, nil); err != nil {
 		return fmt.Errorf("failed to update status to validating: %w", err)
 	}
@@ -101,7 +109,7 @@ func (h *WindowsSnapshotHandler) Handle(ctx context.Context, job *types.Job) err
 		return fmt.Errorf("run snapshot creation script: %w", err)
 	}
 
-	// Step 6: Update snapshot record with success
+	// Step 5: Update snapshot record with success
 	fmt.Printf("✓ Snapshot created successfully: %s\n", ebsSnapshotID)
 	if err := h.store.UpdateWindowsSnapshotValidation(ctx, snapshotID, true, ssmPath); err != nil {
 		return fmt.Errorf("failed to update snapshot record: %w", err)
@@ -139,7 +147,9 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 		Owner:            "system",
 		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
 		TTLHours:         2,                                       // Short TTL - 2 hours max
-		SelectedAddonIDs: []string{},                              // No addons for snapshot creation cluster
+		SelectedAddonIDs: []string{
+			"9a29130d-cfec-4234-942e-f0f65e907b09", // CNV Stable (4.18) + Windows VM Support
+		},
 	}
 
 	if err := h.store.Clusters.Create(ctx, cluster); err != nil {
@@ -194,6 +204,50 @@ func (h *WindowsSnapshotHandler) waitForClusterReady(ctx context.Context, cluste
 	}
 
 	return fmt.Errorf("timeout waiting for cluster to be ready")
+}
+
+// waitForPostDeployment polls until post-deployment completes
+func (h *WindowsSnapshotHandler) waitForPostDeployment(ctx context.Context, clusterID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		// Check for POST_CONFIGURE job
+		query := `SELECT id, status, error_message FROM jobs WHERE cluster_id = $1 AND job_type = 'POST_CONFIGURE' ORDER BY created_at DESC LIMIT 1`
+		var jobID string
+		var status types.JobStatus
+		var errorMessage *string
+
+		err := h.store.DB().QueryRow(ctx, query, clusterID).Scan(&jobID, &status, &errorMessage)
+		if err != nil {
+			// No post-configure job yet, wait for it to be created
+			fmt.Printf("  Waiting for post-deployment job to be created...\n")
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		switch status {
+		case types.JobStatusSucceeded:
+			fmt.Println("  ✓ Post-deployment (CNV installation) completed successfully")
+			return nil
+		case types.JobStatusFailed:
+			errMsg := "unknown error"
+			if errorMessage != nil {
+				errMsg = *errorMessage
+			}
+			return fmt.Errorf("post-deployment job failed: %s", errMsg)
+		case types.JobStatusRunning:
+			fmt.Printf("  Post-deployment job is running (job %s)...\n", jobID[:8])
+			time.Sleep(30 * time.Second)
+		case types.JobStatusPending:
+			fmt.Printf("  Post-deployment job is pending...\n")
+			time.Sleep(10 * time.Second)
+		default:
+			fmt.Printf("  Post-deployment job status: %s\n", status)
+			time.Sleep(10 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("timeout waiting for post-deployment to complete")
 }
 
 // runSnapshotCreationScript executes the snapshot creation script and parses output
