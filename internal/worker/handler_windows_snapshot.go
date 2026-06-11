@@ -142,8 +142,8 @@ func (h *WindowsSnapshotHandler) handleCopySnapshot(ctx context.Context, job *ty
 		return fmt.Errorf("failed to update snapshot record: %w", err)
 	}
 
-	// Update EBS snapshot ID
-	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1 WHERE id = $2`
+	// Update EBS snapshot ID and size (70 GB for Windows 10 OADP image)
+	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1, snapshot_size_gb = 70 WHERE id = $2`
 	if _, err := h.store.DB().Exec(ctx, updateQuery, newEBSSnapshotID, snapshotID); err != nil {
 		return fmt.Errorf("failed to update EBS snapshot ID: %w", err)
 	}
