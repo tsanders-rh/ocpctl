@@ -47,19 +47,26 @@ fi
 
 # Default S3 source - prefer regional copy for faster import
 if [ -z "$S3_SOURCE_URL" ]; then
-    # Check if regional copy exists (us-west-2, eu-west-1, etc.)
-    REGIONAL_URL="s3://ocpctl-binaries/windows-images/${REGION}/windows-10-oadp.qcow2"
-
-    if aws s3 ls "$REGIONAL_URL" --region "$REGION" &>/dev/null; then
-        S3_SOURCE_URL="$REGIONAL_URL"
-        S3_REGION="$REGION"
-        log_info "Using regional copy: $S3_SOURCE_URL (same-region = faster import)"
-    else
-        # Fall back to us-east-1 copy (slower cross-region transfer)
+    if [ "$REGION" = "us-east-1" ]; then
+        # Base image is already in us-east-1, no need for regional copy
         S3_SOURCE_URL="s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
         S3_REGION="us-east-1"
-        log_warn "No regional copy found in $REGION, using us-east-1 (slower cross-region transfer)"
-        log_warn "Consider copying: aws s3 cp $S3_SOURCE_URL s3://ocpctl-binaries/windows-images/${REGION}/windows-10-oadp.qcow2 --region $REGION"
+        log_info "Using base image in us-east-1 (same-region = fast import)"
+    else
+        # Check if regional copy exists for other regions
+        REGIONAL_URL="s3://ocpctl-binaries/windows-images/${REGION}/windows-10-oadp.qcow2"
+
+        if aws s3 ls "$REGIONAL_URL" --region "$REGION" &>/dev/null; then
+            S3_SOURCE_URL="$REGIONAL_URL"
+            S3_REGION="$REGION"
+            log_info "Using regional copy: $S3_SOURCE_URL (same-region = faster import)"
+        else
+            # Fall back to us-east-1 copy (slower cross-region transfer)
+            S3_SOURCE_URL="s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+            S3_REGION="us-east-1"
+            log_warn "No regional copy found in $REGION, using us-east-1 (slower cross-region transfer)"
+            log_warn "Consider copying: aws s3 cp $S3_SOURCE_URL s3://ocpctl-binaries/windows-images/${REGION}/windows-10-oadp.qcow2 --region $REGION"
+        fi
     fi
 fi
 
