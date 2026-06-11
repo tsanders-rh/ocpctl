@@ -19,6 +19,13 @@ export function useWindowsSnapshots(filters?: WindowsSnapshotFilters) {
   return useQuery({
     queryKey: QUERY_KEYS.snapshots(filters),
     queryFn: () => windowsSnapshotsApi.list(filters),
+    refetchInterval: (data) => {
+      // Poll every 10 seconds if there are snapshots in progress
+      const hasInProgress = data?.snapshots?.some(
+        (s) => s.status === "creating" || s.status === "validating" || s.status === "deleting"
+      );
+      return hasInProgress ? 10000 : false; // 10 seconds when in progress, disabled otherwise
+    },
   });
 }
 
@@ -40,7 +47,15 @@ export function useWindowsSnapshotCoverage(version?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.coverage(version),
     queryFn: () => windowsSnapshotsApi.getCoverage(version),
-    refetchInterval: 30000, // Refetch every 30 seconds for live updates
+    refetchInterval: (data) => {
+      // Poll every 10 seconds if there are incomplete snapshots
+      const hasInProgress = data?.snapshots_by_region
+        ? Object.values(data.snapshots_by_region).some(
+            (s) => s.status === "creating" || s.status === "validating" || s.status === "deleting"
+          )
+        : false;
+      return hasInProgress ? 10000 : 30000; // 10 seconds when in progress, 30 seconds otherwise
+    },
   });
 }
 
