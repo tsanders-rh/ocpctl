@@ -168,8 +168,8 @@ EOF
 
 log_info "✓ DataVolume created, waiting for import to complete..."
 
-# Wait for import (40-50 minutes)
-MAX_WAIT=3600  # 1 hour
+# Wait for import (can take up to 90 minutes for cross-region S3 transfer)
+MAX_WAIT=7200  # 2 hours
 WAIT_TIME=0
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
     DV_PHASE=$(oc --kubeconfig="$KUBECONFIG" get datavolume windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
