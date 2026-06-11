@@ -1105,7 +1105,12 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 	if hasSelectedAddons {
 		// Resolve addons by addon_id (SelectedAddonIDs contains addon_id strings like "cnv" or "cnv:stable")
 		for _, addonRef := range addonNames {
-			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonRef)
+			// Parse addon reference format: "addonID" or "addonID:channel"
+			parts := strings.SplitN(addonRef, ":", 2)
+			addonID := parts[0]
+			// Note: channel part is preserved in addonRef and used later during full resolution
+
+			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
 			if err != nil {
 				return fmt.Errorf("failed to resolve addon %s: %w", addonRef, err)
 			}

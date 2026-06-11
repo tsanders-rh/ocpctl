@@ -118,10 +118,10 @@ if oc --kubeconfig="$KUBECONFIG" get storageclass gp3-csi &>/dev/null; then
     IMPORT_ZONE=$(echo "$WORKER_ZONES" | head -1)
     STORAGE_CLASS="gp3-csi-immediate-${IMPORT_ZONE}"
 
-    # Create zone-constrained storage class
+    # Create zone-constrained storage class (idempotent - handle AlreadyExists)
     if ! oc --kubeconfig="$KUBECONFIG" get storageclass "$STORAGE_CLASS" &>/dev/null; then
         log_info "Creating storage class: $STORAGE_CLASS"
-        cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+        if ! cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f - 2>&1 | grep -v "AlreadyExists"
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -139,6 +139,14 @@ allowedTopologies:
     values:
     - ${IMPORT_ZONE}
 EOF
+        then
+            # Check if it failed for a reason other than AlreadyExists
+            if ! oc --kubeconfig="$KUBECONFIG" get storageclass "$STORAGE_CLASS" &>/dev/null; then
+                log_error "Failed to create storage class and it doesn't exist"
+                exit 1
+            fi
+            log_info "Storage class already exists, continuing..."
+        fi
     fi
 else
     log_error "No supported storage class found"
@@ -246,8 +254,8 @@ EOF
 
 log_info "✓ VolumeSnapshot created, waiting for readyToUse..."
 
-# Wait for VolumeSnapshot to become ready (40-50 minutes)
-MAX_WAIT=3600
+# Wait for VolumeSnapshot to become ready (AWS EBS snapshots can take 60-90 minutes for 70GB volumes)
+MAX_WAIT=7200  # 2 hours
 WAIT_TIME=0
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
     READY_TO_USE=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
