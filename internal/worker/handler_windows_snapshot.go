@@ -138,7 +138,7 @@ func (h *WindowsSnapshotHandler) handleCopySnapshot(ctx context.Context, job *ty
 	fmt.Printf("✓ Published to SSM: %s\n", ssmPath)
 
 	// Update snapshot record with success (validated=true since source was validated)
-	if err := h.store.UpdateWindowsSnapshotValidation(ctx, snapshotID, true, &ssmPath); err != nil {
+	if err := h.store.UpdateWindowsSnapshotValidation(ctx, snapshotID, true, ssmPath); err != nil {
 		return fmt.Errorf("failed to update snapshot record: %w", err)
 	}
 
