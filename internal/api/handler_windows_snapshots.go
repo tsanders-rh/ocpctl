@@ -143,6 +143,12 @@ func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 	snapshotID := uuid.New().String()
 	jobID := uuid.New().String()
 
+	// Default creation method to "regenerate" if not specified
+	creationMethod := "regenerate"
+	if req.CreationMethod != nil && *req.CreationMethod != "" {
+		creationMethod = *req.CreationMethod
+	}
+
 	// Create job first (required for foreign key constraint)
 	job := &types.Job{
 		ID:          jobID,
@@ -152,10 +158,13 @@ func (h *WindowsSnapshotHandler) CreateWindowsSnapshot(c echo.Context) error {
 		Attempt:     1,
 		MaxAttempts: 1, // Snapshot creation should not retry (too expensive)
 		Metadata: types.JobMetadata{
-			"snapshot_id": snapshotID,
-			"region":      req.Region,
-			"version":     req.Version,
-			"s3_source":   req.S3SourceURL,
+			"snapshot_id":        snapshotID,
+			"region":             req.Region,
+			"version":            req.Version,
+			"s3_source":          req.S3SourceURL,
+			"creation_method":    creationMethod,
+			"source_snapshot_id": req.SourceSnapshotID,
+			"source_region":      req.SourceRegion,
 		},
 	}
 

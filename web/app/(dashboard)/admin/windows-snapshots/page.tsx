@@ -73,6 +73,9 @@ export default function WindowsSnapshotsPage() {
       region: "us-east-1",
       version: "1.0",
       s3_source_url: "",
+      creation_method: "regenerate",
+      source_snapshot_id: "",
+      source_region: "",
     });
 
   // Fetch data
@@ -97,6 +100,9 @@ export default function WindowsSnapshotsPage() {
         region: "us-east-1",
         version: "1.0",
         s3_source_url: "",
+        creation_method: "regenerate",
+        source_snapshot_id: "",
+        source_region: "",
       });
     } catch (error) {
       console.error("Failed to create snapshot:", error);
@@ -166,6 +172,14 @@ export default function WindowsSnapshotsPage() {
   };
 
   const snapshots = snapshotsData?.snapshots || [];
+
+  // Get available source regions for copying (regions with ready snapshots)
+  const availableSourceRegions =
+    coverage?.snapshots_by_region
+      ? Object.entries(coverage.snapshots_by_region)
+          .filter(([_, snapshot]) => snapshot.status === "ready")
+          .map(([region]) => region)
+      : [];
 
   return (
     <div className="space-y-6">
@@ -446,6 +460,77 @@ export default function WindowsSnapshotsPage() {
               </div>
 
               <div>
+                <Label>Creation Method *</Label>
+                <Select
+                  value={newSnapshot.creation_method || "regenerate"}
+                  onValueChange={(value) =>
+                    setNewSnapshot({
+                      ...newSnapshot,
+                      creation_method: value as "regenerate" | "copy",
+                      source_snapshot_id: value === "copy" ? newSnapshot.source_snapshot_id : "",
+                      source_region: value === "copy" ? newSnapshot.source_region : "",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="regenerate">
+                      Regenerate from S3 (85 min, ~$18)
+                    </SelectItem>
+                    <SelectItem
+                      value="copy"
+                      disabled={availableSourceRegions.length === 0}
+                    >
+                      Copy from existing snapshot (60 min, ~$0.05)
+                      {availableSourceRegions.length === 0 && " - No snapshots available"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {availableSourceRegions.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Copy requires at least one ready snapshot in another region
+                  </p>
+                )}
+              </div>
+
+              {newSnapshot.creation_method === "copy" && availableSourceRegions.length > 0 && (
+                <div>
+                  <Label>Source Region *</Label>
+                  <Select
+                    value={newSnapshot.source_region || ""}
+                    onValueChange={(value) => {
+                      const sourceSnapshot = coverage?.snapshots_by_region[value];
+                      setNewSnapshot({
+                        ...newSnapshot,
+                        source_region: value,
+                        source_snapshot_id: sourceSnapshot?.ebs_snapshot_id || "",
+                        version: sourceSnapshot?.version || newSnapshot.version,
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select source region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSourceRegions.map((region) => {
+                        const snapshot = coverage?.snapshots_by_region[region];
+                        return (
+                          <SelectItem key={region} value={region}>
+                            {region} (v{snapshot?.version || "?"}, {snapshot?.snapshot_size_gb || "?"}GB)
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Snapshot will be copied from this region
+                  </p>
+                </div>
+              )}
+
+              <div>
                 <Label>Version *</Label>
                 <Input
                   value={newSnapshot.version}
@@ -475,15 +560,33 @@ export default function WindowsSnapshotsPage() {
 
               <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Creating a snapshot will:
+                  <strong>Note:</strong>{" "}
+                  {newSnapshot.creation_method === "copy" ? (
+                    <>Copying a snapshot will:</>
+                  ) : (
+                    <>Regenerating a snapshot will:</>
+                  )}
                 </p>
                 <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc space-y-1">
-                  <li>Create a temporary OpenShift cluster (~$18 cost)</li>
-                  <li>Install OpenShift Virtualization</li>
-                  <li>Import Windows image from S3 (40-50 minutes)</li>
-                  <li>Validate by booting a test VM</li>
-                  <li>Publish to SSM Parameter Store</li>
-                  <li>Destroy temporary cluster</li>
+                  {newSnapshot.creation_method === "copy" ? (
+                    <>
+                      <li>Copy EBS snapshot to target region (~60 minutes)</li>
+                      <li>Add ocpctl tags to copied snapshot</li>
+                      <li>Publish to SSM Parameter Store</li>
+                      <li>Cost: ~$0.05 (snapshot copy transfer)</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Create a temporary OpenShift cluster (~$18 cost)</li>
+                      <li>Install OpenShift Virtualization</li>
+                      <li>Import Windows image from S3 (20 minutes)</li>
+                      <li>Create EBS snapshot (65 minutes)</li>
+                      <li>Validate by booting a test VM</li>
+                      <li>Publish to SSM Parameter Store</li>
+                      <li>Destroy temporary cluster</li>
+                      <li>Total time: ~85 minutes</li>
+                    </>
+                  )}
                 </ul>
               </div>
 
@@ -509,7 +612,9 @@ export default function WindowsSnapshotsPage() {
                   disabled={
                     createSnapshot.isPending ||
                     !newSnapshot.region ||
-                    !newSnapshot.version
+                    !newSnapshot.version ||
+                    (newSnapshot.creation_method === "copy" &&
+                      (!newSnapshot.source_region || !newSnapshot.source_snapshot_id))
                   }
                 >
                   {createSnapshot.isPending ? (

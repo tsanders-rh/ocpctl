@@ -35,9 +35,12 @@ type WindowsSnapshot struct {
 
 // CreateWindowsSnapshotRequest represents a request to create a new regional snapshot
 type CreateWindowsSnapshotRequest struct {
-	Region      string  `json:"region" validate:"required"`
-	Version     string  `json:"version" validate:"required"`
-	S3SourceURL *string `json:"s3_source_url,omitempty"`
+	Region           string  `json:"region" validate:"required"`
+	Version          string  `json:"version" validate:"required"`
+	S3SourceURL      *string `json:"s3_source_url,omitempty"`
+	CreationMethod   *string `json:"creation_method,omitempty"`   // "regenerate" or "copy"
+	SourceSnapshotID *string `json:"source_snapshot_id,omitempty"` // For copy method
+	SourceRegion     *string `json:"source_region,omitempty"`      // For copy method
 }
 
 // WindowsSnapshotCoverage represents snapshot availability across regions

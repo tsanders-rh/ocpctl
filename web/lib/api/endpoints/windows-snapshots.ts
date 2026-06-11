@@ -48,6 +48,9 @@ export interface CreateWindowsSnapshotRequest {
   region: string;
   version: string;
   s3_source_url?: string;
+  creation_method?: "regenerate" | "copy";
+  source_snapshot_id?: string;
+  source_region?: string;
 }
 
 export interface CreateWindowsSnapshotResponse {
