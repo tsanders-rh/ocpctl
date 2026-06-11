@@ -67,40 +67,6 @@ versions:
                   duration: 24h0m0s
                   renewBefore: 12h0m0s
 
-  - channel: stable-windows-s3only
-    displayName: "CNV Stable (4.18) + Windows VM Support (S3 Only - No Snapshots)"
-    isDefault: false
-    config:
-      scripts:
-        - name: setup-windows-vm-infrastructure
-          description: Setup Windows VM infrastructure with IRSA and S3 image import (pre-snapshot version for testing)
-          path: windows-vm/auto-setup-irsa-s3only.sh
-          timeout: "5h"
-          dependsOn:
-            - kubevirt-hyperconverged
-
-      operators:
-        - name: kubevirt-hyperconverged
-          namespace: openshift-cnv
-          source: redhat-operators
-          channel: stable
-          customResource:
-            apiVersion: hco.kubevirt.io/v1beta1
-            kind: HyperConverged
-            name: kubevirt-hyperconverged
-            namespace: openshift-cnv
-            spec:
-              featureGates:
-                deployKubeSecondaryDNS: false
-                enableCommonBootImageImport: true
-              certConfig:
-                ca:
-                  duration: 48h0m0s
-                  renewBefore: 24h0m0s
-                server:
-                  duration: 24h0m0s
-                  renewBefore: 12h0m0s
-
 metadata:
   requiresBareMetal: true
   conflictsWith:
