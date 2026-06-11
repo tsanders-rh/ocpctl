@@ -254,10 +254,22 @@ while [ $WAIT_TIME -lt $MAX_WAIT ]; do
         exit 1
     fi
 
-    # Log progress every 5 minutes
+    # Log progress every 5 minutes with additional details
     if [ $((WAIT_TIME % 300)) -eq 0 ] && [ $WAIT_TIME -gt 0 ]; then
         ELAPSED_MIN=$((WAIT_TIME / 60))
-        log_info "  Snapshot creation in progress... Elapsed: ${ELAPSED_MIN}m"
+
+        # Get current status details
+        SNAPSHOT_STATUS=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
+            -o jsonpath='{.status}' 2>/dev/null || echo "{}")
+
+        CONTENT_NAME=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
+            -o jsonpath='{.status.boundVolumeSnapshotContentName}' 2>/dev/null || echo "")
+
+        if [ -n "$CONTENT_NAME" ]; then
+            log_info "  Snapshot creation in progress... Elapsed: ${ELAPSED_MIN}m (VolumeSnapshotContent: $CONTENT_NAME)"
+        else
+            log_info "  Snapshot creation in progress... Elapsed: ${ELAPSED_MIN}m (waiting for VolumeSnapshotContent)"
+        fi
     fi
 
     sleep 10
@@ -266,6 +278,23 @@ done
 
 if [ $WAIT_TIME -ge $MAX_WAIT ]; then
     log_error "Snapshot creation timeout"
+
+    # Dump diagnostic information
+    log_info "VolumeSnapshot status:"
+    oc --kubeconfig="$KUBECONFIG" get volumesnapshot $SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE -o yaml || true
+
+    log_info "VolumeSnapshotContent status:"
+    CONTENT_NAME=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot $SNAPSHOT_NAME -n $SERVICE_ACCOUNT_NAMESPACE \
+        -o jsonpath='{.status.boundVolumeSnapshotContentName}' 2>/dev/null || echo "")
+    if [ -n "$CONTENT_NAME" ]; then
+        oc --kubeconfig="$KUBECONFIG" get volumesnapshotcontent $CONTENT_NAME -o yaml || true
+    else
+        log_warn "No VolumeSnapshotContent bound yet"
+    fi
+
+    log_info "Recent events:"
+    oc --kubeconfig="$KUBECONFIG" get events -n $SERVICE_ACCOUNT_NAMESPACE --sort-by='.lastTimestamp' | tail -20 || true
+
     exit 1
 fi
 
