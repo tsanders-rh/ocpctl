@@ -215,16 +215,33 @@ func (h *WindowsSnapshotHandler) handleRegenerateSnapshot(ctx context.Context, j
 		return fmt.Errorf("run snapshot creation script: %w", err)
 	}
 
-	// Step 5: Update snapshot record with success
-	fmt.Printf("✓ Snapshot created successfully: %s\n", ebsSnapshotID)
+	fmt.Printf("✓ VolumeSnapshot created successfully: %s (cluster-scoped)\n", ebsSnapshotID)
+
+	// Step 5: Create persistent EBS copy that survives cluster deletion
+	fmt.Println("Step 5: Creating persistent EBS snapshot copy...")
+	persistentSnapshotID, err := h.createPersistentCopy(ctx, ebsSnapshotID, region, version)
+	if err != nil {
+		errMsg := fmt.Sprintf("Failed to create persistent snapshot copy: %v", err)
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf("create persistent copy: %w", err)
+	}
+
+	fmt.Printf("✓ Persistent snapshot created: %s (survives cluster deletion)\n", persistentSnapshotID)
+
+	// Step 6: Update snapshot record with persistent snapshot ID
 	if err := h.store.UpdateWindowsSnapshotValidation(ctx, snapshotID, true, ssmPath); err != nil {
 		return fmt.Errorf("failed to update snapshot record: %w", err)
 	}
 
-	// Also update EBS snapshot ID
+	// Update with persistent EBS snapshot ID (not the temporary VolumeSnapshot one)
 	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1 WHERE id = $2`
-	if _, err := h.store.DB().Exec(ctx, updateQuery, ebsSnapshotID, snapshotID); err != nil {
+	if _, err := h.store.DB().Exec(ctx, updateQuery, persistentSnapshotID, snapshotID); err != nil {
 		return fmt.Errorf("failed to update EBS snapshot ID: %w", err)
+	}
+
+	// Update SSM Parameter Store with persistent snapshot
+	if err := h.publishToSSM(ctx, region, ssmPath, persistentSnapshotID); err != nil {
+		fmt.Printf("Warning: Failed to update SSM parameter: %v\n", err)
 	}
 
 	fmt.Println("✓ Windows snapshot creation completed successfully!")
@@ -491,7 +508,116 @@ func (h *WindowsSnapshotHandler) waitForJobCompletion(ctx context.Context, jobID
 	return fmt.Errorf("timeout waiting for job to complete")
 }
 
-// copyEBSSnapshot copies an EBS snapshot from one region to another
+// createPersistentCopy creates a standalone EBS snapshot copy in the same region
+// that persists after the source cluster/VolumeSnapshot is deleted.
+//
+// The Kubernetes VolumeSnapshot is tied to the cluster lifecycle - when the cluster
+// is destroyed, the VolumeSnapshot and its underlying EBS snapshot are deleted.
+// This function creates a persistent copy that survives cluster deletion.
+func (h *WindowsSnapshotHandler) createPersistentCopy(ctx context.Context, sourceSnapshotID, region, version string) (string, error) {
+	description := fmt.Sprintf("Windows 10 OADP v%s (persistent copy)", version)
+
+	fmt.Printf("  Creating persistent copy of %s in %s...\n", sourceSnapshotID, region)
+
+	// Use copy-snapshot in same region to create a standalone snapshot
+	cmd := exec.CommandContext(ctx, "aws", "ec2", "copy-snapshot",
+		"--source-region", region,
+		"--source-snapshot-id", sourceSnapshotID,
+		"--destination-region", region,
+		"--description", description,
+		"--region", region,
+		"--output", "json",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("aws ec2 copy-snapshot failed: %w\nOutput: %s", err, string(output))
+	}
+
+	// Parse snapshot ID from response
+	var result struct {
+		SnapshotID string `json:"SnapshotId"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", fmt.Errorf("parse copy-snapshot response: %w", err)
+	}
+
+	persistentSnapshotID := result.SnapshotID
+	fmt.Printf("  Persistent copy initiated: %s (waiting for completion...)\n", persistentSnapshotID)
+
+	// Same-region copies are fast (typically 2-5 minutes for 70GB snapshot)
+	// Use shorter timeout than cross-region
+	deadline := time.Now().Add(15 * time.Minute)
+	for time.Now().Before(deadline) {
+		// Check snapshot status
+		statusCmd := exec.CommandContext(ctx, "aws", "ec2", "describe-snapshots",
+			"--snapshot-ids", persistentSnapshotID,
+			"--region", region,
+			"--query", "Snapshots[0].[Progress,State]",
+			"--output", "json",
+		)
+
+		statusOutput, err := statusCmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("describe-snapshots failed: %w\nOutput: %s", err, string(statusOutput))
+		}
+
+		var status [2]string
+		if err := json.Unmarshal(statusOutput, &status); err != nil {
+			return "", fmt.Errorf("parse snapshot status: %w", err)
+		}
+
+		progress, state := status[0], status[1]
+		fmt.Printf("  Persistent copy progress: %s (%s)\n", progress, state)
+
+		if state == "completed" {
+			fmt.Printf("  ✓ Persistent snapshot ready: %s\n", persistentSnapshotID)
+
+			// Add ocpctl tags to mark it as managed and persistent
+			if err := h.tagPersistentSnapshot(ctx, persistentSnapshotID, region, version, sourceSnapshotID); err != nil {
+				return "", fmt.Errorf("tag persistent snapshot: %w", err)
+			}
+
+			return persistentSnapshotID, nil
+		} else if state == "error" {
+			return "", fmt.Errorf("snapshot copy failed with error state")
+		}
+
+		time.Sleep(30 * time.Second) // Poll more frequently for same-region copies
+	}
+
+	return "", fmt.Errorf("timeout waiting for persistent snapshot copy to complete")
+}
+
+// tagPersistentSnapshot adds metadata tags to identify persistent snapshots
+func (h *WindowsSnapshotHandler) tagPersistentSnapshot(ctx context.Context, snapshotID, region, version, sourceSnapshotID string) error {
+	tags := []string{
+		"Key=Name,Value=ocpctl-windows-10-oadp-v" + version,
+		"Key=ocpctl:managed,Value=true",
+		"Key=ocpctl:image-version,Value=" + version,
+		"Key=ocpctl:region,Value=" + region,
+		"Key=ocpctl:validated,Value=true",
+		"Key=ocpctl:persistent,Value=true",
+		"Key=ocpctl:source-snapshot,Value=" + sourceSnapshotID,
+		"Key=ocpctl:creation-method,Value=persistent-copy",
+	}
+
+	cmd := exec.CommandContext(ctx, "aws", "ec2", "create-tags",
+		"--resources", snapshotID,
+		"--region", region,
+		"--tags", strings.Join(tags, " "),
+	)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("create-tags failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("  ✓ Tagged persistent snapshot: %s\n", snapshotID)
+	return nil
+}
+
+// copyEBSSnapshot copies an EBS snapshot from one region to another for cross-region availability.
+// Used by the UI when creating regional snapshots via the "copy" method.
 func (h *WindowsSnapshotHandler) copyEBSSnapshot(ctx context.Context, sourceSnapshotID, sourceRegion, destRegion, version string) (string, error) {
 	description := fmt.Sprintf("Windows 10 OADP v%s (copied from %s)", version, sourceRegion)
 
