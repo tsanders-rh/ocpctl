@@ -1502,8 +1502,34 @@ elif [ "$DV_PHASE" = "Succeeded" ] && [ "$IMPORT_METHOD" = "snapshot" ]; then
     CLUSTER_SNAPSHOT_NAME="windows-golden-snapshot-v${SNAPSHOT_VERSION}"
     log_info ""
     log_info "Fast path deployment - using existing regional EBS snapshot"
-    log_info "Skipping cluster-local snapshot creation (pristine PVC already from snapshot)"
-    log_info "Future VMs will use direct VolumeSnapshot restore (fast path)"
+    log_info "Creating golden VolumeSnapshot from pristine PVC for VM cloning..."
+
+    # Create golden snapshot from the windows PVC for VM cloning
+    oc --kubeconfig="$KUBECONFIG" delete volumesnapshot "$CLUSTER_SNAPSHOT_NAME" -n $SERVICE_ACCOUNT_NAMESPACE --ignore-not-found=true
+    cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: ${CLUSTER_SNAPSHOT_NAME}
+  namespace: ${SERVICE_ACCOUNT_NAMESPACE}
+spec:
+  source:
+    persistentVolumeClaimName: windows
+  volumeSnapshotClassName: csi-aws-vsc
+EOF
+
+    # Wait for snapshot to be ready
+    log_info "Waiting for golden snapshot to be ready..."
+    for i in {1..60}; do
+        SNAPSHOT_READY=$(oc --kubeconfig="$KUBECONFIG" get volumesnapshot "$CLUSTER_SNAPSHOT_NAME" -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.status.readyToUse}' 2>/dev/null || echo "false")
+        if [ "$SNAPSHOT_READY" = "true" ]; then
+            log_info "✓ Golden VolumeSnapshot ready: $CLUSTER_SNAPSHOT_NAME"
+            break
+        fi
+        sleep 2
+    done
+
+    log_info "Future VMs will use VolumeSnapshot restore (fast path)"
 fi
 
 # Step 8: Create VM template for users
