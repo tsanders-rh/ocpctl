@@ -152,99 +152,82 @@ func (h *WindowsSnapshotHandler) handleCopySnapshot(ctx context.Context, job *ty
 	return nil
 }
 
-// handleRegenerateSnapshot creates a new snapshot from scratch using a temporary cluster
+// handleRegenerateSnapshot creates a new snapshot from S3 using AWS import-snapshot API
 func (h *WindowsSnapshotHandler) handleRegenerateSnapshot(ctx context.Context, job *types.Job, snapshot *types.WindowsSnapshot) error {
 	snapshotID := snapshot.ID
 	region := snapshot.Region
 	version := snapshot.Version
-	s3SourceURL := "s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
-	if snapshot.S3SourceURL != nil {
-		s3SourceURL = *snapshot.S3SourceURL
+
+	// Only support us-east-1 for import (where S3 bucket is located)
+	// Other regions should use the copy method
+	if region != "us-east-1" {
+		errMsg := "Import from S3 only supported in us-east-1. Use copy method for other regions."
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf(errMsg)
 	}
 
-	fmt.Printf("Regenerating Windows snapshot from S3: region=%s version=%s\n", region, version)
+	fmt.Printf("Importing Windows snapshot from S3: region=%s version=%s\n", region, version)
 
 	// Update status to creating
 	if err := h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusCreating, nil); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
-	// Step 1: Create temporary cluster
-	fmt.Println("Step 1: Creating temporary cluster for snapshot creation...")
-	tempClusterID, err := h.createTemporaryCluster(ctx, region, version)
+	// Step 1: Start import-snapshot task
+	fmt.Println("Step 1: Starting AWS import-snapshot from S3...")
+	importTaskID, err := h.startImportSnapshot(ctx, region, version)
 	if err != nil {
-		errMsg := fmt.Sprintf("Failed to create temporary cluster: %v", err)
+		errMsg := fmt.Sprintf("Failed to start import-snapshot: %v", err)
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("create temporary cluster: %w", err)
+		return fmt.Errorf("start import-snapshot: %w", err)
 	}
 
-	// Ensure cleanup happens even if we fail later
-	defer func() {
-		fmt.Println("Cleaning up temporary cluster...")
-		if cleanupErr := h.destroyTemporaryCluster(ctx, tempClusterID); cleanupErr != nil {
-			fmt.Printf("Warning: Failed to cleanup temporary cluster %s: %v\n", tempClusterID, cleanupErr)
-		}
-	}()
+	fmt.Printf("✓ Import task started: %s\n", importTaskID)
 
-	// Step 2: Wait for cluster to be ready
-	fmt.Println("Step 2: Waiting for temporary cluster to be ready...")
-	if err := h.waitForClusterReady(ctx, tempClusterID, 60*time.Minute); err != nil {
-		errMsg := fmt.Sprintf("Temporary cluster failed to become ready: %v", err)
-		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("wait for cluster ready: %w", err)
-	}
-
-	// Step 3: Wait for CNV operators to be ready
-	fmt.Println("Step 3: Waiting for CNV operators to be ready...")
-	if err := h.waitForCNVReady(ctx, tempClusterID, 15*time.Minute); err != nil {
-		errMsg := fmt.Sprintf("CNV installation failed: %v", err)
-		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("wait for CNV installation: %w", err)
-	}
-
-	// Step 4: Run snapshot creation script
-	fmt.Println("Step 4: Running snapshot creation script...")
+	// Step 2: Wait for import to complete
+	fmt.Println("Step 2: Waiting for import to complete (estimated 30-60 minutes)...")
 	if err := h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusValidating, nil); err != nil {
 		return fmt.Errorf("failed to update status to validating: %w", err)
 	}
 
-	ebsSnapshotID, ssmPath, err := h.runSnapshotCreationScript(ctx, tempClusterID, region, version, s3SourceURL)
+	ebsSnapshotID, err := h.waitForImportComplete(ctx, importTaskID, region)
 	if err != nil {
-		errMsg := fmt.Sprintf("Snapshot creation script failed: %v", err)
+		errMsg := fmt.Sprintf("Import failed: %v", err)
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("run snapshot creation script: %w", err)
+		return fmt.Errorf("wait for import complete: %w", err)
 	}
 
-	fmt.Printf("✓ VolumeSnapshot created successfully: %s (cluster-scoped)\n", ebsSnapshotID)
+	fmt.Printf("✓ Import completed successfully: %s\n", ebsSnapshotID)
 
-	// Step 5: Create persistent EBS copy that survives cluster deletion
-	fmt.Println("Step 5: Creating persistent EBS snapshot copy...")
-	persistentSnapshotID, err := h.createPersistentCopy(ctx, ebsSnapshotID, region, version)
-	if err != nil {
-		errMsg := fmt.Sprintf("Failed to create persistent snapshot copy: %v", err)
-		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf("create persistent copy: %w", err)
+	// Step 3: Tag the snapshot
+	fmt.Println("Step 3: Tagging EBS snapshot...")
+	if err := h.tagSnapshot(ctx, ebsSnapshotID, region, version); err != nil {
+		fmt.Printf("Warning: Failed to tag snapshot: %v\n", err)
 	}
 
-	fmt.Printf("✓ Persistent snapshot created: %s (survives cluster deletion)\n", persistentSnapshotID)
+	// Step 4: Publish to SSM Parameter Store
+	fmt.Println("Step 4: Publishing to SSM Parameter Store...")
+	ssmPath := fmt.Sprintf("/ocpctl/windows-snapshots/%s/%s", version, region)
+	if err := h.publishToSSM(ctx, region, ssmPath, ebsSnapshotID); err != nil {
+		errMsg := fmt.Sprintf("Failed to publish to SSM: %v", err)
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf("publish to SSM: %w", err)
+	}
 
-	// Step 6: Update snapshot record with persistent snapshot ID
+	fmt.Printf("✓ Published to SSM: %s\n", ssmPath)
+
+	// Step 5: Update snapshot record with success
 	if err := h.store.UpdateWindowsSnapshotValidation(ctx, snapshotID, true, ssmPath); err != nil {
 		return fmt.Errorf("failed to update snapshot record: %w", err)
 	}
 
-	// Update with persistent EBS snapshot ID (not the temporary VolumeSnapshot one)
-	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1 WHERE id = $2`
-	if _, err := h.store.DB().Exec(ctx, updateQuery, persistentSnapshotID, snapshotID); err != nil {
+	// Update with EBS snapshot ID and size
+	updateQuery := `UPDATE windows_snapshots SET ebs_snapshot_id = $1, snapshot_size_gb = 70 WHERE id = $2`
+	if _, err := h.store.DB().Exec(ctx, updateQuery, ebsSnapshotID, snapshotID); err != nil {
 		return fmt.Errorf("failed to update EBS snapshot ID: %w", err)
 	}
 
-	// Update SSM Parameter Store with persistent snapshot
-	if err := h.publishToSSM(ctx, region, ssmPath, persistentSnapshotID); err != nil {
-		fmt.Printf("Warning: Failed to update SSM parameter: %v\n", err)
-	}
-
-	fmt.Println("✓ Windows snapshot creation completed successfully!")
+	fmt.Println("✓ Windows snapshot import completed successfully!")
 	return nil
 }
 
@@ -699,6 +682,143 @@ func (h *WindowsSnapshotHandler) tagCopiedSnapshot(ctx context.Context, snapshot
 		"Key=ocpctl:region,Value=" + region,
 		"Key=ocpctl:validated,Value=true",
 		"Key=ocpctl:creation-method,Value=copy",
+	}
+
+	args := []string{"ec2", "create-tags",
+		"--resources", snapshotID,
+		"--region", region,
+		"--tags"}
+	args = append(args, tags...)
+
+	cmd := exec.CommandContext(ctx, "aws", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("create-tags failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("  ✓ Tagged snapshot %s\n", snapshotID)
+	return nil
+}
+
+// startImportSnapshot starts an AWS import-snapshot task from S3
+func (h *WindowsSnapshotHandler) startImportSnapshot(ctx context.Context, region, version string) (string, error) {
+	s3Bucket := "ocpctl-binaries"
+	s3Key := "windows-images/windows-10-oadp.raw"
+	description := fmt.Sprintf("Windows 10 OADP v%s - %s", version, region)
+
+	cmd := exec.CommandContext(ctx, "aws", "ec2", "import-snapshot",
+		"--description", description,
+		"--region", region,
+		"--disk-container", fmt.Sprintf("Format=RAW,UserBucket={S3Bucket=%s,S3Key=%s}", s3Bucket, s3Key),
+		"--output", "json",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("import-snapshot failed: %w\nOutput: %s", err, string(output))
+	}
+
+	var result struct {
+		ImportTaskID string `json:"ImportTaskId"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", fmt.Errorf("parse import-snapshot response: %w", err)
+	}
+
+	if result.ImportTaskID == "" {
+		return "", fmt.Errorf("ImportTaskId not found in response: %s", string(output))
+	}
+
+	return result.ImportTaskID, nil
+}
+
+// waitForImportComplete polls import-snapshot task until completion
+func (h *WindowsSnapshotHandler) waitForImportComplete(ctx context.Context, importTaskID, region string) (string, error) {
+	deadline := time.Now().Add(2 * time.Hour) // Import can take 30-60 minutes
+	lastProgress := ""
+	lastStatus := ""
+
+	for time.Now().Before(deadline) {
+		cmd := exec.CommandContext(ctx, "aws", "ec2", "describe-import-snapshot-tasks",
+			"--region", region,
+			"--import-task-ids", importTaskID,
+			"--output", "json",
+		)
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("describe-import-snapshot-tasks failed: %w\nOutput: %s", err, string(output))
+		}
+
+		var result struct {
+			ImportSnapshotTasks []struct {
+				SnapshotTaskDetail struct {
+					Status      string `json:"Status"`
+					StatusMessage string `json:"StatusMessage"`
+					Progress    string `json:"Progress"`
+					SnapshotID  string `json:"SnapshotId"`
+				} `json:"SnapshotTaskDetail"`
+			} `json:"ImportSnapshotTasks"`
+		}
+
+		if err := json.Unmarshal(output, &result); err != nil {
+			return "", fmt.Errorf("parse describe-import-snapshot-tasks response: %w", err)
+		}
+
+		if len(result.ImportSnapshotTasks) == 0 {
+			return "", fmt.Errorf("import task %s not found", importTaskID)
+		}
+
+		detail := result.ImportSnapshotTasks[0].SnapshotTaskDetail
+		status := detail.Status
+		progress := detail.Progress
+		snapshotID := detail.SnapshotID
+
+		// Log progress if changed
+		if progress != lastProgress || status != lastStatus {
+			if progress != "" {
+				fmt.Printf("  Import progress: %s%% (status: %s)\n", progress, status)
+			} else {
+				fmt.Printf("  Import status: %s\n", status)
+			}
+			lastProgress = progress
+			lastStatus = status
+		}
+
+		// Check completion
+		if status == "completed" {
+			if snapshotID == "" {
+				return "", fmt.Errorf("import completed but no snapshot ID returned")
+			}
+			return snapshotID, nil
+		}
+
+		if status == "deleted" || status == "deleting" {
+			return "", fmt.Errorf("import task was deleted")
+		}
+
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(30 * time.Second):
+			// Continue polling
+		}
+	}
+
+	return "", fmt.Errorf("import timeout (2 hours exceeded)")
+}
+
+// tagSnapshot tags an EBS snapshot with ocpctl metadata
+func (h *WindowsSnapshotHandler) tagSnapshot(ctx context.Context, snapshotID, region, version string) error {
+	tags := []string{
+		"Key=Name,Value=ocpctl-windows-10-oadp-v" + version,
+		"Key=ocpctl:managed,Value=true",
+		"Key=ocpctl:image-version,Value=" + version,
+		"Key=ocpctl:region,Value=" + region,
+		"Key=ocpctl:persistent,Value=true",
+		"Key=ocpctl:source-s3,Value=s3://ocpctl-binaries/windows-images/windows-10-oadp.raw",
+		"Key=ocpctl:creation-method,Value=import-snapshot-api",
 	}
 
 	args := []string{"ec2", "create-tags",
