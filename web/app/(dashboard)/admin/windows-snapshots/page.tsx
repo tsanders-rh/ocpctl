@@ -477,13 +477,13 @@ export default function WindowsSnapshotsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="regenerate">
-                      Regenerate from S3 (85 min, ~$18)
+                      Regenerate from S3 (30 min, ~$0)
                     </SelectItem>
                     <SelectItem
                       value="copy"
                       disabled={availableSourceRegions.length === 0}
                     >
-                      Copy from existing snapshot (60 min, ~$0.05)
+                      Copy from existing snapshot (15 min, ~$0.05)
                       {availableSourceRegions.length === 0 && " - No snapshots available"}
                     </SelectItem>
                   </SelectContent>
@@ -551,10 +551,10 @@ export default function WindowsSnapshotsPage() {
                       s3_source_url: e.target.value,
                     })
                   }
-                  placeholder="s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2"
+                  placeholder="s3://ocpctl-binaries/windows-images/windows-10-oadp.raw"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Leave blank to use default Windows image
+                  Leave blank to use default Windows image (must be RAW format for import-snapshot)
                 </p>
               </div>
 
@@ -570,21 +570,19 @@ export default function WindowsSnapshotsPage() {
                 <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc space-y-1">
                   {newSnapshot.creation_method === "copy" ? (
                     <>
-                      <li>Copy EBS snapshot to target region (~60 minutes)</li>
+                      <li>Copy EBS snapshot to target region (~15 minutes)</li>
                       <li>Add ocpctl tags to copied snapshot</li>
                       <li>Publish to SSM Parameter Store</li>
                       <li>Cost: ~$0.05 (snapshot copy transfer)</li>
                     </>
                   ) : (
                     <>
-                      <li>Create a temporary OpenShift cluster (~$18 cost)</li>
-                      <li>Install OpenShift Virtualization</li>
-                      <li>Import Windows image from S3 (20 minutes)</li>
-                      <li>Create EBS snapshot (65 minutes)</li>
-                      <li>Validate by booting a test VM</li>
+                      <li>Import Windows RAW image from S3 using AWS import-snapshot API</li>
+                      <li>Wait for import to complete (~30 minutes for 70GB)</li>
+                      <li>Tag snapshot with ocpctl metadata</li>
                       <li>Publish to SSM Parameter Store</li>
-                      <li>Destroy temporary cluster</li>
-                      <li>Total time: ~85 minutes</li>
+                      <li>Total time: ~30 minutes</li>
+                      <li>Cost: ~$0 (import-snapshot is free)</li>
                     </>
                   )}
                 </ul>
