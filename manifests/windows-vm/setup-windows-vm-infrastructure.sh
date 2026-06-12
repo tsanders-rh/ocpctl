@@ -759,8 +759,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
 
-# Note: Template uses PVC cloning, not snapshot restore
-# For faster provisioning, create regional snapshots via create-regional-snapshot.sh
+# Note: Template creates VMs from windows-source-snapshot (VolumeSnapshot restore)
+# windows-source-snapshot is populated from EBS snapshot (fast) or S3 import (slow)
+# For faster provisioning in new regions, create regional snapshots via Snapshot Management UI
 cat "${SCRIPT_DIR}/4_windows10-template.yaml" | envsubst '${STORAGE_CLASS}' | oc --kubeconfig="$KUBECONFIG" apply -f -
 log_info "✓ VM Template created: windows10-oadp-vm"
 
@@ -770,8 +771,7 @@ log_info "Creating default Windows VM from template..."
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-vm \
     -p VM_NAMESPACE=$SERVICE_ACCOUNT_NAMESPACE \
-    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} \
-    -p SNAPSHOT_NAME=windows-source-snapshot | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
 
 log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  VM is created but not started - start via OpenShift Console or CLI"

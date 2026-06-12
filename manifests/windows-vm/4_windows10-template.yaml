@@ -187,5 +187,5 @@ parameters:
     required: true
   - name: SNAPSHOT_NAME
     description: "VolumeSnapshot name to restore VM disk from (enables fast CSI snapshot restore)"
-    value: "windows-golden-snapshot-v1.0"
+    value: "windows-source-snapshot"
     required: true
