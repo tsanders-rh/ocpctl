@@ -419,7 +419,7 @@ func (h *CreateHandler) createPoolLeaseServiceAccount(ctx context.Context, clust
 	log.Printf("Creating ServiceAccount for pool cluster %s", cluster.Name)
 
 	// Get pool to determine lease duration
-	pool, err := h.store.ClusterPools.GetByID(ctx, *cluster.PoolID)
+	pool, err := h.store.Pools.GetByID(ctx, *cluster.PoolID)
 	if err != nil {
 		return fmt.Errorf("get pool for SA creation: %w", err)
 	}
