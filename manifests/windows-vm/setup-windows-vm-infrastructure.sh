@@ -742,6 +742,38 @@ if [ $WAIT_TIME -ge $MAX_WAIT ]; then
 fi
 
 ##############################################################################
+# Wait for CNV Webhook Services
+##############################################################################
+
+log_info ""
+log_info "Waiting for CNV webhook services to be ready..."
+
+# Wait for kubemacpool-service to have endpoints
+# This prevents "no endpoints available for service kubemacpool-service" errors
+# when creating VMs immediately after CNV installation
+MAX_WAIT=300
+ELAPSED=0
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    ENDPOINTS=$(oc --kubeconfig="$KUBECONFIG" get endpoints kubemacpool-service -n openshift-cnv -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+    if [ -n "$ENDPOINTS" ]; then
+        log_info "✓ CNV webhook services ready"
+        break
+    fi
+
+    if [ $((ELAPSED % 30)) -eq 0 ]; then
+        log_info "Still waiting for CNV webhooks... (${ELAPSED}s elapsed)"
+    fi
+
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+done
+
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+    log_error "Timeout waiting for CNV webhook services after ${MAX_WAIT}s"
+    exit 1
+fi
+
+##############################################################################
 # Create VM Template
 ##############################################################################
 
