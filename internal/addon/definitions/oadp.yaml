@@ -47,3 +47,42 @@ versions:
                   enable: true
                   uploaderType: kopia
                 {{- end}}
+
+  - channel: stable-1.6
+    displayName: "OADP 1.6"
+    isDefault: false
+    config:
+      operators:
+        - name: redhat-oadp-operator
+          namespace: openshift-adp
+          source: redhat-operators
+          channel: stable-1.6
+      manifests:
+        - name: oadp-dpa-config
+          description: "DataProtectionApplication configuration (platform and profile-aware)"
+          content: |
+            apiVersion: oadp.openshift.io/v1alpha1
+            kind: DataProtectionApplication
+            metadata:
+              name: oadp-dpa
+              namespace: openshift-adp
+            spec:
+              configuration:
+                velero:
+                  defaultPlugins:
+                    - openshift
+                    {{- if or (eq .Platform "aws") (eq .Platform "ibmcloud")}}
+                    - aws
+                    {{- end}}
+                    {{- if contains .Profile "virt"}}
+                    - kubevirt
+                    - csi
+                    {{- end}}
+                  {{- if contains .Profile "virt"}}
+                  resourceTimeout: 10m
+                  {{- end}}
+                {{- if contains .Profile "virt"}}
+                nodeAgent:
+                  enable: true
+                  uploaderType: kopia
+                {{- end}}
