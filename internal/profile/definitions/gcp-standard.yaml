@@ -16,7 +16,8 @@ openshiftVersions:
     - "4.21.8"
     - "4.21.9"
     - "4.21.10"
-  default: "4.20.3"
+    - "4.22.0"
+  default: "4.22.0"
 
 regions:
   allowlist:

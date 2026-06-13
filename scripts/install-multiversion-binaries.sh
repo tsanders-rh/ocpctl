@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install openshift-install and ccoctl binaries for multiple OpenShift versions
-# Supports: 4.18, 4.19, 4.20, 4.21, 4.22 (dev-preview)
+# Supports: 4.18, 4.19, 4.20, 4.21, 4.22
 
 set -e
 
@@ -15,7 +15,7 @@ echo "  - OpenShift 4.18 (Kubernetes 1.31)"
 echo "  - OpenShift 4.19 (Kubernetes 1.32)"
 echo "  - OpenShift 4.20 (Kubernetes 1.33)"
 echo "  - OpenShift 4.21 (Kubernetes 1.34)"
-echo "  - OpenShift 4.22 (Developer Preview - Early Candidate)"
+echo "  - OpenShift 4.22 (GA)"
 echo ""
 echo "Installation directory: $INSTALL_DIR"
 echo "Total download size: ~6GB"
@@ -41,9 +41,9 @@ for VERSION in "${VERSIONS[@]}"; do
 
   # Determine mirror path and version based on whether this is dev-preview
   if [ "$VERSION" = "4.22" ]; then
-    MIRROR_PATH="ocp-dev-preview"
-    FULL_VERSION="4.22.0-ec.5"
-    echo "Using dev-preview version: $FULL_VERSION"
+    MIRROR_PATH="ocp"
+    FULL_VERSION="4.22.0"
+    echo "Using GA version: $FULL_VERSION"
   else
     MIRROR_PATH="ocp"
     FULL_VERSION="stable-$VERSION"
@@ -140,5 +140,5 @@ echo "   sudo journalctl -u ocpctl-worker -f"
 echo ""
 echo "3. Create clusters with different versions through the web UI"
 echo "   Available stable versions: 4.18.35, 4.19.23, 4.20.3, 4.20.4, 4.20.5"
-echo "   Available dev-preview: 4.22.0-ec.5 (RHEL9 FIPS-enabled)"
+echo "   Available GA: 4.22.0"
 echo ""

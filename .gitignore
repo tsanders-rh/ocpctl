@@ -109,3 +109,4 @@ pull-secret.txt
 !*.pub
 credentials.json
 secrets.yaml
+manifests/windows-vm/accesskey

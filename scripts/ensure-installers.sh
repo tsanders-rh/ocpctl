@@ -13,8 +13,8 @@ declare -A DEFAULT_PATCHES
 DEFAULT_PATCHES["4.18"]="4.18.35"
 DEFAULT_PATCHES["4.19"]="4.19.23"
 DEFAULT_PATCHES["4.20"]="4.20.3"
-DEFAULT_PATCHES["4.21"]="4.21.0"
-DEFAULT_PATCHES["4.22"]="4.22.0-ec.5"
+DEFAULT_PATCHES["4.21"]="4.21.9"
+DEFAULT_PATCHES["4.22"]="4.22.0"
 
 log() {
     echo "[ensure-installers] $1"
@@ -59,7 +59,7 @@ download_from_mirror() {
     local full_version=$1
     local binary=$2
     # Extract major.minor version, stripping pre-release suffix if present
-    # e.g., "4.22.0-ec.5" -> "4.22.0" -> "4.22"
+    # e.g., "4.22.0" -> "4.22", "4.23.0-ec.1" -> "4.23"
     local base_version=$(echo "$full_version" | cut -d- -f1)
     local version=$(echo "$base_version" | cut -d. -f1,2)
     local local_path="${INSTALL_DIR}/${binary}-${version}"
@@ -67,13 +67,13 @@ download_from_mirror() {
     log "Downloading ${binary} ${full_version} from mirror.openshift.com..."
 
     # oc client has different tarball name
-    # Use RHEL9 tarball for 4.22.0-ec.5 (FIPS-enabled)
+    # Dev-preview RHEL9 FIPS builds use different tarball names
     local tarball_name="${binary}-linux.tar.gz"
     if [ "$binary" = "oc" ]; then
         tarball_name="openshift-client-linux.tar.gz"
-    elif [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+    elif [ "$binary" = "openshift-install" ] && is_dev_preview_version "$full_version"; then
         tarball_name="openshift-install-rhel9-amd64.tar.gz"
-    elif [ "$binary" = "ccoctl" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+    elif [ "$binary" = "ccoctl" ] && is_dev_preview_version "$full_version"; then
         tarball_name="ccoctl-rhel9-amd64.tar.gz"
     fi
 
@@ -92,11 +92,11 @@ download_from_mirror() {
         # RHEL9 FIPS tarball contains ccoctl-fips instead of ccoctl
         local extracted_binary="${binary}"
         local install_suffix=""
-        if [ "$binary" = "openshift-install" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+        if [ "$binary" = "openshift-install" ] && is_dev_preview_version "$full_version"; then
             extracted_binary="openshift-install-fips"
-        elif [ "$binary" = "ccoctl" ] && [[ "$full_version" == "4.22.0-ec.5" ]]; then
+        elif [ "$binary" = "ccoctl" ] && is_dev_preview_version "$full_version"; then
             extracted_binary="ccoctl-fips"
-            install_suffix="-rhel9"  # Save as ccoctl-4.22-rhel9
+            install_suffix="-rhel9"
         fi
 
         # Update local_path for RHEL9 ccoctl
@@ -463,9 +463,9 @@ ensure_gcloud() {
 }
 
 ensure_4_22_standard_binaries() {
-    # Download standard (non-RHEL9) binaries for 4.22.0-ec.5 testing
+    # Download standard binaries for 4.22.0
     # These are used when CCOCTL_BINARY_4_22 and OPENSHIFT_INSTALL_BINARY_4_22 env vars are set
-    local full_version="4.22.0-ec.5"
+    local full_version="4.22.0"
     local version="4.22"
 
     log "Downloading standard (non-RHEL9) binaries for ${full_version}..."
@@ -475,7 +475,7 @@ ensure_4_22_standard_binaries() {
     if [ ! -f "${installer_path}" ]; then
         log "Downloading standard openshift-install ${full_version}..."
         local tmp_dir=$(mktemp -d)
-        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/${full_version}/openshift-install-linux.tar.gz"
+        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/openshift-install-linux.tar.gz"
 
         if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
             if [ -f "${tmp_dir}/openshift-install" ]; then
@@ -498,7 +498,7 @@ ensure_4_22_standard_binaries() {
     if [ ! -f "${ccoctl_path}" ]; then
         log "Downloading standard ccoctl ${full_version}..."
         local tmp_dir=$(mktemp -d)
-        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp-dev-preview/${full_version}/ccoctl-linux.tar.gz"
+        local mirror_url="https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${full_version}/ccoctl-linux.tar.gz"
 
         if curl -sL "${mirror_url}" | tar xzf - -C "${tmp_dir}"; then
             if [ -f "${tmp_dir}/ccoctl" ]; then

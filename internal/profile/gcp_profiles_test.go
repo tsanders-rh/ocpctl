@@ -76,8 +76,8 @@ func TestGCPProfiles_Load(t *testing.T) {
 
 		// Verify OpenShift versions
 		require.NotNil(t, prof.OpenshiftVersions)
-		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.20.3")
-		assert.Equal(t, "4.20.3", prof.OpenshiftVersions.Default)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22.0")
+		assert.Equal(t, "4.22.0", prof.OpenshiftVersions.Default)
 
 		// Verify base domains
 		require.NotNil(t, prof.BaseDomains)
