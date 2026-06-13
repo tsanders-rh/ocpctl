@@ -9,13 +9,65 @@ supportedPlatforms:
 versions:
   - channel: stable
     displayName: "CNV Stable (4.18)"
-    isDefault: true
+    isDefault: false
     config:
       operators:
         - name: kubevirt-hyperconverged
           namespace: openshift-cnv
           source: redhat-operators
           channel: stable
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+  - channel: stable-4.21
+    displayName: "CNV 4.21"
+    isDefault: true
+    config:
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable-4.21
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+  - channel: stable-4.22
+    displayName: "CNV 4.22"
+    isDefault: false
+    config:
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable-4.22
           customResource:
             apiVersion: hco.kubevirt.io/v1beta1
             kind: HyperConverged
@@ -50,6 +102,74 @@ versions:
           namespace: openshift-cnv
           source: redhat-operators
           channel: stable
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+  - channel: stable-4.21-windows
+    displayName: "CNV 4.21 + Windows VM Support"
+    isDefault: false
+    config:
+      scripts:
+        - name: setup-windows-vm-infrastructure
+          description: Setup Windows VM infrastructure with IRSA and S3 image import
+          path: windows-vm/setup-windows-vm-infrastructure.sh
+          timeout: "5h"
+          dependsOn:
+            - kubevirt-hyperconverged
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable-4.21
+          customResource:
+            apiVersion: hco.kubevirt.io/v1beta1
+            kind: HyperConverged
+            name: kubevirt-hyperconverged
+            namespace: openshift-cnv
+            spec:
+              featureGates:
+                deployKubeSecondaryDNS: false
+                enableCommonBootImageImport: true
+              certConfig:
+                ca:
+                  duration: 48h0m0s
+                  renewBefore: 24h0m0s
+                server:
+                  duration: 24h0m0s
+                  renewBefore: 12h0m0s
+
+  - channel: stable-4.22-windows
+    displayName: "CNV 4.22 + Windows VM Support"
+    isDefault: false
+    config:
+      scripts:
+        - name: setup-windows-vm-infrastructure
+          description: Setup Windows VM infrastructure with IRSA and S3 image import
+          path: windows-vm/setup-windows-vm-infrastructure.sh
+          timeout: "5h"
+          dependsOn:
+            - kubevirt-hyperconverged
+
+      operators:
+        - name: kubevirt-hyperconverged
+          namespace: openshift-cnv
+          source: redhat-operators
+          channel: stable-4.22
           customResource:
             apiVersion: hco.kubevirt.io/v1beta1
             kind: HyperConverged
