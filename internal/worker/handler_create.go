@@ -20,9 +20,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
+	"github.com/tsanders-rh/ocpctl/internal/k8s"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 // CreateHandler handles cluster creation jobs
@@ -335,6 +337,13 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
+	// Create ServiceAccount for pool clusters
+	if cluster.PoolID != nil && outputs != nil && outputs.APIURL != nil {
+		if err := h.createPoolLeaseServiceAccount(ctx, cluster, workDir, *outputs.APIURL); err != nil {
+			log.Printf("Warning: failed to create ServiceAccount for pool cluster: %v", err)
+		}
+	}
+
 	// Update cluster status to READY
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
 		return fmt.Errorf("update cluster status to ready: %w", err)
@@ -403,6 +412,146 @@ func (h *CreateHandler) extractClusterOutputs(workDir string, cluster *types.Clu
 	}
 
 	return outputs, nil
+}
+
+// createPoolLeaseServiceAccount creates a ServiceAccount with time-bound token for pool clusters
+func (h *CreateHandler) createPoolLeaseServiceAccount(ctx context.Context, cluster *types.Cluster, workDir string, apiURL string) error {
+	log.Printf("Creating ServiceAccount for pool cluster %s", cluster.Name)
+
+	// Get pool to determine lease duration
+	pool, err := h.store.ClusterPools.GetByID(ctx, *cluster.PoolID)
+	if err != nil {
+		return fmt.Errorf("get pool for SA creation: %w", err)
+	}
+
+	// Use kubeconfig from work directory
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Initialize ServiceAccount manager
+	saManager, err := k8s.NewServiceAccountManager(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("init ServiceAccount manager: %w", err)
+	}
+
+	// Create ServiceAccount with time-bound token
+	creds, err := saManager.CreatePoolLeaseServiceAccount(ctx, cluster.Name, pool.DefaultLeaseDurationHours)
+	if err != nil {
+		return fmt.Errorf("create pool lease ServiceAccount: %w", err)
+	}
+
+	// Extract CA cert from existing kubeconfig
+	caCert, err := extractCACertFromKubeconfig(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("extract CA cert: %w", err)
+	}
+
+	// Generate token-based kubeconfig
+	tokenKubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig-token")
+	if err := h.writeTokenKubeconfig(apiURL, creds.Token, caCert, cluster.Name, tokenKubeconfigPath); err != nil {
+		return fmt.Errorf("write token kubeconfig: %w", err)
+	}
+
+	// Upload token kubeconfig to S3
+	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
+	if err != nil {
+		return fmt.Errorf("create artifact storage: %w", err)
+	}
+
+	s3Key := fmt.Sprintf("clusters/%s/artifacts/auth/kubeconfig-token", cluster.ID)
+	if err := artifactStorage.uploadFile(ctx, tokenKubeconfigPath, s3Key); err != nil {
+		return fmt.Errorf("upload token kubeconfig: %w", err)
+	}
+
+	tokenKubeconfigS3URI := fmt.Sprintf("s3://%s/%s", h.config.S3BucketName, s3Key)
+
+	// Generate oc login command
+	ocLoginCmd := fmt.Sprintf("oc login %s --token=%s", apiURL, creds.Token)
+
+	// Update cluster outputs with ServiceAccount credentials
+	outputs := &types.ClusterOutputs{
+		ClusterID:        cluster.ID,
+		SAName:           &creds.SAName,
+		SANamespace:      &creds.SANamespace,
+		SAToken:          &creds.Token,
+		SATokenExpiresAt: &creds.TokenExpiresAt,
+		OcLoginCommand:   &ocLoginCmd,
+		KubeconfigS3URI:  &tokenKubeconfigS3URI,
+	}
+
+	// Upsert to update existing record
+	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
+		return fmt.Errorf("store ServiceAccount credentials: %w", err)
+	}
+
+	log.Printf("ServiceAccount created and credentials stored: sa_name=%s, expires_at=%s", creds.SAName, creds.TokenExpiresAt)
+	return nil
+}
+
+// writeTokenKubeconfig generates a token-based kubeconfig file
+func (h *CreateHandler) writeTokenKubeconfig(apiURL, token, caCert, clusterName, outputPath string) error {
+	kubeconfig := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: %s
+    server: %s
+  name: %s
+contexts:
+- context:
+    cluster: %s
+    user: ocpctl-serviceaccount
+  name: %s
+current-context: %s
+users:
+- name: ocpctl-serviceaccount
+  user:
+    token: %s
+`, caCert, apiURL, clusterName, clusterName, clusterName, clusterName, token)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0700); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+
+	// Write kubeconfig with restrictive permissions
+	if err := os.WriteFile(outputPath, []byte(kubeconfig), 0600); err != nil {
+		return fmt.Errorf("write kubeconfig: %w", err)
+	}
+
+	log.Printf("Token-based kubeconfig written to: %s", outputPath)
+	return nil
+}
+
+// extractCACertFromKubeconfig extracts the CA certificate from an existing kubeconfig
+func extractCACertFromKubeconfig(kubeconfigPath string) (string, error) {
+	data, err := os.ReadFile(kubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("read kubeconfig: %w", err)
+	}
+
+	// Parse kubeconfig as YAML
+	var kubeconfig struct {
+		Clusters []struct {
+			Cluster struct {
+				CertificateAuthorityData string `yaml:"certificate-authority-data"`
+			} `yaml:"cluster"`
+		} `yaml:"clusters"`
+	}
+
+	if err := yaml.Unmarshal(data, &kubeconfig); err != nil {
+		return "", fmt.Errorf("parse kubeconfig: %w", err)
+	}
+
+	if len(kubeconfig.Clusters) == 0 {
+		return "", fmt.Errorf("no clusters found in kubeconfig")
+	}
+
+	caCert := kubeconfig.Clusters[0].Cluster.CertificateAuthorityData
+	if caCert == "" {
+		return "", fmt.Errorf("no certificate-authority-data found in kubeconfig")
+	}
+
+	return caCert, nil
 }
 
 // storeArtifacts stores cluster artifacts (kubeconfig, logs, metadata)

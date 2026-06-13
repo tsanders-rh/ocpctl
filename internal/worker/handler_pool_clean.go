@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tsanders-rh/ocpctl/internal/k8s"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -133,6 +134,23 @@ func (h *PoolCleanHandler) getKubeconfigPath(outputs *types.ClusterOutputs) (str
 // cleanupCluster performs the actual cluster cleanup operations
 func (h *PoolCleanHandler) cleanupCluster(ctx context.Context, cluster *types.Cluster, kubeconfigPath string) error {
 	log.Printf("Cleaning cluster %s using kubeconfig %s", cluster.Name, kubeconfigPath)
+
+	// Delete ServiceAccount for pool clusters (before other cleanup)
+	if cluster.PoolID != nil {
+		log.Printf("Deleting ServiceAccount for pool cluster %s", cluster.Name)
+		saManager, err := k8s.NewServiceAccountManager(kubeconfigPath)
+		if err != nil {
+			log.Printf("Warning: Failed to init ServiceAccount manager for cleanup: %v", err)
+			// Continue with cluster cleanup anyway
+		} else {
+			if err := saManager.DeletePoolLeaseServiceAccount(ctx, cluster.Name); err != nil {
+				log.Printf("Warning: Failed to delete ServiceAccount: %v", err)
+				// Continue with cluster cleanup anyway
+			} else {
+				log.Printf("Successfully deleted ServiceAccount for cluster %s", cluster.Name)
+			}
+		}
+	}
 
 	// Determine which CLI to use based on cluster type
 	cli := "kubectl"

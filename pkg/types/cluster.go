@@ -148,6 +148,14 @@ type ClusterOutputs struct {
 	KubeadminSecretRef  *string    `db:"kubeadmin_secret_ref" json:"kubeadmin_secret_ref"`
 	MetadataS3URI       *string    `db:"metadata_s3_uri" json:"metadata_s3_uri"`
 	DashboardToken      *string    `db:"dashboard_token" json:"dashboard_token,omitempty"`
+
+	// ServiceAccount credentials (pool clusters only)
+	SAName             *string    `db:"sa_name" json:"sa_name,omitempty"`
+	SANamespace        *string    `db:"sa_namespace" json:"sa_namespace,omitempty"`
+	SAToken            *string    `db:"sa_token" json:"sa_token,omitempty"`
+	SATokenExpiresAt   *time.Time `db:"sa_token_expires_at" json:"sa_token_expires_at,omitempty"`
+	OcLoginCommand     *string    `db:"oc_login_command" json:"oc_login_command,omitempty"`
+
 	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
 }

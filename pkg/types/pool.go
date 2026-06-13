@@ -30,8 +30,9 @@ type ClusterPool struct {
 	MaxSize    int `json:"max_size" db:"max_size"`
 
 	// Lease configuration
-	MaxLeaseDurationHours int  `json:"max_lease_duration_hours" db:"max_lease_duration_hours"`
-	AutoReleaseEnabled    bool `json:"auto_release_enabled" db:"auto_release_enabled"`
+	DefaultLeaseDurationHours int  `json:"default_lease_duration_hours" db:"default_lease_duration_hours"` // Default lease duration (enforced by ServiceAccount token TTL)
+	MaxLeaseDurationHours     int  `json:"max_lease_duration_hours" db:"max_lease_duration_hours"`
+	AutoReleaseEnabled        bool `json:"auto_release_enabled" db:"auto_release_enabled"`
 
 	// Cluster lifecycle
 	MaxClusterAgeDays  int  `json:"max_cluster_age_days" db:"max_cluster_age_days"`
@@ -123,8 +124,9 @@ type CreatePoolRequest struct {
 	MaxSize    int `json:"max_size,omitempty" validate:"omitempty,min=1"`
 
 	// Lease configuration
-	MaxLeaseDurationHours *int `json:"max_lease_duration_hours,omitempty"`
-	AutoReleaseEnabled    *bool `json:"auto_release_enabled,omitempty"`
+	DefaultLeaseDurationHours *int  `json:"default_lease_duration_hours,omitempty"`
+	MaxLeaseDurationHours     *int  `json:"max_lease_duration_hours,omitempty"`
+	AutoReleaseEnabled        *bool `json:"auto_release_enabled,omitempty"`
 
 	// Cluster lifecycle
 	MaxClusterAgeDays  *int  `json:"max_cluster_age_days,omitempty"`
@@ -152,8 +154,9 @@ type UpdatePoolRequest struct {
 	MaxSize    *int `json:"max_size,omitempty" validate:"omitempty,min=1"`
 
 	// Lease configuration
-	MaxLeaseDurationHours *int  `json:"max_lease_duration_hours,omitempty"`
-	AutoReleaseEnabled    *bool `json:"auto_release_enabled,omitempty"`
+	DefaultLeaseDurationHours *int  `json:"default_lease_duration_hours,omitempty"`
+	MaxLeaseDurationHours     *int  `json:"max_lease_duration_hours,omitempty"`
+	AutoReleaseEnabled        *bool `json:"auto_release_enabled,omitempty"`
 
 	// Cluster lifecycle
 	MaxClusterAgeDays  *int  `json:"max_cluster_age_days,omitempty"`

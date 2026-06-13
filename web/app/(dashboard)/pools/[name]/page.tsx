@@ -12,6 +12,7 @@ import { useState, useEffect } from "react";
 import { poolsApi } from "@/lib/api";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { LeaseCredentialsModal } from "@/components/pools/LeaseCredentialsModal";
 
 interface PoolDetailPageProps {
   params: { name: string };
@@ -25,6 +26,8 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
   const [isLeasing, setIsLeasing] = useState(false);
   const [leasedClusters, setLeasedClusters] = useState<any[]>([]);
   const [loadingClusters, setLoadingClusters] = useState(false);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [leasedClusterData, setLeasedClusterData] = useState<any>(null);
 
   // Fetch leased clusters
   useEffect(() => {
@@ -62,8 +65,13 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
         description: `Cluster ${response.cluster_name} is now available`,
       });
 
-      // Navigate to the cluster detail page
-      router.push(`/clusters/${response.cluster_id}`);
+      // Show credentials modal
+      setLeasedClusterData(response);
+      setShowCredentialsModal(true);
+
+      // Refresh leased clusters list
+      const leasedResponse = await poolsApi.getPoolClusters(name, "LEASED");
+      setLeasedClusters(leasedResponse.clusters);
     } catch (err) {
       toast.error("Failed to lease cluster", {
         description: err instanceof Error ? err.message : "Unknown error",
@@ -365,6 +373,24 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Lease Credentials Modal */}
+      {showCredentialsModal && leasedClusterData && (
+        <LeaseCredentialsModal
+          isOpen={showCredentialsModal}
+          onClose={() => setShowCredentialsModal(false)}
+          clusterName={leasedClusterData.cluster_name}
+          clusterId={leasedClusterData.cluster_id}
+          leaseExpiresAt={leasedClusterData.lease_expires_at}
+          credentials={{
+            sa_token: leasedClusterData.cluster_output?.sa_token,
+            oc_login_command: leasedClusterData.cluster_output?.oc_login_command,
+            kubeconfig_s3_uri: leasedClusterData.cluster_output?.kubeconfig_s3_uri,
+            api_url: leasedClusterData.cluster_output?.api_url,
+            console_url: leasedClusterData.cluster_output?.console_url,
+          }}
+        />
       )}
     </div>
   );
