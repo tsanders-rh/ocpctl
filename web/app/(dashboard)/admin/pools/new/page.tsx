@@ -58,6 +58,7 @@ export default function NewPoolPage() {
       target_size: 3,
       min_size: 1,
       max_size: 10,
+      default_lease_duration_hours: 24,
       max_lease_duration_hours: 2,
       auto_release_enabled: true,
       max_cluster_age_days: 7,
@@ -466,6 +467,24 @@ export default function NewPoolPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label htmlFor="default_lease_duration_hours">Default Lease Duration (hours) *</Label>
+                <Input
+                  id="default_lease_duration_hours"
+                  type="number"
+                  min="1"
+                  max="168"
+                  {...register("default_lease_duration_hours", {
+                    valueAsNumber: true,
+                    min: { value: 1, message: "Minimum lease duration is 1 hour" },
+                    max: { value: 168, message: "Maximum lease duration is 168 hours (1 week)" },
+                  })}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Default lease duration when leasing a cluster (1-168 hours)
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="max_lease_duration_hours">Max Lease Duration (hours) *</Label>
                 <Input
                   id="max_lease_duration_hours"
@@ -482,13 +501,14 @@ export default function NewPoolPage() {
                   Maximum time a cluster can be leased (1-168 hours)
                 </p>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label>Auto-Release</Label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="auto_release"
-                    checked={autoRelease}
+            <div className="space-y-2">
+              <Label>Auto-Release</Label>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="auto_release"
+                  checked={autoRelease}
                     onCheckedChange={(checked) => setAutoRelease(!!checked)}
                   />
                   <label
