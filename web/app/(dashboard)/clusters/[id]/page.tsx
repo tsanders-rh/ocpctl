@@ -19,7 +19,7 @@ import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CustomManifestConfig } from "@/types/api";
+import { CustomManifestConfig, UserRole } from "@/types/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { poolsApi } from "@/lib/api";
 import { toast } from "sonner";
@@ -599,7 +599,8 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeadmin_secret_ref && (
+            {/* Admin credentials - only show for non-pool clusters or admin users */}
+            {outputs.kubeadmin_secret_ref && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Console Credentials</Label>
@@ -695,7 +696,7 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeconfig_s3_uri && (
+            {outputs.kubeconfig_s3_uri && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
               <div className="space-y-2">
                 <Label>Kubeconfig</Label>
                 <div className="flex items-center gap-2">
@@ -782,7 +783,7 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeadmin && (
+            {outputs.kubeadmin && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
               <div className="space-y-2">
                 <Label>Kubeadmin Credentials</Label>
                 <div className="space-y-2">
