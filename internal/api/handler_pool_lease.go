@@ -106,6 +106,16 @@ func (h *PoolLeaseHandler) LeaseCluster(c echo.Context) error {
 		if outputs.KubeconfigS3URI != nil {
 			response.KubeconfigPath = *outputs.KubeconfigS3URI
 		}
+		// Add ServiceAccount token credentials for pool clusters
+		if outputs.SAToken != nil {
+			response.SAToken = *outputs.SAToken
+		}
+		if outputs.SATokenExpiresAt != nil {
+			response.SATokenExpiresAt = outputs.SATokenExpiresAt
+		}
+		if outputs.OcLoginCommand != nil {
+			response.OcLoginCommand = *outputs.OcLoginCommand
+		}
 	}
 
 	LogInfo(c, "Cluster leased from pool",

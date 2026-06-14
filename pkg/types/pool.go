@@ -101,9 +101,12 @@ type LeaseResponse struct {
 	LeaseMetadata  map[string]interface{} `json:"lease_metadata,omitempty"`
 
 	// Cluster access information
-	APIUrl         string `json:"api_url,omitempty"`
-	ConsoleUrl     string `json:"console_url,omitempty"`
-	KubeconfigPath string `json:"kubeconfig_path,omitempty"`
+	APIUrl          string     `json:"api_url,omitempty"`
+	ConsoleUrl      string     `json:"console_url,omitempty"`
+	KubeconfigPath  string     `json:"kubeconfig_path,omitempty"`
+	SAToken         string     `json:"sa_token,omitempty"`
+	SATokenExpiresAt *time.Time `json:"sa_token_expires_at,omitempty"`
+	OcLoginCommand  string     `json:"oc_login_command,omitempty"`
 }
 
 // ReleaseRequest represents a request to release a leased cluster back to the pool
