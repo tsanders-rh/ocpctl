@@ -509,19 +509,18 @@ export default function NewPoolPage() {
                 <Checkbox
                   id="auto_release"
                   checked={autoRelease}
-                    onCheckedChange={(checked) => setAutoRelease(!!checked)}
-                  />
-                  <label
-                    htmlFor="auto_release"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Automatically release expired leases
-                  </label>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Release clusters when lease expires
-                </p>
+                  onCheckedChange={(checked) => setAutoRelease(!!checked)}
+                />
+                <label
+                  htmlFor="auto_release"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Automatically release expired leases
+                </label>
               </div>
+              <p className="text-sm text-muted-foreground">
+                Release clusters when lease expires
+              </p>
             </div>
           </CardContent>
         </Card>
