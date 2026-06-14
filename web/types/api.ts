@@ -858,6 +858,9 @@ export interface LeaseResponse {
   api_url: string;
   console_url: string;
   kubeconfig_path: string;
+  sa_token?: string;
+  sa_token_expires_at?: string;
+  oc_login_command?: string;
 }
 
 export interface ListPoolsResponse {

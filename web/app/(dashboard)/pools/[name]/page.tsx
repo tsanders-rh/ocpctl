@@ -384,11 +384,11 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
           clusterId={leasedClusterData.cluster_id}
           leaseExpiresAt={leasedClusterData.lease_expires_at}
           credentials={{
-            sa_token: leasedClusterData.cluster_output?.sa_token,
-            oc_login_command: leasedClusterData.cluster_output?.oc_login_command,
-            kubeconfig_s3_uri: leasedClusterData.cluster_output?.kubeconfig_s3_uri,
-            api_url: leasedClusterData.cluster_output?.api_url,
-            console_url: leasedClusterData.cluster_output?.console_url,
+            sa_token: leasedClusterData.sa_token,
+            oc_login_command: leasedClusterData.oc_login_command,
+            kubeconfig_s3_uri: leasedClusterData.kubeconfig_path,
+            api_url: leasedClusterData.api_url,
+            console_url: leasedClusterData.console_url,
           }}
         />
       )}
