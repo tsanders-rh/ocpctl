@@ -29,6 +29,14 @@ func NewValidator() *CustomValidator {
 		return matched
 	})
 
+	// Register custom validation for alphanumeric with dashes
+	// Used for pool names, team names, etc.
+	v.RegisterValidation("alphanum-dash", func(fl validator.FieldLevel) bool {
+		value := fl.Field().String()
+		matched, _ := regexp.MatchString(`^[a-zA-Z0-9-]+$`, value)
+		return matched
+	})
+
 	return &CustomValidator{
 		validator: v,
 	}
