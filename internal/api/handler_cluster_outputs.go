@@ -28,6 +28,14 @@ type ClusterOutputsResponse struct {
 	KubeconfigS3URI     string                 `json:"kubeconfig_s3_uri,omitempty"`    // S3 URI to kubeconfig file
 	Kubeadmin           *KubeadminCredentials  `json:"kubeadmin,omitempty"`            // Actual credentials
 	KubeadminSecretRef  string                 `json:"kubeadmin_secret_ref,omitempty"` // Reference to secret location
+
+	// ServiceAccount credentials for pool clusters
+	SAName              string    `json:"sa_name,omitempty"`
+	SANamespace         string    `json:"sa_namespace,omitempty"`
+	SAToken             string    `json:"sa_token,omitempty"`
+	SATokenExpiresAt    *time.Time `json:"sa_token_expires_at,omitempty"`
+	OcLoginCommand      string    `json:"oc_login_command,omitempty"`
+
 	Metadata            map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -159,6 +167,23 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 	}
 	if outputs.KubeadminSecretRef != nil {
 		response.KubeadminSecretRef = *outputs.KubeadminSecretRef
+	}
+
+	// Add ServiceAccount credentials for pool clusters
+	if outputs.SAName != nil {
+		response.SAName = *outputs.SAName
+	}
+	if outputs.SANamespace != nil {
+		response.SANamespace = *outputs.SANamespace
+	}
+	if outputs.SAToken != nil {
+		response.SAToken = *outputs.SAToken
+	}
+	if outputs.SATokenExpiresAt != nil {
+		response.SATokenExpiresAt = outputs.SATokenExpiresAt
+	}
+	if outputs.OcLoginCommand != nil {
+		response.OcLoginCommand = *outputs.OcLoginCommand
 	}
 
 	// Read kubeconfig from disk if path is available

@@ -83,18 +83,24 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 	query := `
 		INSERT INTO cluster_outputs (
 			id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
-			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token
+			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token,
+			sa_name, sa_namespace, sa_token, sa_token_expires_at, oc_login_command
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 		)
 		ON CONFLICT (cluster_id)
 		DO UPDATE SET
-			api_url = EXCLUDED.api_url,
-			console_url = EXCLUDED.console_url,
-			kubeconfig_s3_uri = EXCLUDED.kubeconfig_s3_uri,
-			kubeadmin_secret_ref = EXCLUDED.kubeadmin_secret_ref,
-			metadata_s3_uri = EXCLUDED.metadata_s3_uri,
-			dashboard_token = EXCLUDED.dashboard_token,
+			api_url = COALESCE(EXCLUDED.api_url, cluster_outputs.api_url),
+			console_url = COALESCE(EXCLUDED.console_url, cluster_outputs.console_url),
+			kubeconfig_s3_uri = COALESCE(EXCLUDED.kubeconfig_s3_uri, cluster_outputs.kubeconfig_s3_uri),
+			kubeadmin_secret_ref = COALESCE(EXCLUDED.kubeadmin_secret_ref, cluster_outputs.kubeadmin_secret_ref),
+			metadata_s3_uri = COALESCE(EXCLUDED.metadata_s3_uri, cluster_outputs.metadata_s3_uri),
+			dashboard_token = COALESCE(EXCLUDED.dashboard_token, cluster_outputs.dashboard_token),
+			sa_name = COALESCE(EXCLUDED.sa_name, cluster_outputs.sa_name),
+			sa_namespace = COALESCE(EXCLUDED.sa_namespace, cluster_outputs.sa_namespace),
+			sa_token = COALESCE(EXCLUDED.sa_token, cluster_outputs.sa_token),
+			sa_token_expires_at = COALESCE(EXCLUDED.sa_token_expires_at, cluster_outputs.sa_token_expires_at),
+			oc_login_command = COALESCE(EXCLUDED.oc_login_command, cluster_outputs.oc_login_command),
 			updated_at = NOW()
 	`
 
@@ -107,6 +113,11 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 		outputs.KubeadminSecretRef,
 		outputs.MetadataS3URI,
 		outputs.DashboardToken,
+		outputs.SAName,
+		outputs.SANamespace,
+		outputs.SAToken,
+		outputs.SATokenExpiresAt,
+		outputs.OcLoginCommand,
 	)
 
 	if err != nil {
@@ -120,7 +131,9 @@ func (s *ClusterOutputsStore) Upsert(ctx context.Context, outputs *types.Cluster
 func (s *ClusterOutputsStore) GetByClusterID(ctx context.Context, clusterID string) (*types.ClusterOutputs, error) {
 	query := `
 		SELECT id, cluster_id, api_url, console_url, kubeconfig_s3_uri,
-			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token, created_at, updated_at
+			kubeadmin_secret_ref, metadata_s3_uri, dashboard_token,
+			sa_name, sa_namespace, sa_token, sa_token_expires_at, oc_login_command,
+			created_at, updated_at
 		FROM cluster_outputs
 		WHERE cluster_id = $1
 	`
@@ -135,6 +148,11 @@ func (s *ClusterOutputsStore) GetByClusterID(ctx context.Context, clusterID stri
 		&outputs.KubeadminSecretRef,
 		&outputs.MetadataS3URI,
 		&outputs.DashboardToken,
+		&outputs.SAName,
+		&outputs.SANamespace,
+		&outputs.SAToken,
+		&outputs.SATokenExpiresAt,
+		&outputs.OcLoginCommand,
 		&outputs.CreatedAt,
 		&outputs.UpdatedAt,
 	)

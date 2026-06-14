@@ -87,6 +87,16 @@ func (h *PoolCleanHandler) Handle(ctx context.Context, job *types.Job) error {
 		return fmt.Errorf("cleanup failed: %w", err)
 	}
 
+	log.Printf("Cluster %s cleanup completed successfully", cluster.Name)
+
+	// Recreate ServiceAccount credentials for pool clusters
+	if cluster.PoolID != nil {
+		if err := h.recreateServiceAccount(ctx, cluster, kubeconfigPath, outputs); err != nil {
+			log.Printf("Warning: Failed to recreate ServiceAccount for cluster %s: %v", cluster.Name, err)
+			// Don't fail the cleanup job - cluster can still be used, just without SA credentials
+		}
+	}
+
 	// Reset cluster metadata and mark as READY
 	now := time.Now()
 	updates := map[string]interface{}{
@@ -176,7 +186,6 @@ func (h *PoolCleanHandler) cleanupCluster(ctx context.Context, cluster *types.Cl
 		}
 	}
 
-	log.Printf("Cluster %s cleanup completed successfully", cluster.Name)
 	return nil
 }
 
@@ -261,6 +270,59 @@ func (h *PoolCleanHandler) cleanOpenshiftNamespace(ctx context.Context, cli, kub
 	// For now, we'll skip this as it's risky to delete things from the openshift namespace
 	// Most user workloads should be in other namespaces anyway
 
+	return nil
+}
+
+// recreateServiceAccount recreates ServiceAccount credentials after cleaning
+func (h *PoolCleanHandler) recreateServiceAccount(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, outputs *types.ClusterOutputs) error {
+	log.Printf("Recreating ServiceAccount for pool cluster %s", cluster.Name)
+
+	// Get pool to determine default lease duration
+	pool, err := h.store.Pools.GetByID(ctx, *cluster.PoolID)
+	if err != nil {
+		return fmt.Errorf("get pool for SA creation: %w", err)
+	}
+
+	// Initialize ServiceAccount manager
+	saManager, err := k8s.NewServiceAccountManager(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("init ServiceAccount manager: %w", err)
+	}
+
+	// Create ServiceAccount with time-bound token
+	// Token will be valid for the default lease duration
+	creds, err := saManager.CreatePoolLeaseServiceAccount(ctx, cluster.Name, pool.DefaultLeaseDurationHours)
+	if err != nil {
+		return fmt.Errorf("create pool lease ServiceAccount: %w", err)
+	}
+
+	// Get API URL from existing outputs (should already exist)
+	apiURL := ""
+	if outputs.APIURL != nil {
+		apiURL = *outputs.APIURL
+	} else {
+		return fmt.Errorf("API URL not found in cluster outputs")
+	}
+
+	// Generate oc login command
+	ocLoginCmd := fmt.Sprintf("oc login %s --token=%s", apiURL, creds.Token)
+
+	// Update cluster outputs with ServiceAccount credentials
+	updatedOutputs := &types.ClusterOutputs{
+		ClusterID:        cluster.ID,
+		SAName:           &creds.SAName,
+		SANamespace:      &creds.SANamespace,
+		SAToken:          &creds.Token,
+		SATokenExpiresAt: &creds.TokenExpiresAt,
+		OcLoginCommand:   &ocLoginCmd,
+	}
+
+	// Upsert to update existing record
+	if err := h.store.ClusterOutputs.Upsert(ctx, updatedOutputs); err != nil {
+		return fmt.Errorf("store ServiceAccount credentials: %w", err)
+	}
+
+	log.Printf("ServiceAccount recreated and credentials stored: sa_name=%s, expires_at=%s", creds.SAName, creds.TokenExpiresAt)
 	return nil
 }
 
