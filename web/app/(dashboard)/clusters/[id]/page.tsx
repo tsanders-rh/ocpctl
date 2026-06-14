@@ -599,6 +599,84 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
+            {/* ServiceAccount Token Credentials - for pool clusters */}
+            {cluster.pool_id && outputs.sa_token && (
+              <div className="space-y-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                <div>
+                  <Label className="text-blue-900">ServiceAccount Credentials</Label>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Time-limited credentials that expire when your lease ends
+                  </p>
+                </div>
+
+                {/* Access Token */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Access Token</Label>
+                    {outputs.sa_token_expires_at && (
+                      <span className="text-xs text-muted-foreground">
+                        Expires {formatDistanceToNow(new Date(outputs.sa_token_expires_at), { addSuffix: true })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={outputs.sa_token}
+                      readOnly
+                      type={showPassword ? "text" : "password"}
+                      className="flex-1 font-mono text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowPassword(!showPassword)}
+                      title={showPassword ? "Hide token" : "Show token"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(outputs.sa_token!);
+                        toast.success("Token copied to clipboard");
+                      }}
+                      title="Copy token"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* oc login command */}
+                {outputs.oc_login_command && (
+                  <div className="space-y-2">
+                    <Label>CLI Login Command</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={outputs.oc_login_command}
+                        readOnly
+                        className="flex-1 font-mono text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(outputs.oc_login_command!);
+                          toast.success("Command copied to clipboard");
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Copy and paste this command to login via oc/kubectl
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Admin credentials - only show for non-pool clusters or admin users */}
             {outputs.kubeadmin_secret_ref && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
               <div className="space-y-2">

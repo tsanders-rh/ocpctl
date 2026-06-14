@@ -252,6 +252,12 @@ export interface ClusterOutputs {
   };
   kubeadmin_secret_ref?: string;
   metadata_s3_uri?: string;
+  // ServiceAccount credentials for pool clusters
+  sa_token?: string;
+  sa_token_expires_at?: string;
+  oc_login_command?: string;
+  sa_name?: string;
+  sa_namespace?: string;
   created_at: string;
   updated_at: string;
 }
