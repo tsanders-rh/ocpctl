@@ -809,6 +809,7 @@ export interface CreatePoolRequest {
   target_size: number;
   min_size: number;
   max_size: number;
+  default_lease_duration_hours?: number;
   max_lease_duration_hours?: number;
   auto_release_enabled?: boolean;
   max_cluster_age_days?: number;
@@ -827,6 +828,7 @@ export interface UpdatePoolRequest {
   description?: string;
   target_size?: number;
   min_size?: number;
+  default_lease_duration_hours?: number;
   max_size?: number;
   max_lease_duration_hours?: number;
   auto_release_enabled?: boolean;
