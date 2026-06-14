@@ -73,12 +73,12 @@ type ClusterPoolStats struct {
 	CapacityPercent    float64 `json:"capacity_percent"`    // (total / target_size) * 100
 
 	// Age metrics
-	OldestClusterAge time.Duration `json:"oldest_cluster_age,omitempty"`
-	AvgClusterAge    time.Duration `json:"avg_cluster_age,omitempty"`
+	OldestClusterAge time.Duration `json:"oldest_cluster_age,omitempty" swaggertype:"integer"`
+	AvgClusterAge    time.Duration `json:"avg_cluster_age,omitempty" swaggertype:"integer"`
 
 	// Lease metrics
 	ActiveLeases   int           `json:"active_leases"`
-	AvgLeaseDuration time.Duration `json:"avg_lease_duration,omitempty"`
+	AvgLeaseDuration time.Duration `json:"avg_lease_duration,omitempty" swaggertype:"integer"`
 
 	// Last update
 	ComputedAt time.Time `json:"computed_at"`
