@@ -82,6 +82,20 @@ interface CheckVersionsResponse {
   last_checked: string
 }
 
+interface InstalledVersion {
+  major_minor: string
+  exact_version: string
+  binary_path: string
+  ccoctl_path?: string
+  profile_references?: string[]
+}
+
+interface InstalledVersionsResponse {
+  openshift_versions: Record<string, InstalledVersion>
+  total_installed: number
+  binaries_path: string
+}
+
 interface UpdateVersionsRequest {
   openshift_versions?: string[]
   kubernetes_versions?: string[]
@@ -129,6 +143,37 @@ export default function ProfileUpdatesPage() {
       return response.json()
     },
   })
+
+  // Fetch installed versions
+  const { data: installedVersions } = useQuery<InstalledVersionsResponse>({
+    queryKey: ['admin', 'installed-versions'],
+    queryFn: async () => {
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+      const response = await fetch('/api/v1/admin/installed-versions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch installed versions')
+      }
+      return response.json()
+    },
+  })
+
+  // Helper function to check if a version is installed
+  const isVersionInstalled = (version: string): boolean => {
+    if (!installedVersions?.openshift_versions) return false
+
+    // Extract major.minor from version (e.g., "4.20.3" -> "4.20")
+    const majorMinor = version.split('.').slice(0, 2).join('.')
+
+    return majorMinor in installedVersions.openshift_versions
+  }
 
   // Mutation for updating profile versions
   const updateMutation = useMutation({
@@ -494,6 +539,48 @@ export default function ProfileUpdatesPage() {
         </CardContent>
       </Card>
 
+      {/* Installed Versions Card */}
+      {installedVersions && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Check className="h-5 w-5 text-green-500" />
+              Installed OpenShift Versions
+            </CardTitle>
+            <CardDescription>
+              Binaries currently available on the server ({installedVersions.binaries_path})
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Object.values(installedVersions.openshift_versions)
+                .sort((a, b) => compareVersions(a.major_minor, b.major_minor))
+                .map((version) => (
+                  <div key={version.major_minor} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        className="px-3 py-1"
+                      >
+                        <Check className="h-3 w-3 mr-1 text-green-600" />
+                        {version.major_minor} ({version.exact_version})
+                      </Badge>
+                      {version.profile_references && version.profile_references.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          → Used for: {version.profile_references.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+            {installedVersions.total_installed === 0 && (
+              <p className="text-sm text-muted-foreground">No OpenShift installer binaries found</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filter Controls */}
       <Card>
         <CardHeader>
@@ -725,18 +812,29 @@ export default function ProfileUpdatesPage() {
                     </Button>
                   </div>
                 </div>
+                {/* Installation Status Info */}
+                {installedVersions && (
+                  <div className="mb-3 text-xs text-muted-foreground">
+                    <AlertCircle className="h-3.5 w-3.5 inline mr-1 text-orange-500" />
+                    Versions with warning badge are not installed on the server and cannot be used until installed.
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {[...profile.new_versions].sort(compareVersions).map((version) => {
                     const isSelected = selected.includes(version)
+                    const installed = isVersionInstalled(version)
                     return (
                       <div
                         key={version}
                         className={`px-3 py-1 border rounded-md cursor-pointer transition-colors ${
                           isSelected
                             ? 'bg-primary text-primary-foreground border-primary'
+                            : !installed
+                            ? 'border-orange-300 bg-orange-50 hover:bg-orange-100'
                             : 'hover:bg-muted'
                         }`}
                         onClick={() => handleVersionToggle(profile.profile_name, version, !isSelected)}
+                        title={!installed ? 'Binary not installed on server - cannot be used' : 'Click to select'}
                       >
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -749,6 +847,11 @@ export default function ProfileUpdatesPage() {
                             e.stopPropagation()
                             handleVersionToggle(profile.profile_name, version, !isSelected)
                           }}>{version}</span>
+                          {!installed && (
+                            <Badge variant="outline" className="ml-1 h-4 text-[10px] px-1 bg-orange-100 text-orange-700 border-orange-300">
+                              NOT INSTALLED
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     )
@@ -758,30 +861,50 @@ export default function ProfileUpdatesPage() {
 
               {/* Changes Summary */}
               {hasChanges && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Pending Changes</AlertTitle>
-                  <AlertDescription className="space-y-1">
-                    {selected.length > 0 && (
-                      <div>
-                        <span className="font-semibold">Add:</span> {selected.join(', ')}
-                      </div>
-                    )}
-                    {removed.length > 0 && (
-                      <div>
-                        <span className="font-semibold text-destructive">Remove:</span> {removed.join(', ')}
-                      </div>
-                    )}
-                    {newDefault && (
-                      <div>
-                        <span className="font-semibold text-yellow-600">New Default:</span> {newDefault}
-                        {profile.default_version && profile.default_version !== newDefault && (
-                          <span className="text-muted-foreground"> (was {profile.default_version})</span>
-                        )}
-                      </div>
-                    )}
-                  </AlertDescription>
-                </Alert>
+                <>
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Pending Changes</AlertTitle>
+                    <AlertDescription className="space-y-1">
+                      {selected.length > 0 && (
+                        <div>
+                          <span className="font-semibold">Add:</span> {selected.join(', ')}
+                        </div>
+                      )}
+                      {removed.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-destructive">Remove:</span> {removed.join(', ')}
+                        </div>
+                      )}
+                      {newDefault && (
+                        <div>
+                          <span className="font-semibold text-yellow-600">New Default:</span> {newDefault}
+                          {profile.default_version && profile.default_version !== newDefault && (
+                            <span className="text-muted-foreground"> (was {profile.default_version})</span>
+                          )}
+                        </div>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                  {/* Warning if selected versions are not installed */}
+                  {selected.some(v => !isVersionInstalled(v)) && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Installation Warning</AlertTitle>
+                      <AlertDescription>
+                        The following selected versions are NOT installed on the server and cannot be used: {' '}
+                        <span className="font-semibold">
+                          {selected.filter(v => !isVersionInstalled(v)).join(', ')}
+                        </span>
+                        <br />
+                        <span className="text-xs mt-1 block">
+                          Adding these versions to the profile will fail during cluster creation.
+                          Install the binaries first or remove these versions from your selection.
+                        </span>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
               )}
 
               {/* Action Buttons */}

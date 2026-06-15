@@ -287,6 +287,10 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/profiles/:name/rollback", profileUpdateHandler.HandleRollbackProfile)
 	adminGroup.POST("/profiles/reload", profileUpdateHandler.HandleReloadProfiles)
 
+	// Installed versions check route (admin only)
+	installedVersionsHandler := NewInstalledVersionsHandler()
+	adminGroup.GET("/installed-versions", installedVersionsHandler.HandleGetInstalledVersions)
+
 	// Windows snapshot management routes (admin only)
 	windowsSnapshotHandler := NewWindowsSnapshotHandler(s.store)
 	adminGroup.GET("/windows-snapshots", windowsSnapshotHandler.ListWindowsSnapshots)
