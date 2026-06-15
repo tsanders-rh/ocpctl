@@ -29,6 +29,7 @@ type VersionCache struct {
 // ProfileVersionStatus represents version update availability for a profile
 type ProfileVersionStatus struct {
 	ProfileName        string    `json:"profile_name"`
+	ClusterType        string    `json:"cluster_type"`        // openshift, eks, gke, iks
 	CurrentVersions    []string  `json:"current_versions"`
 	DefaultVersion     string    `json:"default_version"`
 	AvailableVersions  []string  `json:"available_versions"`
@@ -59,6 +60,7 @@ func NewVersionChecker() *VersionChecker {
 func (vc *VersionChecker) CheckProfileUpdates(ctx context.Context, prof *Profile, includeRC bool, includeCI bool) (*ProfileVersionStatus, error) {
 	status := &ProfileVersionStatus{
 		ProfileName:       prof.Name,
+		ClusterType:       string(prof.ClusterType),
 		CurrentVersions:   []string{},
 		AvailableVersions: []string{},
 		NewVersions:       []string{},

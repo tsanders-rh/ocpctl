@@ -66,6 +66,7 @@ function compareVersions(a: string, b: string): number {
 
 interface ProfileVersionStatus {
   profile_name: string
+  cluster_type: string
   current_versions: string[]
   default_version: string
   available_versions: string[]
@@ -355,11 +356,8 @@ export default function ProfileUpdatesPage() {
       return
     }
 
-    // Determine if this is OpenShift or Kubernetes profile
-    const isOpenShift = profile.profile_name.includes('openshift') ||
-                        profile.profile_name.includes('rosa') ||
-                        profile.profile_name.includes('sno') ||
-                        profile.profile_name.includes('virt')
+    // Determine if this is OpenShift or Kubernetes profile based on cluster_type
+    const isOpenShift = profile.cluster_type === 'openshift'
 
     const updateRequest: UpdateVersionsRequest = {
       dry_run: dryRunMode,
