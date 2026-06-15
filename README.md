@@ -39,6 +39,7 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 ### Cluster Pools 🚀
 - **Instant cluster access** - Lease pre-provisioned clusters in < 5 seconds (vs 30-60 minute provisioning)
+- **ServiceAccount credentials** - Time-bound tokens with automatic expiration matching lease duration
 - **CI/CD optimized** - Perfect for GitHub Actions, Jenkins, Tekton, and GitLab pipelines
 - **Auto-scaling pools** - Maintains target number of ready clusters, scales with demand
 - **Auto-release** - Clusters automatically return to pool after lease expiration
@@ -73,6 +74,8 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 - **RESTful API** - OpenAPI/Swagger documentation with interactive playground
 - **Health monitoring** - Liveness and readiness endpoints for all services
 - **Structured logging** - JSON logs with request context and correlation IDs
+- **Dev/test environments** - Multi-environment deployment support with maintenance window procedures
+- **Easy rollback** - Version management with atomic symlink switching for instant rollbacks
 
 ---
 
@@ -138,6 +141,8 @@ After deployment, use the verification checklist:
 
 ### 📚 Additional Resources
 
+- **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Comprehensive deployment procedures and maintenance windows
+- **[Dev/Test Environment Plan](docs/deployment/DEV_TEST_ENVIRONMENT_PLAN.md)** - Multi-environment setup strategy
 - **[Cost Estimation Guide](docs/operations/COST_ESTIMATION.md)** - Detailed cost breakdown and optimization
 - **[Troubleshooting Guide](docs/operations/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[IAM Policies Guide](deploy/IAM_POLICIES.md)** - Ready-to-use IAM policies
@@ -288,14 +293,23 @@ LEASE=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/ci-pool/lease \
     }
   }')
 
-# Extract cluster ID and kubeconfig path
+# Extract cluster details
 CLUSTER_ID=$(echo $LEASE | jq -r '.cluster_id')
-KUBECONFIG_PATH=$(echo $LEASE | jq -r '.kubeconfig_path')
+API_URL=$(echo $LEASE | jq -r '.api_url')
+SA_TOKEN=$(echo $LEASE | jq -r '.sa_token')
+OC_LOGIN_CMD=$(echo $LEASE | jq -r '.oc_login_command')
 
-# Download and use cluster
+# Option 1: Login with ServiceAccount token (recommended for CI/CD)
+eval $OC_LOGIN_CMD  # oc login https://api.cluster.example.com:6443 --token=sha256~...
+
+# Option 2: Download kubeconfig from S3
+KUBECONFIG_PATH=$(echo $LEASE | jq -r '.kubeconfig_path')
 aws s3 cp $KUBECONFIG_PATH ./kubeconfig
 export KUBECONFIG=./kubeconfig
+
+# Use the cluster
 kubectl get nodes
+oc get clusterversion
 
 # Release cluster back to pool when done
 curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/clusters/$CLUSTER_ID/release \
@@ -350,24 +364,31 @@ See [API Documentation](docs/deployment/API_SUBDOMAIN_SETUP.md) for complete end
 
 ### Latest Release
 
-**Version:** v0.20260522.f53c2a5 (May 22, 2026)
+**Version:** v0.20260614.3f03e5d (June 14, 2026)
 
 **Recent Updates:**
-- ✅ **Cluster Pools** - 🚀 NEW! Instant cluster access for CI/CD pipelines
+- ✅ **ServiceAccount Credentials for Pool Clusters** - Enhanced security with time-bound tokens
+  - Automatic ServiceAccount creation with cluster-admin permissions
+  - Time-bound tokens matching lease duration (no manual expiration needed)
+  - Credentials persist through pool cleaning cycles
+  - `oc login` command included in lease response
+  - Displayed in both lease modal and cluster details page
+- ✅ **Dev/Test Environment Support** - Multi-environment deployment infrastructure
+  - Environment-specific configurations (dev/production)
+  - Maintenance window deployment procedures
+  - Emergency hotfix workflows
+  - Cost-efficient dev environment (~$60/month vs $320/month production)
+  - Comprehensive deployment guide with troubleshooting
+- ✅ **API Documentation** - Updated Swagger/OpenAPI spec with ServiceAccount fields
+- ✅ **Documentation Organization** - Restructured docs into logical subdirectories
+- ✅ **Cluster Pools** - 🚀 Instant cluster access for CI/CD pipelines
   - Pre-provisioned clusters available in < 5 seconds (100x faster)
   - Auto-scaling pools with work hours scheduling
   - REST API for lease/release operations
   - Real-time pool metrics and utilization tracking
   - Perfect for GitHub Actions, Jenkins, Tekton pipelines
-- ✅ **Azure Platform Support** - ARO (Azure Red Hat OpenShift) and AKS (Azure Kubernetes Service) now supported
-  - Automated VNet and subnet creation for ARO clusters
-  - Auto-scaling node pools for AKS
-  - Hibernation via MachineSet/NodePool scaling
-  - Full version support (ARO: 4.16-4.20, AKS: K8s 1.31-1.35)
+- ✅ **Azure Platform Support** - ARO (Azure Red Hat OpenShift) and AKS (Azure Kubernetes Service)
 - ✅ **ROSA Support** - Full lifecycle management for Red Hat OpenShift Service on AWS
-- ✅ ROSA credentials fix - Automatic credential capture with retry logic
-- ✅ Password visibility toggle - Eye icon to show/hide cluster credentials in UI
-- ✅ Windows VM management - Script for bulk Windows VM operations on CNV clusters
 - ✅ Security hardening - All critical/high/medium severity issues addressed
 
 See [CHANGELOG.md](CHANGELOG.md) for complete release history.
