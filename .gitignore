@@ -93,6 +93,10 @@ temp/
 ocpctl-worker
 ocpctl-api
 config/worker.env
+config/api.env
+config/*.env.production
+config/*.env.dev
+!config/*.env.*.template
 *.tfplan
 tfplan
 
