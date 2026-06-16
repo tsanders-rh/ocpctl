@@ -316,6 +316,10 @@ func (vc *VersionChecker) GetROSAVersions(ctx context.Context) ([]string, error)
 	// Sort versions
 	sortVersions(versions)
 
+	// Consolidate to major.minor for GA versions, preserve pre-release versions
+	// This ensures ROSA versions match the same format as regular OpenShift profiles
+	versions = consolidateToMajorMinor(versions)
+
 	// Cache the results
 	vc.cache.mu.Lock()
 	vc.cache.ROSAVersions = versions
