@@ -209,6 +209,11 @@ func (vc *VersionChecker) GetOpenShiftVersions(ctx context.Context, includeRC bo
 	// Sort versions using semantic versioning
 	sortVersions(versions)
 
+	// Consolidate to unique major.minor versions only
+	// This ensures the UI only shows installable versions like 4.18, 4.19, 4.20
+	// instead of specific patch versions like 4.21.1, 4.21.2, 4.21.19
+	versions = consolidateToMajorMinor(versions)
+
 	// Cache the results
 	vc.cache.mu.Lock()
 	vc.cache.OpenShiftVersions = versions
@@ -265,6 +270,9 @@ func (vc *VersionChecker) GetOpenShiftCIVersions(ctx context.Context) ([]string,
 
 	// Sort versions
 	sortVersions(versions)
+
+	// Consolidate to unique major.minor versions only
+	versions = consolidateToMajorMinor(versions)
 
 	return versions, nil
 }
@@ -604,4 +612,37 @@ func filterRelevantVersions(currentVersions []string, newVersions []string) []st
 	sortVersions(relevant)
 
 	return relevant
+}
+
+// consolidateToMajorMinor consolidates a list of full versions to unique major.minor versions
+// Example: ["4.18.44", "4.19.34", "4.20.25", "4.21.1", "4.21.2"] -> ["4.18", "4.19", "4.20", "4.21"]
+// This ensures the UI only shows installable versions that match our binary naming (openshift-install-4.21)
+func consolidateToMajorMinor(versions []string) []string {
+	majorMinorSet := make(map[string]bool)
+
+	for _, v := range versions {
+		// Strip pre-release suffix if present (e.g., "4.22.0-rc.1" -> "4.22.0")
+		baseVersion := v
+		if idx := strings.Index(v, "-"); idx > 0 {
+			baseVersion = v[:idx]
+		}
+
+		// Extract major.minor
+		parts := strings.Split(baseVersion, ".")
+		if len(parts) >= 2 {
+			majorMinor := parts[0] + "." + parts[1]
+			majorMinorSet[majorMinor] = true
+		}
+	}
+
+	// Convert set to sorted slice
+	result := make([]string, 0, len(majorMinorSet))
+	for mm := range majorMinorSet {
+		result = append(result, mm)
+	}
+
+	// Sort the major.minor versions
+	sortVersions(result)
+
+	return result
 }
