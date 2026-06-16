@@ -465,6 +465,8 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		req.CustomPostConfig != nil
 
 	// Load add-ons and merge into custom post-config if specified
+	// Note: Default addons from profile are already tracked in selected_addon_ids and processed separately
+	// We only merge USER-ADDED addons (not default addons) into custom_post_config to avoid duplication
 	debugLog("PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
 	if len(req.PostConfigAddOns) > 0 {
 		// Get user ID to allow access to user's draft addons
@@ -479,7 +481,16 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig = &types.CustomPostConfig{}
 		}
 
+		// Build map of default addon IDs to skip them during custom_post_config merge
+		defaultAddonIDs := make(map[string]bool)
+		for _, defaultAddon := range profileForValidation.DefaultAddons {
+			defaultAddonIDs[defaultAddon.AddonID] = true
+		}
+
 		// Load each add-on with specific version and merge into custom post-config
+		// Skip default addons - they're processed via selected_addon_ids
+		mergedCount := 0
+		skippedDefaultCount := 0
 		for _, selection := range req.PostConfigAddOns {
 			// Validate add-on selection has required fields
 			if selection.ID == "" {
@@ -489,7 +500,14 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 				return ErrorBadRequest(c, fmt.Sprintf("version is required for add-on '%s'", selection.ID))
 			}
 
-			debugLog("Processing add-on: %s version %s", selection.ID, selection.Version)
+			// Skip default addons - they're already tracked in selected_addon_ids and processed separately
+			if defaultAddonIDs[selection.ID] {
+				debugLog("Skipping default addon %s (already in selected_addon_ids)", selection.ID)
+				skippedDefaultCount++
+				continue
+			}
+
+			debugLog("Processing user-added addon: %s version %s", selection.ID, selection.Version)
 			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersionForUser(ctx, selection.ID, selection.Version, userID)
 			if err != nil {
 				log.Printf("[ERROR] Failed to load add-on %s version %s: %v", selection.ID, selection.Version, err)
@@ -508,7 +526,9 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 			req.CustomPostConfig.Scripts = append(req.CustomPostConfig.Scripts, addon.Config.Scripts...)
 			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
 			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
+			mergedCount++
 		}
+		debugLog("Skipped %d default addons, merged %d user-added addons", skippedDefaultCount, mergedCount)
 		debugLog("After merging add-ons: %d total operators, %d scripts, %d manifests, %d helm charts",
 			len(req.CustomPostConfig.Operators),
 			len(req.CustomPostConfig.Scripts),
