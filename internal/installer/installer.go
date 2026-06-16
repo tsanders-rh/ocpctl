@@ -289,13 +289,21 @@ func verifyInstallerVersion(binaryPath, requestedVersion string) error {
 		return nil
 	}
 
+	// If requested version is major.minor only (e.g., "4.21"), accept any patch version
+	// This allows using symlinks like /usr/local/bin/openshift-install-4.21 -> openshift-install-4.21.19
+	requestedMajorMinor := extractMajorMinor(requestedVersion)
+	actualMajorMinor := extractMajorMinor(actualVersion)
+
+	// Check if requested version is major.minor format (e.g., "4.21" not "4.21.19")
+	if requestedVersion == requestedMajorMinor && actualMajorMinor == requestedMajorMinor {
+		log.Printf("✓ Version compatible: using %s for requested %s (same major.minor)", actualVersion, requestedVersion)
+		return nil
+	}
+
 	// For dev-preview versions (RC, EC, FC, nightly), allow using a newer build
 	// of the same major.minor version for destroy operations
 	// Example: rc.4 can destroy clusters created with rc.3
 	if isDevPreviewVersion(actualVersion) && isDevPreviewVersion(requestedVersion) {
-		actualMajorMinor := extractMajorMinor(actualVersion)
-		requestedMajorMinor := extractMajorMinor(requestedVersion)
-
 		if actualMajorMinor == requestedMajorMinor {
 			log.Printf("✓ Version compatible: using %s for %s (same major.minor)", actualVersion, requestedVersion)
 			return nil
