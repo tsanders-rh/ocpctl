@@ -616,33 +616,39 @@ func filterRelevantVersions(currentVersions []string, newVersions []string) []st
 }
 
 // consolidateToMajorMinor consolidates a list of full versions to unique major.minor versions
-// Example: ["4.18.44", "4.19.34", "4.20.25", "4.21.1", "4.21.2"] -> ["4.18", "4.19", "4.20", "4.21"]
-// This ensures the UI only shows installable versions that match our binary naming (openshift-install-4.21)
+// GA versions: ["4.18.44", "4.19.34", "4.20.25", "4.21.1", "4.21.2"] -> ["4.18", "4.19", "4.20", "4.21"]
+// Pre-release versions are preserved: ["4.22.0-rc.1", "4.22.0-rc.2"] -> ["4.22.0-rc.1", "4.22.0-rc.2"]
+// This ensures the UI shows installable versions that match our binary naming (openshift-install-4.21)
+// while preserving the ability to select specific pre-release versions (RC, EC, FC, nightly)
 func consolidateToMajorMinor(versions []string) []string {
 	majorMinorSet := make(map[string]bool)
+	preReleaseVersions := []string{}
 
 	for _, v := range versions {
-		// Strip pre-release suffix if present (e.g., "4.22.0-rc.1" -> "4.22.0")
-		baseVersion := v
-		if idx := strings.Index(v, "-"); idx > 0 {
-			baseVersion = v[:idx]
-		}
-
-		// Extract major.minor
-		parts := strings.Split(baseVersion, ".")
-		if len(parts) >= 2 {
-			majorMinor := parts[0] + "." + parts[1]
-			majorMinorSet[majorMinor] = true
+		// Check if this is a pre-release version (contains "-")
+		if strings.Contains(v, "-") {
+			// Pre-release versions (4.22.0-rc.1, 4.99.0-nightly) - preserve full version
+			preReleaseVersions = append(preReleaseVersions, v)
+		} else {
+			// GA versions (4.18.44, 4.20.25) - consolidate to major.minor
+			parts := strings.Split(v, ".")
+			if len(parts) >= 2 {
+				majorMinor := parts[0] + "." + parts[1]
+				majorMinorSet[majorMinor] = true
+			}
 		}
 	}
 
-	// Convert set to sorted slice
-	result := make([]string, 0, len(majorMinorSet))
+	// Convert major.minor set to slice
+	result := make([]string, 0, len(majorMinorSet)+len(preReleaseVersions))
 	for mm := range majorMinorSet {
 		result = append(result, mm)
 	}
 
-	// Sort the major.minor versions
+	// Add pre-release versions
+	result = append(result, preReleaseVersions...)
+
+	// Sort all versions
 	sortVersions(result)
 
 	return result
