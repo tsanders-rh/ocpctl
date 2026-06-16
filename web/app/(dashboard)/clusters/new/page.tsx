@@ -226,14 +226,9 @@ export default function NewClusterPage() {
 
         setValue("ttl_hours", selectedProfile.lifecycle.default_ttl_hours, { shouldValidate: true });
 
-        // Set default addons from profile
-        if (selectedProfile.default_addons && selectedProfile.default_addons.length > 0) {
-          const defaultAddonSelections = selectedProfile.default_addons.map(addon => ({
-            id: addon.addon_id,
-            version: addon.channel || "", // Use channel as version, or empty string if not specified
-          }));
-          setValue("postConfigAddOns", defaultAddonSelections, { shouldValidate: true });
-        }
+        // Note: Default addons from profile are handled by the backend automatically
+        // We only send user-selected additional addons in postConfigAddOns
+        // This prevents duplication between default addons and custom_post_config
       }, 0);
     }
   }, [selectedProfile, setValue, watchedValues.cluster_type]);
