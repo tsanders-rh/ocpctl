@@ -5,30 +5,22 @@ platform: aws
 clusterType: openshift
 enabled: true
 credentialsMode: Auto
-
 openshiftVersions:
   allowlist:
-    - "4.18.35"
-    - "4.19.23"
-    - "4.20.3"
-    - "4.20.4"
-    - "4.20.5"
-    - "4.21.8"
-    - "4.21.9"
-    - "4.21.10"
-    - "4.22.0-ec.5"   # Dev-preview (Early Candidate 5, RHEL9 FIPS)
-  default: "4.20.3"
-
+  - '4.18'
+  - '4.19'
+  - '4.20'
+  - '4.21'
+  - 4.22.0-ec.5
+  default: '4.20'
 regions:
   allowlist:
-    - us-east-1
+  - us-east-1
   default: us-east-1
-
 baseDomains:
   allowlist:
-    - mg.dog8code.com
+  - mg.dog8code.com
   default: mg.dog8code.com
-
 compute:
   controlPlane:
     replicas: 1
@@ -40,23 +32,20 @@ compute:
     maxReplicas: 0
     instanceType: m6i.2xlarge
     autoscaling: false
-
 lifecycle:
   maxTTLHours: 24
   defaultTTLHours: 8
   allowCustomTTL: true
   warnBeforeDestroyHours: 1
-
 networking:
   networkType: OVNKubernetes
   clusterNetworks:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
   serviceNetwork:
-    - 172.30.0.0/16
+  - 172.30.0.0/16
   machineNetwork:
-    - cidr: 10.0.0.0/16
-
+  - cidr: 10.0.0.0/16
 tags:
   required:
     Environment: test
@@ -64,17 +53,14 @@ tags:
     Purpose: migration-testing
     ManagedBy: cluster-control-plane
   allowUserTags: true
-
 features:
   offHoursScaling: false
   fipsMode: false
   privateCluster: false
-
 costControls:
-  estimatedHourlyCost: 0.80
+  estimatedHourlyCost: 0.8
   maxMonthlyCost: 576
   budgetAlertThreshold: 0.8
-
 platformConfig:
   aws:
     instanceMetadataService: required
@@ -82,12 +68,10 @@ platformConfig:
       type: gp3
       size: 120
       iops: 3000
-    # Persistent shared VPC: vpc-085687370b7aa13cb
-    # Created: 2026-03-11
     subnets:
-      - subnet-0656a5d299c74b0eb  # us-east-1a private
-      - subnet-04b32b2bd4012eb32  # us-east-1b private
-      - subnet-04d051776de6e68b0  # us-east-1c private
-      - subnet-09c061637a4635ee9  # us-east-1a public
-      - subnet-0d962c28e4b18a1cd  # us-east-1b public
-      - subnet-0af639cab1051104c  # us-east-1c public
+    - subnet-0656a5d299c74b0eb
+    - subnet-04b32b2bd4012eb32
+    - subnet-04d051776de6e68b0
+    - subnet-09c061637a4635ee9
+    - subnet-0d962c28e4b18a1cd
+    - subnet-0af639cab1051104c

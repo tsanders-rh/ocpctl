@@ -1,32 +1,27 @@
 name: ibmcloud-minimal-test
 displayName: IBM Cloud Minimal Test Cluster
-description: Compact 3-node cluster for IBM Cloud testing (masters schedulable, no workers)
+description: Compact 3-node cluster for IBM Cloud testing (masters schedulable, no
+  workers)
 platform: ibmcloud
 clusterType: openshift
 track: ga
 enabled: true
-
 openshiftVersions:
   allowlist:
-    - "4.18.35"
-    - "4.19.23"
-    - "4.20.3"
-    - "4.20.4"
-    - "4.20.5"
-  default: "4.20.3"
-
+  - '4.18'
+  - '4.19'
+  - '4.20'
+  default: '4.20'
 regions:
   allowlist:
-    - us-south
-    - us-east
-    - eu-de
+  - us-south
+  - us-east
+  - eu-de
   default: us-south
-
 baseDomains:
   allowlist:
-    - ibm.mg.dog8code.com
+  - ibm.mg.dog8code.com
   default: ibm.mg.dog8code.com
-
 compute:
   controlPlane:
     replicas: 3
@@ -38,23 +33,20 @@ compute:
     maxReplicas: 3
     instanceType: bx2-8x32
     autoscaling: false
-
 lifecycle:
   maxTTLHours: 72
   defaultTTLHours: 24
   allowCustomTTL: true
   warnBeforeDestroyHours: 1
-
 networking:
   networkType: OVNKubernetes
   clusterNetworks:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
   serviceNetwork:
-    - 172.30.0.0/16
+  - 172.30.0.0/16
   machineNetwork:
-    - cidr: 10.0.0.0/16
-
+  - cidr: 10.0.0.0/16
 tags:
   required:
     Environment: test
@@ -62,17 +54,14 @@ tags:
     Purpose: testing
     ManagedBy: cluster-control-plane
   allowUserTags: true
-
 features:
   offHoursScaling: true
   fipsMode: false
   privateCluster: false
-
 costControls:
-  estimatedHourlyCost: 2.80
+  estimatedHourlyCost: 2.8
   maxMonthlyCost: 2000
   budgetAlertThreshold: 0.8
-
 platformConfig:
   ibmcloud:
     resourceGroup: Default

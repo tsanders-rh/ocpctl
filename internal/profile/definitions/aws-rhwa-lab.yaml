@@ -1,24 +1,29 @@
 name: aws-rhwa-lab
 displayName: AWS RHWA Lab
-description: Compact 3-node cluster for RHWA/Medik8s node remediation testing. Control plane is schedulable with manual credentials for full AWS access required by failure injection scenarios.
+description: Compact 3-node cluster for RHWA/Medik8s node remediation testing. Control
+  plane is schedulable with manual credentials for full AWS access required by failure
+  injection scenarios.
 platform: aws
 clusterType: openshift
 track: ga
 enabled: true
 credentialsMode: Manual
-
 openshiftVersions:
-  allowlist: ["4.20.3", "4.20.4", "4.20.5", "4.21.8", "4.21.9", "4.21.10"]
-  default: "4.21.10"
-
+  allowlist:
+  - '4.20'
+  - '4.21'
+  default: '4.21'
 regions:
-  allowlist: [us-east-1, us-east-2, us-west-1, us-west-2]
+  allowlist:
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
   default: us-east-1
-
 baseDomains:
-  allowlist: [mg.dog8code.com]
+  allowlist:
+  - mg.dog8code.com
   default: mg.dog8code.com
-
 compute:
   controlPlane:
     replicas: 3
@@ -30,22 +35,20 @@ compute:
     maxReplicas: 6
     instanceType: m6i.xlarge
     autoscaling: false
-
 lifecycle:
   maxTTLHours: 168
   defaultTTLHours: 24
   allowCustomTTL: true
   warnBeforeDestroyHours: 2
-
 networking:
   networkType: OVNKubernetes
   clusterNetworks:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
-  serviceNetwork: [172.30.0.0/16]
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
   machineNetwork:
-    - cidr: 10.0.0.0/16
-
+  - cidr: 10.0.0.0/16
 tags:
   required:
     Environment: lab
@@ -55,17 +58,14 @@ tags:
     Track: ga
     Category: node-remediation
   allowUserTags: true
-
 features:
   offHoursScaling: true
   fipsMode: false
   privateCluster: false
-
 costControls:
   estimatedHourlyCost: 0.77
   maxMonthlyCost: 600
   budgetAlertThreshold: 0.8
-
 platformConfig:
   aws:
     instanceMetadataService: required
@@ -73,14 +73,13 @@ platformConfig:
       type: gp3
       size: 120
       iops: 3000
-
 metadata:
   notes:
-    - "Optimized for RHWA/Medik8s node remediation testing"
-    - "Manual credentials mode required for AWS instance manipulation"
-    - "Control plane schedulable (3 nodes suitable for compact testing)"
-    - "Use with rhwa addon for complete operator installation"
-    - "Estimated cost: $0.77/hr ($18/day with hibernation)"
+  - Optimized for RHWA/Medik8s node remediation testing
+  - Manual credentials mode required for AWS instance manipulation
+  - Control plane schedulable (3 nodes suitable for compact testing)
+  - Use with rhwa addon for complete operator installation
+  - 'Estimated cost: $0.77/hr ($18/day with hibernation)'
   warnings:
-    - "Manual credentials mode: cluster creates AWS credentials with full permissions"
-    - "Failure injection tests may temporarily impact node availability"
+  - 'Manual credentials mode: cluster creates AWS credentials with full permissions'
+  - Failure injection tests may temporarily impact node availability

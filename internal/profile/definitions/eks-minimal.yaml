@@ -5,52 +5,46 @@ platform: aws
 clusterType: eks
 track: kube
 enabled: true
-
 kubernetesVersions:
   allowlist:
-    - "1.35"
-    - "1.34"
-    - "1.33"
-    - "1.32"
-    - "1.31"
-    - "1.30"
-  default: "1.34"
-
+  - '1.35'
+  - '1.34'
+  - '1.33'
+  - '1.32'
+  - '1.31'
+  - '1.30'
+  default: '1.34'
 regions:
   allowlist:
-    - us-east-1
-    - us-east-2
-    - us-west-1
-    - us-west-2
-    - eu-west-1
-    - eu-west-2
-    - eu-central-1
-    - ap-southeast-1
-    - ap-southeast-2
-    - ap-northeast-1
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  - eu-west-1
+  - eu-west-2
+  - eu-central-1
+  - ap-southeast-1
+  - ap-southeast-2
+  - ap-northeast-1
   default: us-east-1
-
 compute:
   managedNodeGroups:
-    - name: standard
-      instanceType: t3.medium
-      desiredCapacity: 2
-      minSize: 1
-      maxSize: 5
-      volumeSize: 80
-      volumeType: gp3
-      amiFamily: AmazonLinux2023
-
+  - name: standard
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 5
+    volumeSize: 80
+    volumeType: gp3
+    amiFamily: AmazonLinux2023
 lifecycle:
-  maxTTLHours: 168      # 1 week max
-  defaultTTLHours: 48   # 2 days default
+  maxTTLHours: 168
+  defaultTTLHours: 48
   allowCustomTTL: true
   warnBeforeDestroyHours: 4
-
 networking:
   vpcCIDR: 10.0.0.0/16
-  natGateway: Single  # Single NAT gateway for cost savings
-
+  natGateway: Single
 tags:
   required:
     Environment: development
@@ -59,37 +53,32 @@ tags:
     ManagedBy: cluster-control-plane
     ClusterType: eks
   allowUserTags: true
-
 features:
-  oidcProvider: true  # Enable OIDC provider for IRSA
-
+  oidcProvider: true
 costControls:
-  estimatedHourlyCost: 0.15   # 2x t3.medium + EKS control plane ($0.10/hr)
-  maxMonthlyCost: 110          # Always-on monthly cost
+  estimatedHourlyCost: 0.15
+  maxMonthlyCost: 110
   budgetAlertThreshold: 0.8
-
 platformConfig:
   eks:
     enabledClusterLogTypes:
-      - api
-      - audit
-      - authenticator
+    - api
+    - audit
+    - authenticator
     publicAccess: true
     privateAccess: true
-
 defaultAddons:
-  - addonID: kubernetes-dashboard
-
+- addonID: kubernetes-dashboard
 metadata:
   capabilities:
-    - AWS EKS managed Kubernetes
-    - Kubernetes Dashboard with token authentication
-    - OIDC provider for IRSA
-    - Single NAT gateway (cost optimized)
-    - CloudWatch logging enabled
+  - AWS EKS managed Kubernetes
+  - Kubernetes Dashboard with token authentication
+  - OIDC provider for IRSA
+  - Single NAT gateway (cost optimized)
+  - CloudWatch logging enabled
   notes:
-    - "EKS control plane costs $0.10/hour ($73/month) regardless of cluster size"
-    - "NAT gateway costs ~$0.045/hour ($32/month) for Single mode"
-    - "Nodes are t3.medium (2 vCPU, 4GB RAM) at $0.0416/hour each"
-    - "Total: ~$0.15/hour or $110/month for always-on cluster"
-    - "Kubernetes Dashboard automatically installed with token-based authentication"
+  - EKS control plane costs $0.10/hour ($73/month) regardless of cluster size
+  - NAT gateway costs ~$0.045/hour ($32/month) for Single mode
+  - Nodes are t3.medium (2 vCPU, 4GB RAM) at $0.0416/hour each
+  - 'Total: ~$0.15/hour or $110/month for always-on cluster'
+  - Kubernetes Dashboard automatically installed with token-based authentication

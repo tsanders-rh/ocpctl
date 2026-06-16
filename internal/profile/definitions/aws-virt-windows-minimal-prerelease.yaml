@@ -1,35 +1,34 @@
 name: aws-virt-windows-minimal-prerelease
 displayName: AWS OpenShift Virtualization - Windows (Prerelease)
-description: High-availability OpenShift Virtualization setup for Windows VM pre-release testing with dual metal workers and automated S3-backed Windows image deployment. Supports 25-30 concurrent Windows VMs. IMPORTANT - Metal instances are expensive, use work hours hibernation to save ~$4,868/month.
+description: High-availability OpenShift Virtualization setup for Windows VM pre-release
+  testing with dual metal workers and automated S3-backed Windows image deployment.
+  Supports 25-30 concurrent Windows VMs. IMPORTANT - Metal instances are expensive,
+  use work hours hibernation to save ~$4,868/month.
 platform: aws
 clusterType: openshift
 track: prerelease
 enabled: true
 credentialsMode: Auto
-
 openshiftVersions:
   allowlist:
-    - "4.22.0-ec.5"   # Early Candidate 5 (RHEL9 FIPS)
-  default: "4.22.0-ec.5"
-
+  - 4.22.0-ec.5
+  default: 4.22.0-ec.5
 regions:
   allowlist:
-    - us-east-1
-    - us-east-2
-    - us-west-2
-    - eu-west-1
-    - eu-west-2
-    - eu-central-1
-    - ap-southeast-1
-    - ap-southeast-2
-    - ap-northeast-1
+  - us-east-1
+  - us-east-2
+  - us-west-2
+  - eu-west-1
+  - eu-west-2
+  - eu-central-1
+  - ap-southeast-1
+  - ap-southeast-2
+  - ap-northeast-1
   default: us-east-1
-
 baseDomains:
   allowlist:
-    - mg.dog8code.com
+  - mg.dog8code.com
   default: mg.dog8code.com
-
 compute:
   controlPlane:
     replicas: 3
@@ -39,25 +38,22 @@ compute:
     replicas: 2
     minReplicas: 2
     maxReplicas: 2
-    instanceType: m5zn.metal  # Cheapest metal instance for nested virtualization
+    instanceType: m5zn.metal
     autoscaling: false
-
 lifecycle:
-  maxTTLHours: 24      # Shorter for pre-release testing
+  maxTTLHours: 24
   defaultTTLHours: 8
   allowCustomTTL: true
   warnBeforeDestroyHours: 1
-
 networking:
   networkType: OVNKubernetes
   clusterNetworks:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
   serviceNetwork:
-    - 172.30.0.0/16
+  - 172.30.0.0/16
   machineNetwork:
-    - cidr: 10.0.0.0/16
-
+  - cidr: 10.0.0.0/16
 tags:
   required:
     Environment: test
@@ -68,54 +64,55 @@ tags:
     CostSavings: use-work-hours-hibernation
     Track: prerelease
   allowUserTags: true
-
 features:
-  offHoursScaling: false  # Not supported with metal instances
+  offHoursScaling: false
   fipsMode: false
   privateCluster: false
-
 costControls:
-  estimatedHourlyCost: 9.08    # 2 workers x $4.54/hr
-  maxMonthlyCost: 6538         # Always-on monthly cost
+  estimatedHourlyCost: 9.08
+  maxMonthlyCost: 6538
   budgetAlertThreshold: 0.7
-  warningMessage: "2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours hibernation to reduce to ~$1,670/month."
-
+  warningMessage: 2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours
+    hibernation to reduce to ~$1,670/month.
 platformConfig:
   aws:
     instanceMetadataService: required
     rootVolume:
       type: gp3
-      size: 500     # Storage for Windows VM images (QCOW2 files)
+      size: 500
       iops: 3000
       throughput: 125
-
 defaultAddons:
-  - addonID: cnv
-    channel: stable-windows
-
+- addonID: cnv
+  channel: stable-windows
 metadata:
   capabilities:
-    - bare-metal
-    - OpenShift Virtualization (HA)
-    - Windows VM support (10, 11, Server 2019/2022)
-    - Nested virtualization
-    - Up to 25-30 concurrent Windows VMs
-    - Live migration support
-    - High availability for VMs
+  - bare-metal
+  - OpenShift Virtualization (HA)
+  - Windows VM support (10, 11, Server 2019/2022)
+  - Nested virtualization
+  - Up to 25-30 concurrent Windows VMs
+  - Live migration support
+  - High availability for VMs
   capacity:
     maxConcurrentVMs: 30
     recommendedVMSize: 4vCPU-8GB
-    totalWorkerCPU: 96         # 2 workers x 48 cores
-    totalWorkerRAM: 384        # 2 workers x 192 GB
+    totalWorkerCPU: 96
+    totalWorkerRAM: 384
   notes:
-    - "Metal instances take 15-20 minutes to provision (vs 5-10 for standard instances)"
-    - "Hibernation start time may be 5-10 minutes due to larger EBS volumes"
-    - "Windows licensing is user's responsibility"
-    - "OpenShift Virtualization operator installed automatically via post-deployment"
-    - "Windows VM infrastructure fully automated - IRSA setup runs automatically during post-deployment"
-    - "Windows 10 image source: s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2 (23GB)"
-    - "Image import starts automatically (5-10 min), Windows VMs ready after cluster creation"
-    - "500GB storage per worker supports ~10-12 Windows VM images per node (40-50GB each)"
-    - "IRSA provides secure, credential-free S3 access (no static credentials stored in cluster)"
-    - "Per-cluster IAM roles created automatically for isolation and security"
-    - "2 workers enable: VM live migration, pod anti-affinity, full CNV operator HA, and no IPAM controller issues"
+  - Metal instances take 15-20 minutes to provision (vs 5-10 for standard instances)
+  - Hibernation start time may be 5-10 minutes due to larger EBS volumes
+  - Windows licensing is user's responsibility
+  - OpenShift Virtualization operator installed automatically via post-deployment
+  - Windows VM infrastructure fully automated - IRSA setup runs automatically during
+    post-deployment
+  - 'Windows 10 image source: s3://ocpctl-binaries/windows-images/windows-10-oadp.qcow2
+    (23GB)'
+  - Image import starts automatically (5-10 min), Windows VMs ready after cluster
+    creation
+  - 500GB storage per worker supports ~10-12 Windows VM images per node (40-50GB each)
+  - IRSA provides secure, credential-free S3 access (no static credentials stored
+    in cluster)
+  - Per-cluster IAM roles created automatically for isolation and security
+  - '2 workers enable: VM live migration, pod anti-affinity, full CNV operator HA,
+    and no IPAM controller issues'

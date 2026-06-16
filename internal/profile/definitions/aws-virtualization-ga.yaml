@@ -1,49 +1,42 @@
 name: aws-virtualization-ga
 displayName: AWS OpenShift Virtualization (GA)
-description: Cluster optimized for OpenShift Virtualization with bare metal instances supporting nested virtualization
+description: Cluster optimized for OpenShift Virtualization with bare metal instances
+  supporting nested virtualization
 platform: aws
 clusterType: openshift
 track: ga
 enabled: true
 credentialsMode: Manual
-
 openshiftVersions:
   allowlist:
-    - "4.18.35"
-    - "4.19.23"
-    - "4.20.3"
-    - "4.20.4"
-    - "4.20.5"
-    - "4.21.8"
-    - "4.21.9"
-    - "4.21.10"
-  default: "4.21.10"
-
+  - '4.18'
+  - '4.19'
+  - '4.20'
+  - '4.21'
+  default: '4.21'
 regions:
   allowlist:
-    - us-east-1
-    - us-east-2
-    - us-west-1
-    - us-west-2
-    - eu-west-1
-    - eu-west-2
-    - eu-west-3
-    - eu-central-1
-    - eu-north-1
-    - ap-southeast-1
-    - ap-southeast-2
-    - ap-northeast-1
-    - ap-northeast-2
-    - ap-south-1
-    - ca-central-1
-    - sa-east-1
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  - eu-west-1
+  - eu-west-2
+  - eu-west-3
+  - eu-central-1
+  - eu-north-1
+  - ap-southeast-1
+  - ap-southeast-2
+  - ap-northeast-1
+  - ap-northeast-2
+  - ap-south-1
+  - ca-central-1
+  - sa-east-1
   default: us-east-1
-
 baseDomains:
   allowlist:
-    - mg.dog8code.com
+  - mg.dog8code.com
   default: mg.dog8code.com
-
 compute:
   controlPlane:
     replicas: 3
@@ -53,25 +46,22 @@ compute:
     replicas: 2
     minReplicas: 2
     maxReplicas: 2
-    instanceType: m5zn.metal  # Cheapest metal instance for nested virtualization
+    instanceType: m5zn.metal
     autoscaling: false
-
 lifecycle:
   maxTTLHours: 168
   defaultTTLHours: 72
   allowCustomTTL: true
   warnBeforeDestroyHours: 2
-
 networking:
   networkType: OVNKubernetes
   clusterNetworks:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
   serviceNetwork:
-    - 172.30.0.0/16
+  - 172.30.0.0/16
   machineNetwork:
-    - cidr: 10.0.0.0/16
-
+  - cidr: 10.0.0.0/16
 tags:
   required:
     Environment: production
@@ -81,30 +71,27 @@ tags:
     Workload: openshift-virtualization
     Track: ga
   allowUserTags: true
-
 features:
   offHoursScaling: false
   fipsMode: false
   privateCluster: false
-
 costControls:
-  estimatedHourlyCost: 9.08    # 2 workers x $4.54/hr
-  maxMonthlyCost: 6538         # Always-on monthly cost
+  estimatedHourlyCost: 9.08
+  maxMonthlyCost: 6538
   budgetAlertThreshold: 0.7
-  warningMessage: "2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours hibernation to reduce to ~$1,670/month."
-
+  warningMessage: 2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours
+    hibernation to reduce to ~$1,670/month.
 platformConfig:
   aws:
     instanceMetadataService: required
     rootVolume:
       type: gp3
-      size: 500     # Storage for Windows VM images (QCOW2 files)
+      size: 500
       iops: 3000
       throughput: 125
-
 metadata:
   capabilities:
-    - bare-metal
+  - bare-metal
   notes:
-    - "Uses metal instances for nested virtualization support"
-    - "Optimized for OpenShift Virtualization workloads"
+  - Uses metal instances for nested virtualization support
+  - Optimized for OpenShift Virtualization workloads
