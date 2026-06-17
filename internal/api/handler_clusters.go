@@ -480,6 +480,29 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 				return ErrorBadRequest(c, fmt.Sprintf("version is required for add-on '%s'", selection.ID))
 			}
 		}
+
+		// Validate no conflicting addons are selected
+		addonMetadata := make(map[string]*types.AddonMetadata)
+		for _, selection := range req.PostConfigAddOns {
+			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
+			if err != nil {
+				return ErrorBadRequest(c, fmt.Sprintf("failed to resolve add-on '%s' version '%s': %v", selection.ID, selection.Version, err))
+			}
+			if addon.Metadata != nil {
+				addonMetadata[selection.ID] = addon.Metadata
+			}
+		}
+
+		// Check for conflicts
+		for addonID, metadata := range addonMetadata {
+			if len(metadata.ConflictsWith) > 0 {
+				for _, conflictingID := range metadata.ConflictsWith {
+					if _, selected := addonMetadata[conflictingID]; selected {
+						return ErrorBadRequest(c, fmt.Sprintf("addon conflict: '%s' conflicts with '%s'", addonID, conflictingID))
+					}
+				}
+			}
+		}
 	}
 
 	// Check if user provided custom post-config (operators/scripts/manifests/helm charts)

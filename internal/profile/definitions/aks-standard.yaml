@@ -1,4 +1,4 @@
-name: azure-aks-standard
+name: aks-standard
 displayName: Azure Kubernetes Service Standard
 description: Managed Kubernetes cluster on Azure (AKS)
 platform: azure

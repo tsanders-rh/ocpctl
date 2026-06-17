@@ -310,8 +310,50 @@ func (w *Worker) Stop() {
 		if w.cancel != nil {
 			w.cancel()
 		}
-		// Wait a bit more for jobs to handle cancellation
-		time.Sleep(5 * time.Second)
+		// Wait for jobs to handle cancellation and clean up locks
+		// Use a longer timeout to ensure locks are released properly
+		cleanupDone := make(chan struct{})
+		go func() {
+			w.jobWg.Wait()
+			close(cleanupDone)
+		}()
+
+		select {
+		case <-cleanupDone:
+			log.Printf("All jobs cleaned up successfully")
+		case <-time.After(30 * time.Second):
+			log.Printf("WARNING: Some jobs did not clean up within 30s, forcing shutdown")
+			// Force cleanup of any remaining locks held by this worker
+			w.cleanupWorkerLocks()
+		}
+	}
+}
+
+// cleanupWorkerLocks forcefully releases all locks held by this worker
+func (w *Worker) cleanupWorkerLocks() {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	w.jobsMu.Lock()
+	clusterIDs := make([]string, 0, len(w.activeJobs))
+	for _, jobInfo := range w.activeJobs {
+		if jobInfo.ClusterID != "" {
+			clusterIDs = append(clusterIDs, jobInfo.ClusterID)
+		}
+	}
+	w.jobsMu.Unlock()
+
+	if len(clusterIDs) == 0 {
+		return
+	}
+
+	log.Printf("Force releasing locks for %d clusters held by worker %s", len(clusterIDs), w.workerID)
+	for _, clusterID := range clusterIDs {
+		if err := w.store.Jobs.ReleaseLock(ctx, clusterID); err != nil {
+			log.Printf("Failed to force release lock for cluster %s: %v", clusterID, err)
+		} else {
+			log.Printf("Force released lock for cluster %s", clusterID)
+		}
 	}
 }
 
@@ -493,13 +535,13 @@ func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.
 	default:
 	}
 
-	// Create child context with timeout for this specific job
-	// This allows both timeout-based cancellation AND parent cancellation
-	ctx, cancel := context.WithTimeout(ctx, w.config.LockTimeout)
-	defer cancel()
+	// Try to acquire lock with a separate timeout context
+	// This prevents lock acquisition timeout from affecting job execution
+	lockCtx, lockCancel := context.WithTimeout(ctx, w.config.LockTimeout)
+	lock, err := w.acquireLock(lockCtx, job)
+	lockCancel() // Release timeout immediately after lock acquisition
 
-	// Try to acquire lock
-	lock, err := w.acquireLock(ctx, job)
+	// Continue with parent context for job execution
 	if err != nil {
 		log.Printf("Failed to acquire lock for job %s: %v", job.ID, err)
 		return
@@ -632,8 +674,9 @@ func (w *Worker) releaseLock(ctx context.Context, clusterID, jobID string) {
 // handleJobSuccess marks job as succeeded and saves metadata
 func (w *Worker) handleJobSuccess(ctx context.Context, job *types.Job, cluster *types.Cluster, duration time.Duration) {
 	// Mark job as succeeded in database
-	// Use background context to ensure this completes even if parent context is canceled during shutdown
-	successCtx, successCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Use parent context but with extended timeout to allow critical DB operation to complete
+	// even during shutdown, while still respecting cancellation signals
+	successCtx, successCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer successCancel()
 
 	if err := w.store.Jobs.MarkSucceeded(successCtx, job.ID, job.Metadata); err != nil {
@@ -690,8 +733,8 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 		log.Printf("Job %s failed preflight check (will not retry): %v", job.ID, jobErr)
 
 		// Mark job as permanently failed with specific error code
-		// Use background context to ensure this completes even if parent context is canceled
-		failCtx, failCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Use parent context with extended timeout to allow critical DB operation to complete
+		failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer failCancel()
 
 		errorCode := "PREFLIGHT_CHECK_FAILED"
@@ -718,8 +761,8 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 		log.Printf("Job %s reached max attempts (%d/%d), marking as failed", job.ID, job.Attempt, job.MaxAttempts)
 
 		// Mark job as permanently failed
-		// Use background context to ensure this completes even if parent context is canceled
-		failCtx, failCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Use parent context with extended timeout to allow critical DB operation to complete
+		failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer failCancel()
 
 		errorCode := "MAX_RETRIES_EXCEEDED"
@@ -741,15 +784,15 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 	}
 
 	// Job will be retried - increment attempt counter
-	// Use background context to ensure this completes even if parent context is canceled during shutdown
-	incrementCtx, incrementCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Use parent context with extended timeout to allow critical DB operation to complete
+	incrementCtx, incrementCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer incrementCancel()
 
 	if err := w.store.Jobs.IncrementAttempt(incrementCtx, job.ID); err != nil {
 		log.Printf("Failed to increment attempt for job %s: %v", job.ID, err)
-		// If increment failed, try to mark job as failed with background context
+		// If increment failed, try to mark job as failed
 		// This prevents jobs from getting stuck in RUNNING state during worker shutdown
-		failCtx, failCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer failCancel()
 
 		errorCode := "INCREMENT_FAILED"

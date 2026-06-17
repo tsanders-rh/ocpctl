@@ -1117,7 +1117,11 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 			selectedAddons = append(selectedAddons, *addon)
 		}
 		if len(selectedAddons) > 0 {
-			selectedAddonsConfig = h.mergeAddonConfigs(selectedAddons)
+			var err error
+			selectedAddonsConfig, err = h.mergeAddonConfigs(selectedAddons)
+			if err != nil {
+				return fmt.Errorf("failed to merge addon configs: %w", err)
+			}
 		}
 	}
 
@@ -2594,10 +2598,38 @@ func (h *PostConfigureHandler) resolveSelectedAddons(ctx context.Context, cluste
 	return addons, nil
 }
 
+// validateAddonConflicts checks for conflicting addons before merging
+func (h *PostConfigureHandler) validateAddonConflicts(addons []types.PostConfigAddon) error {
+	// Build a map of addon IDs for quick lookup
+	addonMap := make(map[string]types.PostConfigAddon)
+	for _, addon := range addons {
+		addonMap[addon.AddonID] = addon
+	}
+
+	// Check each addon for conflicts
+	for _, addon := range addons {
+		if addon.Metadata != nil && len(addon.Metadata.ConflictsWith) > 0 {
+			for _, conflictingID := range addon.Metadata.ConflictsWith {
+				if _, exists := addonMap[conflictingID]; exists {
+					return fmt.Errorf("addon conflict detected: %s (%s) conflicts with %s",
+						addon.AddonID, addon.Name, conflictingID)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // mergeAddonConfigs combines multiple addon configs into a single CustomPostConfig
-func (h *PostConfigureHandler) mergeAddonConfigs(addons []types.PostConfigAddon) *types.CustomPostConfig {
+func (h *PostConfigureHandler) mergeAddonConfigs(addons []types.PostConfigAddon) (*types.CustomPostConfig, error) {
 	if len(addons) == 0 {
-		return nil
+		return nil, nil
+	}
+
+	// Validate no conflicts before merging
+	if err := h.validateAddonConflicts(addons); err != nil {
+		return nil, err
 	}
 
 	merged := &types.CustomPostConfig{
@@ -2618,5 +2650,5 @@ func (h *PostConfigureHandler) mergeAddonConfigs(addons []types.PostConfigAddon)
 		merged.HelmCharts = append(merged.HelmCharts, addon.Config.HelmCharts...)
 	}
 
-	return merged
+	return merged, nil
 }

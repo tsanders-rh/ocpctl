@@ -157,10 +157,18 @@ func (l *Loader) Validate(profile *Profile) error {
 	}
 
 	// 5. Profile name must match platform or cluster type prefix
-	// For OpenShift clusters, use platform prefix (aws-, ibmcloud-)
-	// For EKS/IKS clusters, use cluster type prefix (eks-, iks-)
+	// For managed Kubernetes services, use cluster type prefix (eks-, iks-, gke-, aks-, rosa-, aro-)
+	// For vanilla OpenShift IPI, use platform prefix (aws-, gcp-, azure-, ibmcloud-)
 	var expectedPrefix string
-	if profile.ClusterType == "eks" || profile.ClusterType == "iks" {
+	managedClusterTypes := map[string]bool{
+		"eks":  true,
+		"iks":  true,
+		"gke":  true,
+		"aks":  true,
+		"rosa": true,
+		"aro":  true,
+	}
+	if managedClusterTypes[string(profile.ClusterType)] {
 		expectedPrefix = string(profile.ClusterType) + "-"
 	} else {
 		expectedPrefix = string(profile.Platform) + "-"

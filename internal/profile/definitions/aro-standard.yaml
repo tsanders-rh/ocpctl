@@ -1,4 +1,4 @@
-name: azure-aro-standard
+name: aro-standard
 displayName: Azure Red Hat OpenShift Standard
 description: Managed OpenShift service on Azure (ARO)
 platform: azure

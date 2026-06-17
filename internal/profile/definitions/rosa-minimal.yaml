@@ -1,7 +1,6 @@
-name: aws-rosa-standard
-displayName: ROSA Standard
-description: Standard ROSA managed cluster with 3 compute nodes across multiple AZs
-  (managed control plane)
+name: rosa-minimal
+displayName: ROSA Minimal
+description: Minimal ROSA managed cluster with 2 compute nodes (managed control plane)
 platform: aws
 clusterType: rosa
 track: ga
@@ -37,16 +36,16 @@ compute:
     replicas: 3
     instanceType: m5.2xlarge
     schedulable: false
-    multiAZ: true
+    multiAZ: false
   workers:
-    replicas: 3
+    replicas: 2
     minReplicas: 2
-    maxReplicas: 20
-    instanceType: m5.2xlarge
+    maxReplicas: 10
+    instanceType: m5.xlarge
     autoscaling: false
 lifecycle:
-  maxTTLHours: 168
-  defaultTTLHours: 72
+  maxTTLHours: 72
+  defaultTTLHours: 24
   allowCustomTTL: true
   warnBeforeDestroyHours: 2
   offhoursBehavior: hibernate
@@ -56,7 +55,7 @@ tags:
   required:
     Environment: production
   defaults:
-    Purpose: development
+    Purpose: stable-testing
     ManagedBy: cluster-control-plane
     Track: ga
     ClusterType: rosa
@@ -66,13 +65,12 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 1.2
-  maxMonthlyCost: 900
+  estimatedHourlyCost: 0.42
+  maxMonthlyCost: 310
   budgetAlertThreshold: 0.8
 platformConfig:
   aws:
     rosa:
       stsEnabled: true
-      computeNodes: 3
-      machineType: m5.2xlarge
-      multiAZ: true
+      computeNodes: 2
+      machineType: m5.xlarge
