@@ -5,22 +5,19 @@
 
 set -euo pipefail
 
-# Get cluster region from node labels
+# Get cluster region and zone from node labels
+FULL_ZONE=$(oc get nodes -o jsonpath='{.items[0].metadata.labels.topology\.kubernetes\.io/zone}')
 REGION=$(oc get nodes -o jsonpath='{.items[0].metadata.labels.topology\.kubernetes\.io/region}')
-if [ -z "$REGION" ]; then
-    echo "ERROR: Could not determine cluster region from node labels"
+
+if [ -z "$REGION" ] || [ -z "$FULL_ZONE" ]; then
+    echo "ERROR: Could not determine region or zone from node labels"
     exit 1
 fi
 
-# Get first availability zone from nodes
-ZONE=$(oc get nodes -o jsonpath='{.items[0].metadata.labels.topology\.kubernetes\.io/zone}' | sed "s/${REGION}//")
-if [ -z "$ZONE" ]; then
-    echo "WARNING: Could not determine zone, defaulting to 'a'"
-    ZONE="a"
-fi
+# Extract zone suffix (e.g., "a" from "us-east-1a")
+ZONE="${FULL_ZONE#$REGION}"
 
-STORAGE_CLASS_NAME="gp3-csi-immediate-${REGION}${ZONE}"
-FULL_ZONE="${REGION}${ZONE}"
+STORAGE_CLASS_NAME="gp3-csi-immediate-${FULL_ZONE}"
 
 echo "Creating virtualization-optimized storage class: ${STORAGE_CLASS_NAME}"
 echo "  Region: ${REGION}"
@@ -35,7 +32,6 @@ kind: StorageClass
 metadata:
   name: ${STORAGE_CLASS_NAME}
   annotations:
-    storageclass.kubernetes.io/is-default-class: "true"
     storageclass.kubevirt.io/is-default-class: "true"
 provisioner: ebs.csi.aws.com
 parameters:
@@ -55,6 +51,8 @@ echo "✓ Storage class ${STORAGE_CLASS_NAME} created successfully"
 echo ""
 echo "This storage class provides:"
 echo "  - Immediate volume binding (no WaitForFirstConsumer delay)"
-echo "  - Zone-specific topology constraints"
+echo "  - Zone-specific topology constraints (${FULL_ZONE})"
 echo "  - Volume expansion support for CDI operations"
-echo "  - Default for both Kubernetes and KubeVirt workloads"
+echo "  - Default storage class for KubeVirt workloads"
+echo ""
+echo "NOTE: VMs using this storage class must schedule in ${FULL_ZONE}"
