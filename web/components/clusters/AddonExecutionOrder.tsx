@@ -11,6 +11,7 @@ interface TaskExecutionInfo {
   type: "script" | "manifest" | "operator" | "helmChart";
   dependencies: string[];
   order: number;
+  metadata?: Record<string, any>;
 }
 
 interface Configuration {
@@ -113,6 +114,175 @@ export function AddonExecutionOrder({ executionOrder, configurations, customPost
   };
 
   const renderTaskDetails = (task: TaskExecutionInfo) => {
+    // First try to use metadata from backend
+    if (task.metadata && Object.keys(task.metadata).length > 0) {
+      // Render addon source info if available (common to all task types)
+      const addonInfo = task.metadata.addonName && (
+        <div className="mb-4 pb-4 border-b">
+          <h4 className="text-sm font-semibold mb-2">Addon Source</h4>
+          <div className="space-y-1">
+            <p className="text-sm">
+              <span className="font-medium">Name:</span>{" "}
+              <span className="text-muted-foreground">{task.metadata.addonName}</span>
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Version:</span>{" "}
+              <span className="text-muted-foreground font-mono">{task.metadata.addonVersion}</span>
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">ID:</span>{" "}
+              <span className="text-muted-foreground font-mono">{task.metadata.addonId}</span>
+            </p>
+          </div>
+        </div>
+      );
+
+      switch (task.type) {
+        case "operator":
+          return (
+            <div className="space-y-3">
+              {addonInfo}
+              {task.metadata.namespace && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Namespace</h4>
+                  <p className="text-sm text-muted-foreground font-mono">{task.metadata.namespace}</p>
+                </div>
+              )}
+              {task.metadata.source && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Source</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.source}</p>
+                </div>
+              )}
+              {task.metadata.channel && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Channel</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.channel}</p>
+                </div>
+              )}
+              {task.metadata.customResource && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Custom Resource</h4>
+                  <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                    {JSON.stringify(task.metadata.customResource, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+
+        case "script":
+          return (
+            <div className="space-y-3">
+              {addonInfo}
+              {task.metadata.description && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Description</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.description}</p>
+                </div>
+              )}
+              {task.metadata.timeout && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Timeout</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.timeout}</p>
+                </div>
+              )}
+              {task.metadata.path && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Path</h4>
+                  <p className="text-sm text-muted-foreground font-mono">{task.metadata.path}</p>
+                </div>
+              )}
+              {task.metadata.url && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Script URL</h4>
+                  <a href={task.metadata.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                    {task.metadata.url}
+                  </a>
+                </div>
+              )}
+              {task.metadata.hasInlineContent && (
+                <div>
+                  <p className="text-sm text-muted-foreground">This script uses inline content.</p>
+                </div>
+              )}
+            </div>
+          );
+
+        case "manifest":
+          return (
+            <div className="space-y-3">
+              {addonInfo}
+              {task.metadata.description && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Description</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.description}</p>
+                </div>
+              )}
+              {task.metadata.namespace && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Namespace</h4>
+                  <p className="text-sm text-muted-foreground font-mono">{task.metadata.namespace}</p>
+                </div>
+              )}
+              {task.metadata.url && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Manifest URL</h4>
+                  <a href={task.metadata.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                    {task.metadata.url}
+                  </a>
+                </div>
+              )}
+              {task.metadata.hasInlineContent && (
+                <div>
+                  <p className="text-sm text-muted-foreground">This manifest uses inline content.</p>
+                </div>
+              )}
+            </div>
+          );
+
+        case "helmChart":
+          return (
+            <div className="space-y-3">
+              {addonInfo}
+              {task.metadata.repo && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Repository</h4>
+                  <p className="text-sm text-muted-foreground font-mono">{task.metadata.repo}</p>
+                </div>
+              )}
+              {task.metadata.chart && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Chart</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.chart}</p>
+                </div>
+              )}
+              {task.metadata.version && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Version</h4>
+                  <p className="text-sm text-muted-foreground">{task.metadata.version}</p>
+                </div>
+              )}
+              {task.metadata.namespace && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Namespace</h4>
+                  <p className="text-sm text-muted-foreground font-mono">{task.metadata.namespace}</p>
+                </div>
+              )}
+              {task.metadata.values && Object.keys(task.metadata.values).length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Values</h4>
+                  <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto max-h-96 overflow-y-auto">
+                    {JSON.stringify(task.metadata.values, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+      }
+    }
+
+    // Fall back to old method using customPostConfig
     const details = getTaskDetails(task);
     if (!details) return <p className="text-muted-foreground">No details available</p>;
 

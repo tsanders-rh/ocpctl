@@ -255,8 +255,8 @@ export default function ProfilesPage() {
                         <div className="font-medium flex items-center gap-2">
                           <Badge variant="outline" className="text-xs">Addon</Badge>
                           {addon.addon_id}
-                          {addon.channel && (
-                            <Badge variant="secondary" className="text-xs">{addon.channel}</Badge>
+                          {addon.version && (
+                            <Badge variant="secondary" className="text-xs">{addon.version}</Badge>
                           )}
                         </div>
                       </div>

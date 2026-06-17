@@ -1251,7 +1251,7 @@ func (s *ClusterStore) GetLongRunningClusters(ctx context.Context, minHours int)
 			c.work_hours_start, c.work_hours_end, c.work_days, c.last_work_hours_check,
 			c.skip_post_deployment, c.custom_post_config, c.post_deploy_status,
 			c.preserve_on_failure, c.credentials_mode, c.custom_pull_secret,
-			EXTRACT(EPOCH FROM (NOW() - c.updated_at)) / 3600 as running_duration_hours,
+			EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600 as running_duration_hours,
 			(
 				SELECT MAX(j.ended_at)
 				FROM jobs j
@@ -1261,7 +1261,7 @@ func (s *ClusterStore) GetLongRunningClusters(ctx context.Context, minHours int)
 			) as last_hibernated_at
 		FROM clusters c
 		WHERE c.status = 'READY'
-		  AND c.updated_at <= NOW() - ($1 * INTERVAL '1 hour')
+		  AND c.created_at <= NOW() - ($1 * INTERVAL '1 hour')
 		  AND c.id NOT IN (
 			  SELECT DISTINCT cluster_id
 			  FROM jobs

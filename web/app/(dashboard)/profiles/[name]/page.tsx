@@ -324,11 +324,11 @@ export default function ProfileDetailPage() {
             <CardContent>
               <div className="space-y-2">
                 {profile.default_addons.map((addonRef) => {
-                  // Find the actual addon by matching addon_id and channel
+                  // Find the actual addon by matching addon_id and version
                   const matchedAddon = addons?.find(
                     (a) =>
                       a.addonId === addonRef.addon_id &&
-                      (!addonRef.channel || a.version === addonRef.channel)
+                      (!addonRef.version || a.version === addonRef.version)
                   );
 
                   if (!matchedAddon) {
@@ -340,8 +340,8 @@ export default function ProfileDetailPage() {
                         <div className="font-medium flex items-center gap-2">
                           <Badge variant="outline" className="text-xs">Addon</Badge>
                           {addonRef.addon_id}
-                          {addonRef.channel && (
-                            <Badge variant="secondary" className="text-xs">{addonRef.channel}</Badge>
+                          {addonRef.version && (
+                            <Badge variant="secondary" className="text-xs">{addonRef.version}</Badge>
                           )}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">

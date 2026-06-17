@@ -331,7 +331,7 @@ export interface HelmChartConfig {
 
 export interface AddonReference {
   addon_id: string;
-  channel?: string;
+  version?: string;
 }
 
 // Profile Deployment Metrics

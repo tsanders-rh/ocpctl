@@ -172,6 +172,19 @@ func main() {
 	enabledCount := registry.CountEnabled()
 	log.Printf("Loaded %d profiles (%d enabled)", profileCount, enabledCount)
 
+	// Sync profiles from YAML to database
+	log.Println("Syncing profiles from YAML to database...")
+	allProfiles := registry.ListAll()
+	syncedCount := 0
+	for _, prof := range allProfiles {
+		if err := st.UpsertProfile(ctx, prof); err != nil {
+			log.Printf("Warning: Failed to sync profile %s: %v", prof.Name, err)
+		} else {
+			syncedCount++
+		}
+	}
+	log.Printf("✓ Synced %d profiles to database", syncedCount)
+
 	// Sync add-ons from YAML to database
 	log.Println("Syncing add-ons from YAML...")
 	addonsDir := os.Getenv("ADDONS_DIR")

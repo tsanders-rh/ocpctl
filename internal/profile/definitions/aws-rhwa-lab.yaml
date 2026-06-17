@@ -73,6 +73,9 @@ platformConfig:
       type: gp3
       size: 120
       iops: 3000
+defaultAddons:
+  - addonID: rhwa
+    version: stable
 metadata:
   notes:
   - Optimized for RHWA/Medik8s node remediation testing

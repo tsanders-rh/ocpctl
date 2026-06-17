@@ -88,7 +88,7 @@ platformConfig:
       throughput: 125
 defaultAddons:
 - addonID: cnv
-  channel: stable-windows
+  version: stable-windows
 metadata:
   capabilities:
   - bare-metal

@@ -416,10 +416,10 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Add profile's default addons (for API compatibility)
 	if len(profileForValidation.DefaultAddons) > 0 {
 		for _, addonRef := range profileForValidation.DefaultAddons {
-			// Format: "addonID" or "addonID:channel"
+			// Format: "addonID" or "addonID:version"
 			addonIDRef := addonRef.AddonID
-			if addonRef.Channel != "" {
-				addonIDRef = addonRef.AddonID + ":" + addonRef.Channel
+			if addonRef.Version != "" {
+				addonIDRef = addonRef.AddonID + ":" + addonRef.Version
 			}
 			addonMap[addonIDRef] = true
 		}
@@ -464,89 +464,25 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		len(selectedAddonIDs) > 0 ||
 		req.CustomPostConfig != nil
 
-	// Load add-ons and merge into custom post-config if specified
-	// Note: Default addons from profile are already tracked in selected_addon_ids and processed separately
-	// We only merge USER-ADDED addons (not default addons) into custom_post_config to avoid duplication
+	// NOTE: All addons (both default and user-selected) are tracked in selected_addon_ids
+	// and processed via the selectedAddonsConfig path in the worker.
+	// DO NOT merge PostConfigAddOns into CustomPostConfig - it causes duplicate execution.
+	// CustomPostConfig should ONLY be used for truly custom user-defined operators/scripts/manifests,
+	// not for addons selected from the addon catalog.
 	debugLog("PostConfigAddOns received: %+v (count: %d)", req.PostConfigAddOns, len(req.PostConfigAddOns))
 	if len(req.PostConfigAddOns) > 0 {
-		// Get user ID to allow access to user's draft addons
-		userID, err := auth.GetUserID(c)
-		if err != nil {
-			log.Printf("[ERROR] Failed to get user ID for addon validation: %v", err)
-			return ErrorUnauthorized(c, "authentication required to use addons")
-		}
-
-		// Initialize custom post-config if it doesn't exist
-		if req.CustomPostConfig == nil {
-			req.CustomPostConfig = &types.CustomPostConfig{}
-		}
-
-		// Build map of default addon IDs to skip them during custom_post_config merge
-		defaultAddonIDs := make(map[string]bool)
-		for _, defaultAddon := range profileForValidation.DefaultAddons {
-			defaultAddonIDs[defaultAddon.AddonID] = true
-		}
-
-		// Load each add-on with specific version and merge into custom post-config
-		// Skip default addons - they're processed via selected_addon_ids
-		mergedCount := 0
-		skippedDefaultCount := 0
+		// Validate add-on selections have required fields
 		for _, selection := range req.PostConfigAddOns {
-			// Validate add-on selection has required fields
 			if selection.ID == "" {
 				return ErrorBadRequest(c, "add-on ID is required")
 			}
 			if selection.Version == "" {
 				return ErrorBadRequest(c, fmt.Sprintf("version is required for add-on '%s'", selection.ID))
 			}
-
-			// Skip default addons - they're already tracked in selected_addon_ids and processed separately
-			if defaultAddonIDs[selection.ID] {
-				debugLog("Skipping default addon %s (already in selected_addon_ids)", selection.ID)
-				skippedDefaultCount++
-				continue
-			}
-
-			debugLog("Processing user-added addon: %s version %s", selection.ID, selection.Version)
-			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersionForUser(ctx, selection.ID, selection.Version, userID)
-			if err != nil {
-				log.Printf("[ERROR] Failed to load add-on %s version %s: %v", selection.ID, selection.Version, err)
-				return ErrorBadRequest(c, fmt.Sprintf("add-on '%s' version '%s' not found or disabled", selection.ID, selection.Version))
-			}
-
-			debugLog("Loaded add-on %s: %d operators, %d scripts, %d manifests, %d helm charts",
-				addon.Name,
-				len(addon.Config.Operators),
-				len(addon.Config.Scripts),
-				len(addon.Config.Manifests),
-				len(addon.Config.HelmCharts))
-
-			// Merge add-on config into custom post-config
-			req.CustomPostConfig.Operators = append(req.CustomPostConfig.Operators, addon.Config.Operators...)
-			req.CustomPostConfig.Scripts = append(req.CustomPostConfig.Scripts, addon.Config.Scripts...)
-			req.CustomPostConfig.Manifests = append(req.CustomPostConfig.Manifests, addon.Config.Manifests...)
-			req.CustomPostConfig.HelmCharts = append(req.CustomPostConfig.HelmCharts, addon.Config.HelmCharts...)
-			mergedCount++
 		}
-		debugLog("Skipped %d default addons, merged %d user-added addons", skippedDefaultCount, mergedCount)
-		debugLog("After merging add-ons: %d total operators, %d scripts, %d manifests, %d helm charts",
-			len(req.CustomPostConfig.Operators),
-			len(req.CustomPostConfig.Scripts),
-			len(req.CustomPostConfig.Manifests),
-			len(req.CustomPostConfig.HelmCharts))
-
-		// Re-validate custom post-config after merging add-ons to ensure limits are respected
-		if errs := validation2.ValidateCustomPostConfig(req.CustomPostConfig); len(errs) > 0 {
-			log.Printf("[ERROR] Custom post-config validation failed after merging add-ons: %v", errs)
-			return ErrorBadRequest(c, fmt.Sprintf("validation failed after merging add-ons: %v", errs[0]))
-		}
-
-		// Update cluster object with merged configuration
-		cluster.CustomPostConfig = req.CustomPostConfig
-		debugLog("Updated cluster.CustomPostConfig with merged add-ons")
 	}
 
-	// Check if user provided custom post-config (including from add-ons)
+	// Check if user provided custom post-config (operators/scripts/manifests/helm charts)
 	hasCustomPostConfig := req.CustomPostConfig != nil && (
 		len(req.CustomPostConfig.Operators) > 0 ||
 		len(req.CustomPostConfig.Scripts) > 0 ||
@@ -827,9 +763,91 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 		"cluster": cluster,
 	}
 
-	// Add execution order metadata if custom post-config exists
+	// Build combined config from selected addons and custom post-config
+	combinedConfig := &types.CustomPostConfig{}
+
+	// Track which addon each task came from
+	taskAddonSource := make(map[string]map[string]interface{}) // task name -> addon metadata
+
+	// Load and merge selected addon configs
+	if len(cluster.SelectedAddonIDs) > 0 {
+		for _, addonIDVersion := range cluster.SelectedAddonIDs {
+			// Parse addon ID and version (format: "addon_id:version")
+			parts := strings.Split(addonIDVersion, ":")
+			if len(parts) != 2 {
+				log.Printf("Warning: invalid addon ID format: %s", addonIDVersion)
+				continue
+			}
+
+			addonID := parts[0]
+			version := parts[1]
+
+			// Load addon from database
+			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, addonID, version)
+			if err != nil {
+				log.Printf("Warning: failed to load addon %s:%s for cluster %s: %v", addonID, version, cluster.ID, err)
+				continue
+			}
+
+			// Create addon metadata for tracking
+			addonMeta := map[string]interface{}{
+				"addonId":      addon.AddonID,
+				"addonVersion": addon.Version,
+				"addonName":    addon.Name,
+			}
+
+			// Merge addon config into combined config and track source
+			if addon.Config.Operators != nil {
+				for _, op := range addon.Config.Operators {
+					taskAddonSource[op.Name] = addonMeta
+				}
+				combinedConfig.Operators = append(combinedConfig.Operators, addon.Config.Operators...)
+			}
+			if addon.Config.Scripts != nil {
+				for _, script := range addon.Config.Scripts {
+					taskAddonSource[script.Name] = addonMeta
+				}
+				combinedConfig.Scripts = append(combinedConfig.Scripts, addon.Config.Scripts...)
+			}
+			if addon.Config.Manifests != nil {
+				for _, manifest := range addon.Config.Manifests {
+					taskAddonSource[manifest.Name] = addonMeta
+				}
+				combinedConfig.Manifests = append(combinedConfig.Manifests, addon.Config.Manifests...)
+			}
+			if addon.Config.HelmCharts != nil {
+				for _, chart := range addon.Config.HelmCharts {
+					taskAddonSource[chart.Name] = addonMeta
+				}
+				combinedConfig.HelmCharts = append(combinedConfig.HelmCharts, addon.Config.HelmCharts...)
+			}
+		}
+	}
+
+	// Merge custom post-config if it exists
 	if cluster.CustomPostConfig != nil {
-		executionOrder, err := h.buildExecutionOrderMetadata(cluster.CustomPostConfig)
+		if cluster.CustomPostConfig.Operators != nil {
+			combinedConfig.Operators = append(combinedConfig.Operators, cluster.CustomPostConfig.Operators...)
+		}
+		if cluster.CustomPostConfig.Scripts != nil {
+			combinedConfig.Scripts = append(combinedConfig.Scripts, cluster.CustomPostConfig.Scripts...)
+		}
+		if cluster.CustomPostConfig.Manifests != nil {
+			combinedConfig.Manifests = append(combinedConfig.Manifests, cluster.CustomPostConfig.Manifests...)
+		}
+		if cluster.CustomPostConfig.HelmCharts != nil {
+			combinedConfig.HelmCharts = append(combinedConfig.HelmCharts, cluster.CustomPostConfig.HelmCharts...)
+		}
+	}
+
+	// Add execution order metadata if there's any post-config
+	hasPostConfig := len(combinedConfig.Operators) > 0 ||
+					len(combinedConfig.Scripts) > 0 ||
+					len(combinedConfig.Manifests) > 0 ||
+					len(combinedConfig.HelmCharts) > 0
+
+	if hasPostConfig {
+		executionOrder, err := h.buildExecutionOrderMetadata(combinedConfig, taskAddonSource)
 		if err != nil {
 			// Log but don't fail - just return cluster without execution order
 			log.Printf("Warning: failed to build execution order metadata for cluster %s: %v", cluster.ID, err)
@@ -843,14 +861,15 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 
 // TaskExecutionInfo represents execution metadata for a single task
 type TaskExecutionInfo struct {
-	Name         string   `json:"name"`
-	Type         string   `json:"type"` // "operator", "script", "manifest", "helmChart"
-	Dependencies []string `json:"dependencies"`
-	Order        int      `json:"order"` // Execution order (1-based)
+	Name         string                 `json:"name"`
+	Type         string                 `json:"type"` // "operator", "script", "manifest", "helmChart"
+	Dependencies []string               `json:"dependencies"`
+	Order        int                    `json:"order"` // Execution order (1-based)
+	Metadata     map[string]interface{} `json:"metadata,omitempty"` // Type-specific metadata
 }
 
 // buildExecutionOrderMetadata builds execution order metadata for UI visualization
-func (h *ClusterHandler) buildExecutionOrderMetadata(config *types.CustomPostConfig) ([]TaskExecutionInfo, error) {
+func (h *ClusterHandler) buildExecutionOrderMetadata(config *types.CustomPostConfig, taskAddonSource map[string]map[string]interface{}) ([]TaskExecutionInfo, error) {
 	// Build DAG
 	dag, err := postconfig.BuildExecutionDAG(config)
 	if err != nil {
@@ -860,15 +879,103 @@ func (h *ClusterHandler) buildExecutionOrderMetadata(config *types.CustomPostCon
 	// Get tasks in execution order
 	tasks := dag.GetTasksByExecutionOrder()
 
+	// Build lookup maps for task metadata
+	operatorMap := make(map[string]*types.CustomOperatorConfig)
+	scriptMap := make(map[string]*types.CustomScriptConfig)
+	manifestMap := make(map[string]*types.CustomManifestConfig)
+	helmChartMap := make(map[string]*types.CustomHelmChartConfig)
+
+	for i := range config.Operators {
+		operatorMap[config.Operators[i].Name] = &config.Operators[i]
+	}
+	for i := range config.Scripts {
+		scriptMap[config.Scripts[i].Name] = &config.Scripts[i]
+	}
+	for i := range config.Manifests {
+		manifestMap[config.Manifests[i].Name] = &config.Manifests[i]
+	}
+	for i := range config.HelmCharts {
+		helmChartMap[config.HelmCharts[i].Name] = &config.HelmCharts[i]
+	}
+
 	// Build execution info for each task
 	executionInfo := make([]TaskExecutionInfo, len(tasks))
 	for i, task := range tasks {
-		executionInfo[i] = TaskExecutionInfo{
+		taskInfo := TaskExecutionInfo{
 			Name:         task.Name,
 			Type:         task.Type,
 			Dependencies: task.Dependencies,
 			Order:        i + 1, // 1-based ordering for UI
+			Metadata:     make(map[string]interface{}),
 		}
+
+		// Populate type-specific metadata
+		switch task.Type {
+		case "operator":
+			if op, ok := operatorMap[task.Name]; ok {
+				taskInfo.Metadata["channel"] = op.Channel
+				taskInfo.Metadata["namespace"] = op.Namespace
+				taskInfo.Metadata["source"] = op.Source
+				if op.CustomResource != nil {
+					taskInfo.Metadata["customResource"] = map[string]interface{}{
+						"kind":       op.CustomResource.Kind,
+						"apiVersion": op.CustomResource.APIVersion,
+						"name":       op.CustomResource.Name,
+						"namespace":  op.CustomResource.Namespace,
+					}
+				}
+			}
+		case "script":
+			if script, ok := scriptMap[task.Name]; ok {
+				if script.Description != "" {
+					taskInfo.Metadata["description"] = script.Description
+				}
+				if script.Timeout != "" {
+					taskInfo.Metadata["timeout"] = script.Timeout
+				}
+				if script.Path != "" {
+					taskInfo.Metadata["path"] = script.Path
+				} else if script.URL != "" {
+					taskInfo.Metadata["url"] = script.URL
+				} else if script.Content != "" {
+					taskInfo.Metadata["hasInlineContent"] = true
+				}
+			}
+		case "manifest":
+			if manifest, ok := manifestMap[task.Name]; ok {
+				if manifest.Description != "" {
+					taskInfo.Metadata["description"] = manifest.Description
+				}
+				if manifest.Namespace != "" {
+					taskInfo.Metadata["namespace"] = manifest.Namespace
+				}
+				if manifest.URL != "" {
+					taskInfo.Metadata["url"] = manifest.URL
+				} else if manifest.Content != "" {
+					taskInfo.Metadata["hasInlineContent"] = true
+				}
+			}
+		case "helmChart":
+			if helm, ok := helmChartMap[task.Name]; ok {
+				taskInfo.Metadata["repo"] = helm.Repo
+				taskInfo.Metadata["chart"] = helm.Chart
+				if helm.Version != "" {
+					taskInfo.Metadata["version"] = helm.Version
+				}
+				if helm.Namespace != "" {
+					taskInfo.Metadata["namespace"] = helm.Namespace
+				}
+			}
+		}
+
+		// Add addon source metadata if available
+		if addonMeta, ok := taskAddonSource[task.Name]; ok {
+			taskInfo.Metadata["addonId"] = addonMeta["addonId"]
+			taskInfo.Metadata["addonVersion"] = addonMeta["addonVersion"]
+			taskInfo.Metadata["addonName"] = addonMeta["addonName"]
+		}
+
+		executionInfo[i] = taskInfo
 	}
 
 	return executionInfo, nil

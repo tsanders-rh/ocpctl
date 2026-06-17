@@ -230,7 +230,7 @@ export default function NewClusterPage() {
         if (selectedProfile.default_addons && selectedProfile.default_addons.length > 0) {
           const defaultAddonSelections = selectedProfile.default_addons.map(addon => ({
             id: addon.addon_id,
-            version: addon.channel || "", // Use channel as version, or empty string if not specified
+            version: addon.version || "", // Use version, or empty string if not specified
           }));
           setValue("postConfigAddOns", defaultAddonSelections, { shouldValidate: true });
         }

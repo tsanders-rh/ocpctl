@@ -343,7 +343,7 @@ type HelmChartConfig struct {
 // AddonReference references an addon to be installed by default
 type AddonReference struct {
 	AddonID string `yaml:"addonID" json:"addon_id" validate:"required"`
-	Channel string `yaml:"channel,omitempty" json:"channel,omitempty"` // Optional, uses default version if empty
+	Version string `yaml:"version,omitempty" json:"version,omitempty"` // Optional, uses default version if empty
 }
 
 // MetadataConfig contains profile metadata for documentation
