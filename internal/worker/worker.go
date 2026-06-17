@@ -335,24 +335,31 @@ func (w *Worker) cleanupWorkerLocks() {
 	defer cancel()
 
 	w.jobsMu.Lock()
-	clusterIDs := make([]string, 0, len(w.activeJobs))
+	activeJobsInfo := make([]struct {
+		clusterID string
+		jobID     string
+	}, 0, len(w.activeJobs))
 	for _, jobInfo := range w.activeJobs {
 		if jobInfo.ClusterID != "" {
-			clusterIDs = append(clusterIDs, jobInfo.ClusterID)
+			activeJobsInfo = append(activeJobsInfo, struct {
+				clusterID string
+				jobID     string
+			}{jobInfo.ClusterID, jobInfo.JobID})
 		}
 	}
 	w.jobsMu.Unlock()
 
-	if len(clusterIDs) == 0 {
+	if len(activeJobsInfo) == 0 {
 		return
 	}
 
-	log.Printf("Force releasing locks for %d clusters held by worker %s", len(clusterIDs), w.workerID)
-	for _, clusterID := range clusterIDs {
-		if err := w.store.Jobs.ReleaseLock(ctx, clusterID); err != nil {
-			log.Printf("Failed to force release lock for cluster %s: %v", clusterID, err)
+	hostname, _ := os.Hostname()
+	log.Printf("Force releasing locks for %d clusters held by worker %s", len(activeJobsInfo), hostname)
+	for _, info := range activeJobsInfo {
+		if err := w.store.JobLocks.Release(ctx, info.clusterID, info.jobID); err != nil {
+			log.Printf("Failed to force release lock for cluster %s: %v", info.clusterID, err)
 		} else {
-			log.Printf("Force released lock for cluster %s", clusterID)
+			log.Printf("Force released lock for cluster %s", info.clusterID)
 		}
 	}
 }
