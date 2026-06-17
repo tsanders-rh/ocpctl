@@ -89,9 +89,13 @@ platformConfig:
       size: 500
       iops: 3000
       throughput: 125
+defaultAddons:
+  - addonID: cnv
+    version: stable
 metadata:
   capabilities:
   - bare-metal
   notes:
   - Uses metal instances for nested virtualization support
   - Optimized for OpenShift Virtualization workloads
+  - CNV addon pre-selected for OpenShift Virtualization deployment
