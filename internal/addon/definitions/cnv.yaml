@@ -11,6 +11,14 @@ versions:
     displayName: "CNV (Stable)"
     isDefault: true
     config:
+      scripts:
+        - name: create-immediate-storageclass
+          description: Create Immediate-mode storage class for faster VM provisioning (GitHub #50)
+          path: cnv/create-immediate-storageclass.sh
+          timeout: "5m"
+          dependsOn:
+            - kubevirt-hyperconverged
+
       operators:
         - name: kubevirt-hyperconverged
           namespace: openshift-cnv
@@ -38,6 +46,13 @@ versions:
     isDefault: false
     config:
       scripts:
+        - name: create-immediate-storageclass
+          description: Create Immediate-mode storage class for faster VM provisioning (GitHub #50)
+          path: cnv/create-immediate-storageclass.sh
+          timeout: "5m"
+          dependsOn:
+            - kubevirt-hyperconverged
+
         - name: setup-windows-vm-infrastructure
           description: Setup Windows VM infrastructure with IRSA and S3 image import
           path: windows-vm/setup-windows-vm-infrastructure.sh
