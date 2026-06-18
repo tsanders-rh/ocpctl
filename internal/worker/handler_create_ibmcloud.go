@@ -21,7 +21,21 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 
 	log.Printf("IBM Cloud cluster creation: starting CCO workflow for %s", cluster.Name)
 
-	// Step 1: Create manifests (required to get infraID for CCO)
+	// Step 1: Preflight - Validate CIS DNS zone exists for base domain
+	log.Printf("Running preflight checks for IBM Cloud OpenShift IPI...")
+	baseDomain := ""
+	if cluster.BaseDomain != nil {
+		baseDomain = *cluster.BaseDomain
+	}
+	if baseDomain == "" {
+		return fmt.Errorf("base domain is required for IBM Cloud OpenShift IPI")
+	}
+	if err := ibmcloud.ValidateCISDNSZone(ctx, baseDomain); err != nil {
+		return fmt.Errorf("CIS DNS zone preflight check failed: %w", err)
+	}
+	log.Printf("✓ CIS DNS zone preflight check passed")
+
+	// Step 2: Create manifests (required to get infraID for CCO)
 	log.Printf("Creating manifests for IBM Cloud cluster...")
 	if err := inst.CreateManifests(ctx, workDir); err != nil {
 		return fmt.Errorf("create manifests: %w", err)
