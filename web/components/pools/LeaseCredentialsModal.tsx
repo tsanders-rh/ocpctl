@@ -55,17 +55,45 @@ export function LeaseCredentialsModal({
 
     try {
       // Call API to get presigned URL for kubeconfig download
-      const data = await apiClient.get<{ download_url: string; filename?: string }>(`/clusters/${clusterId}/kubeconfig/download-url`);
+      const data = await apiClient.get<{ download_url: string; filename?: string; storage_type?: string }>(`/clusters/${clusterId}/kubeconfig/download-url`);
       const downloadUrl = data.download_url;
       const filename = data.filename || `kubeconfig-${clusterName}.yaml`;
 
-      // Trigger download
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // For local storage (same origin), we need to fetch with credentials
+      // For S3 presigned URLs (different origin), we can use direct link
+      if (data.storage_type === "local") {
+        // Fetch the file with authentication
+        const response = await fetch(downloadUrl, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to download kubeconfig");
+        }
+
+        // Create blob from response
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+
+        // Trigger download
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Clean up blob URL
+        window.URL.revokeObjectURL(blobUrl);
+      } else {
+        // S3 presigned URL - direct download
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
 
       toast.success("Kubeconfig downloaded");
     } catch (err) {
