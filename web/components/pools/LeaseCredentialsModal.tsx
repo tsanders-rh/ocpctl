@@ -55,13 +55,14 @@ export function LeaseCredentialsModal({
 
     try {
       // Call API to get presigned URL for kubeconfig download
-      const data = await apiClient.get<{ download_url: string }>(`/clusters/${clusterId}/kubeconfig/download-url`);
+      const data = await apiClient.get<{ download_url: string; filename?: string }>(`/clusters/${clusterId}/kubeconfig/download-url`);
       const downloadUrl = data.download_url;
+      const filename = data.filename || `kubeconfig-${clusterName}.yaml`;
 
       // Trigger download
       const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = `kubeconfig-${clusterName}`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
