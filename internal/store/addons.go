@@ -181,7 +181,7 @@ func (s *PostConfigAddonStore) GetByAddonID(ctx context.Context, addonID string)
 		       parent_version_id, version_number, is_immutable,
 		       created_at, updated_at
 		FROM post_config_addons
-		WHERE addon_id = $1 AND enabled = TRUE
+		WHERE addon_id = $1 AND enabled = TRUE AND is_default = TRUE
 		  AND (addon_source = 'system' OR (addon_source = 'user' AND is_published = TRUE))
 	`
 
