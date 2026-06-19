@@ -49,6 +49,7 @@ export enum JobType {
   HIBERNATE = "HIBERNATE",
   RESUME = "RESUME",
   POST_CONFIGURE = "POST_CONFIGURE",
+  POOL_CLEAN = "POOL_CLEAN",
 }
 
 export enum JobStatus {

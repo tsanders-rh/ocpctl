@@ -19,7 +19,7 @@ import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CustomManifestConfig, UserRole } from "@/types/api";
+import { CustomManifestConfig, UserRole, JobType } from "@/types/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { poolsApi } from "@/lib/api";
 import { toast } from "sonner";
@@ -304,7 +304,15 @@ export default function ClusterDetailPage() {
     }
   };
 
-  const jobs = jobsData?.data || [];
+  // Filter jobs for display - hide POOL_CLEAN jobs for non-admin users on pool clusters
+  const jobs = (jobsData?.data || []).filter((job) => {
+    // Show all jobs if not a pool cluster or user is admin
+    if (!cluster?.pool_id || user?.role === UserRole.ADMIN) {
+      return true;
+    }
+    // For pool clusters with non-admin users, hide POOL_CLEAN jobs
+    return job.job_type !== JobType.POOL_CLEAN;
+  });
 
   return (
     <div className="space-y-6">
@@ -677,8 +685,12 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {/* Admin credentials - only show for non-pool clusters or admin users */}
-            {outputs.kubeadmin_secret_ref && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
+            {/* Admin credentials - show for non-pool clusters, admins, or current leasee */}
+            {outputs.kubeadmin_secret_ref && (
+              !cluster.pool_id || // Not a pool cluster - show to everyone
+              user?.role === UserRole.ADMIN || // Admin - show always
+              (cluster.pool_id && cluster.leased_by === user?.email) // Pool cluster and current user is leasee
+            ) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Console Credentials</Label>
@@ -774,7 +786,11 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeconfig_s3_uri && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
+            {outputs.kubeconfig_s3_uri && (
+              !cluster.pool_id || // Not a pool cluster - show to everyone
+              user?.role === UserRole.ADMIN || // Admin - show always
+              (cluster.pool_id && cluster.leased_by === user?.email) // Pool cluster and current user is leasee
+            ) && (
               <div className="space-y-2">
                 <Label>Kubeconfig</Label>
                 <div className="flex items-center gap-2">
@@ -861,7 +877,11 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {outputs.kubeadmin && (!cluster.pool_id || user?.role === UserRole.ADMIN) && (
+            {outputs.kubeadmin && (
+              !cluster.pool_id || // Not a pool cluster - show to everyone
+              user?.role === UserRole.ADMIN || // Admin - show always
+              (cluster.pool_id && cluster.leased_by === user?.email) // Pool cluster and current user is leasee
+            ) && (
               <div className="space-y-2">
                 <Label>Kubeadmin Credentials</Label>
                 <div className="space-y-2">
