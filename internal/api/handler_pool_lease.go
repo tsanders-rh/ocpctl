@@ -2,6 +2,8 @@ package api
 
 import (
 	"database/sql"
+	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -115,6 +117,33 @@ func (h *PoolLeaseHandler) LeaseCluster(c echo.Context) error {
 		}
 		if outputs.OcLoginCommand != nil {
 			response.OcLoginCommand = *outputs.OcLoginCommand
+		}
+
+		// Add kubeadmin credentials for web console login
+		if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
+			passwordPath := *outputs.KubeadminSecretRef
+			if strings.HasPrefix(passwordPath, "file://") {
+				passwordPath = passwordPath[7:] // Remove "file://" prefix
+			}
+
+			// Validate path to prevent path traversal attacks
+			validatedPath, err := validateOutputFilePath(passwordPath)
+			if err != nil {
+				LogWarning(c, "invalid kubeadmin password path blocked", "error", err.Error(), "attempted_path", passwordPath)
+			} else {
+				if passwordData, err := os.ReadFile(validatedPath); err == nil {
+					response.Kubeadmin = &struct {
+						Username string `json:"username"`
+						Password string `json:"password"`
+					}{
+						Username: "kubeadmin",
+						Password: string(passwordData),
+					}
+					LogInfo(c, "kubeadmin password included in lease response")
+				} else {
+					LogWarning(c, "failed to read kubeadmin password", "error", err.Error(), "path", validatedPath)
+				}
+			}
 		}
 	}
 

@@ -107,6 +107,10 @@ type LeaseResponse struct {
 	SAToken         string     `json:"sa_token,omitempty"`
 	SATokenExpiresAt *time.Time `json:"sa_token_expires_at,omitempty"`
 	OcLoginCommand  string     `json:"oc_login_command,omitempty"`
+	Kubeadmin       *struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"kubeadmin,omitempty"`
 }
 
 // ReleaseRequest represents a request to release a leased cluster back to the pool
