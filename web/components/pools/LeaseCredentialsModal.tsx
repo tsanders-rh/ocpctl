@@ -54,7 +54,7 @@ export function LeaseCredentialsModal({
 
     try {
       // Call API to get presigned URL for kubeconfig download
-      const response = await fetch(`/api/v1/clusters/${clusterId}/kubeconfig-download`);
+      const response = await fetch(`/api/v1/clusters/${clusterId}/kubeconfig/download-url`);
       if (!response.ok) {
         throw new Error("Failed to get download URL");
       }
