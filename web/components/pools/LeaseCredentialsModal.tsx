@@ -9,6 +9,7 @@ import { Copy, Download, ExternalLink, Clock, Check } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { apiClient } from "@/lib/api/client";
+import { useAuthStore } from "@/lib/store/auth-store";
 
 interface LeaseCredentialsModalProps {
   isOpen: boolean;
@@ -59,12 +60,24 @@ export function LeaseCredentialsModal({
       const downloadUrl = data.download_url;
       const filename = data.filename || `kubeconfig-${clusterName}.yaml`;
 
-      // For local storage (same origin), we need to fetch with credentials
+      // For local storage (same origin), we need to fetch with authentication using apiClient
       // For S3 presigned URLs (different origin), we can use direct link
       if (data.storage_type === "local") {
-        // Fetch the file with authentication
+        // Get access token from auth store
+        const accessToken = useAuthStore.getState().accessToken;
+
+        // Fetch the file with authentication (include Bearer token)
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+        };
+
+        if (accessToken) {
+          headers["Authorization"] = `Bearer ${accessToken}`;
+        }
+
         const response = await fetch(downloadUrl, {
           credentials: "include",
+          headers,
         });
 
         if (!response.ok) {
