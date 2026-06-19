@@ -84,12 +84,10 @@ objects:
       dataVolumeTemplates:
         - metadata:
             name: ${VM_NAME}-disk
-            annotations:
-              cdi.kubevirt.io/storage.usePopulator: "false"
           spec:
-            # Use explicit VolumeSnapshot → PVC restore (fast CSI snapshot path)
-            # This ensures ~1 minute disk creation via CSI snapshot restore
-            # instead of slow host-assisted PVC cloning
+            # Use VolumeSnapshot → PVC restore (fast CSI snapshot path)
+            # CDI will automatically use volume populators for fast snapshot restore (~seconds)
+            # instead of slow host-assisted PVC cloning (~90+ minutes)
             source:
               snapshot:
                 name: ${SNAPSHOT_NAME}
