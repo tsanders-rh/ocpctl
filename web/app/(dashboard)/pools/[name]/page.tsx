@@ -389,6 +389,7 @@ export default function PoolDetailPage({ params }: PoolDetailPageProps) {
             kubeconfig_s3_uri: leasedClusterData.kubeconfig_path,
             api_url: leasedClusterData.api_url,
             console_url: leasedClusterData.console_url,
+            kubeadmin: leasedClusterData.kubeadmin,
           }}
         />
       )}
