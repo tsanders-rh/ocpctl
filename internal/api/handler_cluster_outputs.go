@@ -288,17 +288,23 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 	// Get cluster ID
 	id := c.Param("id")
 
+	LogInfo(c, "DownloadKubeconfig called", "cluster_id", id)
+
 	// Get cluster
 	cluster, err := h.store.Clusters.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			LogInfo(c, "cluster not found", "cluster_id", id)
 			return ErrorNotFound(c, "Cluster not found")
 		}
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to retrieve cluster: %w", err))
 	}
 
+	LogInfo(c, "checking cluster access", "cluster_id", cluster.ID, "cluster_name", cluster.Name)
+
 	// Check access
 	if err := h.checkClusterAccess(c, cluster); err != nil {
+		LogInfo(c, "access check failed", "cluster_id", cluster.ID, "error", err.Error())
 		return err
 	}
 
