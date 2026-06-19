@@ -23,6 +23,10 @@ interface LeaseCredentialsModalProps {
     kubeconfig_s3_uri?: string;
     api_url?: string;
     console_url?: string;
+    kubeadmin?: {
+      username: string;
+      password: string;
+    };
   };
 }
 
@@ -36,6 +40,7 @@ export function LeaseCredentialsModal({
 }: LeaseCredentialsModalProps) {
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
 
   const copyToClipboard = async (text: string, setCopied: (val: boolean) => void) => {
     try {
@@ -185,6 +190,47 @@ export function LeaseCredentialsModal({
             </Card>
           )}
 
+          {/* Kubeadmin Credentials for Web Console */}
+          {credentials.kubeadmin && (
+            <Card className="p-4 bg-blue-50 border-blue-200">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="font-semibold flex items-center gap-2">
+                    Web Console Credentials
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Use these credentials to log into the OpenShift web console
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Username</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-white px-3 py-2 rounded text-sm font-mono">
+                      {credentials.kubeadmin.username}
+                    </code>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Password</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-white px-3 py-2 rounded text-sm font-mono break-all">
+                      {credentials.kubeadmin.password}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(credentials.kubeadmin!.password, setCopiedPassword)}
+                    >
+                      {copiedPassword ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Kubeconfig Download */}
           {credentials.kubeconfig_s3_uri && (
             <Card className="p-4">
@@ -258,7 +304,9 @@ export function LeaseCredentialsModal({
                 </a>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Log in using the access token above
+                {credentials.kubeadmin
+                  ? "Log in using the kubeadmin credentials above"
+                  : "Log in using the access token above"}
               </p>
             </Card>
           )}
@@ -267,6 +315,8 @@ export function LeaseCredentialsModal({
           <Card className="p-4 bg-blue-50 border-blue-200">
             <h3 className="font-semibold mb-2">Important Notes</h3>
             <ul className="text-sm space-y-1 text-muted-foreground list-disc list-inside">
+              <li>Use <strong>kubeadmin credentials</strong> for web console access</li>
+              <li>Use <strong>ServiceAccount token</strong> for CLI/API access (oc, kubectl)</li>
               <li>All credentials automatically expire when the lease ends</li>
               <li>You can view cluster details and manage the lease from the cluster page</li>
               <li>The cluster will be automatically returned to the pool after the lease expires</li>
