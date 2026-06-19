@@ -805,6 +805,9 @@ fi
 log_info "  Storage class: ${VM_STORAGE_CLASS} (WaitForFirstConsumer for flexible scheduling)"
 log_info "  VMs will restore from VolumeSnapshot (cross-zone compatible)"
 
+# Preserve source PVC storage class for summary output before switching to VM storage class
+SOURCE_STORAGE_CLASS="${STORAGE_CLASS}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STORAGE_CLASS="${VM_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
@@ -843,7 +846,7 @@ log_info "Windows VM Resources:"
 log_info "  Base Image: windows (pristine PVC, 70GB Windows 10)"
 log_info "  Default VM: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  Template: windows10-oadp-vm"
-log_info "  Source PVC Storage: ${STORAGE_CLASS} (Immediate binding for fast import)"
+log_info "  Source PVC Storage: ${SOURCE_STORAGE_CLASS} (Immediate binding for fast import)"
 log_info "  VM Disk Storage: ${VM_STORAGE_CLASS} (WaitForFirstConsumer for flexible scheduling)"
 log_info "  Import Method: ${IMPORT_METHOD}"
 log_info ""
