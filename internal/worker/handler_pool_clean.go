@@ -307,9 +307,17 @@ func (h *PoolCleanHandler) recreateServiceAccount(ctx context.Context, cluster *
 	// Generate oc login command
 	ocLoginCmd := fmt.Sprintf("oc login %s --token=%s", apiURL, creds.Token)
 
-	// Update cluster outputs with ServiceAccount credentials
+	// Update existing outputs record with new ServiceAccount credentials
+	// Use all fields from existing record to avoid nulling out other fields
 	updatedOutputs := &types.ClusterOutputs{
+		ID:               outputs.ID, // Preserve existing ID for upsert
 		ClusterID:        cluster.ID,
+		APIURL:           outputs.APIURL,
+		ConsoleURL:       outputs.ConsoleURL,
+		KubeconfigS3URI:  outputs.KubeconfigS3URI,
+		KubeadminSecretRef: outputs.KubeadminSecretRef,
+		MetadataS3URI:    outputs.MetadataS3URI,
+		DashboardToken:   outputs.DashboardToken,
 		SAName:           &creds.SAName,
 		SANamespace:      &creds.SANamespace,
 		SAToken:          &creds.Token,
