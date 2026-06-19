@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Copy, Download, ExternalLink, Clock, Check } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { apiClient } from "@/lib/api/client";
 
 interface LeaseCredentialsModalProps {
   isOpen: boolean;
@@ -54,12 +55,7 @@ export function LeaseCredentialsModal({
 
     try {
       // Call API to get presigned URL for kubeconfig download
-      const response = await fetch(`/api/v1/clusters/${clusterId}/kubeconfig/download-url`);
-      if (!response.ok) {
-        throw new Error("Failed to get download URL");
-      }
-
-      const data = await response.json();
+      const data = await apiClient.get<{ download_url: string }>(`/clusters/${clusterId}/kubeconfig/download-url`);
       const downloadUrl = data.download_url;
 
       // Trigger download
