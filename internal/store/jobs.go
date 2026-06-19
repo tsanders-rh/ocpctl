@@ -339,6 +339,26 @@ func (s *JobStore) UpdateStatus(ctx context.Context, id string, status types.Job
 	return nil
 }
 
+// UpdateMetadata updates the job metadata without changing status
+func (s *JobStore) UpdateMetadata(ctx context.Context, id string, metadata types.JobMetadata) error {
+	query := `
+		UPDATE jobs
+		SET metadata = $1, updated_at = NOW()
+		WHERE id = $2
+	`
+
+	result, err := s.pool.Exec(ctx, query, metadata, id)
+	if err != nil {
+		return fmt.Errorf("update job metadata: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // MarkStarted marks a job as RUNNING and sets the started_at timestamp to the current time.
 // Returns ErrNotFound if the job does not exist.
 func (s *JobStore) MarkStarted(ctx context.Context, id string) error {
@@ -517,6 +537,10 @@ func (s *JobStore) GetPending(ctx context.Context, limit int) ([]*types.Job, err
 			created_at, updated_at, metadata
 		FROM jobs
 		WHERE status IN ('PENDING', 'RETRYING')
+			AND (
+				metadata->>'retry_after' IS NULL
+				OR (metadata->>'retry_after')::timestamptz <= NOW()
+			)
 		ORDER BY created_at ASC
 		LIMIT $1
 	`

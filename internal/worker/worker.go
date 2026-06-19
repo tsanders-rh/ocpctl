@@ -735,6 +735,127 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 		return
 	}
 
+	// Check if this is a transient error - retry with exponential backoff
+	if transientErr := DetectTransientError(jobErr); transientErr != nil {
+		log.Printf("Job %s encountered transient error: %s", job.ID, transientErr.Message)
+		log.Printf("Transient error details: %v", transientErr.Error())
+
+		// Calculate backoff delay
+		backoffMins := transientErr.BackoffMins
+		if backoffMins == 0 {
+			// Use exponential backoff: 2^attempt minutes (capped at 60 minutes)
+			backoffMins = 1 << uint(job.Attempt) // 2^1=2min, 2^2=4min, 2^3=8min, etc.
+			if backoffMins > 60 {
+				backoffMins = 60
+			}
+		}
+
+		retryAfter := time.Now().Add(time.Duration(backoffMins) * time.Minute)
+
+		log.Printf("Job %s will retry after %d minutes (at %s) due to transient error",
+			job.ID, backoffMins, retryAfter.Format(time.RFC3339))
+
+		// Increment attempt counter for transient errors
+		incrementCtx, incrementCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer incrementCancel()
+
+		if err := w.store.Jobs.IncrementAttempt(incrementCtx, job.ID); err != nil {
+			log.Printf("Failed to increment attempt for job %s: %v", job.ID, err)
+			// If increment failed, mark job as failed to prevent getting stuck
+			failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer failCancel()
+
+			errorCode := "INCREMENT_FAILED"
+			errorMessage := fmt.Sprintf("Failed to increment attempt counter: %v. Original error: %v", err, jobErr)
+			if markErr := w.store.Jobs.MarkFailed(failCtx, job.ID, errorCode, errorMessage); markErr != nil {
+				log.Printf("CRITICAL: Failed to mark job %s as failed after increment failure: %v", job.ID, markErr)
+			}
+
+			if cluster != nil {
+				if statusErr := w.store.Clusters.UpdateStatus(failCtx, nil, job.ClusterID, types.ClusterStatusFailed); statusErr != nil {
+					log.Printf("CRITICAL: Failed to update cluster %s status to FAILED: %v", job.ClusterID, statusErr)
+				}
+			}
+			return
+		}
+
+		// Check if max attempts reached AFTER incrementing
+		if job.Attempt+1 > job.MaxAttempts {
+			log.Printf("Job %s reached max attempts (%d/%d) for transient error, marking as failed",
+				job.ID, job.Attempt+1, job.MaxAttempts)
+
+			failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer failCancel()
+
+			errorCode := "MAX_RETRIES_EXCEEDED_TRANSIENT"
+			errorMessage := fmt.Sprintf("Job failed after %d attempts (transient error): %v\n\nLast error:\n%s",
+				job.MaxAttempts, transientErr.Message, transientErr.Error())
+
+			if err := w.store.Jobs.MarkFailed(failCtx, job.ID, errorCode, errorMessage); err != nil {
+				log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
+			}
+
+			if cluster != nil {
+				if err := w.store.Clusters.UpdateStatus(failCtx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+					log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+				}
+			}
+
+			w.publishJobFailureMetrics(ctx, job, cluster, duration, "MAX_RETRIES_EXCEEDED_TRANSIENT")
+			return
+		}
+
+		// Record retry with transient error details
+		errorCode := "TRANSIENT_RETRY"
+		retryMessage := fmt.Sprintf("Transient error (retry in %d min): %s", backoffMins, transientErr.Error())
+		if err := w.store.JobRetryHistory.RecordRetry(ctx, job.ID, job.Attempt+1, errorCode, retryMessage); err != nil {
+			log.Printf("Warning: Failed to record retry history for job %s: %v", job.ID, err)
+		}
+
+		// For CREATE jobs, clean up partial infrastructure before retry
+		if job.JobType == types.JobTypeCreate {
+			w.cleanupPartialDeployment(ctx, job)
+		}
+
+		// Delete deployment logs from previous attempt
+		if err := w.store.DeploymentLogs.DeleteByJobID(ctx, job.ID); err != nil {
+			log.Printf("Warning: Failed to delete deployment logs for retry of job %s: %v", job.ID, err)
+		} else {
+			log.Printf("Cleared previous deployment logs for job %s before retry", job.ID)
+		}
+
+		// For POST_CONFIGURE jobs, delete configuration records from previous attempt
+		if job.JobType == types.JobTypePostConfigure {
+			if err := w.store.ClusterConfigurations.DeleteByClusterID(ctx, job.ClusterID); err != nil {
+				log.Printf("Warning: Failed to delete configurations for retry of job %s: %v", job.ID, err)
+			} else {
+				log.Printf("Cleared previous configuration records for cluster %s before POST_CONFIGURE retry", job.ClusterID)
+			}
+		}
+
+		// Update job metadata with retry_after timestamp
+		if job.Metadata == nil {
+			job.Metadata = make(map[string]interface{})
+		}
+		job.Metadata["retry_after"] = retryAfter.Format(time.RFC3339)
+		job.Metadata["transient_error"] = transientErr.Message
+		job.Metadata["backoff_minutes"] = backoffMins
+
+		// Update job with metadata and reset to PENDING
+		updateCtx, updateCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer updateCancel()
+
+		if err := w.store.Jobs.UpdateMetadata(updateCtx, job.ID, job.Metadata); err != nil {
+			log.Printf("Warning: Failed to update job metadata for %s: %v", job.ID, err)
+		}
+
+		if err := w.store.Jobs.UpdateStatus(updateCtx, job.ID, types.JobStatusPending); err != nil {
+			log.Printf("Failed to reset job %s to pending: %v", job.ID, err)
+		}
+
+		return
+	}
+
 	// Check if this is a preflight check error - fail immediately without retries
 	if types.IsPreflightCheckError(jobErr) {
 		log.Printf("Job %s failed preflight check (will not retry): %v", job.ID, jobErr)
