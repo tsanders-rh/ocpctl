@@ -78,6 +78,18 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 		return nil
 	}
 
+	// Debug logging for access denial
+	LogInfo(c, "Access check failed",
+		"cluster_id", cluster.ID,
+		"cluster_name", cluster.Name,
+		"user_id", userID,
+		"user_email", user.Email,
+		"cluster_owner_id", cluster.OwnerID,
+		"cluster_leased_by", cluster.LeasedBy,
+		"pool_id", cluster.PoolID,
+		"pool_state", cluster.PoolState,
+	)
+
 	// Check if user is team admin for this cluster's team
 	if user.Role == types.RoleTeamAdmin {
 		for _, managedTeam := range user.ManagedTeams {
