@@ -9,7 +9,7 @@ import { Copy, Download, ExternalLink, Clock, Check } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { apiClient } from "@/lib/api/client";
-import { useAuthStore } from "@/lib/store/auth-store";
+import { useAuthStore } from "@/lib/stores/authStore";
 
 interface LeaseCredentialsModalProps {
   isOpen: boolean;
