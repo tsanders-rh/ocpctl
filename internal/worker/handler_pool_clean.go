@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"github.com/tsanders-rh/ocpctl/internal/k8s"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // PoolCleanHandler handles cluster cleaning/sanitization for pools
@@ -94,6 +97,12 @@ func (h *PoolCleanHandler) Handle(ctx context.Context, job *types.Job) error {
 		if err := h.recreateServiceAccount(ctx, cluster, kubeconfigPath, outputs); err != nil {
 			log.Printf("Warning: Failed to recreate ServiceAccount for cluster %s: %v", cluster.Name, err)
 			// Don't fail the cleanup job - cluster can still be used, just without SA credentials
+		}
+
+		// Rotate kubeadmin password for security (prevents previous leasees from accessing)
+		if err := h.rotateKubeadminPassword(ctx, cluster, kubeconfigPath, outputs); err != nil {
+			log.Printf("Warning: Failed to rotate kubeadmin password for cluster %s: %v", cluster.Name, err)
+			// Don't fail the cleanup job - cluster can still be used with old password
 		}
 	}
 
@@ -332,6 +341,74 @@ func (h *PoolCleanHandler) recreateServiceAccount(ctx context.Context, cluster *
 
 	log.Printf("ServiceAccount recreated and credentials stored: sa_name=%s, expires_at=%s", creds.SAName, creds.TokenExpiresAt)
 	return nil
+}
+
+// rotateKubeadminPassword generates a new kubeadmin password and updates the cluster
+func (h *PoolCleanHandler) rotateKubeadminPassword(ctx context.Context, cluster *types.Cluster, kubeconfigPath string, outputs *types.ClusterOutputs) error {
+	log.Printf("Rotating kubeadmin password for pool cluster %s", cluster.Name)
+
+	// Generate new random password (23 characters, alphanumeric)
+	newPassword, err := generateRandomPassword(23)
+	if err != nil {
+		return fmt.Errorf("generate random password: %w", err)
+	}
+
+	// Hash password with bcrypt for OpenShift
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	// Determine which CLI to use based on cluster type
+	cli := "kubectl"
+	if cluster.ClusterType == types.ClusterTypeOpenShift {
+		cli = "oc"
+	}
+
+	// Update kubeadmin secret in kube-system namespace
+	// The secret contains the bcrypt-hashed password
+	updateCmd := exec.CommandContext(ctx, cli, "--kubeconfig", kubeconfigPath,
+		"patch", "secret", "kubeadmin", "-n", "kube-system",
+		"--type=json",
+		"-p", fmt.Sprintf(`[{"op":"replace","path":"/data/kubeadmin","value":"%s"}]`, base64.StdEncoding.EncodeToString(hashedPassword)))
+
+	if output, err := updateCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("update kubeadmin secret: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Updated kubeadmin secret in cluster %s", cluster.Name)
+
+	// Update the kubeadmin-password file on disk if it exists
+	if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
+		passwordPath := *outputs.KubeadminSecretRef
+		if strings.HasPrefix(passwordPath, "file://") {
+			passwordPath = passwordPath[7:] // Remove "file://" prefix
+		}
+
+		// Write new password to file
+		if err := os.WriteFile(passwordPath, []byte(newPassword), 0600); err != nil {
+			log.Printf("Warning: Failed to update kubeadmin-password file: %v", err)
+			// Don't fail the rotation if file update fails - the secret is updated
+		} else {
+			log.Printf("Updated kubeadmin-password file at %s", passwordPath)
+		}
+	}
+
+	log.Printf("Successfully rotated kubeadmin password for cluster %s", cluster.Name)
+	return nil
+}
+
+// generateRandomPassword generates a random alphanumeric password of the specified length
+func generateRandomPassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b), nil
 }
 
 // markClusterExpired marks a cluster as EXPIRED when cleanup cannot be performed
