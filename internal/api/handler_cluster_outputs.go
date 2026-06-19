@@ -336,11 +336,6 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 		return ErrorForbidden(c, "Invalid kubeconfig path")
 	}
 
-	// Check if kubeconfig exists
-	if _, err := os.Stat(validatedPath); os.IsNotExist(err) {
-		return ErrorNotFound(c, "Kubeconfig file not found at path")
-	}
-
 	// Set headers for file download
 	filename := fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name)
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
@@ -369,6 +364,50 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 	// Log audit event (best effort - don't fail download if logging fails)
 	if err := h.store.Audit.Log(ctx, auditEvent); err != nil {
 		LogWarning(c, "failed to log audit event", "error", err.Error())
+	}
+
+	// For pool clusters with ServiceAccount tokens, generate fresh kubeconfig
+	if cluster.PoolID != nil && outputs.SAToken != nil && *outputs.SAToken != "" {
+		LogInfo(c, "generating fresh kubeconfig for pool cluster", "cluster_id", cluster.ID, "has_sa_token", true)
+
+		// Generate kubeconfig YAML with current SA token
+		apiURL := ""
+		if outputs.APIURL != nil {
+			apiURL = *outputs.APIURL
+		} else {
+			return ErrorNotFound(c, "API URL not available")
+		}
+
+		saName := "ocpctl-lease-user"
+		if outputs.SAName != nil {
+			saName = *outputs.SAName
+		}
+
+		kubeconfigYAML := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: %s
+contexts:
+- context:
+    cluster: %s
+    user: %s
+  name: %s
+current-context: %s
+users:
+- name: %s
+  user:
+    token: %s
+`, apiURL, cluster.Name, cluster.Name, saName, cluster.Name, cluster.Name, saName, *outputs.SAToken)
+
+		return c.Blob(200, "application/x-yaml", []byte(kubeconfigYAML))
+	}
+
+	// For non-pool clusters or pool clusters without SA tokens, serve the file
+	if _, err := os.Stat(validatedPath); os.IsNotExist(err) {
+		return ErrorNotFound(c, "Kubeconfig file not found at path")
 	}
 
 	// Send file
