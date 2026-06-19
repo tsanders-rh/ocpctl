@@ -780,15 +780,33 @@ fi
 log_info ""
 log_info "Creating Windows VM template..."
 
-# Get source PVC details
-SOURCE_STORAGE_CLASS=$(oc --kubeconfig="$KUBECONFIG" get pvc windows -n $SERVICE_ACCOUNT_NAMESPACE -o jsonpath='{.spec.storageClassName}' 2>/dev/null)
-CLONE_STORAGE_CLASS="${SOURCE_STORAGE_CLASS}"
+# VM disks should use WaitForFirstConsumer for flexible zone scheduling
+# (source PVC uses Immediate for fast import, but VMs should not be zone-pinned)
+VM_STORAGE_CLASS="gp3-csi-wfc"
 
-log_info "  Storage class: ${CLONE_STORAGE_CLASS}"
-log_info "  VMs will clone from pristine PVC 'windows'"
+# Ensure gp3-csi-wfc storage class exists
+if ! oc --kubeconfig="$KUBECONFIG" get storageclass "$VM_STORAGE_CLASS" &>/dev/null; then
+    log_info "Creating WaitForFirstConsumer storage class for VM disks..."
+    cat <<EOF | oc --kubeconfig="$KUBECONFIG" apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ${VM_STORAGE_CLASS}
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+  type: gp3
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+EOF
+fi
+
+log_info "  Storage class: ${VM_STORAGE_CLASS} (WaitForFirstConsumer for flexible scheduling)"
+log_info "  VMs will restore from VolumeSnapshot (cross-zone compatible)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export STORAGE_CLASS="${CLONE_STORAGE_CLASS}"
+export STORAGE_CLASS="${VM_STORAGE_CLASS}"
 export ACCESS_MODE="ReadWriteOnce"
 
 # Note: Template creates VMs from windows-source-snapshot (VolumeSnapshot restore)
@@ -803,7 +821,7 @@ log_info "Creating default Windows VM from template..."
 oc --kubeconfig="$KUBECONFIG" process -n $SERVICE_ACCOUNT_NAMESPACE windows10-oadp-vm \
     -p VM_NAME=windows-vm \
     -p VM_NAMESPACE=$SERVICE_ACCOUNT_NAMESPACE \
-    -p STORAGE_CLASS=${CLONE_STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
+    -p STORAGE_CLASS=${VM_STORAGE_CLASS} | oc --kubeconfig="$KUBECONFIG" apply -f -
 
 log_info "✓ Windows VM created: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  VM is created but not started - start via OpenShift Console or CLI"
@@ -825,7 +843,8 @@ log_info "Windows VM Resources:"
 log_info "  Base Image: windows (pristine PVC, 70GB Windows 10)"
 log_info "  Default VM: windows-vm (namespace: $SERVICE_ACCOUNT_NAMESPACE)"
 log_info "  Template: windows10-oadp-vm"
-log_info "  Storage Class: ${CLONE_STORAGE_CLASS}"
+log_info "  Source PVC Storage: ${STORAGE_CLASS} (Immediate binding for fast import)"
+log_info "  VM Disk Storage: ${VM_STORAGE_CLASS} (WaitForFirstConsumer for flexible scheduling)"
 log_info "  Import Method: ${IMPORT_METHOD}"
 log_info ""
 log_info "Next Steps:"
