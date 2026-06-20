@@ -16,6 +16,9 @@ ExecStartPre=+/opt/ocpctl/scripts/ensure-installers.sh
 # Authenticate Azure CLI with service principal if Azure credentials are configured
 ExecStartPre=/opt/ocpctl/scripts/azure-login.sh
 
+# Authenticate IBM Cloud CLI with API key if IBM Cloud credentials are configured
+ExecStartPre=/opt/ocpctl/scripts/ibmcloud-login.sh
+
 ExecStart=/opt/ocpctl/current/ocpctl-worker
 Restart=on-failure
 RestartSec=10
