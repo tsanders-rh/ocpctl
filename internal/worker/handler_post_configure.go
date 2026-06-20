@@ -1108,13 +1108,34 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 			// Parse addon reference format: "addonID" or "addonID:channel"
 			parts := strings.SplitN(addonRef, ":", 2)
 			addonID := parts[0]
-			// Note: channel part is preserved in addonRef and used later during full resolution
+			channel := ""
+			if len(parts) == 2 {
+				channel = parts[1]
+			}
 
-			addon, err := h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+			var addon *types.PostConfigAddon
+			var err error
+
+			// Fetch addon by ID and optional channel
+			// Use ForUser variant to allow cluster owners to use their draft addons
+			if channel != "" {
+				addon, err = h.store.PostConfigAddons.GetByAddonIDAndVersionForUser(ctx, addonID, channel, cluster.OwnerID)
+			} else {
+				// Get default version for this addon
+				addon, err = h.store.PostConfigAddons.GetByAddonID(ctx, addonID)
+			}
+
 			if err != nil {
 				return fmt.Errorf("failed to resolve addon %s: %w", addonRef, err)
 			}
+
+			if !addon.Enabled {
+				log.Printf("Warning: addon %s is disabled, skipping", addonRef)
+				continue
+			}
+
 			selectedAddons = append(selectedAddons, *addon)
+			log.Printf("Resolved addon: %s (version=%s, name=%s)", addonID, addon.Version, addon.Name)
 		}
 		if len(selectedAddons) > 0 {
 			var err error
