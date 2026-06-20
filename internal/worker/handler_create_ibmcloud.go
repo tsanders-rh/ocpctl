@@ -21,7 +21,7 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 
 	log.Printf("IBM Cloud cluster creation: starting CCO workflow for %s", cluster.Name)
 
-	// Step 1: Preflight - Validate CIS DNS zone exists for base domain
+	// Step 1: Preflight - Validate base domain is specified
 	log.Printf("Running preflight checks for IBM Cloud OpenShift IPI...")
 	baseDomain := ""
 	if cluster.BaseDomain != nil {
@@ -30,10 +30,11 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 	if baseDomain == "" {
 		return fmt.Errorf("base domain is required for IBM Cloud OpenShift IPI")
 	}
-	if err := ibmcloud.ValidateCISDNSZone(ctx, baseDomain); err != nil {
-		return fmt.Errorf("CIS DNS zone preflight check failed: %w", err)
-	}
-	log.Printf("✓ CIS DNS zone preflight check passed")
+	log.Printf("✓ Base domain specified: %s", baseDomain)
+
+	// Note: CIS DNS zone validation skipped - requires CLI login which conflicts with
+	// credential detection from environment variables. The openshift-install tool will
+	// validate DNS zone access during actual installation.
 
 	// Step 2: Create manifests (required to get infraID for CCO)
 	log.Printf("Creating manifests for IBM Cloud cluster...")
