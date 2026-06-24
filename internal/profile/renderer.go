@@ -365,6 +365,7 @@ credentialsMode: Manual
 {{- end}}
 metadata:
   name: {{.ClusterName}}
+publish: {{.PublishStrategy}}
 platform:
   ibmcloud:
     region: {{.Region}}
