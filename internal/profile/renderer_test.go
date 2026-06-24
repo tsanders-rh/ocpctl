@@ -403,4 +403,72 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 			})
 		}
 	})
+
+	// Test all IBM Cloud profiles to ensure they all have publish field
+	t.Run("all IBM Cloud profiles include publish field", func(t *testing.T) {
+		// Get all profiles
+		profiles := registry.List()
+
+		pullSecret := `{"auths":{}}`
+		tags := map[string]string{}
+
+		for _, prof := range profiles {
+			// Only test IBM Cloud OpenShift profiles
+			if prof.Platform != "ibmcloud" {
+				continue
+			}
+			if prof.ClusterType != "openshift" {
+				continue
+			}
+
+			t.Run(prof.Name, func(t *testing.T) {
+				// Get default version
+				if prof.OpenshiftVersions == nil {
+					t.Skip("Profile has no OpenShift version configuration")
+					return
+				}
+				defaultVersion := prof.OpenshiftVersions.Default
+
+				req := &policy.CreateClusterRequest{
+					Name:       "test-" + prof.Name,
+					Platform:   string(prof.Platform),
+					Version:    defaultVersion,
+					Profile:    prof.Name,
+					Region:     prof.Regions.Default,
+					BaseDomain: "test.example.com",
+					Owner:      "test-user",
+					Team:       "test-team",
+					CostCenter: "test-cost-center",
+					TTLHours:   24,
+				}
+
+				config, err := renderer.RenderInstallConfig(req, pullSecret, tags)
+				require.NoError(t, err, "profile %s should render successfully", prof.Name)
+
+				// Parse and verify
+				var installConfig map[string]interface{}
+				err = yaml.Unmarshal(config, &installConfig)
+				require.NoError(t, err, "profile %s should produce valid YAML", prof.Name)
+
+				// Verify publish field exists
+				publish, ok := installConfig["publish"]
+				assert.True(t, ok, "profile %s install-config must have publish field", prof.Name)
+
+				// Verify publish value is valid
+				publishStr, ok := publish.(string)
+				assert.True(t, ok, "publish field should be a string")
+				assert.Contains(t, []string{"External", "Internal"}, publishStr,
+					"profile %s publish field must be External or Internal, got: %v", prof.Name, publish)
+
+				// Verify it matches the privateCluster setting
+				expectedPublish := "External"
+				if prof.Features.PrivateCluster {
+					expectedPublish = "Internal"
+				}
+				assert.Equal(t, expectedPublish, publishStr,
+					"profile %s with privateCluster=%v should have publish=%s",
+					prof.Name, prof.Features.PrivateCluster, expectedPublish)
+			})
+		}
+	})
 }
