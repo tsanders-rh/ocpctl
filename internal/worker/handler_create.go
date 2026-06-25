@@ -252,6 +252,11 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 	var output string
 
 	if cluster.Platform == types.PlatformIBMCloud {
+		// Start background task to add ingress security group rules
+		// This polls for VPC creation and adds rules automatically
+		// Works for both IPI (4.18) and CAPI (4.19+) installations
+		go h.AddIngressSecurityGroupRulesAsync(ctx, cluster.Name)
+
 		// IBM Cloud: use direct cluster creation (CCO already done)
 		output, err = inst.CreateClusterDirect(ctx, workDir)
 	} else {

@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/tsanders-rh/ocpctl/internal/ibmcloud"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -139,6 +141,94 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 	log.Printf("IBM Cloud environment configured for openshift-installer")
 
 	return nil
+}
+
+// AddIngressSecurityGroupRulesAsync polls for VPC creation and adds ingress security group rules
+// This is called asynchronously after openshift-install create cluster starts
+// It works for both IPI (4.18) and CAPI (4.19+) installations
+func (h *CreateHandler) AddIngressSecurityGroupRulesAsync(ctx context.Context, clusterName string) {
+	log.Printf("[%s] Starting background task to add ingress security group rules", clusterName)
+
+	// Detect IBM Cloud credentials
+	creds, err := ibmcloud.DetectCredentials()
+	if err != nil {
+		log.Printf("[%s] Warning: failed to detect IBM Cloud credentials for ingress fix: %v", clusterName, err)
+		return
+	}
+
+	// Create IBM Cloud client
+	ibmClient, err := ibmcloud.NewClient(&ibmcloud.Config{
+		APIKey:        creds.APIKey,
+		Region:        creds.Region,
+		ResourceGroup: creds.ResourceGroup,
+	})
+	if err != nil {
+		log.Printf("[%s] Warning: failed to create IBM Cloud client for ingress fix: %v", clusterName, err)
+		return
+	}
+
+	// Poll for VPC creation (timeout after 30 minutes)
+	vpcID, err := h.pollForVPCCreation(ctx, ibmClient, clusterName, 30*time.Minute)
+	if err != nil {
+		log.Printf("[%s] Warning: failed to detect VPC creation: %v", clusterName, err)
+		log.Printf("[%s] Ingress security group rules will need to be added manually", clusterName)
+		return
+	}
+
+	log.Printf("[%s] VPC detected: %s", clusterName, vpcID)
+	log.Printf("[%s] Adding ingress security group rules to VPC default security group...", clusterName)
+
+	if err := ibmClient.AddIngressSecurityGroupRules(ctx, vpcID); err != nil {
+		log.Printf("[%s] Warning: failed to add ingress security group rules: %v", clusterName, err)
+		log.Printf("[%s] Manual fix may be required: add inbound TCP 80, 443, 1936 rules to VPC default security group", clusterName)
+		return
+	}
+
+	log.Printf("[%s] ✓ Ingress security group rules added successfully", clusterName)
+}
+
+// pollForVPCCreation polls for VPC creation by listing VPCs and finding one matching the cluster name
+func (h *CreateHandler) pollForVPCCreation(ctx context.Context, client *ibmcloud.Client, clusterName string, timeout time.Duration) (string, error) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	deadline := time.Now().Add(timeout)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return "", fmt.Errorf("timeout waiting for VPC creation")
+			}
+
+			// List VPCs and find one containing the cluster name
+			vpcs, _, err := client.VPCService().ListVpcs(&vpcv1.ListVpcsOptions{})
+			if err != nil {
+				log.Printf("[%s] Error listing VPCs: %v (will retry)", clusterName, err)
+				continue
+			}
+
+			for _, vpc := range vpcs.Vpcs {
+				if vpc.Name != nil && containsClusterName(*vpc.Name, clusterName) {
+					if vpc.ID != nil {
+						return *vpc.ID, nil
+					}
+				}
+			}
+
+			log.Printf("[%s] VPC not found yet, will retry in 30 seconds...", clusterName)
+		}
+	}
+}
+
+// containsClusterName checks if a VPC name contains the cluster name
+// VPC names typically follow pattern: cluster-name-xxxxx-vpc
+func containsClusterName(vpcName, clusterName string) bool {
+	return len(vpcName) > len(clusterName) &&
+		vpcName[:len(clusterName)] == clusterName &&
+		(len(vpcName) == len(clusterName) || vpcName[len(clusterName)] == '-')
 }
 
 // extractVPCIDFromState extracts the VPC ID from the terraform network state
