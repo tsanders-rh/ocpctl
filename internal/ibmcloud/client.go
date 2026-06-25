@@ -253,3 +253,111 @@ func (c *Client) IAMService() *iamidentityv1.IamIdentityV1 {
 func (c *Client) ResourceManagerService() *resourcemanagerv2.ResourceManagerV2 {
 	return c.rmSvc
 }
+
+// AddIngressSecurityGroupRules adds security group rules for ingress load balancers
+// This allows external traffic to reach OpenShift ingress routes (*.apps domain)
+func (c *Client) AddIngressSecurityGroupRules(ctx context.Context, vpcID string) error {
+	// Get VPC details to find default security group
+	getVPCOptions := &vpcv1.GetVPCOptions{
+		ID: &vpcID,
+	}
+
+	vpc, _, err := c.vpcSvc.GetVPCWithContext(ctx, getVPCOptions)
+	if err != nil {
+		return fmt.Errorf("get VPC: %w", err)
+	}
+
+	if vpc.DefaultSecurityGroup == nil || vpc.DefaultSecurityGroup.ID == nil {
+		return fmt.Errorf("VPC %s has no default security group", vpcID)
+	}
+
+	sgID := *vpc.DefaultSecurityGroup.ID
+	sgName := *vpc.DefaultSecurityGroup.Name
+
+	fmt.Printf("Adding ingress security group rules to: %s (%s)\n", sgName, sgID)
+
+	// Define the rules we need to add
+	rules := []struct {
+		port        int64
+		description string
+	}{
+		{80, "HTTP traffic for OpenShift ingress"},
+		{443, "HTTPS traffic for OpenShift ingress"},
+		{1936, "OpenShift router stats"},
+	}
+
+	// Check if rules already exist before adding
+	getSGOptions := &vpcv1.GetSecurityGroupOptions{
+		ID: &sgID,
+	}
+
+	sg, _, err := c.vpcSvc.GetSecurityGroupWithContext(ctx, getSGOptions)
+	if err != nil {
+		return fmt.Errorf("get security group: %w", err)
+	}
+
+	// Track which ports already have rules
+	existingPorts := make(map[int64]bool)
+	for _, rule := range sg.Rules {
+		if ruleItem, ok := rule.(*vpcv1.SecurityGroupRuleSecurityGroupRuleProtocolTcpudp); ok {
+			if *ruleItem.Direction == "inbound" && *ruleItem.Protocol == "tcp" {
+				if ruleItem.PortMin != nil && ruleItem.PortMax != nil &&
+					*ruleItem.PortMin == *ruleItem.PortMax {
+					existingPorts[*ruleItem.PortMin] = true
+				}
+			}
+		}
+	}
+
+	// Add rules for any ports that don't already exist
+	for _, rule := range rules {
+		if existingPorts[rule.port] {
+			fmt.Printf("✓ Port %d rule already exists, skipping\n", rule.port)
+			continue
+		}
+
+		// Create the inbound rule
+		direction := "inbound"
+		protocol := "tcp"
+		remote := &vpcv1.SecurityGroupRuleRemotePrototype{
+			CIDRBlock: core.StringPtr("0.0.0.0/0"),
+		}
+
+		createRuleOptions := &vpcv1.CreateSecurityGroupRuleOptions{
+			SecurityGroupID: &sgID,
+			SecurityGroupRulePrototype: &vpcv1.SecurityGroupRulePrototype{
+				Direction: &direction,
+				Protocol:  &protocol,
+				PortMin:   &rule.port,
+				PortMax:   &rule.port,
+				Remote:    remote,
+			},
+		}
+
+		_, _, err := c.vpcSvc.CreateSecurityGroupRuleWithContext(ctx, createRuleOptions)
+		if err != nil {
+			// Check if error is because rule already exists
+			if !containsErrorCode(err, "duplicate") {
+				return fmt.Errorf("create security group rule for port %d: %w", rule.port, err)
+			}
+			fmt.Printf("✓ Port %d rule already exists (from error), skipping\n", rule.port)
+			continue
+		}
+
+		fmt.Printf("✓ Added inbound TCP %d rule from 0.0.0.0/0 (%s)\n", rule.port, rule.description)
+	}
+
+	return nil
+}
+
+// containsErrorCode checks if an error message contains a specific code
+func containsErrorCode(err error, code string) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return fmt.Sprintf("%v", errStr) != "" &&
+		(fmt.Sprintf("%v", errStr) == code ||
+		 fmt.Sprintf("%v", errStr) != "" &&
+		 len(errStr) > 0)
+}

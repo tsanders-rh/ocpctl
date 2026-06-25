@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -43,6 +44,13 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 	}
 	log.Printf("✓ Manifests created successfully")
 
+	// Step 2.5: Extract VPC ID from terraform state (manifests create the VPC)
+	vpcID, err := h.extractVPCIDFromState(workDir)
+	if err != nil {
+		log.Printf("Warning: could not extract VPC ID from state: %v", err)
+		log.Printf("Ingress security group rules will not be added automatically")
+	}
+
 	// Detect IBM Cloud credentials
 	creds, err := ibmcloud.DetectCredentials()
 	if err != nil {
@@ -73,6 +81,19 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 	}
 
 	log.Printf("✓ IBM Cloud credentials validated")
+
+	// Step 3: Add ingress security group rules to VPC default security group
+	// This fixes the issue where ingress load balancers use the VPC default security group
+	// which blocks all external traffic by default
+	if vpcID != "" {
+		log.Printf("Adding ingress security group rules to VPC default security group...")
+		if err := ibmClient.AddIngressSecurityGroupRules(ctx, vpcID); err != nil {
+			log.Printf("Warning: failed to add ingress security group rules: %v", err)
+			log.Printf("Manual fix may be required: add inbound TCP 80, 443, 1936 rules to VPC default security group")
+		} else {
+			log.Printf("✓ Ingress security group rules added successfully")
+		}
+	}
 
 	// Get profile to extract resource group
 	prof, err := h.registry.Get(cluster.Profile)
@@ -118,6 +139,64 @@ func (h *CreateHandler) HandleIBMCloudCreate(ctx context.Context, job *types.Job
 	log.Printf("IBM Cloud environment configured for openshift-installer")
 
 	return nil
+}
+
+// extractVPCIDFromState extracts the VPC ID from the terraform network state
+func (h *CreateHandler) extractVPCIDFromState(workDir string) (string, error) {
+	// The VPC ID is in terraform.network.tfstate after manifests are created
+	statePath := filepath.Join(workDir, "terraform.network.tfstate")
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return "", fmt.Errorf("read terraform state: %w", err)
+	}
+
+	// Parse the terraform state JSON
+	var state map[string]interface{}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return "", fmt.Errorf("parse terraform state: %w", err)
+	}
+
+	// Extract VPC ID from resources
+	resources, ok := state["resources"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("terraform state has no resources")
+	}
+
+	for _, res := range resources {
+		resource, ok := res.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Look for the VPC resource
+		if resource["type"] == "ibm_is_vpc" && resource["name"] == "vpc" {
+			instances, ok := resource["instances"].([]interface{})
+			if !ok || len(instances) == 0 {
+				continue
+			}
+
+			instance, ok := instances[0].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			attributes, ok := instance["attributes"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			vpcID, ok := attributes["id"].(string)
+			if !ok {
+				continue
+			}
+
+			log.Printf("Extracted VPC ID from terraform state: %s", vpcID)
+			return vpcID, nil
+		}
+	}
+
+	return "", fmt.Errorf("VPC resource not found in terraform state")
 }
 
 // StoreIBMCloudMetadata stores IBM Cloud-specific metadata after cluster creation
