@@ -123,7 +123,7 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 
 	// Apply all manifests from profile
 	hasDashboard := false
-	if len(prof.PostDeployment.Manifests) > 0 {
+	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
@@ -771,7 +771,7 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 
 	// Apply all manifests from profile
 	hasDashboard := false
-	if len(prof.PostDeployment.Manifests) > 0 {
+	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		logWriter("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
 			logWriter("Applying manifest: %s", manifest.Name)
@@ -1012,7 +1012,7 @@ func (h *PostConfigureHandler) handleGKEPostConfigure(ctx context.Context, job *
 
 	// Apply all manifests from profile
 	hasDashboard := false
-	if len(prof.PostDeployment.Manifests) > 0 {
+	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
