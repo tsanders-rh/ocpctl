@@ -296,6 +296,56 @@ func (i *IKSInstaller) GetKubeconfig(ctx context.Context, clusterNameOrID, outpu
 	return nil
 }
 
+// EnableAddon enables an addon for an IKS cluster
+func (i *IKSInstaller) EnableAddon(ctx context.Context, clusterNameOrID, addonID string) error {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "cluster", "addon", "enable", addonID,
+		"--cluster", clusterNameOrID,
+		"-f")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("enable addon %s: %w\nStderr: %s", addonID, err, stderr.String())
+	}
+
+	return nil
+}
+
+// GetAddonStatus checks if an addon is enabled for a cluster
+func (i *IKSInstaller) GetAddonStatus(ctx context.Context, clusterNameOrID, addonID string) (string, error) {
+	cmd := exec.CommandContext(ctx, i.binaryPath, "ks", "cluster", "addon", "ls",
+		"--cluster", clusterNameOrID,
+		"--output", "json")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("list addons: %w\nStderr: %s", err, stderr.String())
+	}
+
+	// Parse JSON output to find the addon
+	var addons []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+
+	if err := json.Unmarshal(stdout.Bytes(), &addons); err != nil {
+		return "", fmt.Errorf("parse addon list: %w", err)
+	}
+
+	for _, addon := range addons {
+		if addon.Name == addonID {
+			return addon.Status, nil
+		}
+	}
+
+	return "", nil // Addon not found
+}
+
 // WaitForCluster waits for a cluster to reach the desired state
 // If logPath is provided, status updates are written to the log file
 func (i *IKSInstaller) WaitForCluster(ctx context.Context, clusterNameOrID, desiredState string, timeout time.Duration, logPath string) error {

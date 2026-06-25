@@ -769,8 +769,44 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 	}
 	logWriter("Kubeconfig retrieved successfully")
 
-	// Apply all manifests from profile
+	// Track if kubernetes-dashboard is installed (via addon or manifest)
 	hasDashboard := false
+
+	// Install IKS addons from profile
+	// Note: IKS managed addons are typically infrastructure-related (vpc-block-csi-driver, cluster-autoscaler, etc.)
+	// Kubernetes Dashboard is installed via manifests, not as a managed addon
+	if len(prof.DefaultAddons) > 0 {
+		logWriter("Installing %d default addons from profile", len(prof.DefaultAddons))
+		for _, addon := range prof.DefaultAddons {
+			logWriter("Installing addon: %s", addon.AddonID)
+
+			// Check if addon is already installed
+			status, err := iksInstaller.GetAddonStatus(ctx, cluster.Name, addon.AddonID)
+			if err != nil {
+				logWriter("Warning: failed to check addon status for %s: %v", addon.AddonID, err)
+			} else if status != "" {
+				logWriter("Addon %s is already installed (status: %s), skipping", addon.AddonID, status)
+				continue
+			}
+
+			// Enable the addon
+			if err := iksInstaller.EnableAddon(ctx, cluster.Name, addon.AddonID); err != nil {
+				logWriter("Warning: failed to enable addon %s: %v", addon.AddonID, err)
+			} else {
+				logWriter("✓ Addon %s enabled successfully", addon.AddonID)
+
+				// Wait for addon to be ready
+				logWriter("Waiting for addon %s to be ready...", addon.AddonID)
+				if err := h.waitForIKSAddonReady(ctx, cluster.Name, addon.AddonID, logWriter); err != nil {
+					logWriter("Warning: timeout waiting for addon to be ready: %v", err)
+				} else {
+					logWriter("✓ Addon %s is ready", addon.AddonID)
+				}
+			}
+		}
+	}
+
+	// Apply all manifests from profile
 	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		logWriter("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
@@ -944,6 +980,56 @@ func (h *PostConfigureHandler) waitForIKSIngressReady(ctx context.Context, clust
 	}
 
 	return fmt.Errorf("Ingress did not become ready after %d attempts (%v)", maxAttempts, time.Duration(maxAttempts)*retryDelay)
+}
+
+// waitForIKSAddonReady waits for an IKS addon to be ready
+func (h *PostConfigureHandler) waitForIKSAddonReady(ctx context.Context, clusterName, addonID string, logWriter func(string, ...interface{})) error {
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes timeout
+	retryDelay := 10 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Query addon status
+		cmd := exec.CommandContext(ctx, "ibmcloud", "ks", "cluster", "addon", "ls", "--cluster", clusterName, "--output", "json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logWriter("Warning: failed to query addon status (attempt %d/%d): %v", attempt, maxAttempts, err)
+		} else {
+			// Parse addon list
+			var addons []struct {
+				Name   string `json:"name"`
+				Status string `json:"status"`
+				Health string `json:"health"`
+			}
+			if err := json.Unmarshal(output, &addons); err == nil {
+				// Find our addon
+				for _, addon := range addons {
+					if addon.Name == addonID {
+						// Check if addon is healthy/normal
+						if addon.Health == "normal" || addon.Status == "ready" {
+							logWriter("Addon %s is ready (health: %s, status: %s)", addonID, addon.Health, addon.Status)
+							return nil
+						}
+
+						// Log progress every minute
+						if attempt%6 == 0 {
+							logWriter("Addon %s status: %s, health: %s (attempt %d/%d)", addonID, addon.Status, addon.Health, attempt, maxAttempts)
+						}
+						break
+					}
+				}
+			}
+		}
+
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for addon %s", addonID)
+		case <-time.After(retryDelay):
+			// Continue to next attempt
+		}
+	}
+
+	return fmt.Errorf("addon %s did not become ready after %d attempts (%v)", addonID, maxAttempts, time.Duration(maxAttempts)*retryDelay)
 }
 
 // handleGKEPostConfigure applies post-deployment manifests for GKE clusters
