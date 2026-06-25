@@ -67,8 +67,11 @@ platformConfig:
     - authenticator
     publicAccess: true
     privateAccess: true
-defaultAddons:
-- addonID: kubernetes-dashboard
+postDeployment:
+  enabled: true
+  manifests:
+  - name: kubernetes-dashboard
+    url: https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
 metadata:
   capabilities:
   - AWS EKS managed Kubernetes
