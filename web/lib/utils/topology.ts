@@ -90,14 +90,17 @@ export function getTopologyLayout(
   let currentY = MARGIN;
 
   // Platform header (not a visual element, just metadata)
+  // Determine cluster type: prioritize actual cluster type from database,
+  // otherwise infer from profile (EKS if AWS with node_groups, else OpenShift)
+  const clusterType = (cluster as any).cluster_type ||
+                      (profile?.platform === Platform.AWS && profile.compute.node_groups ? ClusterType.EKS : ClusterType.OpenShift);
+
   const layout: TopologyLayout = {
     elements: [],
     connections: [],
     sections: [],
     platform: cluster.platform,
-    cluster_type: profile?.platform === Platform.AWS && profile.compute.node_groups ? ClusterType.EKS :
-                  profile?.platform === Platform.IBMCloud ? ClusterType.IKS :
-                  ClusterType.OpenShift,
+    cluster_type: clusterType,
     region: cluster.region,
     hasStorage: !!(cluster as any).storage_config,
   };
