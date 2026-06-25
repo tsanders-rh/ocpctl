@@ -126,9 +126,36 @@ func (h *PostConfigureHandler) handleEKSPostConfigure(ctx context.Context, job *
 	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
+			// Create configuration tracking entry
+			configID, err := h.store.ClusterConfigurations.Create(ctx, cluster.ID, types.ConfigTypeManifest, manifest.Name)
+			if err != nil {
+				log.Printf("Warning: failed to create configuration tracking for %s: %v", manifest.Name, err)
+			}
+
+			// Update status to installing
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusInstalling, nil); err != nil {
+					log.Printf("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
+			// Apply the manifest
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				// Mark as failed
+				if configID != "" {
+					errMsg := err.Error()
+					_ = h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+				}
 				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
 			}
+
+			// Mark as completed
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusCompleted, nil); err != nil {
+					log.Printf("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
 			// Check if this is the kubernetes-dashboard
 			if manifest.Name == "kubernetes-dashboard" {
 				hasDashboard = true
@@ -811,12 +838,40 @@ func (h *PostConfigureHandler) handleIKSPostConfigure(ctx context.Context, job *
 		logWriter("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
 			logWriter("Applying manifest: %s", manifest.Name)
+
+			// Create configuration tracking entry
+			configID, err := h.store.ClusterConfigurations.Create(ctx, cluster.ID, types.ConfigTypeManifest, manifest.Name)
+			if err != nil {
+				logWriter("Warning: failed to create configuration tracking for %s: %v", manifest.Name, err)
+			}
+
+			// Update status to installing
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusInstalling, nil); err != nil {
+					logWriter("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
+			// Apply the manifest
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				// Mark as failed
+				if configID != "" {
+					errMsg := err.Error()
+					_ = h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+				}
 				streamCancel()
 				time.Sleep(LogBatchFlushDelay)
 				_ = streamer.Stop()
 				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
 			}
+
+			// Mark as completed
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusCompleted, nil); err != nil {
+					logWriter("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
 			// Check if this is the kubernetes-dashboard
 			if manifest.Name == "kubernetes-dashboard" {
 				hasDashboard = true
@@ -1101,9 +1156,36 @@ func (h *PostConfigureHandler) handleGKEPostConfigure(ctx context.Context, job *
 	if prof.PostDeployment != nil && len(prof.PostDeployment.Manifests) > 0 {
 		log.Printf("Applying %d manifests from profile", len(prof.PostDeployment.Manifests))
 		for _, manifest := range prof.PostDeployment.Manifests {
+			// Create configuration tracking entry
+			configID, err := h.store.ClusterConfigurations.Create(ctx, cluster.ID, types.ConfigTypeManifest, manifest.Name)
+			if err != nil {
+				log.Printf("Warning: failed to create configuration tracking for %s: %v", manifest.Name, err)
+			}
+
+			// Update status to installing
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusInstalling, nil); err != nil {
+					log.Printf("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
+			// Apply the manifest
 			if err := h.applyManifest(ctx, kubeconfigPath, manifest); err != nil {
+				// Mark as failed
+				if configID != "" {
+					errMsg := err.Error()
+					_ = h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusFailed, &errMsg)
+				}
 				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
 			}
+
+			// Mark as completed
+			if configID != "" {
+				if err := h.store.ClusterConfigurations.UpdateStatus(ctx, configID, types.ConfigStatusCompleted, nil); err != nil {
+					log.Printf("Warning: failed to update configuration status: %v", err)
+				}
+			}
+
 			// Check if this is the kubernetes-dashboard
 			if manifest.Name == "kubernetes-dashboard" {
 				hasDashboard = true
