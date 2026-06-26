@@ -2744,7 +2744,7 @@ func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *
 	// Construct kubeconfig path
 	workDir := os.Getenv("WORK_DIR")
 	if workDir == "" {
-		workDir = "/opt/ocpctl/clusters"
+		workDir = "/var/lib/ocpctl/clusters"
 	}
 	kubeconfigPath := filepath.Join(workDir, cluster.ID, "auth", "kubeconfig")
 
