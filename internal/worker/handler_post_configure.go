@@ -546,6 +546,13 @@ func (h *PostConfigureHandler) updateClusterConsoleURL(ctx context.Context, clus
 func (h *PostConfigureHandler) generateTokenKubeconfig(ctx context.Context, awsKubeconfigPath, outputPath string, cluster *types.Cluster) error {
 	log.Println("Generating token-based kubeconfig for kubectl access...")
 
+	// Extract API server URL from the AWS kubeconfig
+	apiURL, err := h.extractAPIServerURL(ctx, awsKubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("extract API server URL: %w", err)
+	}
+	log.Printf("Extracted API server URL: %s", apiURL)
+
 	// Create and apply service account manifest
 	if err := h.createKubectlServiceAccount(ctx, awsKubeconfigPath); err != nil {
 		return err
@@ -561,7 +568,26 @@ func (h *PostConfigureHandler) generateTokenKubeconfig(ctx context.Context, awsK
 	}
 
 	// Build and write the kubeconfig file
-	return h.writeTokenBasedKubeconfig(cluster, token, caCert, outputPath)
+	return h.writeTokenBasedKubeconfig(cluster, apiURL, token, caCert, outputPath)
+}
+
+// extractAPIServerURL extracts the API server URL from a kubeconfig file
+func (h *PostConfigureHandler) extractAPIServerURL(ctx context.Context, kubeconfigPath string) (string, error) {
+	// Use kubectl to extract the server URL from the kubeconfig
+	cmd := exec.CommandContext(ctx, "kubectl", "config", "view", "--kubeconfig", kubeconfigPath,
+		"--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("extract server URL: %w\nOutput: %s", err, string(output))
+	}
+
+	apiURL := strings.TrimSpace(string(output))
+	if apiURL == "" {
+		return "", fmt.Errorf("no API server URL found in kubeconfig")
+	}
+
+	return apiURL, nil
 }
 
 // createKubectlServiceAccount creates and applies a service account manifest for kubectl access
@@ -647,9 +673,7 @@ func (h *PostConfigureHandler) extractServiceAccountCredentials(ctx context.Cont
 }
 
 // writeTokenBasedKubeconfig generates and writes a token-based kubeconfig file
-func (h *PostConfigureHandler) writeTokenBasedKubeconfig(cluster *types.Cluster, token, caCert, outputPath string) error {
-	apiURL := fmt.Sprintf("https://%s.%s.eks.amazonaws.com", cluster.Name, cluster.Region)
-
+func (h *PostConfigureHandler) writeTokenBasedKubeconfig(cluster *types.Cluster, apiURL, token, caCert, outputPath string) error {
 	// Generate kubeconfig YAML
 	kubeconfig := fmt.Sprintf(`apiVersion: v1
 kind: Config
