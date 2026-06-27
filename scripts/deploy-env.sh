@@ -32,8 +32,8 @@ fi
 # Environment-specific configuration
 case $ENVIRONMENT in
   dev)
-    API_HOST="DEV_SERVER_IP"  # TODO: Replace with actual dev server IP
-    WORKER_HOSTS=("DEV_SERVER_IP")
+    API_HOST="54.167.79.11"
+    WORKER_HOSTS=("54.167.79.11")
     SSH_USER="ubuntu"
     SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
     S3_BUCKET="s3://ocpctl-dev-binaries"

@@ -313,6 +313,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "dev_binaries" {
     id     = "delete-old-versions"
     status = "Enabled"
 
+    filter {}
+
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
@@ -343,6 +345,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "dev_artifacts" {
     id     = "delete-old-artifacts"
     status = "Enabled"
 
+    filter {}
+
     expiration {
       days = 30
     }
@@ -351,6 +355,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "dev_artifacts" {
   rule {
     id     = "delete-old-versions"
     status = "Enabled"
+
+    filter {}
 
     noncurrent_version_expiration {
       noncurrent_days = 7

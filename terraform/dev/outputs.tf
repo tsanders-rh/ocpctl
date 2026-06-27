@@ -58,6 +58,7 @@ output "ssh_command" {
 # Instructions for next steps
 output "next_steps" {
   description = "Next steps after infrastructure is created"
+  sensitive   = true
   value = <<-EOT
 
     === OCPCTL Dev Environment Created Successfully ===
@@ -67,7 +68,7 @@ output "next_steps" {
        chmod 600 ~/.ssh/${var.key_name}
 
     2. SSH to dev server:
-       ${self.value.ssh_command}
+       ssh -i ~/.ssh/${var.key_name} ubuntu@${aws_eip.dev_server.public_ip}
 
     3. Update deploy-env.sh with dev server IP:
        API_HOST="${aws_eip.dev_server.public_ip}"
@@ -77,7 +78,7 @@ output "next_steps" {
        cp config/worker.env.dev.template config/worker.env.dev
 
     5. Update config files with:
-       DATABASE_URL: ${self.value.database_url}
+       DATABASE_URL: postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.dev.address}:5432/${var.db_name}?sslmode=require
        S3_BUCKET_NAME: ${aws_s3_bucket.dev_binaries.id}
 
     6. Bootstrap dev server:

@@ -54,7 +54,7 @@ variable "dev_subdomain" {
 variable "postgres_version" {
   description = "PostgreSQL version"
   type        = string
-  default     = "15.4"
+  default     = "17.9"
 }
 
 variable "rds_instance_class" {
