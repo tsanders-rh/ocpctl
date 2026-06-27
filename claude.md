@@ -79,6 +79,126 @@ sudo systemctl restart ocpctl-worker
 
 ---
 
+## Development Environment
+
+### Dev Server
+- **Hostname**: ocpctl-dev
+- **IP**: 54.167.79.11
+- **Domain**: dev.ocpctl.mg.dog8code.com
+- **Instance Type**: t3.medium (2 vCPU, 4GB RAM)
+- **OS**: Ubuntu 22.04 LTS
+- **SSH**: `ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11`
+
+### Service Ports
+- **API Server**: 8080 (internal, proxied via nginx)
+- **Worker Health**: 8081 (internal)
+- **Web UI**: 3000 (internal, proxied via nginx)
+- **Nginx**: 80, 443 (public)
+
+### Dev Paths
+```
+/opt/ocpctl/
+├── current/                    # Symlink to active version
+│   ├── ocpctl-api             # API server binary
+│   └── ocpctl-worker          # Worker binary
+├── releases/                   # Versioned deployments
+│   └── v0.YYYYMMDD.HASH/
+├── profiles/                   # Cluster profile YAML files (30+)
+├── addons/                     # CNV, MTA, MTC, OADP definitions
+└── web/                        # Next.js frontend build
+
+/etc/ocpctl/
+├── api.env                     # API server config (DATABASE_URL, JWT_SECRET)
+├── worker.env                  # Worker config (WORK_DIR, CONCURRENCY, cloud credentials)
+└── web.env                     # Web frontend config (NEXT_PUBLIC_API_URL, etc.)
+
+/var/lib/ocpctl/
+└── clusters/                   # Worker cluster work directories
+```
+
+### Systemd Services
+```bash
+# Check service status
+sudo systemctl status ocpctl-api
+sudo systemctl status ocpctl-worker
+sudo systemctl status ocpctl-web
+
+# View logs
+sudo journalctl -u ocpctl-api -f
+sudo journalctl -u ocpctl-worker -f
+sudo journalctl -u ocpctl-web -f
+
+# Restart services
+sudo systemctl restart ocpctl-api
+sudo systemctl restart ocpctl-worker
+sudo systemctl restart ocpctl-web
+```
+
+### Database
+- **RDS Endpoint**: ocpctl-dev-db.czu6z8r7it71.us-east-1.rds.amazonaws.com:5432
+- **Database**: ocpctl_dev
+- **User**: ocpctl_dev_admin
+- **Engine**: PostgreSQL 17.9 (same as production)
+- **Instance**: db.t3.micro
+- **Connection**: See config/worker.env.dev for DATABASE_URL
+
+### S3 Buckets
+- **ocpctl-dev-binaries**: Worker binaries, profiles, addons (shared with production)
+- **ocpctl-dev-artifacts**: Cluster state, kubeconfigs, installer directories
+
+### Login Credentials
+- **URL**: https://dev.ocpctl.mg.dog8code.com
+- **Email**: `admin@example.com` or `admin@localhost`
+- **Password**: `changeme` (should be changed after first login)
+
+### Dev Server Access
+```bash
+# SSH to dev
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11
+
+# Check service status
+sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
+
+# View live logs
+sudo journalctl -u ocpctl-api -f
+sudo journalctl -u ocpctl-worker -f
+sudo journalctl -u ocpctl-web -f
+
+# Restart services
+sudo systemctl restart ocpctl-api
+sudo systemctl restart ocpctl-worker
+sudo systemctl restart ocpctl-web
+
+# Check database connectivity
+PGPASSWORD=<password> psql -h ocpctl-dev-db.czu6z8r7it71.us-east-1.rds.amazonaws.com -U ocpctl_dev_admin -d ocpctl_dev -c "SELECT version();"
+```
+
+### Deployment to Dev
+```bash
+# Deploy to dev environment
+./scripts/deploy-env.sh dev
+
+# Or deploy specific version
+./scripts/deploy-env.sh dev v0.20260627.22e3b9b
+```
+
+### Infrastructure Management
+```bash
+# Navigate to terraform dev directory
+cd terraform/dev
+
+# Plan infrastructure changes
+terraform plan
+
+# Apply infrastructure changes
+terraform apply
+
+# Destroy infrastructure (use carefully!)
+terraform destroy
+```
+
+---
+
 ## Code Structure
 
 ### Top-Level Directories
@@ -415,6 +535,25 @@ sudo systemctl restart ocpctl-worker
 psql $DATABASE_URL -c "SELECT version();"
 ```
 
+### Dev Server Access
+```bash
+# SSH to dev
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11
+
+# Check service status
+sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
+
+# View live logs
+sudo journalctl -u ocpctl-api -f
+sudo journalctl -u ocpctl-worker -f
+sudo journalctl -u ocpctl-web -f
+
+# Restart services
+sudo systemctl restart ocpctl-api
+sudo systemctl restart ocpctl-worker
+sudo systemctl restart ocpctl-web
+```
+
 ### Development
 ```bash
 # Run locally
@@ -541,6 +680,14 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-06-27**: Dev Environment Setup Complete
+- Provisioned complete dev infrastructure with Terraform (EC2, RDS PostgreSQL 17.9, S3, Route53)
+- Deployed API server, worker service, and Next.js web frontend
+- Configured nginx reverse proxy with Let's Encrypt SSL
+- Created config files: api.env.dev, worker.env.dev, web.env
+- All cloud credentials copied from production for full cluster provisioning capability
+- Dev environment accessible at https://dev.ocpctl.mg.dog8code.com
+
 **2026-05-28**: Windows VM Provisioning Optimization with Regional EBS Snapshots
 - Reduced Windows VM deployment time from 30-50 minutes to 2-3 minutes (94% reduction)
 - Hybrid approach: EBS snapshots (fast path) with automatic S3 fallback (slow path)
@@ -602,6 +749,7 @@ ocpctl:region: us-east-1
 ## Resources
 
 - **Production URL**: https://ocpctl.mg.dog8code.com
+- **Dev URL**: https://dev.ocpctl.mg.dog8code.com
 - **GitHub**: https://github.com/tsanders-rh/ocpctl
 - **Docs**: `/Users/tsanders/Workspace2/ocpctl/docs/`
 - **Architecture Decisions**: `docs/features/` (ROSA_SUPPORT_PLAN.md, etc.)
@@ -609,4 +757,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-05-28 (Windows VM snapshot optimization)
+**Last Updated**: 2026-06-27 (Added dev environment documentation)
