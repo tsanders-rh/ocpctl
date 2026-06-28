@@ -233,15 +233,15 @@ func (s *TeamStore) GetTeamsWithClusterCounts(ctx context.Context) (map[string]i
 	return counts, nil
 }
 
-// GetTeamClusters returns all active clusters for a team
+// GetTeamClusters returns all clusters for a team (including destroyed for cost tracking)
 func (s *TeamStore) GetTeamClusters(ctx context.Context, team string) ([]*types.Cluster, error) {
 	query := `
 		SELECT id, name, profile, cluster_type, platform, status, owner_id, team,
 		       region, version, cost_center, ttl_hours, destroy_at,
-		       created_at, updated_at
+		       created_at, updated_at, destroyed_at
 		FROM clusters
 		WHERE team = $1
-		  AND status NOT IN ('DESTROYED', 'FAILED')
+		  AND status != 'FAILED'
 		ORDER BY created_at DESC
 	`
 
@@ -270,6 +270,7 @@ func (s *TeamStore) GetTeamClusters(ctx context.Context, team string) ([]*types.
 			&cluster.DestroyAt,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
+			&cluster.DestroyedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan cluster: %w", err)

@@ -743,7 +743,12 @@ func (h *TeamHandler) calculateEffectiveCost(cluster *types.Cluster, prof *profi
 func (h *TeamHandler) calculatePeriodCost(cluster *types.Cluster, effectiveCost float64, periodStart, periodEnd time.Time) (float64, float64) {
 	// Determine cluster's active period within the date range
 	clusterStart := cluster.CreatedAt
-	clusterEnd := periodEnd // Assume still running (no destroy_at for active clusters)
+	clusterEnd := periodEnd // Assume still running
+
+	// If cluster is destroyed, use destroyed_at as the end time
+	if cluster.Status == types.ClusterStatusDestroyed && cluster.DestroyedAt != nil {
+		clusterEnd = *cluster.DestroyedAt
+	}
 
 	// Calculate intersection of cluster lifetime and period
 	activeStart := clusterStart
