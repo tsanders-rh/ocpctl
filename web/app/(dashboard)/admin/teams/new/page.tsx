@@ -73,12 +73,12 @@ export default function NewTeamPage() {
               <Label htmlFor="name">Team Name *</Label>
               <Input
                 id="name"
-                placeholder="engineering"
+                placeholder="Engineering"
                 {...register("name", {
                   required: "Team name is required",
                   pattern: {
-                    value: /^[a-z0-9-]+$/,
-                    message: "Team name must be lowercase letters, numbers, and hyphens only",
+                    value: /^[a-zA-Z0-9-]+$/,
+                    message: "Team name must contain only letters, numbers, and hyphens",
                   },
                   minLength: {
                     value: 2,
@@ -94,7 +94,7 @@ export default function NewTeamPage() {
                 <p className="text-sm text-red-600">{errors.name.message}</p>
               )}
               <p className="text-sm text-muted-foreground">
-                Use lowercase letters, numbers, and hyphens (e.g., "engineering", "data-science")
+                Use letters, numbers, and hyphens (e.g., "Engineering", "Data-Science", "staff")
               </p>
             </div>
 
