@@ -2,20 +2,38 @@
 
 ## Quick Reference
 
-### Deploy to Dev
+### Deploy Backend to Dev
 ```bash
 ./scripts/deploy-env.sh dev
 ```
 
-### Deploy to Production (with confirmation)
+### Deploy Backend to Production (with confirmation)
 ```bash
 ./scripts/deploy-env.sh production
 ```
 
-### Deploy Specific Version
+### Deploy Backend Specific Version
 ```bash
 ./scripts/deploy-env.sh dev v0.20260614.abc1234
 ./scripts/deploy-env.sh production v0.20260614.abc1234
+```
+
+### Deploy Web Frontend
+```bash
+# Deploy to dev
+./scripts/deploy-web.sh dev
+
+# Deploy to production
+./scripts/deploy-web.sh production
+```
+
+### Full Deployment (Backend + Frontend)
+```bash
+# Dev
+./scripts/deploy-env.sh dev && ./scripts/deploy-web.sh dev
+
+# Production
+./scripts/deploy-env.sh production && ./scripts/deploy-web.sh production
 ```
 
 ### Rollback
@@ -376,6 +394,130 @@ ssh production 'sudo journalctl -u ocpctl-api -u ocpctl-worker -f'
 git push origin hotfix/critical-bug-fix
 gh pr create --title "[HOTFIX] Fix cluster creation deadlock" \
   --body "Emergency hotfix deployed to production at $(date)"
+```
+
+---
+
+## Web Frontend Deployment
+
+### What deploy-web.sh Does
+
+```
+1. Install npm dependencies locally
+   └── npm install
+
+2. Run linting
+   └── npm run lint (with option to continue if failed)
+
+3. Build production bundle
+   ├── npm run build
+   └── Creates optimized .next/ directory
+
+4. Create deployment package
+   ├── tar czf ocpctl-web-VERSION.tar.gz
+   └── Excludes: node_modules, .next/cache, .env.local
+
+5. Upload to server
+   └── scp package to /tmp/
+
+6. Deploy on server
+   ├── Stop ocpctl-web service
+   ├── Backup current deployment
+   ├── Extract new files to /opt/ocpctl/web
+   ├── npm install --production (on server)
+   └── Start ocpctl-web service
+
+7. Verify deployment
+   ├── Check service is running
+   ├── Test http://localhost:3000
+   └── Test public URL via nginx
+```
+
+### Web Frontend Files Deployed
+
+```
+/opt/ocpctl/web/
+├── .next/              # Production build (optimized, minified)
+├── public/             # Static assets
+├── src/                # Source code (for error traces)
+├── package.json        # Dependencies
+├── next.config.mjs     # Next.js config
+└── node_modules/       # Production dependencies only
+```
+
+### Web Configuration
+
+Environment file: `/etc/ocpctl/web.env`
+
+**Dev:**
+```bash
+NEXT_PUBLIC_API_URL=/api/v1
+NEXT_PUBLIC_AUTH_MODE=jwt
+NEXT_PUBLIC_AWS_REGION=us-east-1
+NEXT_PUBLIC_APP_ENV=dev
+NODE_ENV=production
+PORT=3000
+```
+
+**Production:**
+```bash
+NEXT_PUBLIC_API_URL=/api/v1
+NEXT_PUBLIC_AUTH_MODE=iam  # or jwt
+NEXT_PUBLIC_AWS_REGION=us-east-1
+NEXT_PUBLIC_APP_ENV=production
+NODE_ENV=production
+PORT=3000
+```
+
+### Web Frontend Rollback
+
+```bash
+# List backups
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11 \
+  'sudo ls -d /opt/ocpctl/web.backup.*'
+
+# Restore backup
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11 \
+  'sudo systemctl stop ocpctl-web && \
+   sudo rm -rf /opt/ocpctl/web && \
+   sudo mv /opt/ocpctl/web.backup.20260627-070000 /opt/ocpctl/web && \
+   sudo systemctl start ocpctl-web'
+```
+
+### Troubleshooting Web Deployment
+
+**Build fails:**
+```bash
+# Check Node.js version (must be 18+)
+node --version
+
+# Clean and rebuild
+cd web
+rm -rf .next node_modules
+npm install
+npm run build
+```
+
+**Service won't start:**
+```bash
+# Check logs
+ssh server 'sudo journalctl -u ocpctl-web -n 50 --no-pager'
+
+# Check if port 3000 is in use
+ssh server 'sudo lsof -i :3000'
+
+# Verify environment file
+ssh server 'sudo cat /etc/ocpctl/web.env'
+```
+
+**Frontend shows 404 or blank page:**
+```bash
+# Verify nginx routing
+ssh server 'sudo nginx -t'
+ssh server 'sudo cat /etc/nginx/sites-enabled/ocpctl'
+
+# Check nginx logs
+ssh server 'sudo tail -f /var/log/nginx/error.log'
 ```
 
 ---
