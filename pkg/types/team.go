@@ -67,3 +67,34 @@ type AddUserToTeamRequest struct {
 	UserID string  `json:"user_id" validate:"required,uuid"`
 	Notes  *string `json:"notes,omitempty"`
 }
+
+// ClusterCostDetail represents cost details for a single cluster
+type ClusterCostDetail struct {
+	ID                       string    `json:"id"`
+	Name                     string    `json:"name"`
+	Profile                  string    `json:"profile"`
+	Status                   string    `json:"status"`
+	Owner                    string    `json:"owner"`
+	CreatedAt                time.Time `json:"created_at"`
+	EstimatedHourlyCost      float64   `json:"estimated_hourly_cost"`
+	CurrentMonthCost         float64   `json:"current_month_cost"`
+	Last30DaysCost           float64   `json:"last_30_days_cost"`
+	RuntimeHoursCurrentMonth float64   `json:"runtime_hours_current_month"`
+	RuntimeHoursLast30Days   float64   `json:"runtime_hours_last_30_days"`
+}
+
+// PeriodCostSummary represents cost summary for a specific time period
+type PeriodCostSummary struct {
+	StartDate          string  `json:"start_date"`
+	EndDate            string  `json:"end_date"`
+	TotalCost          float64 `json:"total_cost"`
+	EstimatedFullMonth float64 `json:"estimated_full_month,omitempty"`
+}
+
+// TeamCostSummary represents complete cost summary for a team
+type TeamCostSummary struct {
+	Team         string               `json:"team"`
+	CurrentMonth *PeriodCostSummary   `json:"current_month"`
+	Last30Days   *PeriodCostSummary   `json:"last_30_days"`
+	Clusters     []*ClusterCostDetail `json:"clusters"`
+}

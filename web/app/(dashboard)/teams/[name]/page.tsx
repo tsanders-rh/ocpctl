@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api/endpoints/admin";
 import { profilesApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/authStore";
+import { useTeamCosts } from "@/lib/hooks/useTeamCosts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,10 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { formatDate } from "@/lib/utils/formatters";
-import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { formatDate, formatCurrency } from "@/lib/utils/formatters";
+import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight, DollarSign, TrendingUp, Calendar } from "lucide-react";
 import type { User, Profile } from "@/types/api";
 
 export default function TeamDetailPage() {
@@ -36,6 +38,7 @@ export default function TeamDetailPage() {
     queryClient.refetchQueries({ queryKey: ["auth", "me"] });
   }, [queryClient]);
 
+  const [activeTab, setActiveTab] = useState("members");
   const [memberSuccess, setMemberSuccess] = useState("");
   const [memberError, setMemberError] = useState("");
   const [selectedMemberUserId, setSelectedMemberUserId] = useState("");
@@ -76,6 +79,9 @@ export default function TeamDetailPage() {
     queryKey: ["allowed-profiles", teamName],
     queryFn: () => adminApi.getAllowedProfiles(teamName),
   });
+
+  // Fetch team costs for the Costs tab
+  const { data: costsData, isLoading: costsLoading } = useTeamCosts(teamName);
 
   // Initialize selected profiles when allowed profiles data loads
   useEffect(() => {
@@ -253,8 +259,15 @@ export default function TeamDetailPage() {
         </div>
       </div>
 
-      {/* Team Members Section */}
-      <Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="profiles">Allowed Profiles</TabsTrigger>
+          <TabsTrigger value="costs">Costs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="members" className="space-y-4">
+          <Card>
         <CardHeader>
           <CardTitle>Team Members</CardTitle>
           <CardDescription>
@@ -364,9 +377,10 @@ export default function TeamDetailPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
-      {/* Allowed Profiles Section */}
-      <Card>
+        <TabsContent value="profiles" className="space-y-4">
+          <Card>
         <CardHeader>
           <CardTitle>Allowed Profiles</CardTitle>
           <CardDescription>
@@ -531,6 +545,144 @@ export default function TeamDetailPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="costs" className="space-y-6">
+          {/* Summary Cards Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Current Month Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Current Month</CardTitle>
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {costsData ? formatCurrency(costsData.current_month.total_cost) : "-"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {costsData?.current_month.start_date} to {costsData?.current_month.end_date}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Projected: {costsData ? formatCurrency(costsData.current_month.estimated_full_month || 0) : "-"}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Last 30 Days Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Last 30 Days</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {costsData ? formatCurrency(costsData.last_30_days.total_cost) : "-"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {costsData?.last_30_days.start_date} to {costsData?.last_30_days.end_date}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Average Daily Cost Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Daily Average</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {costsData ? formatCurrency(costsData.last_30_days.total_cost / 30) : "-"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Based on last 30 days
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Per-Cluster Breakdown Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Cluster Cost Breakdown</CardTitle>
+              <CardDescription>
+                Detailed costs for each cluster in this team
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {costsLoading ? (
+                <p className="text-muted-foreground">Loading cost data...</p>
+              ) : !costsData?.clusters || costsData.clusters.length === 0 ? (
+                <div className="text-center py-8 border rounded-lg">
+                  <p className="text-muted-foreground">No active clusters</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left text-sm font-medium">Cluster</th>
+                        <th className="p-3 text-left text-sm font-medium">Profile</th>
+                        <th className="p-3 text-left text-sm font-medium">Owner</th>
+                        <th className="p-3 text-left text-sm font-medium">Status</th>
+                        <th className="p-3 text-right text-sm font-medium">Current Month</th>
+                        <th className="p-3 text-right text-sm font-medium">Last 30 Days</th>
+                        <th className="p-3 text-right text-sm font-medium">Hourly Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costsData.clusters.map((cluster) => (
+                        <tr key={cluster.id} className="border-b last:border-0 hover:bg-muted/50">
+                          <td className="p-3 font-medium">{cluster.name}</td>
+                          <td className="p-3 text-sm text-muted-foreground">{cluster.profile}</td>
+                          <td className="p-3 text-sm text-muted-foreground">{cluster.owner}</td>
+                          <td className="p-3">
+                            <Badge variant={
+                              cluster.status === "READY" ? "default" :
+                              cluster.status === "HIBERNATED" ? "secondary" :
+                              cluster.status === "FAILED" ? "destructive" : "outline"
+                            }>
+                              {cluster.status}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-right font-medium">
+                            {formatCurrency(cluster.current_month_cost)}
+                            <p className="text-xs text-muted-foreground">
+                              {Math.round(cluster.runtime_hours_current_month)}h runtime
+                            </p>
+                          </td>
+                          <td className="p-3 text-right font-medium">
+                            {formatCurrency(cluster.last_30_days_cost)}
+                            <p className="text-xs text-muted-foreground">
+                              {Math.round(cluster.runtime_hours_last_30_days)}h runtime
+                            </p>
+                          </td>
+                          <td className="p-3 text-right text-sm text-muted-foreground">
+                            {formatCurrency(cluster.estimated_hourly_cost)}/hr
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/30 font-semibold">
+                        <td colSpan={4} className="p-3">Total</td>
+                        <td className="p-3 text-right">
+                          {formatCurrency(costsData.current_month.total_cost)}
+                        </td>
+                        <td className="p-3 text-right">
+                          {formatCurrency(costsData.last_30_days.total_cost)}
+                        </td>
+                        <td className="p-3"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

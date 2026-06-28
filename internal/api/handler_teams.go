@@ -1,23 +1,28 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
+	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
 // TeamHandler handles team management endpoints (admin only)
 type TeamHandler struct {
-	store *store.Store
+	store    *store.Store
+	registry *profile.Registry
 }
 
 // NewTeamHandler creates a new team handler
-func NewTeamHandler(st *store.Store) *TeamHandler {
+func NewTeamHandler(st *store.Store, r *profile.Registry) *TeamHandler {
 	return &TeamHandler{
-		store: st,
+		store:    st,
+		registry: r,
 	}
 }
 
@@ -574,4 +579,196 @@ func (h *TeamHandler) UpdateAllowedProfiles(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, team)
+}
+
+// GetTeamCosts returns cost summary for a team
+//
+//	@Summary		Get team costs
+//	@Description	Returns cost summary for a team (current month and last 30 days)
+//	@Tags			Teams
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string	true	"Team name"
+//	@Success		200		{object}	types.TeamCostSummary
+//	@Failure		403		{object}	map[string]string	"Not authorized to view this team"
+//	@Failure		404		{object}	map[string]string	"Team not found"
+//	@Failure		500		{object}	map[string]string	"Failed to get team costs"
+//	@Security		BearerAuth
+//	@Router			/teams/{name}/costs [get]
+func (h *TeamHandler) GetTeamCosts(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamName := c.Param("name")
+
+	// Check authorization - user must be team admin for this team or platform admin
+	if !auth.CanManageTeam(c, teamName) {
+		return ErrorForbidden(c, "You do not have permission to view costs for this team")
+	}
+
+	// Verify team exists
+	team, err := h.store.Teams.Get(ctx, teamName)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return ErrorNotFound(c, "team not found")
+		}
+		return LogAndReturnGenericError(c, err)
+	}
+
+	// Get all active clusters for the team
+	clusters, err := h.store.Teams.GetTeamClusters(ctx, team.Name)
+	if err != nil {
+		return LogAndReturnGenericError(c, fmt.Errorf("failed to get team clusters: %w", err))
+	}
+
+	// Calculate date ranges
+	now := time.Now().UTC()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonthEnd := now
+	last30DaysStart := now.AddDate(0, 0, -30)
+	last30DaysEnd := now
+
+	// Calculate costs for each cluster
+	clusterDetails := []*types.ClusterCostDetail{}
+	var currentMonthTotal float64
+	var last30DaysTotal float64
+
+	for _, cluster := range clusters {
+		// Get profile for cost calculation
+		prof, _ := h.registry.Get(cluster.Profile)
+		if prof == nil {
+			LogWarning(c, "profile not found for cluster, skipping cost calculation",
+				"cluster", cluster.Name,
+				"profile", cluster.Profile)
+			continue
+		}
+
+		// Calculate effective hourly cost based on cluster state
+		effectiveCost := h.calculateEffectiveCost(cluster, prof)
+
+		// Calculate current month costs
+		currentMonthCost, currentMonthHours := h.calculatePeriodCost(
+			cluster, effectiveCost, currentMonthStart, currentMonthEnd)
+
+		// Calculate last 30 days costs
+		last30DaysCost, last30DaysHours := h.calculatePeriodCost(
+			cluster, effectiveCost, last30DaysStart, last30DaysEnd)
+
+		// Get owner email for display
+		owner, err := h.store.Users.GetByID(ctx, cluster.OwnerID)
+		ownerEmail := cluster.OwnerID
+		if err == nil && owner != nil {
+			ownerEmail = owner.Email
+		}
+
+		detail := &types.ClusterCostDetail{
+			ID:                       cluster.ID,
+			Name:                     cluster.Name,
+			Profile:                  cluster.Profile,
+			Status:                   string(cluster.Status),
+			Owner:                    ownerEmail,
+			CreatedAt:                cluster.CreatedAt,
+			EstimatedHourlyCost:      effectiveCost,
+			CurrentMonthCost:         currentMonthCost,
+			Last30DaysCost:           last30DaysCost,
+			RuntimeHoursCurrentMonth: currentMonthHours,
+			RuntimeHoursLast30Days:   last30DaysHours,
+		}
+
+		clusterDetails = append(clusterDetails, detail)
+		currentMonthTotal += currentMonthCost
+		last30DaysTotal += last30DaysCost
+	}
+
+	// Calculate estimated full month cost (prorated)
+	daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	daysElapsed := now.Day()
+	var estimatedFullMonth float64
+	if daysElapsed > 0 {
+		estimatedFullMonth = currentMonthTotal * float64(daysInMonth) / float64(daysElapsed)
+	}
+
+	// Build response
+	summary := &types.TeamCostSummary{
+		Team: team.Name,
+		CurrentMonth: &types.PeriodCostSummary{
+			StartDate:          currentMonthStart.Format("2006-01-02"),
+			EndDate:            currentMonthEnd.Format("2006-01-02"),
+			TotalCost:          currentMonthTotal,
+			EstimatedFullMonth: estimatedFullMonth,
+		},
+		Last30Days: &types.PeriodCostSummary{
+			StartDate: last30DaysStart.Format("2006-01-02"),
+			EndDate:   last30DaysEnd.Format("2006-01-02"),
+			TotalCost: last30DaysTotal,
+		},
+		Clusters: clusterDetails,
+	}
+
+	return c.JSON(http.StatusOK, summary)
+}
+
+// calculateEffectiveCost calculates the effective hourly cost based on cluster state
+// Hibernated clusters cost significantly less than running clusters
+func (h *TeamHandler) calculateEffectiveCost(cluster *types.Cluster, prof *profile.Profile) float64 {
+	baseCost := prof.CostControls.EstimatedHourlyCost
+
+	// If cluster is hibernated, calculate reduced cost based on cluster type
+	if cluster.Status == types.ClusterStatusHibernated {
+		switch cluster.ClusterType {
+		case types.ClusterTypeOpenShift:
+			// OpenShift: All instances stopped, only persistent storage remains (~10%)
+			return baseCost * 0.10
+		case types.ClusterTypeROSA:
+			// ROSA: Machine pools scaled to 0, but control plane runs at fixed $0.03/hr
+			return 0.03
+		case types.ClusterTypeEKS:
+			// EKS: Node groups scaled to 0, control plane at $0.10/hr
+			return 0.10
+		case types.ClusterTypeIKS:
+			// IKS: Workers scaled to 0, minimal cost (~5%)
+			return baseCost * 0.05
+		case types.ClusterTypeGKE:
+			// GKE: Node pools scaled to 0, no control plane cost, only persistent disks (~3%)
+			return baseCost * 0.03
+		default:
+			// Unknown cluster type, use conservative estimate
+			return baseCost * 0.10
+		}
+	}
+
+	// For all other states (READY, CREATING, etc.), use full cost
+	return baseCost
+}
+
+// calculatePeriodCost calculates cost and runtime hours for a specific period
+func (h *TeamHandler) calculatePeriodCost(cluster *types.Cluster, effectiveCost float64, periodStart, periodEnd time.Time) (float64, float64) {
+	// Determine cluster's active period within the date range
+	clusterStart := cluster.CreatedAt
+	clusterEnd := periodEnd // Assume still running (no destroy_at for active clusters)
+
+	// Calculate intersection of cluster lifetime and period
+	activeStart := clusterStart
+	if periodStart.After(clusterStart) {
+		activeStart = periodStart
+	}
+
+	activeEnd := clusterEnd
+	if periodEnd.Before(clusterEnd) {
+		activeEnd = periodEnd
+	}
+
+	// If cluster wasn't active during this period, return 0
+	if activeStart.After(activeEnd) || activeStart.After(periodEnd) || activeEnd.Before(periodStart) {
+		return 0.0, 0.0
+	}
+
+	// Calculate runtime hours
+	runtimeHours := activeEnd.Sub(activeStart).Hours()
+	if runtimeHours < 0 {
+		runtimeHours = 0
+	}
+
+	// Calculate total cost
+	totalCost := runtimeHours * effectiveCost
+
+	return totalCost, runtimeHours
 }

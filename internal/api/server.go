@@ -300,7 +300,7 @@ func (s *Server) setupRoutes() {
 	adminGroup.DELETE("/windows-snapshots/:id", windowsSnapshotHandler.DeleteWindowsSnapshot)
 
 	// Team management routes
-	teamHandler := NewTeamHandler(s.store)
+	teamHandler := NewTeamHandler(s.store, s.registry)
 
 	// Team admin routes (accessible by TEAM_ADMIN and ADMIN)
 	teamAdminGroup := v1.Group("/admin", auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireTeamAdmin())
@@ -312,6 +312,9 @@ func (s *Server) setupRoutes() {
 	teamAdminGroup.DELETE("/teams/:name/members/:user_id", teamHandler.RemoveUserFromTeam)
 	teamAdminGroup.GET("/teams/:name/allowed-profiles", teamHandler.GetAllowedProfiles)
 	teamAdminGroup.PATCH("/teams/:name/allowed-profiles", teamHandler.UpdateAllowedProfiles)
+
+	// Team costs route (accessible under /teams prefix for team admins)
+	v1.GET("/teams/:name/costs", teamHandler.GetTeamCosts, auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireTeamAdmin())
 
 	// Admin-only team routes
 	adminGroup.POST("/teams", teamHandler.CreateTeam)

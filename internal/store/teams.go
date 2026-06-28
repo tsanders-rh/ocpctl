@@ -233,6 +233,57 @@ func (s *TeamStore) GetTeamsWithClusterCounts(ctx context.Context) (map[string]i
 	return counts, nil
 }
 
+// GetTeamClusters returns all active clusters for a team
+func (s *TeamStore) GetTeamClusters(ctx context.Context, team string) ([]*types.Cluster, error) {
+	query := `
+		SELECT id, name, profile, cluster_type, platform, status, owner_id, team,
+		       region, version, cost_center, ttl_hours, destroy_at,
+		       created_at, updated_at
+		FROM clusters
+		WHERE team = $1
+		  AND status NOT IN ('DESTROYED', 'FAILED')
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, team)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query team clusters: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		cluster := &types.Cluster{}
+		err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.Profile,
+			&cluster.ClusterType,
+			&cluster.Platform,
+			&cluster.Status,
+			&cluster.OwnerID,
+			&cluster.Team,
+			&cluster.Region,
+			&cluster.Version,
+			&cluster.CostCenter,
+			&cluster.TTLHours,
+			&cluster.DestroyAt,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan cluster: %w", err)
+		}
+		clusters = append(clusters, cluster)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating team clusters: %w", err)
+	}
+
+	return clusters, nil
+}
+
 // joinStrings is a helper to join string slices
 func joinStrings(strs []string, sep string) string {
 	if len(strs) == 0 {

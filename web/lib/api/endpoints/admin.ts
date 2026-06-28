@@ -110,6 +110,34 @@ export interface LongRunningClustersResponse {
   total_monthly_cost: number;
 }
 
+export interface ClusterCostDetail {
+  id: string;
+  name: string;
+  profile: string;
+  status: string;
+  owner: string;
+  created_at: string;
+  estimated_hourly_cost: number;
+  current_month_cost: number;
+  last_30_days_cost: number;
+  runtime_hours_current_month: number;
+  runtime_hours_last_30_days: number;
+}
+
+export interface PeriodCostSummary {
+  start_date: string;
+  end_date: string;
+  total_cost: number;
+  estimated_full_month?: number;
+}
+
+export interface TeamCostSummary {
+  team: string;
+  current_month: PeriodCostSummary;
+  last_30_days: PeriodCostSummary;
+  clusters: ClusterCostDetail[];
+}
+
 export const adminApi = {
   getClusterStatistics: async (): Promise<ClusterStatistics> => {
     return apiClient.get<ClusterStatistics>("/admin/clusters/statistics");
@@ -192,5 +220,10 @@ export const adminApi = {
       `/admin/teams/${encodeURIComponent(teamName)}/allowed-profiles`,
       data
     );
+  },
+
+  // Team Cost Tracking
+  getTeamCosts: async (teamName: string): Promise<TeamCostSummary> => {
+    return apiClient.get<TeamCostSummary>(`/teams/${encodeURIComponent(teamName)}/costs`);
   },
 };
