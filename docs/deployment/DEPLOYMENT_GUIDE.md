@@ -47,6 +47,327 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl
 
 ---
 
+## Software Release Process Overview
+
+### Release Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        OCPCTL RELEASE PIPELINE                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+1. DEVELOPMENT
+   ├── Create feature branch (feature/my-feature)
+   ├── Develop code (Go backend, Next.js frontend)
+   ├── Local testing (make test, make run-api)
+   └── Commit changes
+
+2. DEV DEPLOYMENT (Integration Testing)
+   ├── Deploy backend: ./scripts/deploy-env.sh dev
+   ├── Deploy frontend: ./scripts/deploy-web.sh dev
+   ├── Test on https://dev.ocpctl.mg.dog8code.com
+   └── Verify all features work end-to-end
+
+3. CODE REVIEW
+   ├── Create Pull Request
+   ├── Team review and approval
+   ├── Automated checks (linting, security)
+   └── Merge to main branch
+
+4. PRODUCTION DEPLOYMENT (Maintenance Window)
+   ├── Create RDS snapshot (backup)
+   ├── Deploy backend: ./scripts/deploy-env.sh production
+   ├── Deploy frontend: ./scripts/deploy-web.sh production
+   ├── Run smoke tests
+   └── Monitor for 30-60 minutes
+
+5. VERIFICATION & MONITORING
+   ├── Health checks (API, Worker, Web)
+   ├── Check logs for errors
+   ├── Verify cluster creation works
+   └── Monitor metrics and user reports
+```
+
+### Version Format
+
+All releases use semantic versioning with date-based format:
+
+```
+v0.YYYYMMDD.COMMITHASH
+
+Examples:
+  v0.20260627.22e3b9b  - June 27, 2026 deployment
+  v0.20260614.abc1234  - June 14, 2026 deployment
+```
+
+**Components:**
+- `v0` - Major version (always 0 for pre-1.0)
+- `YYYYMMDD` - Deployment date
+- `COMMITHASH` - Git commit short hash (7 chars)
+
+### What Gets Released
+
+**Backend (Go services):**
+- API Server (`ocpctl-api`) - Port 8080
+- Worker Service (`ocpctl-worker`) - Port 8081
+- Cluster profiles (YAML definitions)
+- Addon definitions (CNV, MTA, MTC, OADP)
+- Kubernetes manifests
+- Database migrations (automatic on API startup)
+
+**Frontend (Next.js):**
+- Web UI (`ocpctl-web`) - Port 3000
+- Static assets (CSS, images)
+- Client-side JavaScript bundles
+- React components (Server + Client)
+
+**Infrastructure:**
+- S3 binaries and artifacts
+- Autoscaling worker instances (AWS ASG)
+- Configuration files (/etc/ocpctl/*.env)
+
+### Deployment Methods
+
+#### Backend Deployment (`deploy-env.sh`)
+
+**What it does:**
+1. Builds Go binaries (Linux amd64) with version embedded
+2. Uploads to S3 (versioned + stable paths)
+3. Syncs profiles, addons, manifests to S3
+4. Terminates autoscale workers (ASG replaces with new version)
+5. Deploys to API server:
+   - Creates `/opt/ocpctl/releases/VERSION/`
+   - Updates symlink `/opt/ocpctl/current`
+   - Restarts `ocpctl-api` service
+6. Deploys to worker servers:
+   - Requeues RUNNING jobs to PENDING
+   - Clears stale locks
+   - Restarts `ocpctl-worker` service
+7. Verifies version endpoints
+
+**Zero-downtime:** Uses atomic symlinks, services restart in <5 seconds
+
+#### Frontend Deployment (`deploy-web.sh`)
+
+**What it does:**
+1. Installs npm dependencies locally
+2. Runs ESLint (with optional continue)
+3. Builds Next.js production bundle (`npm run build`)
+4. Creates deployment package (excludes node_modules)
+5. Uploads to server
+6. Backs up current deployment (timestamped)
+7. Extracts new files to `/opt/ocpctl/web`
+8. Installs production dependencies on server
+9. Restarts `ocpctl-web` service
+10. Verifies HTTP 200/307 response
+
+**Brief downtime:** ~3-5 seconds during service restart
+
+### Release Environments
+
+| Environment | Domain | Server | Database | Purpose |
+|-------------|--------|--------|----------|---------|
+| **Dev** | dev.ocpctl.mg.dog8code.com | 54.167.79.11 (t3.medium) | ocpctl_dev (PostgreSQL 17.9) | Integration testing, QA |
+| **Production** | ocpctl.mg.dog8code.com | 44.201.165.78 (t3.large) | ocpctl (PostgreSQL 17.9) | Live service |
+
+### Standard Release Cycle
+
+**Weekly Release (Recommended):**
+- **Day 1-4 (Mon-Thu):** Development and testing
+- **Day 5 (Fri):** Deploy to dev, integration testing
+- **Day 6-7 (Sat-Sun):** Production deployment during maintenance window
+
+**Maintenance Window:**
+- **Recommended:** First Sunday of month, 2-6 AM ET
+- **Emergency hotfix:** Any time with on-call approval
+
+### Database Migrations
+
+**Automatic Migration:**
+- Migrations run automatically when `ocpctl-api` starts
+- Located in `internal/store/migrations/`
+- Uses goose (up/down migrations)
+
+**Migration File Format:**
+```sql
+-- +goose Up
+ALTER TABLE clusters ADD COLUMN new_field VARCHAR(255);
+
+-- +goose Down
+ALTER TABLE clusters DROP COLUMN new_field;
+```
+
+**Testing Migrations:**
+1. Test on dev first: `./scripts/deploy-env.sh dev`
+2. Verify schema: `ssh dev 'psql $DATABASE_URL -c "\d clusters"'`
+3. Deploy to production during maintenance window
+
+### Rollback Procedures
+
+**Backend Rollback:**
+```bash
+# List available versions
+ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+  'sudo ls -d /opt/ocpctl/releases/*'
+
+# Deploy previous version
+./scripts/deploy-env.sh production v0.20260601.xyz5678
+```
+
+**Frontend Rollback:**
+```bash
+# List backups
+ssh server 'sudo ls -d /opt/ocpctl/web.backup.*'
+
+# Restore backup
+ssh server 'sudo systemctl stop ocpctl-web && \
+  sudo rm -rf /opt/ocpctl/web && \
+  sudo mv /opt/ocpctl/web.backup.20260627-070000 /opt/ocpctl/web && \
+  sudo systemctl start ocpctl-web'
+```
+
+**Database Rollback:**
+```bash
+# Rollback last migration
+ssh server 'cd /opt/ocpctl/current && ./ocpctl-api migrate down 1'
+
+# Extreme: Restore from RDS snapshot
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier ocpctl-db-restored \
+  --db-snapshot-identifier ocpctl-db-pre-maint-20260627
+```
+
+### Pre-Deployment Checklist
+
+**Before deploying to production:**
+- [ ] All changes tested on dev environment
+- [ ] Database migrations tested on dev
+- [ ] No breaking API changes (or documented)
+- [ ] All tests passing (`make test`)
+- [ ] Code reviewed and approved
+- [ ] RDS snapshot created
+- [ ] Rollback plan documented
+- [ ] On-call engineer identified
+- [ ] Users notified (if user-facing changes)
+
+### Post-Deployment Verification
+
+**Immediately after deployment:**
+```bash
+# 1. Health checks
+curl https://ocpctl.mg.dog8code.com/health
+curl https://ocpctl.mg.dog8code.com/version
+
+# 2. Service status
+ssh production 'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'
+
+# 3. Check logs
+ssh production 'sudo journalctl -u ocpctl-api --since "10 minutes ago" | grep -i error'
+
+# 4. Verify database
+ssh production 'psql $DATABASE_URL -c "SELECT COUNT(*) FROM clusters;"'
+
+# 5. Test cluster creation (optional)
+# Create small SNO cluster via UI
+```
+
+**Monitor for 30-60 minutes:**
+- Error rates in logs
+- Job queue status
+- Cluster creation success rate
+- User-reported issues
+
+### Emergency Hotfix Process
+
+**Critical production bug (any time):**
+
+```bash
+# 1. Create hotfix branch
+git checkout -b hotfix/critical-bug-fix
+
+# 2. Fix bug (minimal changes only)
+vim internal/worker/handler_create.go
+
+# 3. Test locally
+make test
+go run ./cmd/worker
+
+# 4. Quick validation on dev
+./scripts/deploy-env.sh dev
+# Test the fix works
+
+# 5. Get approval from on-call manager
+# Slack/call on-call manager
+
+# 6. Deploy to production immediately
+./scripts/deploy-env.sh production
+./scripts/deploy-web.sh production  # if frontend changes
+
+# 7. Monitor for 30 minutes
+watch -n 10 'curl -s https://ocpctl.mg.dog8code.com/health'
+ssh production 'sudo journalctl -u ocpctl-api -f'
+
+# 8. Create PR for post-deployment review
+git push origin hotfix/critical-bug-fix
+gh pr create --title "[HOTFIX] Critical bug fix"
+```
+
+### Release Artifacts
+
+**Build Artifacts:**
+- Binaries: `s3://ocpctl-binaries/releases/VERSION/`
+- Profiles: `s3://ocpctl-binaries/profiles/`
+- Addons: `s3://ocpctl-binaries/addons/`
+- Web bundle: `/opt/ocpctl/web/.next/`
+
+**Deployed Locations:**
+- Backend: `/opt/ocpctl/releases/VERSION/`
+- Current: `/opt/ocpctl/current/` (symlink)
+- Frontend: `/opt/ocpctl/web/`
+- Configs: `/etc/ocpctl/*.env`
+
+**Version Tracking:**
+```bash
+# Check deployed versions
+curl https://ocpctl.mg.dog8code.com/version
+curl https://dev.ocpctl.mg.dog8code.com/version
+
+# Output:
+# {
+#   "version": "v0.20260627.22e3b9b",
+#   "commit": "22e3b9b1234567890abcdef",
+#   "buildTime": "2026-06-27T10:30:00Z"
+# }
+```
+
+### Best Practices
+
+**Development:**
+- Always test on dev before production
+- Keep feature branches short-lived (<1 week)
+- Write database migrations with rollback support
+- Include tests for new features
+
+**Deployment:**
+- Deploy during low-traffic periods
+- Create database snapshots before migrations
+- Monitor logs during and after deployment
+- Keep rollback instructions handy
+
+**Code Quality:**
+- Run linters before committing
+- Follow Go and React best practices
+- Document breaking changes
+- Update CLAUDE.md for architectural changes
+
+**Communication:**
+- Announce maintenance windows 1 week ahead
+- Document what changed in each release
+- Report completion (or issues) after deployment
+- Keep runbook updated
+
+---
+
 ## First-Time Dev Environment Setup
 
 ### 1. Provision Infrastructure
