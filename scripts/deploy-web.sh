@@ -162,12 +162,21 @@ echo -e "${YELLOW}  Stopping ocpctl-web service...${NC}"
 ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" 'sudo systemctl stop ocpctl-web'
 echo -e "${GREEN}✓ Service stopped${NC}"
 
-# Backup current deployment
+# Backup current deployment (excluding node_modules and build artifacts)
 echo -e "${YELLOW}  Creating backup of current deployment...${NC}"
 ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
     if [ -d ${REMOTE_BASE}/web ]; then
-        sudo cp -r ${REMOTE_BASE}/web ${REMOTE_BASE}/web.backup.\$(date +%Y%m%d-%H%M%S)
-        echo '  ✓ Backup created'
+        BACKUP_DIR=${REMOTE_BASE}/web.backup.\$(date +%Y%m%d-%H%M%S)
+        sudo mkdir -p \${BACKUP_DIR}
+        sudo rsync -a \
+            --exclude='node_modules' \
+            --exclude='.next/cache' \
+            --exclude='.next/standalone' \
+            --exclude='.next/static/chunks' \
+            ${REMOTE_BASE}/web/ \
+            \${BACKUP_DIR}/
+        BACKUP_SIZE=\$(sudo du -sh \${BACKUP_DIR} | cut -f1)
+        echo \"  ✓ Backup created (\${BACKUP_SIZE})\"
     else
         echo '  ℹ No existing deployment to backup'
     fi
@@ -176,8 +185,7 @@ ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
 # Extract new deployment
 echo -e "${YELLOW}  Extracting new deployment...${NC}"
 ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
-    cd ${REMOTE_BASE}
-    sudo tar xzf /tmp/${PACKAGE_NAME}
+    sudo bash -c 'cd ${REMOTE_BASE} && tar xzf /tmp/${PACKAGE_NAME} 2>&1 | grep -v \"Ignoring unknown extended header\" || true'
     sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/web
 "
 echo -e "${GREEN}✓ Files extracted${NC}"
@@ -185,8 +193,7 @@ echo -e "${GREEN}✓ Files extracted${NC}"
 # Install production dependencies on server
 echo -e "${YELLOW}  Installing production dependencies...${NC}"
 ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
-    cd ${REMOTE_BASE}/web
-    npm install --production --quiet
+    sudo bash -c 'cd ${REMOTE_BASE}/web && npm install --production --quiet'
 "
 echo -e "${GREEN}✓ Dependencies installed${NC}"
 
@@ -248,6 +255,13 @@ echo ""
 echo -e "${YELLOW}Cleaning up...${NC}"
 rm -f "/tmp/${PACKAGE_NAME}"
 ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "rm -f /tmp/${PACKAGE_NAME}"
+
+# Remove old backups (keep last 5)
+echo -e "${YELLOW}  Removing old backups (keeping last 5)...${NC}"
+ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
+    cd ${REMOTE_BASE}
+    sudo ls -dt web.backup.* 2>/dev/null | tail -n +6 | xargs -r sudo rm -rf
+" 2>/dev/null || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
 echo ""
 

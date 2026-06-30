@@ -216,15 +216,19 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
 
 **Frontend Rollback:**
 ```bash
-# List backups
-ssh server 'sudo ls -d /opt/ocpctl/web.backup.*'
+# List backups (automatically created during deployment, last 5 kept)
+ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -ldt /opt/ocpctl/web.backup.*'
 
-# Restore backup
-ssh server 'sudo systemctl stop ocpctl-web && \
+# Restore backup (note: will need to run npm install after restore)
+ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo systemctl stop ocpctl-web && \
   sudo rm -rf /opt/ocpctl/web && \
   sudo mv /opt/ocpctl/web.backup.20260627-070000 /opt/ocpctl/web && \
+  sudo bash -c "cd /opt/ocpctl/web && npm install --production --quiet" && \
+  sudo chown -R ocpctl:ocpctl /opt/ocpctl/web && \
   sudo systemctl start ocpctl-web'
 ```
+
+**Note**: Backups exclude `node_modules` to save space, so you must run `npm install` after restoring.
 
 **Database Rollback:**
 ```bash
@@ -743,7 +747,7 @@ gh pr create --title "[HOTFIX] Fix cluster creation deadlock" \
 
 6. Deploy on server
    ├── Stop ocpctl-web service
-   ├── Backup current deployment
+   ├── Backup current deployment (optimized - excludes node_modules, .next/cache)
    ├── Extract new files to /opt/ocpctl/web
    ├── npm install --production (on server)
    └── Start ocpctl-web service
@@ -752,7 +756,29 @@ gh pr create --title "[HOTFIX] Fix cluster creation deadlock" \
    ├── Check service is running
    ├── Test http://localhost:3000
    └── Test public URL via nginx
+
+8. Cleanup
+   ├── Remove deployment packages
+   └── Remove old backups (keeps last 5)
 ```
+
+### Deployment Optimizations
+
+**Backup Performance:**
+- **Old approach**: `cp -r` entire web directory (~9.8GB on production)
+  - Caused SSH timeouts during long copy operations
+  - Included unnecessary files (node_modules, build cache)
+
+- **Optimized approach**: `rsync` with selective excludes
+  - Excludes: `node_modules`, `.next/cache`, `.next/standalone`, `.next/static/chunks`
+  - Backup size: ~19MB instead of 600MB (97% reduction on dev)
+  - Backup time: <2 seconds instead of several minutes
+  - Production backup: ~294MB instead of 9.8GB
+
+**Automatic Cleanup:**
+- Keeps last 5 backups automatically
+- Removes older backups during deployment
+- Prevents disk space issues over time
 
 ### Web Frontend Files Deployed
 
