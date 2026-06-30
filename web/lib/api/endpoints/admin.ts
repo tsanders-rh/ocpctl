@@ -131,10 +131,26 @@ export interface PeriodCostSummary {
   estimated_full_month?: number;
 }
 
+export interface DailyCostPoint {
+  date: string;
+  total_cost: number;
+}
+
+export interface PeriodComparison {
+  current_period: number;
+  previous_period: number;
+  percent_change: number;
+  start_date: string;
+  end_date: string;
+}
+
 export interface TeamCostSummary {
   team: string;
   current_month: PeriodCostSummary;
   last_30_days: PeriodCostSummary;
+  daily_trend: DailyCostPoint[];
+  week_over_week: PeriodComparison;
+  month_over_month: PeriodComparison;
   clusters: ClusterCostDetail[];
 }
 

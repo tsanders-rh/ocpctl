@@ -23,7 +23,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatDate, formatCurrency } from "@/lib/utils/formatters";
-import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight, DollarSign, TrendingUp, Calendar } from "lucide-react";
+import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight, DollarSign, TrendingUp, TrendingDown, Calendar, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { AreaChart, Card as TremorCard, Metric, Text, Flex, BadgeDelta } from "@tremor/react";
 import type { User, Profile } from "@/types/api";
 
 export default function TeamDetailPage() {
@@ -601,6 +602,149 @@ export default function TeamDetailPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Trend Comparisons Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Week over Week Comparison */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Week over Week</CardTitle>
+                <CardDescription>This week vs last week comparison</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {costsData?.week_over_week ? (
+                  <div className="space-y-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">This Week</span>
+                      <span className="text-2xl font-bold">
+                        {formatCurrency(costsData.week_over_week.current_period)}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">Last Week</span>
+                      <span className="text-lg text-muted-foreground">
+                        {formatCurrency(costsData.week_over_week.previous_period)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      {costsData.week_over_week.percent_change > 0 ? (
+                        <>
+                          <ArrowUpRight className="h-4 w-4 text-red-600" />
+                          <span className="text-sm font-medium text-red-600">
+                            +{costsData.week_over_week.percent_change.toFixed(1)}%
+                          </span>
+                          <span className="text-sm text-muted-foreground">increase</span>
+                        </>
+                      ) : costsData.week_over_week.percent_change < 0 ? (
+                        <>
+                          <ArrowDownRight className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-600">
+                            {costsData.week_over_week.percent_change.toFixed(1)}%
+                          </span>
+                          <span className="text-sm text-muted-foreground">decrease</span>
+                        </>
+                      ) : (
+                        <>
+                          <Minus className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">No change</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-2">
+                      {costsData.week_over_week.start_date} to {costsData.week_over_week.end_date}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No data available</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Month over Month Comparison */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Month over Month</CardTitle>
+                <CardDescription>This month vs last month comparison</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {costsData?.month_over_month ? (
+                  <div className="space-y-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">This Month</span>
+                      <span className="text-2xl font-bold">
+                        {formatCurrency(costsData.month_over_month.current_period)}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">Last Month</span>
+                      <span className="text-lg text-muted-foreground">
+                        {formatCurrency(costsData.month_over_month.previous_period)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      {costsData.month_over_month.percent_change > 0 ? (
+                        <>
+                          <ArrowUpRight className="h-4 w-4 text-red-600" />
+                          <span className="text-sm font-medium text-red-600">
+                            +{costsData.month_over_month.percent_change.toFixed(1)}%
+                          </span>
+                          <span className="text-sm text-muted-foreground">increase</span>
+                        </>
+                      ) : costsData.month_over_month.percent_change < 0 ? (
+                        <>
+                          <ArrowDownRight className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-600">
+                            {costsData.month_over_month.percent_change.toFixed(1)}%
+                          </span>
+                          <span className="text-sm text-muted-foreground">decrease</span>
+                        </>
+                      ) : (
+                        <>
+                          <Minus className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">No change</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-2">
+                      {costsData.month_over_month.start_date} to {costsData.month_over_month.end_date}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No data available</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Cost Trend Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Daily Cost Trend</CardTitle>
+              <CardDescription>Daily spending over the last 30 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {costsData?.daily_trend && costsData.daily_trend.length > 0 ? (
+                <AreaChart
+                  className="h-72 mt-4"
+                  data={costsData.daily_trend}
+                  index="date"
+                  categories={["total_cost"]}
+                  colors={["blue"]}
+                  valueFormatter={(value) => formatCurrency(value)}
+                  yAxisWidth={60}
+                  showAnimation={true}
+                  showLegend={false}
+                  showGridLines={true}
+                  showXAxis={true}
+                  showYAxis={true}
+                />
+              ) : (
+                <div className="h-72 flex items-center justify-center border rounded-lg">
+                  <p className="text-sm text-muted-foreground">No trend data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Per-Cluster Breakdown Table */}
           <Card>
