@@ -91,10 +91,28 @@ type PeriodCostSummary struct {
 	EstimatedFullMonth float64 `json:"estimated_full_month,omitempty"`
 }
 
+// DailyCostPoint represents the cost for a single day
+type DailyCostPoint struct {
+	Date      string  `json:"date"`       // YYYY-MM-DD format
+	TotalCost float64 `json:"total_cost"` // Sum of all cluster costs for this day
+}
+
+// PeriodComparison represents a comparison between two time periods
+type PeriodComparison struct {
+	CurrentPeriod  float64 `json:"current_period"`   // Current period total cost
+	PreviousPeriod float64 `json:"previous_period"`  // Previous period total cost
+	PercentChange  float64 `json:"percent_change"`   // Percentage change (positive = increase)
+	StartDate      string  `json:"start_date"`       // Current period start date
+	EndDate        string  `json:"end_date"`         // Current period end date
+}
+
 // TeamCostSummary represents complete cost summary for a team
 type TeamCostSummary struct {
-	Team         string               `json:"team"`
-	CurrentMonth *PeriodCostSummary   `json:"current_month"`
-	Last30Days   *PeriodCostSummary   `json:"last_30_days"`
-	Clusters     []*ClusterCostDetail `json:"clusters"`
+	Team           string               `json:"team"`
+	CurrentMonth   *PeriodCostSummary   `json:"current_month"`
+	Last30Days     *PeriodCostSummary   `json:"last_30_days"`
+	DailyTrend     []*DailyCostPoint    `json:"daily_trend"`      // Daily costs for last 30 days
+	WeekOverWeek   *PeriodComparison    `json:"week_over_week"`   // This week vs last week
+	MonthOverMonth *PeriodComparison    `json:"month_over_month"` // This month vs last month
+	Clusters       []*ClusterCostDetail `json:"clusters"`
 }

@@ -686,6 +686,15 @@ func (h *TeamHandler) GetTeamCosts(c echo.Context) error {
 		estimatedFullMonth = currentMonthTotal * float64(daysInMonth) / float64(daysElapsed)
 	}
 
+	// Calculate daily trend for last 30 days
+	dailyTrend := h.calculateDailyCosts(clusters, 30)
+
+	// Calculate week-over-week comparison
+	weekOverWeek := h.calculateWeekOverWeek(clusters)
+
+	// Calculate month-over-month comparison
+	monthOverMonth := h.calculateMonthOverMonth(clusters)
+
 	// Build response
 	summary := &types.TeamCostSummary{
 		Team: team.Name,
@@ -700,7 +709,10 @@ func (h *TeamHandler) GetTeamCosts(c echo.Context) error {
 			EndDate:   last30DaysEnd.Format("2006-01-02"),
 			TotalCost: last30DaysTotal,
 		},
-		Clusters: clusterDetails,
+		DailyTrend:     dailyTrend,
+		WeekOverWeek:   weekOverWeek,
+		MonthOverMonth: monthOverMonth,
+		Clusters:       clusterDetails,
 	}
 
 	return c.JSON(http.StatusOK, summary)
@@ -776,4 +788,123 @@ func (h *TeamHandler) calculatePeriodCost(cluster *types.Cluster, effectiveCost 
 	totalCost := runtimeHours * effectiveCost
 
 	return totalCost, runtimeHours
+}
+
+// calculateDailyCosts calculates cost for each day in the specified number of days
+func (h *TeamHandler) calculateDailyCosts(clusters []*types.Cluster, days int) []*types.DailyCostPoint {
+	now := time.Now().UTC()
+	dailyCosts := make([]*types.DailyCostPoint, days)
+
+	// For each of the last N days
+	for i := 0; i < days; i++ {
+		dayEnd := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -i)
+		dayStart := dayEnd.AddDate(0, 0, -1)
+
+		var dayTotal float64
+
+		// Calculate cost for each cluster on this day
+		for _, cluster := range clusters {
+			prof, _ := h.registry.Get(cluster.Profile)
+			if prof == nil {
+				continue
+			}
+
+			effectiveCost := h.calculateEffectiveCost(cluster, prof)
+			dayCost, _ := h.calculatePeriodCost(cluster, effectiveCost, dayStart, dayEnd)
+			dayTotal += dayCost
+		}
+
+		dailyCosts[days-1-i] = &types.DailyCostPoint{
+			Date:      dayStart.Format("2006-01-02"),
+			TotalCost: dayTotal,
+		}
+	}
+
+	return dailyCosts
+}
+
+// calculateWeekOverWeek compares this week to last week
+func (h *TeamHandler) calculateWeekOverWeek(clusters []*types.Cluster) *types.PeriodComparison {
+	now := time.Now().UTC()
+
+	// This week: Start of week (Sunday) to now
+	weekday := int(now.Weekday())
+	thisWeekStart := now.AddDate(0, 0, -weekday)
+	thisWeekStart = time.Date(thisWeekStart.Year(), thisWeekStart.Month(), thisWeekStart.Day(), 0, 0, 0, 0, time.UTC)
+	thisWeekEnd := now
+
+	// Last week: Previous Sunday to previous Saturday
+	lastWeekStart := thisWeekStart.AddDate(0, 0, -7)
+	lastWeekEnd := thisWeekStart.AddDate(0, 0, -1)
+
+	var thisWeekCost, lastWeekCost float64
+
+	for _, cluster := range clusters {
+		prof, _ := h.registry.Get(cluster.Profile)
+		if prof == nil {
+			continue
+		}
+
+		effectiveCost := h.calculateEffectiveCost(cluster, prof)
+		thisCost, _ := h.calculatePeriodCost(cluster, effectiveCost, thisWeekStart, thisWeekEnd)
+		lastCost, _ := h.calculatePeriodCost(cluster, effectiveCost, lastWeekStart, lastWeekEnd)
+
+		thisWeekCost += thisCost
+		lastWeekCost += lastCost
+	}
+
+	percentChange := 0.0
+	if lastWeekCost > 0 {
+		percentChange = ((thisWeekCost - lastWeekCost) / lastWeekCost) * 100
+	}
+
+	return &types.PeriodComparison{
+		CurrentPeriod:  thisWeekCost,
+		PreviousPeriod: lastWeekCost,
+		PercentChange:  percentChange,
+		StartDate:      thisWeekStart.Format("2006-01-02"),
+		EndDate:        thisWeekEnd.Format("2006-01-02"),
+	}
+}
+
+// calculateMonthOverMonth compares this month to last month
+func (h *TeamHandler) calculateMonthOverMonth(clusters []*types.Cluster) *types.PeriodComparison {
+	now := time.Now().UTC()
+
+	// This month: 1st of month to now
+	thisMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	thisMonthEnd := now
+
+	// Last month: 1st of last month to last day of last month
+	lastMonthStart := thisMonthStart.AddDate(0, -1, 0)
+	lastMonthEnd := thisMonthStart.AddDate(0, 0, -1)
+
+	var thisMonthCost, lastMonthCost float64
+
+	for _, cluster := range clusters {
+		prof, _ := h.registry.Get(cluster.Profile)
+		if prof == nil {
+			continue
+		}
+
+		effectiveCost := h.calculateEffectiveCost(cluster, prof)
+		thisCost, _ := h.calculatePeriodCost(cluster, effectiveCost, thisMonthStart, thisMonthEnd)
+		lastCost, _ := h.calculatePeriodCost(cluster, effectiveCost, lastMonthStart, lastMonthEnd)
+
+		thisMonthCost += thisCost
+		lastMonthCost += lastCost
+	}
+
+	percentChange := 0.0
+	if lastMonthCost > 0 {
+		percentChange = ((thisMonthCost - lastMonthCost) / lastMonthCost) * 100
+	}
+
+	return &types.PeriodComparison{
+		CurrentPeriod:  thisMonthCost,
+		PreviousPeriod: lastMonthCost,
+		PercentChange:  percentChange,
+		StartDate:      thisMonthStart.Format("2006-01-02"),
+		EndDate:        thisMonthEnd.Format("2006-01-02"),
+	}
 }
