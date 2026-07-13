@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -109,6 +110,12 @@ func (h *HibernateHandler) hibernateAWS(ctx context.Context, cluster *types.Clus
 	}
 
 	log.Printf("Found infrastructure ID: %s", infraID)
+
+	// Clean up ephemeral addon namespaces (e.g., openshift-adp with ttl.sh images)
+	// This prevents ImagePullBackOff errors on resume when ephemeral images have expired
+	if err := h.cleanupEphemeralAddonNamespaces(ctx, cluster); err != nil {
+		log.Printf("Warning: failed to cleanup ephemeral addon namespaces: %v (continuing anyway)", err)
+	}
 
 	// Load AWS config
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cluster.Region))
@@ -534,4 +541,162 @@ func (h *HibernateHandler) hibernateROSA(ctx context.Context, cluster *types.Clu
 // int32Ptr returns a pointer to an int32
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+// cleanupEphemeralAddonNamespaces removes addon namespaces that use ephemeral image registries (e.g., ttl.sh)
+// This prevents ImagePullBackOff errors after resume when ephemeral images have expired
+func (h *HibernateHandler) cleanupEphemeralAddonNamespaces(ctx context.Context, cluster *types.Cluster) error {
+	// Only cleanup for OpenShift clusters (addons like OADP are OpenShift-specific)
+	if cluster.ClusterType != types.ClusterTypeOpenShift {
+		return nil
+	}
+
+	// Namespaces known to use ephemeral registries like ttl.sh
+	namespacesToClean := []string{
+		"openshift-adp", // OADP often uses ttl.sh for development/testing
+	}
+
+	kubeconfigPath, err := h.getKubeconfigPath(cluster.ID)
+	if err != nil {
+		return fmt.Errorf("get kubeconfig path: %w", err)
+	}
+
+	for _, ns := range namespacesToClean {
+		exists, err := h.namespaceExists(ctx, kubeconfigPath, ns)
+		if err != nil {
+			log.Printf("Warning: failed to check if namespace %s exists: %v (skipping)", ns, err)
+			continue
+		}
+
+		if !exists {
+			log.Printf("Namespace %s does not exist, skipping cleanup", ns)
+			continue
+		}
+
+		log.Printf("Cleaning up namespace %s before hibernation (ephemeral registry cleanup)...", ns)
+
+		// Remove finalizers from all resources in namespace to allow clean deletion
+		if err := h.removeFinalizers(ctx, kubeconfigPath, ns); err != nil {
+			log.Printf("Warning: failed to remove finalizers from %s: %v (continuing anyway)", ns, err)
+		}
+
+		// Delete namespace
+		if err := h.deleteNamespace(ctx, kubeconfigPath, ns); err != nil {
+			log.Printf("Warning: failed to delete namespace %s: %v (continuing anyway)", ns, err)
+			continue
+		}
+
+		log.Printf("Successfully deleted namespace %s", ns)
+	}
+
+	return nil
+}
+
+// getKubeconfigPath returns the path to the cluster's kubeconfig
+func (h *HibernateHandler) getKubeconfigPath(clusterID string) (string, error) {
+	workDir := filepath.Join(h.config.WorkDir, clusterID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	if _, err := os.Stat(kubeconfigPath); err != nil {
+		return "", fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
+	}
+
+	return kubeconfigPath, nil
+}
+
+// namespaceExists checks if a namespace exists
+func (h *HibernateHandler) namespaceExists(ctx context.Context, kubeconfigPath, namespace string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "get", "namespace", namespace)
+	if err := cmd.Run(); err != nil {
+		// Namespace doesn't exist (kubectl get returns error)
+		return false, nil
+	}
+	return true, nil
+}
+
+// removeFinalizers removes finalizers from all resources in a namespace
+// This is required for clean namespace deletion, especially for CRs with finalizers
+func (h *HibernateHandler) removeFinalizers(ctx context.Context, kubeconfigPath, namespace string) error {
+	log.Printf("Removing finalizers from resources in namespace %s...", namespace)
+
+	// Get all API resources in the namespace
+	// Focus on OADP/Velero resources that typically have finalizers
+	resourceTypes := []string{
+		"velerobackups",
+		"velerorestores",
+		"backupstoragelocations",
+		"volumesnapshotlocations",
+		"dataprotectionapplications",
+		"schedules",
+	}
+
+	for _, resourceType := range resourceTypes {
+		// Get all resources of this type
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", resourceType, "-n", namespace, "-o", "name")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Resource type might not exist, skip
+			continue
+		}
+
+		resources := string(output)
+		if resources == "" {
+			continue
+		}
+
+		// Patch each resource to remove finalizers
+		lines := splitOutput(resources)
+		for _, resource := range lines {
+			if resource == "" {
+				continue
+			}
+
+			log.Printf("Removing finalizers from %s", resource)
+			patchCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"patch", resource, "-n", namespace,
+				"--type", "json",
+				"-p", `[{"op": "remove", "path": "/metadata/finalizers"}]`)
+
+			if err := patchCmd.Run(); err != nil {
+				log.Printf("Warning: failed to remove finalizers from %s: %v", resource, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// deleteNamespace deletes a namespace
+func (h *HibernateHandler) deleteNamespace(ctx context.Context, kubeconfigPath, namespace string) error {
+	log.Printf("Deleting namespace %s...", namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"delete", "namespace", namespace, "--ignore-not-found=true", "--timeout=5m")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("delete namespace %s: %w", namespace, err)
+	}
+
+	return nil
+}
+
+// splitOutput splits command output by newlines and returns non-empty lines
+func splitOutput(s string) []string {
+	var result []string
+	current := ""
+	for _, r := range s {
+		if r == '\n' {
+			if current != "" {
+				result = append(result, current)
+			}
+			current = ""
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
 }
