@@ -168,7 +168,7 @@ resource "aws_iam_role_policy" "dev_server_s3" {
   })
 }
 
-# IAM policy for EC2 describe (for instance metadata)
+# IAM policy for EC2 describe (for instance metadata and OpenShift installer validation)
 resource "aws_iam_role_policy" "dev_server_ec2" {
   name = "${var.project_name}-dev-server-ec2-policy"
   role = aws_iam_role.dev_server.id
@@ -180,7 +180,8 @@ resource "aws_iam_role_policy" "dev_server_ec2" {
         Effect = "Allow"
         Action = [
           "ec2:DescribeInstances",
-          "ec2:DescribeTags"
+          "ec2:DescribeTags",
+          "ec2:DescribeInstanceTypes"
         ]
         Resource = "*"
       }
