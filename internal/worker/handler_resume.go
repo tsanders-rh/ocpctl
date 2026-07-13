@@ -570,7 +570,7 @@ func (h *ResumeHandler) waitForRouterPods(ctx context.Context, kubeconfigPath st
 // This function retries both route lookup (in case API server is still initializing)
 // and accessibility checks (in case console pods are still starting)
 func (h *ResumeHandler) waitForConsoleAccessibility(ctx context.Context, kubeconfigPath string) error {
-	maxAttempts := 30 // 30 attempts * 10 seconds = 5 minutes
+	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
 	retryDelay := 10 * time.Second
 
 	var consoleURL string
@@ -647,7 +647,7 @@ func (h *ResumeHandler) waitForConsoleAccessibility(ctx context.Context, kubecon
 		}
 	}
 
-	return fmt.Errorf("console did not become accessible after %d attempts (5 minutes)", maxAttempts)
+	return fmt.Errorf("console did not become accessible after %d attempts (10 minutes)", maxAttempts)
 }
 
 // waitForCNIPods waits for CNI networking pods (multus, OVN) to be healthy on all nodes
