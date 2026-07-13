@@ -168,25 +168,13 @@ resource "aws_iam_role_policy" "dev_server_s3" {
   })
 }
 
-# IAM policy for EC2 describe (for instance metadata and OpenShift installer validation)
-resource "aws_iam_role_policy" "dev_server_ec2" {
-  name = "${var.project_name}-dev-server-ec2-policy"
+# IAM policy for OpenShift provisioning (matches production ocpctl-ec2-role OpenShiftProvisioning policy)
+# Includes comprehensive EC2, ELB, IAM, Route53, S3, and service quota permissions required by openshift-install
+resource "aws_iam_role_policy" "dev_server_openshift_provisioning" {
+  name = "${var.project_name}-dev-server-openshift-provisioning"
   role = aws_iam_role.dev_server.id
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeInstances",
-          "ec2:DescribeTags",
-          "ec2:DescribeInstanceTypes"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+  policy = file("${path.module}/openshift-provisioning-policy.json")
 }
 
 # IAM instance profile
