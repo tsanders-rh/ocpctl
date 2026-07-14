@@ -575,9 +575,21 @@ func (h *HibernateHandler) cleanupEphemeralAddonNamespaces(ctx context.Context, 
 
 		log.Printf("Cleaning up namespace %s before hibernation (ephemeral registry cleanup)...", ns)
 
-		// Remove finalizers from all resources in namespace to allow clean deletion
-		if err := h.removeFinalizers(ctx, kubeconfigPath, ns); err != nil {
-			log.Printf("Warning: failed to remove finalizers from %s: %v (continuing anyway)", ns, err)
+		// For openshift-adp: First try to delete restores gracefully to let Velero clean up S3 content
+		// Only force-remove finalizers if graceful deletion fails/hangs
+		if ns == "openshift-adp" {
+			if err := h.deleteOADPRestoresGracefully(ctx, kubeconfigPath, ns); err != nil {
+				log.Printf("Warning: graceful restore deletion failed: %v (will force cleanup)", err)
+				// Fall back to removing finalizers
+				if err := h.removeFinalizers(ctx, kubeconfigPath, ns); err != nil {
+					log.Printf("Warning: failed to remove finalizers from %s: %v (continuing anyway)", ns, err)
+				}
+			}
+		} else {
+			// For other namespaces, just remove finalizers
+			if err := h.removeFinalizers(ctx, kubeconfigPath, ns); err != nil {
+				log.Printf("Warning: failed to remove finalizers from %s: %v (continuing anyway)", ns, err)
+			}
 		}
 
 		// Delete namespace
@@ -589,6 +601,29 @@ func (h *HibernateHandler) cleanupEphemeralAddonNamespaces(ctx context.Context, 
 		log.Printf("Successfully deleted namespace %s", ns)
 	}
 
+	return nil
+}
+
+// deleteOADPRestoresGracefully attempts to delete all OADP restores gracefully
+// This allows Velero to properly clean up S3 content via finalizers
+// Returns error if deletion fails or times out (caller should fall back to force-removing finalizers)
+func (h *HibernateHandler) deleteOADPRestoresGracefully(ctx context.Context, kubeconfigPath, namespace string) error {
+	log.Printf("Attempting graceful deletion of OADP restores (allows Velero to clean up S3 content)...")
+
+	// Try to delete all restores with a 2-minute timeout
+	// This lets Velero process finalizers and clean up S3 properly
+	deleteCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(deleteCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"delete", "restore", "--all", "-n", namespace, "--timeout=2m")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("graceful restore deletion failed: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Successfully deleted all restores gracefully: %s", string(output))
 	return nil
 }
 
