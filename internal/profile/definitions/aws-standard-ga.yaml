@@ -10,11 +10,13 @@ credentialsMode: Auto
 openshiftVersions:
   allowlist:
   - '4.14'
+  - '4.16'
   - '4.18'
   - '4.19'
   - '4.20'
   - '4.21'
-  default: '4.21'
+  - '4.22'
+  default: '4.22'
 regions:
   allowlist:
   - us-east-1
