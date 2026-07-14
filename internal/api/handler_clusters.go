@@ -557,12 +557,26 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 					addon2Source = "user-selected"
 				}
 
-				return ErrorBadRequest(c, fmt.Sprintf(
-					"addon conflict: %s addon '%s' conflicts with %s addon '%s'. "+
-						"Profile '%s' includes '%s' by default. Please deselect one of the conflicting addons.",
-					addon1Source, addonID, addon2Source, conflictingID,
-					req.Profile, conflictingID,
-				))
+				// Determine which addon is the profile default for the error message
+				var profileDefaultAddon string
+				if info.Source == "profile" {
+					profileDefaultAddon = addonID
+				} else if conflictingInfo.Source == "profile" {
+					profileDefaultAddon = conflictingID
+				}
+
+				// Build error message
+				errorMsg := fmt.Sprintf(
+					"addon conflict: %s addon '%s' conflicts with %s addon '%s'.",
+					addon1Source, addonID, addon2Source, conflictingID)
+
+				// Add profile default context if applicable
+				if profileDefaultAddon != "" {
+					errorMsg += fmt.Sprintf(" Profile '%s' includes '%s' by default.", req.Profile, profileDefaultAddon)
+				}
+				errorMsg += " Please deselect one of the conflicting addons."
+
+				return ErrorBadRequest(c, errorMsg)
 			}
 		}
 	}
