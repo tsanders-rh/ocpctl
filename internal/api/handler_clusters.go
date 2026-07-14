@@ -496,27 +496,73 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 				return ErrorBadRequest(c, fmt.Sprintf("version is required for add-on '%s'", selection.ID))
 			}
 		}
+	}
 
-		// Validate no conflicting addons are selected
-		addonMetadata := make(map[string]*types.AddonMetadata)
-		for _, selection := range req.PostConfigAddOns {
-			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
+	// Validate no conflicting addons are selected (check ALL addons: profile defaults + user selections)
+	// Build merged list of all addons that will be installed
+	type addonInfo struct {
+		ID       string
+		Version  string
+		Metadata *types.AddonMetadata
+		Source   string // "profile" or "user"
+	}
+	allAddons := make(map[string]addonInfo)
+
+	// Add profile default addons
+	if len(profileForValidation.DefaultAddons) > 0 {
+		for _, addonRef := range profileForValidation.DefaultAddons {
+			addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, addonRef.AddonID, addonRef.Version)
 			if err != nil {
-				return ErrorBadRequest(c, fmt.Sprintf("failed to resolve add-on '%s' version '%s': %v", selection.ID, selection.Version, err))
+				log.Printf("Warning: failed to resolve profile default addon '%s' version '%s': %v", addonRef.AddonID, addonRef.Version, err)
+				continue
 			}
-			if addon.Metadata != nil {
-				addonMetadata[selection.ID] = addon.Metadata
+			allAddons[addonRef.AddonID] = addonInfo{
+				ID:       addonRef.AddonID,
+				Version:  addonRef.Version,
+				Metadata: addon.Metadata,
+				Source:   "profile",
 			}
 		}
+	}
 
-		// Check for conflicts
-		for addonID, metadata := range addonMetadata {
-			if len(metadata.ConflictsWith) > 0 {
-				for _, conflictingID := range metadata.ConflictsWith {
-					if _, selected := addonMetadata[conflictingID]; selected {
-						return ErrorBadRequest(c, fmt.Sprintf("addon conflict: '%s' conflicts with '%s'", addonID, conflictingID))
-					}
+	// Add user-selected addons (overrides profile defaults if same ID)
+	for _, selection := range req.PostConfigAddOns {
+		addon, err := h.store.PostConfigAddons.GetByAddonIDAndVersion(ctx, selection.ID, selection.Version)
+		if err != nil {
+			return ErrorBadRequest(c, fmt.Sprintf("failed to resolve add-on '%s' version '%s': %v", selection.ID, selection.Version, err))
+		}
+		allAddons[selection.ID] = addonInfo{
+			ID:       selection.ID,
+			Version:  selection.Version,
+			Metadata: addon.Metadata,
+			Source:   "user",
+		}
+	}
+
+	// Check for conflicts in the merged addon list
+	for addonID, info := range allAddons {
+		if info.Metadata == nil || len(info.Metadata.ConflictsWith) == 0 {
+			continue
+		}
+
+		for _, conflictingID := range info.Metadata.ConflictsWith {
+			if conflictingInfo, exists := allAddons[conflictingID]; exists {
+				// Found a conflict - build helpful error message
+				addon1Source := "profile default"
+				if info.Source == "user" {
+					addon1Source = "user-selected"
 				}
+				addon2Source := "profile default"
+				if conflictingInfo.Source == "user" {
+					addon2Source = "user-selected"
+				}
+
+				return ErrorBadRequest(c, fmt.Sprintf(
+					"addon conflict: %s addon '%s' conflicts with %s addon '%s'. "+
+						"Profile '%s' includes '%s' by default. Please deselect one of the conflicting addons.",
+					addon1Source, addonID, addon2Source, conflictingID,
+					req.Profile, conflictingID,
+				))
 			}
 		}
 	}
