@@ -539,44 +539,39 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		}
 	}
 
-	// Check for conflicts in the merged addon list
+	// Smart conflict resolution: Auto-exclude profile defaults that conflict with user selections
+	// This allows users to override conflicting defaults by selecting an alternative
+	// while still keeping non-conflicting defaults
+	for addonID, info := range allAddons {
+		if info.Source != "user" || info.Metadata == nil {
+			continue
+		}
+
+		// Check if this user-selected addon conflicts with any profile defaults
+		for _, conflictingID := range info.Metadata.ConflictsWith {
+			if conflictingInfo, exists := allAddons[conflictingID]; exists && conflictingInfo.Source == "profile" {
+				// User explicitly selected an addon that conflicts with a profile default
+				// Remove the profile default to honor user's choice
+				log.Printf("Auto-excluding profile default addon '%s' because user selected conflicting addon '%s'",
+					conflictingID, addonID)
+				delete(allAddons, conflictingID)
+			}
+		}
+	}
+
+	// Check for conflicts in the final merged addon list (only user-user conflicts remain)
 	for addonID, info := range allAddons {
 		if info.Metadata == nil || len(info.Metadata.ConflictsWith) == 0 {
 			continue
 		}
 
 		for _, conflictingID := range info.Metadata.ConflictsWith {
-			if conflictingInfo, exists := allAddons[conflictingID]; exists {
-				// Found a conflict - build helpful error message
-				addon1Source := "profile default"
-				if info.Source == "user" {
-					addon1Source = "user-selected"
-				}
-				addon2Source := "profile default"
-				if conflictingInfo.Source == "user" {
-					addon2Source = "user-selected"
-				}
-
-				// Determine which addon is the profile default for the error message
-				var profileDefaultAddon string
-				if info.Source == "profile" {
-					profileDefaultAddon = addonID
-				} else if conflictingInfo.Source == "profile" {
-					profileDefaultAddon = conflictingID
-				}
-
-				// Build error message
-				errorMsg := fmt.Sprintf(
-					"addon conflict: %s addon '%s' conflicts with %s addon '%s'.",
-					addon1Source, addonID, addon2Source, conflictingID)
-
-				// Add profile default context if applicable
-				if profileDefaultAddon != "" {
-					errorMsg += fmt.Sprintf(" Profile '%s' includes '%s' by default.", req.Profile, profileDefaultAddon)
-				}
-				errorMsg += " Please deselect one of the conflicting addons."
-
-				return ErrorBadRequest(c, errorMsg)
+			if _, exists := allAddons[conflictingID]; exists {
+				// Found a conflict between two user-selected addons
+				// (profile defaults that conflicted were already removed above)
+				return ErrorBadRequest(c, fmt.Sprintf(
+					"addon conflict: '%s' conflicts with '%s'. Please deselect one of these addons.",
+					addonID, conflictingID))
 			}
 		}
 	}
