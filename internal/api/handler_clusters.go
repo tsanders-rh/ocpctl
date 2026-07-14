@@ -576,6 +576,16 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Rebuild cluster.SelectedAddonIDs from the cleaned-up allAddons map
+	// This ensures only non-conflicting addons are saved to the database
+	finalSelectedAddonIDs := make([]string, 0, len(allAddons))
+	for addonID, info := range allAddons {
+		addonRef := addonID + ":" + info.Version
+		finalSelectedAddonIDs = append(finalSelectedAddonIDs, addonRef)
+	}
+	cluster.SelectedAddonIDs = finalSelectedAddonIDs
+	log.Printf("Final addon list after conflict resolution: %v", finalSelectedAddonIDs)
+
 	// Check if user provided custom post-config (operators/scripts/manifests/helm charts)
 	hasCustomPostConfig := req.CustomPostConfig != nil && (
 		len(req.CustomPostConfig.Operators) > 0 ||
