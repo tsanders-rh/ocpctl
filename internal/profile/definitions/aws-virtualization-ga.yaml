@@ -9,6 +9,7 @@ enabled: true
 credentialsMode: Manual
 openshiftVersions:
   allowlist:
+  - '4.14'
   - '4.18'
   - '4.19'
   - '4.20'
