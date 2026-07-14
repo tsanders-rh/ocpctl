@@ -102,7 +102,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}
 
 	// Validate supported version
-	supportedVersions := []string{"4.18", "4.19", "4.20", "4.21", "4.22"}
+	supportedVersions := []string{"4.14", "4.18", "4.19", "4.20", "4.21", "4.22"}
 	isSupported := false
 	for _, v := range supportedVersions {
 		if majorMinor == v {
@@ -111,7 +111,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		}
 	}
 	if !isSupported {
-		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.18, 4.19, 4.20, 4.21, 4.22)", version)
+		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.14, 4.18, 4.19, 4.20, 4.21, 4.22)", version)
 	}
 
 	// Check for version-specific binaries in environment (exact version first, then major.minor)
