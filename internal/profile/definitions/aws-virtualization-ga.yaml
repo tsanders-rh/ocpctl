@@ -6,7 +6,7 @@ platform: aws
 clusterType: openshift
 track: ga
 enabled: true
-credentialsMode: Manual
+credentialsMode: Auto
 openshiftVersions:
   allowlist:
   - '4.14'
