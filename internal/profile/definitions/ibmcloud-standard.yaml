@@ -7,10 +7,12 @@ track: ga
 enabled: true
 openshiftVersions:
   allowlist:
+  - '4.17'
   - '4.18'
   - '4.19'
   - '4.20'
-  default: '4.20'
+  - '4.21'
+  default: '4.21'
 regions:
   allowlist:
   - us-south
