@@ -91,6 +91,12 @@ echo -e "${GREEN}✓ Uploaded download-specific-version.sh${NC}"
 aws s3 cp scripts/ocpctl-worker.service ${S3_BUCKET}/scripts/ocpctl-worker.service
 echo -e "${GREEN}✓ Uploaded ocpctl-worker.service${NC}"
 
+aws s3 cp scripts/configure-efs-storage.sh ${S3_BUCKET}/scripts/configure-efs-storage.sh
+echo -e "${GREEN}✓ Uploaded configure-efs-storage.sh${NC}"
+
+aws s3 cp scripts/configure-shared-migration-storage.sh ${S3_BUCKET}/scripts/configure-shared-migration-storage.sh
+echo -e "${GREEN}✓ Uploaded configure-shared-migration-storage.sh${NC}"
+
 if [ -f config/worker.env ]; then
     aws s3 cp config/worker.env ${S3_BUCKET}/config/worker.env
     echo -e "${GREEN}✓ Uploaded worker.env${NC}"
@@ -227,6 +233,13 @@ for host in "${WORKER_HOSTS[@]}"; do
     ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/manifests && sudo mkdir -p ${REMOTE_BASE}/manifests"
     scp -i "$SSH_KEY" -r manifests/* $SSH_USER@$host:/tmp/manifests/
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp -r /tmp/manifests/* ${REMOTE_BASE}/manifests/ && sudo chmod -R 755 ${REMOTE_BASE}/manifests && rm -rf /tmp/manifests"
+
+    # Deploy scripts directory (for worker scripts like configure-efs-storage.sh)
+    echo -e "${YELLOW}  Deploying scripts directory...${NC}"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/worker-scripts && sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}/scripts"
+    scp -i "$SSH_KEY" scripts/configure-efs-storage.sh $SSH_USER@$host:/tmp/worker-scripts/ 2>/dev/null || true
+    scp -i "$SSH_KEY" scripts/configure-shared-migration-storage.sh $SSH_USER@$host:/tmp/worker-scripts/ 2>/dev/null || true
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp /tmp/worker-scripts/* ${REMOTE_BASE}/releases/${VERSION}/scripts/ 2>/dev/null || true && sudo chmod +x ${REMOTE_BASE}/releases/${VERSION}/scripts/*.sh 2>/dev/null || true && rm -rf /tmp/worker-scripts"
 
     # Deploy profiles directory
     echo -e "${YELLOW}  Deploying profiles directory...${NC}"
