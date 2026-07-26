@@ -274,11 +274,20 @@ export default function ClusterDetailPage() {
 
   const handleExtend = async () => {
     if (extendHours > 0) {
-      await extendCluster.mutateAsync({
-        id,
-        data: { ttl_hours: extendHours },
-      });
-      setExtendHours(24);
+      try {
+        await extendCluster.mutateAsync({
+          id,
+          data: { ttl_hours: extendHours },
+        });
+        toast.success("Cluster TTL extended successfully", {
+          description: `TTL extended by ${extendHours} hours`,
+        });
+        setExtendHours(24);
+      } catch (err) {
+        toast.error("Failed to extend cluster TTL", {
+          description: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
     }
   };
 

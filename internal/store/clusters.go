@@ -674,7 +674,7 @@ func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) error {
 	query := `
 		UPDATE clusters
-		SET ttl_hours = $1, destroy_at = NOW() + ($1::text || ' hours')::interval, updated_at = NOW()
+		SET ttl_hours = $1, destroy_at = NOW() + ($1 || ' hours')::interval, updated_at = NOW()
 		WHERE id = $2
 	`
 
