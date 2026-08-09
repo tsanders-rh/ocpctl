@@ -192,7 +192,7 @@ func (h *UserHandler) Create(c echo.Context) error {
 		WorkHoursEnabled: false,
 		WorkHoursStart:   defaultStartTime,
 		WorkHoursEnd:     defaultEndTime,
-		WorkDays:         62, // Monday-Friday (binary: 0111110)
+		WorkDays:         63, // Sunday-Friday (binary: 0111111)
 		Active:           true,
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),

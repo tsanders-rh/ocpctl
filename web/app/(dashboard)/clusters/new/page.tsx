@@ -83,7 +83,7 @@ export default function NewClusterPage() {
       work_hours_enabled: user?.work_hours_enabled || false,
       work_hours_start: user?.work_hours?.start_time || "09:00",
       work_hours_end: user?.work_hours?.end_time || "17:00",
-      work_days: user?.work_hours?.work_days || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      work_days: user?.work_hours?.work_days || ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     },
   });
 
