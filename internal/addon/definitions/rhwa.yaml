@@ -89,7 +89,7 @@ versions:
             spec:
               template:
                 spec:
-                  remediationStrategy: ResourceDeletion
+                  remediationStrategy: Automatic
           namespace: openshift-workload-availability
           dependsOn: [workload-availability-namespace, self-node-remediation]
 
@@ -101,10 +101,7 @@ versions:
             metadata:
               name: machine-deletion-template
               namespace: openshift-workload-availability
-            spec:
-              template:
-                spec:
-                  order: 0
+            spec: {}
           namespace: openshift-workload-availability
           dependsOn: [workload-availability-namespace, machine-deletion-remediation]
 
