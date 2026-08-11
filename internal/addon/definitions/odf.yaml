@@ -1,0 +1,171 @@
+id: odf
+name: OpenShift Data Foundation (ODF)
+description: Software-defined storage for OpenShift using Ceph. Provides block (RBD), file (CephFS), and object (NooBaa/S3) storage classes for stateful workloads.
+category: storage
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  - channel: stable
+    displayName: "ODF (Stable)"
+    isDefault: true
+    config:
+      scripts:
+        - name: install-odf
+          description: "Install ODF operator with auto-detected channel, wait for sub-operators, label workers"
+          dependsOn: [odf-namespace]
+          timeout: "20m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}' | cut -d. -f1,2)
+            CHANNEL="stable-${OCP_VERSION}"
+            echo "Detected OCP version ${OCP_VERSION}, using ODF channel ${CHANNEL}"
+
+            echo "Creating OperatorGroup..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1
+            kind: OperatorGroup
+            metadata:
+              name: openshift-storage-operatorgroup
+              namespace: openshift-storage
+            spec:
+              targetNamespaces:
+                - openshift-storage
+            EOF
+
+            echo "Creating ODF Subscription..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: Subscription
+            metadata:
+              name: odf-operator
+              namespace: openshift-storage
+            spec:
+              channel: "${CHANNEL}"
+              installPlanApproval: Automatic
+              name: odf-operator
+              source: redhat-operators
+              sourceNamespace: openshift-marketplace
+            EOF
+
+            echo "Waiting for odf-operator CSV to appear..."
+            until oc get csv -n openshift-storage -o name 2>/dev/null | grep -q odf-operator; do
+              sleep 10
+            done
+
+            echo "Waiting for odf-operator CSV to succeed..."
+            CSV_NAME=$(oc get csv -n openshift-storage -o name | grep odf-operator)
+            oc wait "${CSV_NAME}" -n openshift-storage \
+              --for=jsonpath='{.status.phase}'=Succeeded --timeout=600s
+
+            echo "Waiting for ocs-operator CSV to appear..."
+            until oc get csv -n openshift-storage -o name 2>/dev/null | grep -q ocs-operator; do
+              sleep 10
+            done
+
+            echo "Waiting for all ODF sub-operator CSVs to succeed..."
+            oc wait csv -n openshift-storage --all \
+              --for=jsonpath='{.status.phase}'=Succeeded --timeout=600s
+
+            echo "Labeling worker nodes for ODF..."
+            oc label nodes -l node-role.kubernetes.io/worker \
+              cluster.ocs.openshift.io/openshift-storage= --overwrite
+
+            echo "Enabling ODF console plugin..."
+            oc patch console.operator cluster --type json \
+              -p '[{"op": "add", "path": "/spec/plugins/-", "value": "odf-console"}]' 2>/dev/null || true
+
+            echo "ODF operator installation complete"
+
+        - name: wait-for-odf-ready
+          description: "Wait for StorageCluster to reach Ready and verify StorageClasses exist"
+          dependsOn: [odf-storagecluster]
+          timeout: "30m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Waiting for StorageCluster to become Ready..."
+            oc wait storagecluster ocs-storagecluster \
+              -n openshift-storage \
+              --for=jsonpath='{.status.phase}'=Ready \
+              --timeout=1800s
+
+            echo "StorageCluster is Ready. Verifying StorageClasses..."
+
+            EXPECTED_CLASSES=("ocs-storagecluster-ceph-rbd" "ocs-storagecluster-cephfs" "openshift-storage.noobaa.io")
+            MISSING=()
+            for SC in "${EXPECTED_CLASSES[@]}"; do
+              if oc get storageclass "$SC" &>/dev/null; then
+                echo "  ✓ $SC"
+              else
+                echo "  ✗ $SC not found"
+                MISSING+=("$SC")
+              fi
+            done
+
+            if [ ${#MISSING[@]} -gt 0 ]; then
+              echo "ERROR: Missing StorageClasses: ${MISSING[*]}"
+              exit 1
+            fi
+
+            echo "ODF is fully operational"
+
+      manifests:
+        - name: odf-namespace
+          description: "Create openshift-storage namespace with cluster monitoring"
+          content: |
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: openshift-storage
+              labels:
+                openshift.io/cluster-monitoring: "true"
+
+        - name: odf-storagecluster
+          description: "StorageCluster with 3-replica 2Ti gp3 device set"
+          namespace: openshift-storage
+          dependsOn: [install-odf]
+          content: |
+            apiVersion: ocs.openshift.io/v1
+            kind: StorageCluster
+            metadata:
+              name: ocs-storagecluster
+              namespace: openshift-storage
+            spec:
+              manageNodes: false
+              monDataDirHostPath: /var/lib/rook
+              multiCloudGateway:
+                dbStorageClassName: gp3-csi
+                reconcileStrategy: manage
+              storageDeviceSets:
+                - name: ocs-deviceset-gp3-csi
+                  count: 1
+                  dataPVCTemplate:
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: 2Ti
+                      storageClassName: gp3-csi
+                      volumeMode: Block
+                  portable: true
+                  replica: 3
+              resourceProfile: balanced
+
+metadata:
+  notes:
+    - "Auto-detects OCP version to select the matching ODF channel (stable-4.X)"
+    - "Requires 3 worker nodes with at least 10 vCPU and 24 GiB RAM each (30 vCPU / 72 GiB aggregate)"
+    - "Creates 3 x 2Ti gp3 OSDs (6Ti raw, ~2Ti usable with 3-way Ceph replication)"
+    - "Labels worker nodes with cluster.ocs.openshift.io/openshift-storage for ODF scheduling"
+    - "Provides StorageClasses: ocs-storagecluster-ceph-rbd (block), ocs-storagecluster-cephfs (file), openshift-storage.noobaa.io (object/S3)"
+    - "StorageCluster may take 15-30 minutes to reach Ready after manifest is applied"
+  warnings:
+    - "Worker nodes must be large enough for ODF overhead (m5.4xlarge / m8i.4xlarge or larger recommended)"
+    - "gp3-csi StorageClass must exist on the cluster (default for AWS IPI since OCP 4.10)"
+    - "Not suitable for single-node or compact clusters without additional configuration"
