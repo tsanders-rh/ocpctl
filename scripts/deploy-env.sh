@@ -32,8 +32,8 @@ fi
 # Environment-specific configuration
 case $ENVIRONMENT in
   dev)
-    API_HOST="54.167.79.11"
-    WORKER_HOSTS=("54.167.79.11")
+    API_HOST="44.214.230.178"
+    WORKER_HOSTS=("44.214.230.178")
     SSH_USER="ubuntu"
     SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
     S3_BUCKET="s3://ocpctl-dev-binaries"
