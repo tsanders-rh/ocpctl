@@ -14,6 +14,7 @@ import { StorageTab } from "@/components/clusters/StorageTab";
 import { ClusterTopology } from "@/components/clusters/ClusterTopology";
 import { EC2InstancesCard } from "@/components/clusters/EC2InstancesCard";
 import { AddonExecutionOrder } from "@/components/clusters/AddonExecutionOrder";
+import { SaveClusterSettingsPrompt } from "@/components/clusters/SaveClusterSettingsPrompt";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate, formatTTL, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, Trash2, Clock, ExternalLink, Download, Copy, Moon, Sunrise, FileText, Eye, EyeOff, RotateCcw } from "lucide-react";
@@ -325,6 +326,7 @@ export default function ClusterDetailPage() {
 
   return (
     <div className="space-y-6">
+      <SaveClusterSettingsPrompt />
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>

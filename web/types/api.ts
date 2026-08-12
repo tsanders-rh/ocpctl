@@ -665,6 +665,21 @@ export interface PostConfigTemplatesResponse {
   templates: PostConfigTemplate[];
 }
 
+// Cluster-creation Template Types
+// config is a partial create-cluster form payload; only present fields are pre-filled.
+export interface ClusterTemplate {
+  id: string;
+  name: string;
+  ownerId: string;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClusterTemplatesResponse {
+  templates: ClusterTemplate[];
+}
+
 // Post-Config Validation Types
 export interface DAGInfo {
   executionOrder: string[];

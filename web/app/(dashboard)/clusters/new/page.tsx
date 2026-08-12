@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { TagsInput } from "@/components/ui/tags-input";
 import { CustomPostConfigEditor } from "@/components/postconfig/CustomPostConfigEditor";
+import { ClusterTemplateBar } from "@/components/clusters/ClusterTemplateBar";
 import {
   Select,
   SelectContent,
@@ -59,6 +60,7 @@ export default function NewClusterPage() {
     handleSubmit,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<CreateClusterFormData>({
     resolver: zodResolver(createClusterSchema),
@@ -88,6 +90,45 @@ export default function NewClusterPage() {
   });
 
   const watchedValues = watch();
+
+  // Template fields that can be captured/restored (cluster name is intentionally excluded).
+  const TEMPLATE_FIELDS: (keyof CreateClusterFormData)[] = [
+    "platform", "cluster_type", "version", "profile", "region", "base_domain",
+    "owner", "team", "cost_center", "ttl_hours", "ssh_public_key", "extra_tags",
+    "offhours_opt_in", "skip_post_deployment", "postConfigAddOns", "customPostConfig",
+    "enable_efs_storage", "preserve_on_failure", "credentials_mode", "custom_pull_secret",
+    "override_work_hours", "work_hours_enabled", "work_hours_start", "work_hours_end", "work_days",
+  ];
+
+  // Holds a template awaiting re-application so it wins over profile-derived defaults.
+  const pendingTemplate = useRef<Record<string, unknown> | null>(null);
+
+  const applyTemplateToForm = (config: Record<string, unknown>) => {
+    for (const field of TEMPLATE_FIELDS) {
+      const value = config[field];
+      if (value !== undefined && value !== null) {
+        setValue(field, value as never, { shouldValidate: true });
+      }
+    }
+  };
+
+  const handleApplyTemplate = (config: Record<string, unknown>) => {
+    if (config.platform) setSelectedPlatform(config.platform as Platform);
+    if (config.cluster_type) setSelectedClusterType(config.cluster_type as ClusterType);
+    applyTemplateToForm(config);
+    // Re-apply once the profile-change effect has run so template values are not
+    // overwritten by profile defaults.
+    pendingTemplate.current = config;
+  };
+
+  const getCurrentConfig = (): Record<string, unknown> => {
+    const values = getValues();
+    const config: Record<string, unknown> = {};
+    for (const field of TEMPLATE_FIELDS) {
+      config[field] = values[field];
+    }
+    return config;
+  };
 
   // Filter profiles by platform, cluster type, and track, then sort alphabetically
   const sortedProfiles = useMemo(() => {
@@ -234,6 +275,13 @@ export default function NewClusterPage() {
           }));
           setValue("postConfigAddOns", defaultAddonSelections, { shouldValidate: true });
         }
+
+        // Re-apply a just-loaded template so its values take precedence over the
+        // profile defaults set above.
+        if (pendingTemplate.current) {
+          applyTemplateToForm(pendingTemplate.current);
+          pendingTemplate.current = null;
+        }
       }, 0);
     }
   }, [selectedProfile, setValue, watchedValues.cluster_type]);
@@ -278,6 +326,16 @@ export default function NewClusterPage() {
       }
 
       const result = await createCluster.mutateAsync(payload);
+      // Stash the settings used so the cluster detail page can offer to save them
+      // as a template when they don't already match one.
+      try {
+        sessionStorage.setItem(
+          "ocpctl:new-cluster-template-config",
+          JSON.stringify(getCurrentConfig())
+        );
+      } catch {
+        // sessionStorage may be unavailable; the prompt is a best-effort convenience.
+      }
       router.push(`/clusters/${result.id}`);
     } catch (error) {
       console.error("Failed to create cluster:", error);
@@ -303,6 +361,8 @@ export default function NewClusterPage() {
           Request a new Kubernetes cluster (OpenShift, EKS, or IKS)
         </p>
       </div>
+
+      <ClusterTemplateBar onApply={handleApplyTemplate} getCurrentConfig={getCurrentConfig} />
 
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="grid grid-cols-2 gap-8">
