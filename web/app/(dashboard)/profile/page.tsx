@@ -37,6 +37,7 @@ const TIMEZONES = [
   { value: "Europe/Paris", label: "Paris (CET/CEST)" },
   { value: "Europe/Berlin", label: "Berlin (CET/CEST)" },
   { value: "Europe/Moscow", label: "Moscow (MSK)" },
+  { value: "Asia/Jerusalem", label: "Jerusalem (IST/IDT)" },
   { value: "Asia/Dubai", label: "Dubai (GST)" },
   { value: "Asia/Kolkata", label: "India (IST)" },
   { value: "Asia/Singapore", label: "Singapore (SGT)" },
