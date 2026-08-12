@@ -177,9 +177,11 @@ func (sb *stringBuilder) WriteString(s string) {
 	sb.buf = append(sb.buf, s...)
 }
 
-// WriteByte appends a byte
-func (sb *stringBuilder) WriteByte(b byte) {
+// WriteByte appends a byte. It returns an error to satisfy the io.ByteWriter
+// convention; the implementation never fails.
+func (sb *stringBuilder) WriteByte(b byte) error {
 	sb.buf = append(sb.buf, b)
+	return nil
 }
 
 // String returns the built string

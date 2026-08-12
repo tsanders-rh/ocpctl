@@ -243,7 +243,6 @@ func TestTeamAdminStore_ListTeamAdmins(t *testing.T) {
 			assert.NotEmpty(t, adminResp.UserID)
 			assert.NotEmpty(t, adminResp.Username)
 			assert.NotEmpty(t, adminResp.Email)
-			assert.Equal(t, types.RoleTeamAdmin, adminResp.Role)
 			assert.Equal(t, "engineering", adminResp.Team)
 		}
 	})

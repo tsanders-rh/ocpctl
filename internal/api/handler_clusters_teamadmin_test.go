@@ -30,7 +30,7 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 
 		// Create policy engine and registry (required by ClusterHandler)
 		policyEngine := policy.NewEngine(nil) // Mock profiles
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
@@ -105,7 +105,7 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and teams
@@ -166,7 +166,7 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and teams
@@ -230,7 +230,7 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and teams
@@ -254,8 +254,8 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create clusters in both teams
-		clusterOwned := createTestCluster(t, s, teamAdmin.ID, "engineering") // Should see (owned)
-		createTestCluster(t, s, otherUser.ID, "sales")                        // Should NOT see
+		createTestCluster(t, s, teamAdmin.ID, "engineering") // Should see (owned)
+		createTestCluster(t, s, otherUser.ID, "sales")       // Should NOT see
 
 		// Create request filtering by non-managed team (sales)
 		e := echo.New()
@@ -296,7 +296,7 @@ func TestClusterHandler_Get_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and team
@@ -351,7 +351,7 @@ func TestClusterHandler_Get_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and team
@@ -400,7 +400,7 @@ func TestClusterHandler_Get_TeamAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and teams
@@ -462,7 +462,7 @@ func TestClusterHandler_RegularUserAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and team
@@ -519,7 +519,7 @@ func TestClusterHandler_PlatformAdminAccess(t *testing.T) {
 		s := store.New(pool)
 
 		policyEngine := policy.NewEngine(nil)
-		registry := profile.NewRegistry()
+		registry, _ := profile.NewRegistry(profile.NewLoader(""))
 		handler := api.NewClusterHandler(s, policyEngine, registry)
 
 		// Create users and teams

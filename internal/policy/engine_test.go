@@ -24,7 +24,7 @@ func TestEngine_ValidateCreateRequest(t *testing.T) {
 		req := &policy.CreateClusterRequest{
 			Name:        "test-cluster-01",
 			Platform:    "aws",
-			Version:     "4.20.3",
+			Version:     "4.20",
 			Profile:     "aws-minimal-test",
 			Region:      "us-east-1",
 			BaseDomain:  "mg.dog8code.com",
@@ -237,7 +237,7 @@ func TestEngine_GetDefaults(t *testing.T) {
 	t.Run("gets default version", func(t *testing.T) {
 		version, err := engine.GetDefaultVersion("aws-minimal-test")
 		require.NoError(t, err)
-		assert.Equal(t, "4.20.3", version)
+		assert.Equal(t, "4.20", version)
 	})
 
 	t.Run("gets default region", func(t *testing.T) {

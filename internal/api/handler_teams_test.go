@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tsanders-rh/ocpctl/internal/api"
+	"github.com/tsanders-rh/ocpctl/internal/auth"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -26,7 +27,7 @@ func TestTeamHandler_ListTeams(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create test teams
 		teams := []*types.Team{
@@ -69,7 +70,7 @@ func TestTeamHandler_ListTeams(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create request
 		e := echo.New()
@@ -82,7 +83,7 @@ func TestTeamHandler_ListTeams(t *testing.T) {
 		setAuthContext(c, user)
 
 		// Execute with admin middleware
-		err := api.RequireAdmin()(handler.ListTeams)(c)
+		err := auth.RequireAdmin()(handler.ListTeams)(c)
 
 		// Assert - should be forbidden
 		assert.Error(t, err)
@@ -103,7 +104,7 @@ func TestTeamHandler_CreateTeam(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create request
 		e := echo.New()
@@ -138,7 +139,7 @@ func TestTeamHandler_CreateTeam(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create request with invalid name
 		e := echo.New()
@@ -165,7 +166,7 @@ func TestTeamHandler_CreateTeam(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create first team
 		team1 := &types.Team{Name: "duplicate", Description: stringPtr("First")}
@@ -207,7 +208,7 @@ func TestTeamHandler_GrantTeamAdmin(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create team and users
 		team := &types.Team{Name: "engineering", Description: stringPtr("Engineering")}
@@ -250,7 +251,7 @@ func TestTeamHandler_GrantTeamAdmin(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create team and users
 		team := &types.Team{Name: "sales", Description: stringPtr("Sales")}
@@ -297,7 +298,7 @@ func TestTeamHandler_RevokeTeamAdmin(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create team and users
 		team := &types.Team{Name: "engineering", Description: stringPtr("Engineering")}
@@ -341,7 +342,7 @@ func TestTeamHandler_RevokeTeamAdmin(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create admin
 		admin := createTestUser(t, s, "admin@example.com", types.RoleAdmin)
@@ -380,7 +381,7 @@ func TestTeamHandler_DeleteTeam(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create team
 		team := &types.Team{Name: "temp-team", Description: stringPtr("Temporary")}
@@ -417,7 +418,7 @@ func TestTeamHandler_DeleteTeam(t *testing.T) {
 		pool := setupTestDB(t)
 		defer pool.Close()
 		s := store.New(pool)
-		handler := api.NewTeamHandler(s)
+		handler := api.NewTeamHandler(s, nil)
 
 		// Create team and cluster
 		team := &types.Team{Name: "active-team", Description: stringPtr("Active")}

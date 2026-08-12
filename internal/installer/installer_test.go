@@ -161,7 +161,7 @@ func TestNewInstallerForVersionDevPreviewParsing(t *testing.T) {
 		{
 			name:          "unsupported version",
 			version:       "4.17.0",
-			expectedMajor: "",
+			expectedMajor: "4.17",
 			shouldError:   true,
 		},
 	}

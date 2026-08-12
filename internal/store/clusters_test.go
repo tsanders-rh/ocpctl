@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // This is a sample test demonstrating the testing pattern
@@ -99,20 +101,11 @@ func TestClusterStore_GetExpiredClusters(t *testing.T) {
 	})
 }
 
-// Helper function for real integration tests
-func setupTestDB(t *testing.T) {
-	// This would use testcontainers to spin up PostgreSQL
-	// Run migrations
-	// Return connection pool
-	//
-	// Example:
-	// ctx := context.Background()
-	// pgContainer, err := testcontainers.GenericContainer(ctx, ...)
-	// require.NoError(t, err)
-	// t.Cleanup(func() { pgContainer.Terminate(ctx) })
-	//
-	// pool, err := store.NewPool(ctx, cfg)
-	// require.NoError(t, err)
-	//
-	// return pool
+// setupTestDB returns a pgx pool connected to a real PostgreSQL test database.
+// It is not yet wired up (a testcontainers-based harness is the intended
+// implementation), so it skips the calling test rather than returning a nil pool.
+func setupTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	t.Skip("integration test: requires a PostgreSQL test database (not configured)")
+	return nil
 }
