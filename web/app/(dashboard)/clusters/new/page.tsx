@@ -103,16 +103,16 @@ export default function NewClusterPage() {
       // but exclude managed service profiles (ROSA, ARO, AKS, EKS, IKS, GKE)
       if (selectedClusterType === ClusterType.OpenShift) {
         clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`) &&
-          !p.name.startsWith(`${selectedPlatform}-rosa-`) &&
+          !p.name.startsWith('rosa-') &&
           !p.name.startsWith(`${selectedPlatform}-aro-`) &&
           !p.name.startsWith(`${selectedPlatform}-aks-`) &&
-          !p.name.startsWith(`${selectedPlatform}-eks-`) &&
-          !p.name.startsWith(`${selectedPlatform}-iks-`) &&
-          !p.name.startsWith(`${selectedPlatform}-gke-`);
+          !p.name.startsWith('eks-') &&
+          !p.name.startsWith('iks-') &&
+          !p.name.startsWith('gke-');
       }
-      // For ROSA clusters, show profiles that start with aws-rosa-
+      // For ROSA clusters, show profiles that start with rosa-
       else if (selectedClusterType === ClusterType.ROSA) {
-        clusterTypeMatch = p.name.startsWith('aws-rosa-');
+        clusterTypeMatch = p.name.startsWith('rosa-');
       }
       // For EKS/IKS/GKE/ARO/AKS clusters, show profiles that start with cluster type prefix (eks-, iks-, gke-, aro-, aks-)
       else if (selectedClusterType === ClusterType.EKS) {
