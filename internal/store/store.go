@@ -56,6 +56,7 @@ type Store struct {
 	ProfileDeploymentMetrics  *ProfileDeploymentMetricsStore
 	PostConfigAddons          *PostConfigAddonStore
 	PostConfigTemplates       *PostConfigTemplateStore
+	ClusterTemplates          *ClusterTemplateStore
 	Teams                     *TeamStore
 	TeamAdmins                *TeamAdminStore
 	TeamMemberships           *TeamMembershipStore
@@ -95,6 +96,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.ProfileDeploymentMetrics = &ProfileDeploymentMetricsStore{pool: pool}
 	s.PostConfigAddons = &PostConfigAddonStore{pool: pool}
 	s.PostConfigTemplates = &PostConfigTemplateStore{pool: pool}
+	s.ClusterTemplates = &ClusterTemplateStore{pool: pool}
 	s.Teams = &TeamStore{db: pool}
 	s.TeamAdmins = &TeamAdminStore{db: pool}
 	s.TeamMemberships = &TeamMembershipStore{db: pool}

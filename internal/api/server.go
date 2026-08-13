@@ -413,6 +413,15 @@ func (s *Server) setupRoutes() {
 	templatesGroup.PATCH("/:id", templateHandler.Update)
 	templatesGroup.DELETE("/:id", templateHandler.Delete)
 
+	// Cluster-creation template routes (per-user, require authentication)
+	clusterTemplateHandler := NewClusterTemplateHandler(s.store)
+	clusterTemplatesGroup := v1.Group("/cluster-templates", auth.RequireAuthDual(s.auth, s.iamAuth))
+	clusterTemplatesGroup.POST("", clusterTemplateHandler.Create)
+	clusterTemplatesGroup.GET("", clusterTemplateHandler.List)
+	clusterTemplatesGroup.GET("/:id", clusterTemplateHandler.Get)
+	clusterTemplatesGroup.PATCH("/:id", clusterTemplateHandler.Update)
+	clusterTemplatesGroup.DELETE("/:id", clusterTemplateHandler.Delete)
+
 	// Job routes (require authentication)
 	jobHandler := NewJobHandler(s.store)
 	jobsGroup := v1.Group("/jobs", auth.RequireAuthDual(s.auth, s.iamAuth))

@@ -6,7 +6,7 @@ VALUES (
     'admin@localhost',
     'admin',
     '$2a$10$FA2EDw.BHNmEP508TMIka.iXbt4l4D1B3AMcYBAzi9B1bO.gV6Yv2',
-    'admin',
+    'ADMIN',
     true,
     NOW(),
     NOW()
