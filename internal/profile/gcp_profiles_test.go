@@ -11,12 +11,12 @@ import (
 func TestGCPProfiles_Load(t *testing.T) {
 	loader := profile.NewLoader("definitions")
 
-	t.Run("loads gcp-gke-standard profile", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("loads gke-standard profile", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 		require.NotNil(t, prof)
 
-		assert.Equal(t, "gcp-gke-standard", prof.Name)
+		assert.Equal(t, "gke-standard", prof.Name)
 		assert.Equal(t, "gcp", string(prof.Platform))
 		assert.Equal(t, "gke", string(prof.ClusterType))
 		assert.True(t, prof.Enabled)
@@ -76,8 +76,8 @@ func TestGCPProfiles_Load(t *testing.T) {
 
 		// Verify OpenShift versions
 		require.NotNil(t, prof.OpenshiftVersions)
-		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.20.3")
-		assert.Equal(t, "4.20.3", prof.OpenshiftVersions.Default)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.20")
+		assert.Equal(t, "4.20", prof.OpenshiftVersions.Default)
 
 		// Verify base domains
 		require.NotNil(t, prof.BaseDomains)
@@ -115,8 +115,8 @@ func TestGCPProfiles_Load(t *testing.T) {
 func TestGCPProfiles_Validation(t *testing.T) {
 	loader := profile.NewLoader("definitions")
 
-	t.Run("gcp-gke-standard validates correctly", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("gke-standard validates correctly", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
 		// Verify required fields
@@ -165,8 +165,8 @@ func TestGCPProfiles_Validation(t *testing.T) {
 func TestGCPProfiles_CostEstimates(t *testing.T) {
 	loader := profile.NewLoader("definitions")
 
-	t.Run("gcp-gke-standard cost estimates", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("gke-standard cost estimates", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
 		assert.Equal(t, 0.05, prof.CostControls.EstimatedHourlyCost)
@@ -203,8 +203,8 @@ func TestGCPProfiles_RegionSupport(t *testing.T) {
 		"asia-east1",
 	}
 
-	t.Run("gcp-gke-standard regions", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("gke-standard regions", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
 		for _, region := range commonRegions {
@@ -225,8 +225,8 @@ func TestGCPProfiles_RegionSupport(t *testing.T) {
 func TestGCPProfiles_NodePoolConfiguration(t *testing.T) {
 	loader := profile.NewLoader("definitions")
 
-	t.Run("gcp-gke-standard node pool", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("gke-standard node pool", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
 		require.NotNil(t, prof.PlatformConfig)
@@ -254,8 +254,8 @@ func TestGCPProfiles_LifecycleConfiguration(t *testing.T) {
 		expectedDefaultTTL int
 	}{
 		{
-			name:               "gcp-gke-standard",
-			profileName:        "gcp-gke-standard",
+			name:               "gke-standard",
+			profileName:        "gke-standard",
 			expectedMaxTTL:     168, // 1 week
 			expectedDefaultTTL: 48,  // 2 days
 		},
@@ -286,8 +286,8 @@ func TestGCPProfiles_Tags(t *testing.T) {
 		"ManagedBy": "cluster-control-plane",
 	}
 
-	t.Run("gcp-gke-standard tags", func(t *testing.T) {
-		prof, err := loader.Load("gcp-gke-standard")
+	t.Run("gke-standard tags", func(t *testing.T) {
+		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
 		assert.True(t, prof.Tags.AllowUserTags)

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -83,26 +84,26 @@ func (h *WindowsSnapshotHandler) handleCopySnapshot(ctx context.Context, job *ty
 	if !ok {
 		errMsg := "source_snapshot_id not found in job metadata for copy method"
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 	sourceSnapshotID, ok := sourceSnapshotIDRaw.(string)
 	if !ok || sourceSnapshotID == "" {
 		errMsg := "source_snapshot_id is invalid"
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	sourceRegionRaw, ok := job.Metadata["source_region"]
 	if !ok {
 		errMsg := "source_region not found in job metadata for copy method"
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 	sourceRegion, ok := sourceRegionRaw.(string)
 	if !ok || sourceRegion == "" {
 		errMsg := "source_region is invalid"
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	fmt.Printf("Copying snapshot %s from %s to %s\n", sourceSnapshotID, sourceRegion, region)
@@ -163,7 +164,7 @@ func (h *WindowsSnapshotHandler) handleRegenerateSnapshot(ctx context.Context, j
 	if region != "us-east-1" {
 		errMsg := "Import from S3 only supported in us-east-1. Use copy method for other regions."
 		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	fmt.Printf("Importing Windows snapshot from S3: region=%s version=%s\n", region, version)

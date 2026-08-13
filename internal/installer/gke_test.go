@@ -2,6 +2,7 @@ package installer
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,7 +213,7 @@ func TestGKEInstaller_SanitizeClusterName(t *testing.T) {
 		{
 			name:     "too long name",
 			input:    "this-is-a-very-long-cluster-name-that-needs-to-be-truncated-because-it-exceeds-limit",
-			expected: "this-is-a-very-long-cluster-name-that-",
+			expected: "this-is-a-very-long-cluster-name-that-ne",
 		},
 	}
 
@@ -312,5 +313,5 @@ func trimHyphens(s string) string {
 }
 
 func (i *GKEInstaller) buildNodePoolName(clusterName string, poolIndex int) string {
-	return clusterName + "-pool-" + string(rune('0'+poolIndex))
+	return clusterName + "-pool-" + strconv.Itoa(poolIndex)
 }

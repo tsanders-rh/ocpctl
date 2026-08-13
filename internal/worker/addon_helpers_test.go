@@ -89,7 +89,8 @@ func TestMergeAddonConfigs(t *testing.T) {
 		handler := &PostConfigureHandler{}
 
 		// Merge configs
-		merged := handler.mergeAddonConfigs(addons)
+		merged, err := handler.mergeAddonConfigs(addons)
+		require.NoError(t, err)
 
 		// Verify all configs were merged
 		require.NotNil(t, merged)
@@ -108,7 +109,8 @@ func TestMergeAddonConfigs(t *testing.T) {
 
 	t.Run("returns nil for empty addon list", func(t *testing.T) {
 		handler := &PostConfigureHandler{}
-		merged := handler.mergeAddonConfigs([]types.PostConfigAddon{})
+		merged, err := handler.mergeAddonConfigs([]types.PostConfigAddon{})
+		require.NoError(t, err)
 		assert.Nil(t, merged)
 	})
 
@@ -125,7 +127,8 @@ func TestMergeAddonConfigs(t *testing.T) {
 		}
 
 		handler := &PostConfigureHandler{}
-		merged := handler.mergeAddonConfigs(addons)
+		merged, err := handler.mergeAddonConfigs(addons)
+		require.NoError(t, err)
 
 		require.NotNil(t, merged)
 		assert.Empty(t, merged.Operators)
@@ -161,7 +164,8 @@ func TestMergeAddonConfigs(t *testing.T) {
 		}
 
 		handler := &PostConfigureHandler{}
-		merged := handler.mergeAddonConfigs(addons)
+		merged, err := handler.mergeAddonConfigs(addons)
+		require.NoError(t, err)
 
 		require.NotNil(t, merged)
 		require.Len(t, merged.Operators, 1)
@@ -195,7 +199,8 @@ func TestMergeAddonConfigs(t *testing.T) {
 		}
 
 		handler := &PostConfigureHandler{}
-		merged := handler.mergeAddonConfigs(addons)
+		merged, err := handler.mergeAddonConfigs(addons)
+		require.NoError(t, err)
 
 		require.NotNil(t, merged)
 		assert.Len(t, merged.Operators, 10)
@@ -232,7 +237,8 @@ func TestAddonConfigMergeWithDependencies(t *testing.T) {
 		}
 
 		handler := &PostConfigureHandler{}
-		merged := handler.mergeAddonConfigs(addons)
+		merged, err := handler.mergeAddonConfigs(addons)
+		require.NoError(t, err)
 
 		require.NotNil(t, merged)
 

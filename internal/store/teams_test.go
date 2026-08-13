@@ -331,8 +331,8 @@ func TestTeamStore_GetTeamsWithClusterCounts(t *testing.T) {
 
 		// Verify counts
 		counts := make(map[string]int)
-		for _, team := range teams {
-			counts[team.Name] = team.ClusterCount
+		for name, count := range teams {
+			counts[name] = count
 		}
 
 		assert.Equal(t, 2, counts["team-alpha"])
