@@ -1,0 +1,104 @@
+name: aws-odf-m6i-ga
+displayName: AWS OpenShift Data Foundation - m6i (GA)
+description: Cluster with ODF-capable workers (m6i.4xlarge) providing Ceph block, file,
+  and object storage. Use this profile when m8i instances are not available.
+platform: aws
+clusterType: openshift
+track: ga
+enabled: true
+credentialsMode: Auto
+openshiftVersions:
+  allowlist:
+  - '4.16'
+  - '4.17'
+  - '4.18'
+  - '4.19'
+  - '4.20'
+  - '4.21'
+  - '4.22'
+  default: '4.21'
+regions:
+  allowlist:
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  - eu-west-1
+  - eu-west-2
+  - eu-west-3
+  - eu-central-1
+  - eu-north-1
+  - ap-southeast-1
+  - ap-southeast-2
+  - ap-northeast-1
+  - ap-northeast-2
+  - ap-south-1
+  - ca-central-1
+  - sa-east-1
+  default: us-east-1
+baseDomains:
+  allowlist:
+  - mg.dog8code.com
+  default: mg.dog8code.com
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: m6i.xlarge
+    schedulable: false
+  workers:
+    replicas: 3
+    minReplicas: 3
+    maxReplicas: 3
+    instanceType: m6i.4xlarge
+    autoscaling: false
+lifecycle:
+  maxTTLHours: 168
+  defaultTTLHours: 72
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+  machineNetwork:
+  - cidr: 10.0.0.0/16
+tags:
+  required:
+    Environment: production
+  defaults:
+    Purpose: storage
+    ManagedBy: cluster-control-plane
+    Workload: openshift-data-foundation
+    Track: ga
+  allowUserTags: true
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+costControls:
+  estimatedHourlyCost: 3.40
+  maxMonthlyCost: 2448
+  budgetAlertThreshold: 0.8
+  warningMessage: 3x m6i.4xlarge + 3x m6i.xlarge cost ~$3.40/hr ($2,448/month).
+platformConfig:
+  aws:
+    instanceMetadataService: required
+    rootVolume:
+      type: gp3
+      size: 120
+      iops: 3000
+defaultAddons:
+  - addonID: odf
+    version: stable
+metadata:
+  capabilities:
+  - ceph-storage
+  notes:
+  - Workers sized for ODF (m6i.4xlarge, 16 vCPU / 64 GiB each, 48 vCPU / 192 GiB aggregate)
+  - Exceeds ODF minimum of 30 vCPU / 72 GiB with headroom for platform services
+  - ODF addon pre-selected for automatic Ceph storage deployment
+  - Fallback for accounts where m8i instances are not available
+  - m6i instances available in all major AWS regions
