@@ -1,13 +1,13 @@
 name: aws-rhwa-lab-prerelease
 displayName: AWS RHWA Lab (Prerelease)
 description: Compact 3-node cluster for RHWA/Medik8s node remediation testing with
-  pre-release OpenShift versions (EC, RC, nightly builds). Control plane is schedulable
-  with manual credentials for full AWS access required by failure injection scenarios.
+  pre-release OpenShift versions (EC, RC, nightly builds). Control plane is schedulable.
+  Uses Auto credentials mode for OpenShift 5.0 compatibility.
 platform: aws
 clusterType: openshift
 track: prerelease
 enabled: true
-credentialsMode: Manual
+credentialsMode: Auto
 openshiftVersions:
   allowlist:
   - 4.22.0-ec.5
@@ -80,12 +80,13 @@ defaultAddons:
 metadata:
   notes:
   - Optimized for RHWA/Medik8s node remediation testing with prerelease OpenShift
-  - Manual credentials mode required for AWS instance manipulation
+  - Uses Auto credentials mode for OpenShift 5.0 compatibility
   - Control plane schedulable (3 nodes suitable for compact testing)
   - Use with rhwa addon for complete operator installation
   - 'Estimated cost: $0.77/hr ($18/day with hibernation)'
   - 'Supports OpenShift 4.22 EC builds, 5.0 EC builds, and 5.0 nightly builds'
   warnings:
-  - 'Manual credentials mode: cluster creates AWS credentials with full permissions'
+  - Auto credentials mode may have limited IAM permissions for some failure injection scenarios
+  - For full AWS access use the GA aws-rhwa-lab profile with Manual credentials
   - Failure injection tests may temporarily impact node availability
   - 'Prerelease versions may have bugs or breaking changes'
