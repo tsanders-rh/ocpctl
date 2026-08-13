@@ -559,6 +559,30 @@ func extractCACertFromKubeconfig(kubeconfigPath string) (string, error) {
 	return caCert, nil
 }
 
+// updateArtifactURIs updates cluster_outputs with S3 URIs after artifacts are uploaded
+func (h *CreateHandler) updateArtifactURIs(ctx context.Context, clusterID string) error {
+	// Get current outputs
+	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("get cluster outputs: %w", err)
+	}
+
+	// Update URIs to point to S3
+	kubeconfigS3URI := fmt.Sprintf("s3://%s/clusters/%s/artifacts/auth/kubeconfig", h.config.S3BucketName, clusterID)
+	outputs.KubeconfigS3URI = &kubeconfigS3URI
+
+	metadataS3URI := fmt.Sprintf("s3://%s/clusters/%s/artifacts/metadata.json", h.config.S3BucketName, clusterID)
+	outputs.MetadataS3URI = &metadataS3URI
+
+	// Update in database
+	if err := h.store.ClusterOutputs.Update(ctx, outputs); err != nil {
+		return fmt.Errorf("update cluster outputs: %w", err)
+	}
+
+	log.Printf("Updated artifact URIs for cluster %s to S3 locations", clusterID)
+	return nil
+}
+
 // storeArtifacts stores cluster artifacts (kubeconfig, logs, metadata)
 func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID string) error {
 	// Create artifact storage client
@@ -570,6 +594,11 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 	// Upload all artifacts to S3
 	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, clusterID); err != nil {
 		return fmt.Errorf("upload artifacts: %w", err)
+	}
+
+	// Update cluster_outputs with S3 URIs (replaces file:// URIs set during extraction)
+	if err := h.updateArtifactURIs(ctx, clusterID); err != nil {
+		log.Printf("Warning: failed to update artifact URIs to S3: %v", err)
 	}
 
 	// Create artifact records for tracking
