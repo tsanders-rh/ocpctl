@@ -668,13 +668,13 @@ func (s *ClusterStore) MarkDestroyed(ctx context.Context, id string) error {
 	return nil
 }
 
-// UpdateTTL updates a cluster's TTL (time-to-live) in hours and recalculates the destroy_at timestamp.
-// The destroy_at timestamp is set to the current time plus ttlHours.
+// UpdateTTL extends a cluster's TTL (time-to-live) by adding the specified hours.
+// Both ttl_hours and destroy_at are incremented by the provided hours.
 // Returns ErrNotFound if the cluster does not exist.
 func (s *ClusterStore) UpdateTTL(ctx context.Context, id string, ttlHours int) error {
 	query := `
 		UPDATE clusters
-		SET ttl_hours = $1, destroy_at = NOW() + make_interval(hours => $1), updated_at = NOW()
+		SET ttl_hours = ttl_hours + $1, destroy_at = destroy_at + make_interval(hours => $1), updated_at = NOW()
 		WHERE id = $2
 	`
 
