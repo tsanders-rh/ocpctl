@@ -30,7 +30,7 @@ fi
 # Environment-specific configuration
 case $ENVIRONMENT in
   dev)
-    SSH_HOST="54.167.79.11"
+    SSH_HOST="44.214.230.178"
     SSH_USER="ubuntu"
     SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
     DOMAIN="dev.ocpctl.mg.dog8code.com"
@@ -196,6 +196,16 @@ ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
     sudo bash -c 'cd ${REMOTE_BASE}/web && npm install --production --quiet'
 "
 echo -e "${GREEN}✓ Dependencies installed${NC}"
+
+# Copy static files to standalone directory (required for Next.js standalone mode)
+echo -e "${YELLOW}  Copying static files to standalone directory...${NC}"
+ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
+    sudo rm -rf ${REMOTE_BASE}/web/.next/standalone/.next/static
+    sudo cp -r ${REMOTE_BASE}/web/.next/static ${REMOTE_BASE}/web/.next/standalone/.next/static
+    sudo cp -r ${REMOTE_BASE}/web/public ${REMOTE_BASE}/web/.next/standalone/public 2>/dev/null || true
+    sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/web/.next/standalone
+"
+echo -e "${GREEN}✓ Static files copied${NC}"
 
 # Verify web.env exists
 echo -e "${YELLOW}  Verifying configuration...${NC}"
