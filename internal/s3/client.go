@@ -39,20 +39,36 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 // GeneratePresignedURL generates a pre-signed URL for downloading an S3 object
 func (c *Client) GeneratePresignedURL(ctx context.Context, s3URI string, expirationMinutes int) (string, error) {
+	return c.GeneratePresignedDownloadURL(ctx, s3URI, expirationMinutes, "")
+}
+
+// GeneratePresignedDownloadURL generates a pre-signed URL for downloading an S3 object,
+// optionally forcing the browser's saved filename via response-content-disposition.
+// Unlike an HTML anchor's download attribute (which browsers ignore for cross-origin
+// URLs), this is signed into the URL and always honored by S3.
+func (c *Client) GeneratePresignedDownloadURL(ctx context.Context, s3URI string, expirationMinutes int, downloadFilename string) (string, error) {
 	// Parse S3 URI (format: s3://bucket-name/path/to/object)
 	bucket, key, err := parseS3URI(s3URI)
 	if err != nil {
 		return "", err
 	}
 
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+
+	// Force the downloaded filename so multiple kubeconfigs can be told apart.
+	if downloadFilename != "" {
+		input.ResponseContentDisposition = aws.String(
+			fmt.Sprintf("attachment; filename=%q", downloadFilename))
+	}
+
 	// Create presigner
 	presigner := s3.NewPresignClient(c.s3Client)
 
 	// Generate presigned URL
-	request, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}, func(opts *s3.PresignOptions) {
+	request, err := presigner.PresignGetObject(ctx, input, func(opts *s3.PresignOptions) {
 		opts.Expires = time.Duration(expirationMinutes) * time.Minute
 	})
 

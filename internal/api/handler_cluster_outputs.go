@@ -508,8 +508,10 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to create S3 client: %w", err))
 	}
 
-	// Generate presigned URL (valid for 15 minutes)
-	presignedURL, err := s3Client.GeneratePresignedURL(ctx, kubeconfigURI, 15)
+	// Generate presigned URL (valid for 15 minutes), forcing a cluster-specific
+	// download filename so multiple kubeconfigs can be told apart.
+	downloadFilename := fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name)
+	presignedURL, err := s3Client.GeneratePresignedDownloadURL(ctx, kubeconfigURI, 15, downloadFilename)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to generate presigned URL: %w", err))
 	}
