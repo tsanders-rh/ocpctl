@@ -36,17 +36,36 @@ fi
 # Get cluster name
 CLUSTER_NAME=$(oc get infrastructure cluster -o jsonpath='{.status.apiServerURL}' | sed 's|https://api\.||; s|:.*||; s|\..*||')
 
-# Get OIDC provider info
-OIDC_ISSUER=$(oc get authentication.config.openshift.io cluster -o jsonpath='{.spec.serviceAccountIssuer}')
+# Get OIDC provider info - try multiple paths used by different cluster types
+OIDC_ISSUER=$(oc get authentication.config.openshift.io cluster \
+  -o jsonpath='{.spec.serviceAccountIssuer}' 2>/dev/null || true)
+
+# Fallback: some clusters expose it via the infrastructure object
+if [ -z "$OIDC_ISSUER" ]; then
+  OIDC_ISSUER=$(oc get infrastructure cluster \
+    -o jsonpath='{.status.platformStatus.aws.serviceEndpoints[?(@.name=="sts")].url}' 2>/dev/null || true)
+fi
 
 echo "Cluster Information:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Cluster Name: $CLUSTER_NAME"
 echo "Infrastructure ID: $INFRA_ID"
 echo "Region: $REGION"
-echo "OIDC Issuer: $OIDC_ISSUER"
+if [ -n "$OIDC_ISSUER" ]; then
+  echo "OIDC Issuer: $OIDC_ISSUER"
+else
+  echo "OIDC Issuer: (not found - cluster may not use STS/OIDC mode)"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "To setup IRSA, run:"
-echo "  ./setup-irsa.sh $INFRA_ID $REGION"
+if [ -n "$OIDC_ISSUER" ]; then
+  echo "  ./setup-irsa.sh $INFRA_ID $REGION $OIDC_ISSUER"
+else
+  echo "  ./setup-irsa.sh $INFRA_ID $REGION"
+  echo ""
+  echo "Note: OIDC Issuer was not found. setup-irsa.sh will use the standard"
+  echo "IPI STS pattern. If that fails, check the issuer manually:"
+  echo "  oc get authentication.config.openshift.io cluster -o jsonpath='{.spec.serviceAccountIssuer}'"
+fi
 echo ""
