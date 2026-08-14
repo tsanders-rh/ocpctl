@@ -94,6 +94,16 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("create worker subnet: %w", err)
 	}
 
+	// Resolve MAJOR.MINOR profile versions (e.g. "4.20") to a full patch
+	// (e.g. "4.20.15"); az aro create rejects a bare minor with "--version is invalid".
+	resolvedVersion, err := aroInstaller.ResolveVersion(ctx, cluster.Region, cluster.Version)
+	if err != nil {
+		return fmt.Errorf("resolve ARO version %q: %w", cluster.Version, err)
+	}
+	if resolvedVersion != cluster.Version {
+		log.Printf("[JOB %s] Resolved OpenShift version %s -> %s", job.ID, cluster.Version, resolvedVersion)
+	}
+
 	// Build ARO cluster config
 	clusterConfig := &installer.AROClusterConfig{
 		Name:             cluster.Name,
@@ -102,7 +112,7 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		MasterVMSize:     aroConfig.MasterVMSize,
 		WorkerVMSize:     aroConfig.WorkerVMSize,
 		WorkerCount:      aroConfig.WorkerCount,
-		OpenShiftVersion: cluster.Version,
+		OpenShiftVersion: resolvedVersion,
 		PullSecret:       fmt.Sprintf("@%s", pullSecretPath),
 		Tags:             cluster.EffectiveTags,
 	}

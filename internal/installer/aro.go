@@ -117,6 +117,63 @@ func (a *AROInstaller) CreateSubnet(ctx context.Context, resourceGroup, vnetName
 	return nil
 }
 
+// ResolveVersion turns a MAJOR.MINOR OpenShift version (e.g. "4.20") into the
+// highest available patch release (e.g. "4.20.15") for the given Azure region.
+// `az aro create --version` rejects a bare minor with "--version is invalid",
+// but ocpctl profiles declare minor versions by convention. This bridges that
+// gap, mirroring the ROSA ResolveVersion path.
+//
+// Already fully-qualified versions (X.Y.Z) and empty versions are returned
+// unchanged (empty lets az aro create pick its own default).
+func (a *AROInstaller) ResolveVersion(ctx context.Context, region, version string) (string, error) {
+	if version == "" || fullPatchVersionRe.MatchString(version) {
+		return version, nil
+	}
+	if !minorVersionRe.MatchString(version) {
+		return "", fmt.Errorf("unrecognized OpenShift version %q: expected MAJOR.MINOR or MAJOR.MINOR.PATCH", version)
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(listCtx, a.binaryPath, "aro", "get-versions", "--location", region, "--output", "json")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("az aro get-versions: %w: %s", err, stderr.String())
+	}
+
+	// az aro get-versions returns a JSON array of patch version strings.
+	var versions []string
+	if err := json.Unmarshal(stdout.Bytes(), &versions); err != nil {
+		return "", fmt.Errorf("parse aro versions: %w", err)
+	}
+
+	// Pick the highest patch matching the requested minor.
+	prefix := version + "."
+	best := ""
+	bestPatch := -1
+	for _, v := range versions {
+		if !strings.HasPrefix(v, prefix) {
+			continue
+		}
+		patch, ok := patchNumber(v)
+		if !ok {
+			continue
+		}
+		if patch > bestPatch {
+			bestPatch = patch
+			best = v
+		}
+	}
+
+	if best == "" {
+		return "", fmt.Errorf("no ARO-supported patch version found for OpenShift %s in region %s", version, region)
+	}
+	return best, nil
+}
+
 // CreateCluster creates an ARO cluster using az aro create
 func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConfig, logFile string, vnetName, masterSubnetName, workerSubnetName string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
