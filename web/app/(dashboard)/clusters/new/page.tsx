@@ -362,12 +362,14 @@ export default function NewClusterPage() {
         </p>
       </div>
 
-      <ClusterTemplateBar onApply={handleApplyTemplate} getCurrentConfig={getCurrentConfig} />
-
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="grid grid-cols-2 gap-8">
           {/* Left Panel - Form */}
           <div className="space-y-6">
+            {/* Template bar lives in the left column so it matches the form width
+                and both columns start at the top (no empty top-right gap). */}
+            <ClusterTemplateBar onApply={handleApplyTemplate} getCurrentConfig={getCurrentConfig} />
+
             {/* Basic Info Section */}
             <div className="rounded-lg border bg-card p-6 space-y-4">
               <h2 className="text-lg font-semibold">Basic Information</h2>
