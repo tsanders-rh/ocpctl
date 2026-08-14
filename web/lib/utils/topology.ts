@@ -109,18 +109,23 @@ export function getTopologyLayout(
   const isEKS = layout.cluster_type === ClusterType.EKS;
   const isIKS = layout.cluster_type === ClusterType.IKS;
   const isOpenShift = layout.cluster_type === ClusterType.OpenShift;
+  // ROSA is a managed OpenShift service: the control plane is hosted/managed by
+  // Red Hat (no user-managed control-plane nodes), so it lays out like EKS with a
+  // single managed control-plane box rather than individual CP node boxes.
+  const isROSA = layout.cluster_type === ClusterType.ROSA;
+  const isManagedControlPlane = isEKS || isROSA;
 
   // 1. Control Plane Section
   const cpSectionStart = currentY;
-  if (isEKS) {
-    // EKS: Managed control plane
+  if (isManagedControlPlane) {
+    // EKS/ROSA: Managed control plane
     elements.push({
       id: "managed-cp",
       type: "managed-control-plane",
-      label: "EKS Control Plane",
+      label: isROSA ? "ROSA Control Plane" : "EKS Control Plane",
       status: cluster.status,
       metadata: {
-        detail: "AWS Managed",
+        detail: isROSA ? "Red Hat Managed" : "AWS Managed",
       },
       position: { x: CANVAS_WIDTH / 2 - NODE_DIMENSIONS["managed-control-plane"].width / 2, y: currentY },
       size: NODE_DIMENSIONS["managed-control-plane"],
@@ -327,7 +332,7 @@ export function getTopologyLayout(
     currentY += NODE_DIMENSIONS.access.height + NODE_SPACING;
   }
 
-  if (outputs?.console_url && isOpenShift) {
+  if (outputs?.console_url && (isOpenShift || isROSA)) {
     accessElements.push({
       id: "console-access",
       type: "access",
