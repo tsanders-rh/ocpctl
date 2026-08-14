@@ -1502,7 +1502,7 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	}
 
 	// Run rosa create cluster
-	clusterID, output, err := rosaInstaller.CreateCluster(ctx, args, logPath)
+	clusterID, output, err := rosaInstaller.CreateCluster(ctx, resolvedVersion, args, logPath)
 
 	if err != nil {
 		// Stop log streaming after rosa create fails

@@ -131,36 +131,80 @@ func (r *ROSAInstaller) ensureLoggedIn(ctx context.Context) error {
 	return nil
 }
 
-// ensureAccountRoles ensures ROSA account-level IAM roles exist
-// These are one-time roles required for any ROSA cluster in the AWS account
-func (r *ROSAInstaller) ensureAccountRoles(ctx context.Context) error {
-	// Check if account roles exist
-	cmd := exec.CommandContext(ctx, r.binaryPath, "list", "account-roles")
+// ensureAccountRoles ensures the default ManagedOpenShift account-level IAM roles
+// exist AND are at a version >= the cluster's OpenShift version.
+//
+// ROSA requires account roles to be equal to or newer than the cluster version;
+// otherwise `rosa create cluster` cannot auto-detect suitable roles and falls
+// back to an interactive ARN prompt (which fails with "Expected a valid ARN: EOF"
+// in our non-interactive context). Checking only that the role names exist is not
+// enough — a 4.21 set of roles will not satisfy a 4.22 cluster.
+//
+// version may be a minor ("4.22") or full patch ("4.22.8"); only MAJOR.MINOR is
+// used. When roles are missing or too old, they are created/upgraded with an
+// explicit --version, because `rosa create account-roles` otherwise targets the
+// channel default (which can lag the requested version, e.g. 4.21 default while
+// provisioning 4.22).
+func (r *ROSAInstaller) ensureAccountRoles(ctx context.Context, version string) error {
+	target, ok := majorMinor(version)
+	if !ok {
+		return fmt.Errorf("invalid OpenShift version %q for account role check", version)
+	}
+
+	// Check existing account roles and their versions.
+	cmd := exec.CommandContext(ctx, r.binaryPath, "list", "account-roles", "-o", "json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("check account roles: %w: %s", err, stderr.String())
 	}
 
-	// If output contains role ARNs, roles exist
-	output := stdout.String()
-	if strings.Contains(output, "ManagedOpenShift-Installer-Role") &&
-		strings.Contains(output, "ManagedOpenShift-ControlPlane-Role") &&
-		strings.Contains(output, "ManagedOpenShift-Worker-Role") &&
-		strings.Contains(output, "ManagedOpenShift-Support-Role") {
-		// Account roles already exist
+	var roles []struct {
+		RoleName string `json:"RoleName"`
+		Version  string `json:"Version"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &roles); err != nil {
+		return fmt.Errorf("parse account roles: %w", err)
+	}
+
+	// All four default account roles must be present and at a version >= target.
+	present := map[string]bool{
+		"ManagedOpenShift-Installer-Role":    false,
+		"ManagedOpenShift-ControlPlane-Role": false,
+		"ManagedOpenShift-Worker-Role":       false,
+		"ManagedOpenShift-Support-Role":      false,
+	}
+	suitable := true
+	for _, role := range roles {
+		if _, required := present[role.RoleName]; !required {
+			continue
+		}
+		present[role.RoleName] = true
+		if !versionAtLeast(role.Version, target) {
+			suitable = false
+		}
+	}
+	allPresent := true
+	for _, ok := range present {
+		if !ok {
+			allPresent = false
+			break
+		}
+	}
+	if allPresent && suitable {
 		return nil
 	}
 
-	// Create account roles
-	cmd = exec.CommandContext(ctx, r.binaryPath, "create", "account-roles", "--mode", "auto", "--yes")
+	// Create or upgrade the account roles to the cluster's version.
+	cmd = exec.CommandContext(ctx, r.binaryPath, "create", "account-roles",
+		"--mode", "auto", "--yes", "--version", target)
+	stdout.Reset()
+	stderr.Reset()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("create account roles: %w: %s", err, stderr.String())
+		return fmt.Errorf("create account roles for %s: %w: %s", target, err, stderr.String())
 	}
 
 	return nil
@@ -233,6 +277,50 @@ func (r *ROSAInstaller) ResolveVersion(ctx context.Context, version string) (str
 	return best, nil
 }
 
+// majorMinor returns the "MAJOR.MINOR" prefix of a version string, accepting
+// either "4.22" or "4.22.8", and false if it can't be parsed.
+func majorMinor(version string) (string, bool) {
+	maj, min, ok := splitMajorMinor(version)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%d.%d", maj, min), true
+}
+
+// versionAtLeast reports whether MAJOR.MINOR version have is >= want. Both are
+// compared numerically; unparseable input compares as false (treated as too old).
+func versionAtLeast(have, want string) bool {
+	hMaj, hMin, ok := splitMajorMinor(have)
+	if !ok {
+		return false
+	}
+	wMaj, wMin, ok := splitMajorMinor(want)
+	if !ok {
+		return false
+	}
+	if hMaj != wMaj {
+		return hMaj > wMaj
+	}
+	return hMin >= wMin
+}
+
+// splitMajorMinor parses the major and minor components of a version string.
+func splitMajorMinor(v string) (int, int, bool) {
+	parts := strings.Split(v, ".")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	maj, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	min, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return maj, min, true
+}
+
 // patchNumber extracts the numeric patch component from a version string like
 // "4.21.27" (or "4.21.27-candidate"), returning false if it can't be parsed.
 func patchNumber(rawID string) (int, bool) {
@@ -253,14 +341,14 @@ func patchNumber(rawID string) (int, bool) {
 
 // CreateCluster creates a ROSA cluster using rosa CLI
 // Returns cluster ID and error
-func (r *ROSAInstaller) CreateCluster(ctx context.Context, args []string, logFile string) (string, string, error) {
+func (r *ROSAInstaller) CreateCluster(ctx context.Context, version string, args []string, logFile string) (string, string, error) {
 	// Ensure rosa is authenticated
 	if err := r.ensureLoggedIn(ctx); err != nil {
 		return "", "", err
 	}
 
-	// Ensure account-level IAM roles exist (one-time setup)
-	if err := r.ensureAccountRoles(ctx); err != nil {
+	// Ensure account-level IAM roles exist and are new enough for this version.
+	if err := r.ensureAccountRoles(ctx, version); err != nil {
 		return "", "", fmt.Errorf("ensure account roles: %w", err)
 	}
 
