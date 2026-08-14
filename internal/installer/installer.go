@@ -955,6 +955,22 @@ func (i *Installer) copyManifests(ccoOutputDir, workDir string) error {
 			return fmt.Errorf("read %s: %w", srcFile, err)
 		}
 
+		// Skip credentials destined for the openshift-cluster-api namespace
+		// (e.g. capa-manager-bootstrap-credentials). On OpenShift 4.22+ the installer
+		// uses Cluster API to provision infra, and ccoctl emits a CAPA bootstrap
+		// credentials Secret for the openshift-cluster-api namespace. That namespace
+		// does not exist during bootstrap, so cluster-bootstrap retries applying the
+		// Secret forever and the install hangs until the 45-minute bootstrap timeout.
+		// These credentials are consumed by the installer's local CAPI, not the
+		// cluster, so they must not be copied into the cluster manifests.
+		// ccoctl names files "<namespace>-<name>-credentials.yaml", but match on the
+		// manifest's namespace field as well for robustness.
+		if strings.HasPrefix(file.Name(), "openshift-cluster-api-") ||
+			strings.Contains(string(data), "namespace: openshift-cluster-api") {
+			log.Printf("Skipping manifest (openshift-cluster-api namespace, installer-local CAPI credential): %s", file.Name())
+			continue
+		}
+
 		if err := os.WriteFile(dstFile, data, 0644); err != nil {
 			return fmt.Errorf("write %s: %w", dstFile, err)
 		}

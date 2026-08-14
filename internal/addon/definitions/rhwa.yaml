@@ -101,7 +101,9 @@ versions:
             metadata:
               name: machine-deletion-template
               namespace: openshift-workload-availability
-            spec: {}
+            spec:
+              template:
+                spec: {}
           namespace: openshift-workload-availability
           dependsOn: [workload-availability-namespace, machine-deletion-remediation]
 
