@@ -150,7 +150,9 @@ func (h *SystemHandler) getDatabaseInfo(ctx context.Context) (string, string) {
 
 // getStaticWorkers returns info about static workers (running on API server)
 func (h *SystemHandler) getStaticWorkers(ctx context.Context) []WorkerInfo {
-	var workers []WorkerInfo
+	// Non-nil so it marshals to [] (not null) when no static worker is active,
+	// e.g. while the worker is draining/restarting — the frontend spreads this.
+	workers := []WorkerInfo{}
 
 	// Check if worker service is running locally
 	cmd := exec.Command("systemctl", "is-active", "ocpctl-worker")

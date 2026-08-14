@@ -76,7 +76,7 @@ export default function InfrastructurePage() {
   }
 
   const allWorkers = [
-    ...data.static_workers,
+    ...(data.static_workers || []),
     ...(data.autoscale_group?.instances || []),
   ];
 
