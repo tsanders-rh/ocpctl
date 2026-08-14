@@ -7,8 +7,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
+)
+
+// fullPatchVersionRe matches a fully-qualified OpenShift version (X.Y.Z, with an
+// optional pre-release/build suffix). minorVersionRe matches a minor-only version
+// (X.Y), which is what ocpctl profiles declare by convention.
+var (
+	fullPatchVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+`)
+	minorVersionRe     = regexp.MustCompile(`^\d+\.\d+$`)
 )
 
 // ROSAInstaller wraps the rosa CLI for ROSA cluster operations
@@ -154,6 +164,91 @@ func (r *ROSAInstaller) ensureAccountRoles(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// ResolveVersion resolves a possibly minor-only OpenShift version (e.g. "4.21")
+// to the latest fully-qualified patch version supported by ROSA (e.g. "4.21.27").
+//
+// The rosa CLI's `create cluster --version` flag rejects minor-only versions and
+// demands an exact patch from its supported list. ocpctl profiles, however,
+// declare minor versions by convention (matching the IPI path, where
+// openshift-install resolves the minor internally). This method bridges that gap
+// so a profile default like "4.21" provisions successfully on ROSA.
+//
+// Already fully-qualified versions (X.Y.Z) are returned unchanged.
+func (r *ROSAInstaller) ResolveVersion(ctx context.Context, version string) (string, error) {
+	// Already fully qualified — nothing to resolve.
+	if fullPatchVersionRe.MatchString(version) {
+		return version, nil
+	}
+	if !minorVersionRe.MatchString(version) {
+		return "", fmt.Errorf("unrecognized OpenShift version %q: expected MAJOR.MINOR or MAJOR.MINOR.PATCH", version)
+	}
+
+	// Listing versions requires OCM authentication.
+	if err := r.ensureLoggedIn(ctx); err != nil {
+		return "", err
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(listCtx, r.binaryPath, "list", "versions", "--output", "json")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("rosa list versions: %w: %s", err, stderr.String())
+	}
+
+	var versions []struct {
+		RawID   string `json:"raw_id"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &versions); err != nil {
+		return "", fmt.Errorf("parse rosa versions: %w", err)
+	}
+
+	// Pick the highest enabled patch matching the requested minor.
+	prefix := version + "."
+	best := ""
+	bestPatch := -1
+	for _, v := range versions {
+		if !v.Enabled || !strings.HasPrefix(v.RawID, prefix) {
+			continue
+		}
+		patch, ok := patchNumber(v.RawID)
+		if !ok {
+			continue
+		}
+		if patch > bestPatch {
+			bestPatch = patch
+			best = v.RawID
+		}
+	}
+
+	if best == "" {
+		return "", fmt.Errorf("no ROSA-supported patch version found for OpenShift %s", version)
+	}
+	return best, nil
+}
+
+// patchNumber extracts the numeric patch component from a version string like
+// "4.21.27" (or "4.21.27-candidate"), returning false if it can't be parsed.
+func patchNumber(rawID string) (int, bool) {
+	parts := strings.Split(rawID, ".")
+	if len(parts) < 3 {
+		return 0, false
+	}
+	patchStr := parts[2]
+	if i := strings.IndexAny(patchStr, "-+"); i >= 0 {
+		patchStr = patchStr[:i]
+	}
+	n, err := strconv.Atoi(patchStr)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // CreateCluster creates a ROSA cluster using rosa CLI

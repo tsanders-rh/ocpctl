@@ -1444,11 +1444,22 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		return fmt.Errorf("get profile: %w", err)
 	}
 
+	// Resolve the OpenShift version. Profiles declare minor versions (e.g. "4.21"),
+	// but `rosa create cluster --version` requires a fully-qualified patch (e.g.
+	// "4.21.27"). Resolve minor -> latest supported patch before building the args.
+	resolvedVersion, err := rosaInstaller.ResolveVersion(ctx, cluster.Version)
+	if err != nil {
+		return fmt.Errorf("resolve ROSA version %s: %w", cluster.Version, err)
+	}
+	if resolvedVersion != cluster.Version {
+		log.Printf("Resolved ROSA version %s -> %s for cluster %s", cluster.Version, resolvedVersion, cluster.Name)
+	}
+
 	// Build rosa create cluster command arguments
 	args := []string{
 		"--cluster-name", cluster.Name,
 		"--region", cluster.Region,
-		"--version", cluster.Version,
+		"--version", resolvedVersion,
 		"--yes", // Auto-approve
 	}
 
