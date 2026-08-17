@@ -486,14 +486,31 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	// or AWS credentials. For now, we'll use oc to get the kubeconfig.
 	// This requires the cluster to be ready and oc to be installed.
 
-	// First get cluster API URL
-	info, err := r.DescribeCluster(ctx, clusterName)
-	if err != nil {
-		return nil, fmt.Errorf("get cluster info: %w", err)
-	}
-
-	if info.APIURL() == "" {
-		return nil, fmt.Errorf("cluster API URL not available")
+	// The cluster API URL is not always published the instant ROSA reports the
+	// cluster ready. Poll `rosa describe cluster` until .api.url appears before
+	// creating the admin user, so `rosa create admin` doesn't fail spuriously
+	// and leave the cluster READY without usable credentials (issue #75).
+	const (
+		apiURLPollTimeout  = 5 * time.Minute
+		apiURLPollInterval = 15 * time.Second
+	)
+	deadline := time.Now().Add(apiURLPollTimeout)
+	for {
+		info, err := r.DescribeCluster(ctx, clusterName)
+		if err != nil {
+			return nil, fmt.Errorf("get cluster info: %w", err)
+		}
+		if info.APIURL() != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("cluster API URL not available after %s", apiURLPollTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(apiURLPollInterval):
+		}
 	}
 
 	// Create admin user and get login command
