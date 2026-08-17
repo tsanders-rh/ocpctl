@@ -1545,22 +1545,26 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		log.Printf("Warning: error stopping log streamer: %v", stopErr)
 	}
 
-	// Get cluster information
-	info, err := rosaInstaller.DescribeCluster(ctx, cluster.Name)
-	if err != nil {
-		return fmt.Errorf("describe cluster: %w", err)
-	}
-
-	// Get kubeconfig and admin credentials
+	// Get kubeconfig and admin credentials. GetKubeconfig polls for the cluster
+	// API URL to be published, creates the admin user, and logs in. Without
+	// credentials the cluster is READY but inaccessible, so a failure here is
+	// fatal rather than a warning (issue #75) — the job fails and can retry.
 	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 	if err := os.MkdirAll(filepath.Dir(kubeconfigPath), 0700); err != nil {
 		return fmt.Errorf("create auth directory: %w", err)
 	}
 
-	var adminCreds *installer.ROSAAdminCredentials
-	adminCreds, err = rosaInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath)
+	adminCreds, err := rosaInstaller.GetKubeconfig(ctx, cluster.Name, kubeconfigPath)
 	if err != nil {
-		log.Printf("Warning: failed to get kubeconfig: %v", err)
+		return fmt.Errorf("get ROSA admin credentials/kubeconfig: %w", err)
+	}
+
+	// Re-describe now that the API URL is published so outputs capture api_url
+	// and console_url (a describe taken the instant the installer reports ready
+	// may not yet expose .api.url).
+	info, err := rosaInstaller.DescribeCluster(ctx, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("describe cluster: %w", err)
 	}
 
 	// Get machine pools to store in metadata
@@ -1595,8 +1599,11 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		outputs.ConsoleURL = &consoleURL
 	}
 
-	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
-	outputs.KubeconfigS3URI = &kubeconfigURI
+	// KubeconfigS3URI is intentionally left unset here. It is populated with the
+	// s3:// location by storeArtifacts -> updateArtifactURIs after the kubeconfig
+	// is uploaded. Setting a file:// URI would advertise a download that 404s:
+	// the worker writes the file to its own disk, while the API host serving the
+	// download reads from its local disk (issue #75).
 
 	// Store admin credentials for console login (expires in 72 hours)
 	if adminCreds != nil {
@@ -1607,14 +1614,17 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		log.Printf("Stored ROSA admin credentials (expires in 72 hours)")
 	}
 
-	// Store cluster outputs
+	// Store cluster outputs (api_url, console_url, admin credentials). These are
+	// required for access, so persist them before marking READY (issue #75).
 	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
-		log.Printf("Warning: failed to store cluster outputs: %v", err)
+		return fmt.Errorf("store cluster outputs: %w", err)
 	}
 
-	// Store artifacts
+	// Upload artifacts (kubeconfig, metadata) to S3 and rewrite KubeconfigS3URI
+	// to the s3:// location so the UI/API can serve the kubeconfig from any host.
+	// A failure must not leave the cluster READY with a missing kubeconfig.
 	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
-		log.Printf("Warning: failed to store artifacts: %v", err)
+		return fmt.Errorf("store artifacts: %w", err)
 	}
 
 	// Update cluster status to READY
