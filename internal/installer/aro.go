@@ -202,13 +202,14 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 		args = append(args, "--pull-secret", config.PullSecret)
 	}
 
-	// Add tags
+	// Add tags. Each key=value pair must be a separate argument to --tags; joining
+	// them into a single space-delimited string makes az treat the whole string as
+	// one tag value, which trips Azure's 256-char tag-value limit.
 	if len(config.Tags) > 0 {
-		tagPairs := []string{}
+		args = append(args, "--tags")
 		for k, v := range config.Tags {
-			tagPairs = append(tagPairs, fmt.Sprintf("%s=%s", k, v))
+			args = append(args, fmt.Sprintf("%s=%s", k, v))
 		}
-		args = append(args, "--tags", strings.Join(tagPairs, " "))
 	}
 
 	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
@@ -319,13 +320,14 @@ func (a *AROInstaller) CreateResourceGroup(ctx context.Context, name, region str
 		"--location", region,
 	}
 
-	// Add tags
+	// Add tags. Each key=value pair must be a separate argument to --tags; joining
+	// them into a single space-delimited string makes az treat the whole string as
+	// one tag value, which trips Azure's 256-char tag-value limit.
 	if len(tags) > 0 {
-		tagPairs := []string{}
+		args = append(args, "--tags")
 		for k, v := range tags {
-			tagPairs = append(tagPairs, fmt.Sprintf("%s=%s", k, v))
+			args = append(args, fmt.Sprintf("%s=%s", k, v))
 		}
-		args = append(args, "--tags", strings.Join(tagPairs, " "))
 	}
 
 	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
@@ -334,7 +336,7 @@ func (a *AROInstaller) CreateResourceGroup(ctx context.Context, name, region str
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("create resource group: %w", err)
+		return fmt.Errorf("create resource group: %w: %s", err, stderr.String())
 	}
 
 	return nil
