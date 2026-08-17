@@ -30,6 +30,12 @@ type AROClusterConfig struct {
 	OpenShiftVersion string
 	PullSecret       string
 	Tags             map[string]string
+	// ClientID/ClientSecret are the cluster service principal passed to
+	// az aro create (Red Hat recommended BYO-SP pattern). Providing an existing
+	// SP prevents az from creating a new app registration in Entra ID, which
+	// would require Microsoft Graph write permissions the worker does not have.
+	ClientID     string
+	ClientSecret string
 }
 
 // AROClusterInfo represents cluster information from Azure
@@ -195,6 +201,13 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 	// Add version if specified
 	if config.OpenShiftVersion != "" {
 		args = append(args, "--version", config.OpenShiftVersion)
+	}
+
+	// BYO service principal (Red Hat recommended pattern). Passing an existing SP
+	// stops az aro create from creating a new app registration in Entra ID, which
+	// requires Microsoft Graph write permissions the worker SP lacks.
+	if config.ClientID != "" && config.ClientSecret != "" {
+		args = append(args, "--client-id", config.ClientID, "--client-secret", config.ClientSecret)
 	}
 
 	// Add pull secret

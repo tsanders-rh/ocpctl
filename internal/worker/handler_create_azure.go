@@ -104,6 +104,22 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		log.Printf("[JOB %s] Resolved OpenShift version %s -> %s", job.ID, cluster.Version, resolvedVersion)
 	}
 
+	// Resolve the cluster service principal (Red Hat recommended BYO-SP pattern).
+	// Passing an existing SP to az aro create avoids the Entra ID app-registration
+	// write (Microsoft Graph) permission the worker SP does not have. Prefer a
+	// dedicated ARO SP, falling back to the worker's Azure SP credentials.
+	clientID := os.Getenv("ARO_CLIENT_ID")
+	if clientID == "" {
+		clientID = os.Getenv("AZURE_CLIENT_ID")
+	}
+	clientSecret := os.Getenv("ARO_CLIENT_SECRET")
+	if clientSecret == "" {
+		clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
+	}
+	if clientID == "" || clientSecret == "" {
+		return fmt.Errorf("ARO service principal not configured: set ARO_CLIENT_ID/ARO_CLIENT_SECRET or AZURE_CLIENT_ID/AZURE_CLIENT_SECRET")
+	}
+
 	// Build ARO cluster config
 	clusterConfig := &installer.AROClusterConfig{
 		Name:             cluster.Name,
@@ -115,6 +131,8 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		OpenShiftVersion: resolvedVersion,
 		PullSecret:       fmt.Sprintf("@%s", pullSecretPath),
 		Tags:             cluster.EffectiveTags,
+		ClientID:         clientID,
+		ClientSecret:     clientSecret,
 	}
 
 	// Create log file
