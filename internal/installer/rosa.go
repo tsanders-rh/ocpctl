@@ -440,6 +440,49 @@ func (r *ROSAInstaller) WaitForClusterReady(ctx context.Context, clusterName str
 	}
 }
 
+// clusterNotFoundError reports whether an error from rosa describe/delete
+// indicates the cluster no longer exists in OCM (uninstall complete or never
+// existed). ROSA returns several phrasings for this condition.
+func clusterNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "There is no cluster")
+}
+
+// WaitForClusterDeleted blocks until the ROSA cluster is fully removed from OCM
+// (i.e. `rosa describe cluster` reports it no longer exists). This is a
+// prerequisite for deleting the operator IAM roles and OIDC provider, which ROSA
+// only permits once the cluster is fully uninstalled. Returns nil as soon as the
+// cluster is gone.
+func (r *ROSAInstaller) WaitForClusterDeleted(ctx context.Context, clusterName string, pollInterval time.Duration) error {
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	// Check once immediately before waiting for the first tick.
+	for {
+		info, err := r.DescribeCluster(ctx, clusterName)
+		if err != nil {
+			if clusterNotFoundError(err) {
+				return nil
+			}
+			return fmt.Errorf("describe cluster while waiting for deletion: %w", err)
+		}
+		if info.State == "error" {
+			return fmt.Errorf("cluster entered error state during uninstall")
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 // DescribeCluster gets cluster information using rosa CLI
 func (r *ROSAInstaller) DescribeCluster(ctx context.Context, clusterName string) (*ROSAClusterInfo, error) {
 	// Ensure rosa is authenticated
@@ -792,7 +835,16 @@ func (r *ROSAInstaller) DeleteOperatorRoles(ctx context.Context, clusterID strin
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("rosa delete operator-roles failed: %w\nStderr: %s", err, stderr.String())
+		// Operator roles may already be gone (e.g. a prior destroy attempt
+		// deleted them but failed later). Treat not-found as success so retries
+		// converge instead of failing forever on the missing roles.
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "not found") ||
+			strings.Contains(stderrStr, "does not exist") ||
+			strings.Contains(stderrStr, "There is no cluster") {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("rosa delete operator-roles failed: %w\nStderr: %s", err, stderrStr)
 	}
 
 	// Parse output to extract deleted role ARNs

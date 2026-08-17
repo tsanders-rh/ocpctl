@@ -793,9 +793,37 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 		log.Printf("ROSA cluster %s destroyed successfully", cluster.Name)
 	}
 
+	// The `rosa delete cluster` call returns immediately while the actual
+	// uninstall runs asynchronously (~30-40 min). Operator IAM roles and the
+	// OIDC provider can only be deleted once the cluster is fully uninstalled;
+	// attempting deletion before then silently leaks them (issue #76). Block
+	// until the cluster is gone from OCM before attempting cleanup. Skip the
+	// wait if the cluster was already absent.
+	if !clusterNotFound {
+		log.Printf("Waiting for ROSA cluster %s uninstall to complete before deleting operator roles and OIDC provider...", cluster.Name)
+		waitCtx, waitCancel := context.WithTimeout(ctx, 90*time.Minute)
+		if waitErr := rosaInstaller.WaitForClusterDeleted(waitCtx, cluster.Name, 30*time.Second); waitErr != nil {
+			waitCancel()
+			log.Printf("ROSA cluster %s did not finish uninstalling: %v", cluster.Name, waitErr)
+			if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+				log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+			}
+			return fmt.Errorf("wait for cluster uninstall: %w", waitErr)
+		}
+		waitCancel()
+		log.Printf("ROSA cluster %s uninstall complete", cluster.Name)
+	}
+
 	// Track cleanup results for job metadata
 	cleanupResults := make(map[string]interface{})
 	cleanupWarnings := []string{}
+
+	// cleanupFailed tracks whether deletion of any AWS IAM resource failed.
+	// Unlike the local work directory, these leaks are permanent and count
+	// against the account-wide OIDC provider limit, so a failure here must NOT
+	// be silently marked DESTROYED (issue #76) - instead the job fails and
+	// retries, which is safe because both operations are idempotent.
+	cleanupFailed := false
 
 	// Delete operator IAM roles
 	// These are created by ROSA with --sts --mode auto and are not automatically deleted
@@ -803,9 +831,10 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 	deletedRoles, err := rosaInstaller.DeleteOperatorRoles(ctx, clusterID)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to delete operator roles: %v", err)
-		log.Printf("Warning: %s", errMsg)
+		log.Printf("ERROR: %s", errMsg)
 		cleanupWarnings = append(cleanupWarnings, errMsg)
 		cleanupResults["operator_roles_deleted"] = false
+		cleanupFailed = true
 	} else {
 		log.Printf("Successfully deleted %d operator IAM roles for cluster %s", len(deletedRoles), clusterID)
 		cleanupResults["operator_roles_deleted"] = true
@@ -820,12 +849,30 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 	log.Printf("Deleting OIDC provider for cluster %s", clusterID)
 	if err := rosaInstaller.DeleteOIDCProvider(ctx, clusterID); err != nil {
 		errMsg := fmt.Sprintf("failed to delete OIDC provider: %v", err)
-		log.Printf("Warning: %s", errMsg)
+		log.Printf("ERROR: %s", errMsg)
 		cleanupWarnings = append(cleanupWarnings, errMsg)
 		cleanupResults["oidc_provider_deleted"] = false
+		cleanupFailed = true
 	} else {
 		log.Printf("Successfully deleted OIDC provider for cluster %s", clusterID)
 		cleanupResults["oidc_provider_deleted"] = true
+	}
+
+	// If IAM cleanup failed, record what we know, mark DESTROY_FAILED and return
+	// an error so the job retries and eventually reclaims the roles/OIDC provider.
+	// The cluster itself is already gone from OCM, so the retry's delete-cluster
+	// step is a no-op and only the IAM cleanup is re-attempted.
+	if cleanupFailed {
+		if job.Metadata == nil {
+			job.Metadata = make(types.JobMetadata)
+		}
+		job.Metadata["cleanup_results"] = cleanupResults
+		job.Metadata["cleanup_warnings"] = cleanupWarnings
+		job.Metadata["cleanup_warning_count"] = len(cleanupWarnings)
+		if updateErr := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyFailed); updateErr != nil {
+			log.Printf("Failed to update cluster status to DESTROY_FAILED: %v", updateErr)
+		}
+		return fmt.Errorf("ROSA IAM cleanup failed: %s", strings.Join(cleanupWarnings, "; "))
 	}
 
 	// Mark cluster as destroyed
