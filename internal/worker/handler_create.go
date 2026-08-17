@@ -1501,22 +1501,31 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
-	// Run rosa create cluster
-	clusterID, output, err := rosaInstaller.CreateCluster(ctx, resolvedVersion, args, logPath)
+	// Run rosa create cluster, guarding against non-idempotent retries (issue
+	// #77): if a prior attempt already created the cluster in OCM, re-running
+	// `rosa create cluster` fails with "Duplicate cluster name" and the job is
+	// marked FAILED even though the cluster is healthy. Detect an existing
+	// cluster of the same name and resume from the post-create steps instead.
+	var clusterID string
+	if existing, derr := rosaInstaller.DescribeCluster(ctx, cluster.Name); derr == nil && existing.ID != "" {
+		clusterID = existing.ID
+		log.Printf("ROSA cluster %s already exists (ID: %s, state: %s) - skipping create and resuming", cluster.Name, clusterID, existing.State)
+	} else {
+		var output string
+		clusterID, output, err = rosaInstaller.CreateCluster(ctx, resolvedVersion, args, logPath)
+		if err != nil {
+			// Stop log streaming after rosa create fails
+			streamCancel()
+			time.Sleep(LogBatchFlushDelay)
+			if stopErr := streamer.Stop(); stopErr != nil {
+				log.Printf("Warning: error stopping log streamer: %v", stopErr)
+			}
 
-	if err != nil {
-		// Stop log streaming after rosa create fails
-		streamCancel()
-		time.Sleep(LogBatchFlushDelay)
-		if stopErr := streamer.Stop(); stopErr != nil {
-			log.Printf("Warning: error stopping log streamer: %v", stopErr)
+			log.Printf("ROSA cluster creation failed: %v\nOutput: %s", err, output)
+			return fmt.Errorf("rosa create cluster: %w", err)
 		}
-
-		log.Printf("ROSA cluster creation failed: %v\nOutput: %s", err, output)
-		return fmt.Errorf("rosa create cluster: %w", err)
+		log.Printf("ROSA cluster %s created with ID: %s", cluster.Name, clusterID)
 	}
-
-	log.Printf("ROSA cluster %s created with ID: %s", cluster.Name, clusterID)
 
 	// Start streaming installation logs in background
 	// This will run 'rosa logs install --watch' and append to the same log file (rosa-create.log)
