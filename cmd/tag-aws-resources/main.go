@@ -112,6 +112,7 @@ func main() {
 
 	// Build metadata for tagging
 	metadata := installer.ClusterMetadata{
+		ClusterID:   cluster.ID,
 		ClusterName: cluster.Name,
 		ProfileName: cluster.Profile,
 		InfraID:     infraID,

@@ -11,6 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 )
 
 // fullPatchVersionRe matches a fully-qualified OpenShift version (X.Y.Z, with an
@@ -65,6 +70,16 @@ type ROSAClusterInfo struct {
 		ID string `json:"id"`
 	} `json:"region"`
 	OpenshiftVersion string `json:"openshift_version"`
+	AWS              struct {
+		STS struct {
+			OIDCEndpointURL  string `json:"oidc_endpoint_url"`
+			OperatorIAMRoles []struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+				RoleARN   string `json:"role_arn"`
+			} `json:"operator_iam_roles"`
+		} `json:"sts"`
+	} `json:"aws"`
 }
 
 // APIURL returns the cluster API URL
@@ -897,6 +912,95 @@ func (r *ROSAInstaller) DeleteOIDCProvider(ctx context.Context, clusterID string
 		return fmt.Errorf("rosa delete oidc-provider failed: %w\nStderr: %s", err, stderrStr)
 	}
 
+	return nil
+}
+
+// TagClusterIAMResources tags the operator IAM roles and OIDC provider that
+// `rosa create cluster --sts --mode auto` created for this cluster. rosa does
+// not apply ocpctl --tags to these IAM resources, so when a cluster is orphaned
+// they cannot be attributed back to it (issue #79). We tag them directly via the
+// AWS IAM API using the same ocpctl provenance tags applied elsewhere.
+//
+// Tagging is best-effort: the caller should treat a failure as a warning rather
+// than fail an otherwise-healthy cluster.
+func (r *ROSAInstaller) TagClusterIAMResources(ctx context.Context, info *ROSAClusterInfo, region string, tags map[string]string) error {
+	if info == nil {
+		return fmt.Errorf("nil cluster info")
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+	iamClient := iam.NewFromConfig(cfg)
+
+	iamTags := make([]iamtypes.Tag, 0, len(tags))
+	for k, v := range tags {
+		iamTags = append(iamTags, iamtypes.Tag{Key: aws.String(k), Value: aws.String(v)})
+	}
+
+	var errs []string
+
+	// Tag each operator IAM role (role name is the ARN segment after "role/").
+	for _, role := range info.AWS.STS.OperatorIAMRoles {
+		if role.RoleARN == "" {
+			continue
+		}
+		roleName := role.RoleARN
+		if idx := strings.LastIndex(roleName, "/"); idx != -1 {
+			roleName = roleName[idx+1:]
+		}
+		if _, err := iamClient.TagRole(ctx, &iam.TagRoleInput{
+			RoleName: aws.String(roleName),
+			Tags:     iamTags,
+		}); err != nil {
+			errs = append(errs, fmt.Sprintf("tag role %s: %v", roleName, err))
+		}
+	}
+
+	// Tag the OIDC provider by matching its URL against the cluster's endpoint.
+	if endpoint := info.AWS.STS.OIDCEndpointURL; endpoint != "" {
+		wantURL := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+		listOut, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("list OIDC providers: %v", err))
+		} else {
+			tagged := false
+			for _, provider := range listOut.OpenIDConnectProviderList {
+				if provider.Arn == nil {
+					continue
+				}
+				getOut, err := iamClient.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+					OpenIDConnectProviderArn: provider.Arn,
+				})
+				if err != nil || getOut.Url == nil {
+					continue
+				}
+				providerURL := strings.TrimPrefix(strings.TrimPrefix(*getOut.Url, "https://"), "http://")
+				if providerURL != wantURL {
+					continue
+				}
+				if _, err := iamClient.TagOpenIDConnectProvider(ctx, &iam.TagOpenIDConnectProviderInput{
+					OpenIDConnectProviderArn: provider.Arn,
+					Tags:                     iamTags,
+				}); err != nil {
+					errs = append(errs, fmt.Sprintf("tag OIDC provider %s: %v", *provider.Arn, err))
+				}
+				tagged = true
+				break
+			}
+			if !tagged {
+				errs = append(errs, fmt.Sprintf("no OIDC provider matched endpoint %s", endpoint))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("ROSA IAM tagging: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 

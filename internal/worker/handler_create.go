@@ -242,6 +242,7 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 
 	// Build cluster metadata for tagging
 	metadata := &installer.ClusterMetadata{
+		ClusterID:   cluster.ID,
 		ClusterName: cluster.Name,
 		ProfileName: cluster.Profile,
 		InfraID:     "", // Will be populated during cluster creation
@@ -1574,6 +1575,15 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	info, err := rosaInstaller.DescribeCluster(ctx, cluster.Name)
 	if err != nil {
 		return fmt.Errorf("describe cluster: %w", err)
+	}
+
+	// Tag the operator IAM roles + OIDC provider that rosa created for this
+	// cluster. rosa does not apply our --tags to these IAM resources, so tag
+	// them directly so they can be attributed as orphans (issue #79). Best-effort:
+	// a tagging failure must not fail an otherwise-healthy cluster.
+	provTags := types.ProvenanceTags(cluster.ID, cluster.Name, cluster.CreatedAt)
+	if terr := rosaInstaller.TagClusterIAMResources(ctx, info, cluster.Region, provTags); terr != nil {
+		log.Printf("Warning: failed to tag ROSA IAM resources for %s: %v", cluster.Name, terr)
 	}
 
 	// Get machine pools to store in metadata

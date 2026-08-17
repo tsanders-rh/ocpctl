@@ -2,7 +2,43 @@ package installer
 
 import (
 	"testing"
+	"time"
+
+	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
+
+func TestBuildTagSetProvenance(t *testing.T) {
+	created := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	meta := ClusterMetadata{
+		ClusterID:   "11111111-2222-3333-4444-555555555555",
+		ClusterName: "demo-cluster",
+		ProfileName: "aws-rosa-standard",
+		InfraID:     "demo-abc12",
+		CreatedAt:   created,
+	}
+
+	tags := buildTagSet(meta)
+
+	want := map[string]string{
+		types.TagKeyManaged:     "true",
+		types.TagKeyClusterID:   meta.ClusterID,
+		types.TagKeyClusterName: meta.ClusterName,
+		types.TagKeyCreatedAt:   created.Format(time.RFC3339),
+	}
+	for k, v := range want {
+		if got := tags[k]; got != v {
+			t.Errorf("buildTagSet()[%q] = %q, want %q", k, got, v)
+		}
+	}
+
+	// Existing tags must be preserved alongside provenance tags.
+	if tags["ManagedBy"] != "ocpctl" {
+		t.Errorf("buildTagSet() dropped ManagedBy tag: got %q", tags["ManagedBy"])
+	}
+	if tags["kubernetes.io/cluster/"+meta.InfraID] != "owned" {
+		t.Errorf("buildTagSet() dropped cluster ownership tag")
+	}
+}
 
 func TestExtractMajorMinor(t *testing.T) {
 	tests := []struct {

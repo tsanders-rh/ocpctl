@@ -34,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -60,6 +61,7 @@ const (
 
 // ClusterMetadata contains metadata for tagging cluster resources
 type ClusterMetadata struct {
+	ClusterID   string // ocpctl cluster UUID, used for provenance tagging
 	ClusterName string
 	ProfileName string
 	InfraID     string
@@ -1586,15 +1588,22 @@ func (i *Installer) tagRoute53Zone(ctx context.Context, workDir string) error {
 
 // buildTagSet creates the standard tag map for cluster resources
 func buildTagSet(metadata ClusterMetadata) map[string]string {
-	return map[string]string{
+	tags := map[string]string{
 		fmt.Sprintf("kubernetes.io/cluster/%s", metadata.InfraID): "owned",
-		"ManagedBy":      "ocpctl",
-		"ClusterName":    metadata.ClusterName,
-		"Profile":        metadata.ProfileName,
-		"InfraID":        metadata.InfraID,
-		"CreatedAt":      metadata.CreatedAt.Format(time.RFC3339),
-		"OcpctlVersion":  ocpctlVersion,
+		"ManagedBy":     "ocpctl",
+		"ClusterName":   metadata.ClusterName,
+		"Profile":       metadata.ProfileName,
+		"InfraID":       metadata.InfraID,
+		"CreatedAt":     metadata.CreatedAt.Format(time.RFC3339),
+		"OcpctlVersion": ocpctlVersion,
 	}
+	// Add ocpctl provenance tags so direct-SDK-tagged resources (IAM roles,
+	// OIDC provider, S3 bucket, EC2, ELB, Route53) can be attributed to the
+	// originating cluster even after its record is gone.
+	for k, v := range types.ProvenanceTags(metadata.ClusterID, metadata.ClusterName, metadata.CreatedAt) {
+		tags[k] = v
+	}
+	return tags
 }
 
 // isClusterIAMRole checks if an IAM role name matches the cluster's infraID

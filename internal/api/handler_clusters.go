@@ -397,6 +397,19 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 		UpdatedAt:          time.Now(),
 	}
 
+	// Stamp ocpctl provenance tags now that the cluster UUID exists. These flow
+	// through EffectiveTags into install-config userTags, eksctl/rosa tags, so
+	// every ocpctl-created resource can be traced back to this cluster.
+	// EffectiveTags is a distinct copy so RequestTags keeps the user's request.
+	effectiveTags := make(types.Tags, len(validation.MergedTags)+4)
+	for k, v := range validation.MergedTags {
+		effectiveTags[k] = v
+	}
+	for k, v := range types.ProvenanceTags(cluster.ID, cluster.Name, cluster.CreatedAt) {
+		effectiveTags[k] = v
+	}
+	cluster.EffectiveTags = effectiveTags
+
 	// Handle work hours override if provided
 	if req.WorkHoursEnabled != nil {
 		cluster.WorkHoursEnabled = req.WorkHoursEnabled

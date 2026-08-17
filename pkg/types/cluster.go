@@ -83,6 +83,29 @@ func (t *Tags) Scan(value interface{}) error {
 	return nil
 }
 
+// Provenance tag keys stamped on all ocpctl-created cloud resources so they can
+// be attributed back to a cluster (and cleaned up as orphans) even after the
+// cluster record is gone. Uses the "ocpctl:" prefix convention.
+const (
+	TagKeyManaged     = "ocpctl:managed"
+	TagKeyClusterID   = "ocpctl:cluster-id"
+	TagKeyClusterName = "ocpctl:cluster-name"
+	TagKeyCreatedAt   = "ocpctl:created-at"
+)
+
+// ProvenanceTags returns the standard set of ocpctl provenance tags for a
+// cluster. These are merged into every resource-tagging path (install-config
+// userTags, eksctl/rosa tags, and direct-SDK tagging of IAM/OIDC/S3/EC2/etc.)
+// so orphaned resources can always be traced to their originating cluster.
+func ProvenanceTags(clusterID, clusterName string, createdAt time.Time) map[string]string {
+	return map[string]string{
+		TagKeyManaged:     "true",
+		TagKeyClusterID:   clusterID,
+		TagKeyClusterName: clusterName,
+		TagKeyCreatedAt:   createdAt.Format(time.RFC3339),
+	}
+}
+
 // Cluster represents a cluster record in the database
 type Cluster struct {
 	ID             string        `db:"id" json:"id"`
