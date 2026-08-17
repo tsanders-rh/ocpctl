@@ -28,7 +28,7 @@ compute:
     replicas: 3
     minReplicas: 2
     maxReplicas: 20
-    instanceType: Standard_D4s_v3
+    instanceType: Standard_D4s_v6
     autoscaling: false
 lifecycle:
   maxTTLHours: 168
@@ -52,8 +52,8 @@ costControls:
   warningMessage: ARO is a managed service with higher costs than self-managed.
 platformConfig:
   aro:
-    masterVMSize: Standard_D8s_v3
-    workerVMSize: Standard_D4s_v3
+    masterVMSize: Standard_D8s_v6
+    workerVMSize: Standard_D4s_v6
     workerCount: 3
 metadata:
   capabilities:
@@ -67,6 +67,6 @@ metadata:
     memory: 48 GB RAM worker capacity
   notes:
   - Control plane managed by Microsoft (~$2.50/hr)
-  - 'Workers: 3x Standard_D4s_v3 @ $0.336/hr = $1.01/hr'
+  - 'Workers: 3x Standard_D4s_v6 @ $0.336/hr = $1.01/hr'
   - 'Total: ~$3.70/hr or $2,664/month'
   - 'Hibernated cost: ~$0.20/hr (storage only) = 95% savings'
