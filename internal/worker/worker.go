@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,7 +193,7 @@ type Worker struct {
 	processor  *JobProcessor
 	metrics    *metrics.Publisher
 	asgName    string
-	running    bool
+	stopping   atomic.Bool // Set on graceful shutdown; poll() stops claiming new jobs when true
 	ctx        context.Context
 	cancel     context.CancelFunc
 	jobWg      sync.WaitGroup               // Tracks running job goroutines for graceful shutdown
@@ -224,7 +225,6 @@ func NewWorker(config *Config, st *store.Store, profileRegistry *profile.Registr
 		processor:  NewJobProcessor(config, st, profileRegistry),
 		metrics:    metricsPublisher,
 		asgName:    asgName,
-		running:    false,
 		activeJobs: make(map[string]*ActiveJobInfo),
 	}
 }
@@ -232,7 +232,7 @@ func NewWorker(config *Config, st *store.Store, profileRegistry *profile.Registr
 // Start starts the worker loop
 func (w *Worker) Start(ctx context.Context) error {
 	w.ctx, w.cancel = context.WithCancel(ctx)
-	w.running = true
+	w.stopping.Store(false)
 
 	log.Printf("Worker %s starting (poll=%s, max_concurrent=%d)",
 		w.config.WorkerID, w.config.PollInterval, w.config.MaxConcurrent)
@@ -286,8 +286,12 @@ func (w *Worker) Start(ctx context.Context) error {
 func (w *Worker) Stop() {
 	log.Printf("Stopping worker, waiting for running jobs to complete...")
 
-	// Mark as not running to prevent new jobs from being picked up
-	w.running = false
+	// Signal the poll loop to stop claiming NEW jobs immediately. Without this
+	// the ticker keeps firing poll() during the drain window and keeps adding
+	// work to jobWg, so a steady stream of fast-failing jobs (e.g. a
+	// JANITOR_DESTROY loop) prevents the WaitGroup from ever draining and the
+	// shutdown blocks until WorkerShutdownTimeout (issue #78).
+	w.stopping.Store(true)
 
 	// Wait for all running jobs to complete (with timeout)
 	// Use a channel to implement timeout on WaitGroup
@@ -400,6 +404,13 @@ func (w *Worker) GetActiveJobs() []*ActiveJobInfo {
 
 // poll fetches and processes pending jobs
 func (w *Worker) poll() {
+	// Stop claiming new jobs once graceful shutdown has begun. In-flight jobs
+	// continue to run (tracked by jobWg); this only prevents the drain window
+	// from being extended indefinitely by newly-claimed work (issue #78).
+	if w.stopping.Load() {
+		return
+	}
+
 	// Use worker's context (not Background) to enable graceful shutdown
 	ctx := w.ctx
 
