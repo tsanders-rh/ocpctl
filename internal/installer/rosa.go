@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -615,11 +616,18 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	username := parts[4]
 	password := parts[6]
 
-	// Run oc login with kubeconfig output (with retry logic)
-	// The cluster API may not be immediately accessible after cluster becomes ready
+	// Run oc login with kubeconfig output (with retry logic).
+	//
+	// A freshly created cluster-admin is not immediately usable: the credential
+	// must propagate to the cluster's OAuth server before it authenticates, and
+	// rosa itself warns "It may take several minutes for this access to become
+	// active." Until then oc login returns 401 Unauthorized. The previous 5x10s
+	// (~50s) window landed right on the edge of that propagation time, so logins
+	// failed intermittently even though the cluster and admin were both healthy.
+	// Retry for ~5 minutes to comfortably cover the activation delay.
 	var lastErr error
-	maxRetries := 5
-	retryDelay := 10 * time.Second
+	maxRetries := 20
+	retryDelay := 15 * time.Second
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		ocCmd := exec.CommandContext(ctx, "oc", "login", apiURL,
@@ -628,14 +636,23 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 			"--kubeconfig", outputPath,
 			"--insecure-skip-tls-verify")
 
-		var ocStderr bytes.Buffer
+		// oc login writes the "Login failed (401 Unauthorized)" message to stdout,
+		// not stderr, so capture both to produce a useful error on final failure.
+		var ocStdout, ocStderr bytes.Buffer
+		ocCmd.Stdout = &ocStdout
 		ocCmd.Stderr = &ocStderr
 
 		if err := ocCmd.Run(); err != nil {
-			lastErr = fmt.Errorf("oc login failed (attempt %d/%d): %w\nStderr: %s", attempt, maxRetries, err, ocStderr.String())
+			lastErr = fmt.Errorf("oc login failed (attempt %d/%d): %w\nStdout: %s\nStderr: %s",
+				attempt, maxRetries, err, strings.TrimSpace(ocStdout.String()), strings.TrimSpace(ocStderr.String()))
+			log.Printf("ROSA admin oc login not yet ready for %s (attempt %d/%d), retrying in %s", clusterName, attempt, maxRetries, retryDelay)
 			if attempt < maxRetries {
-				// Wait before retrying
-				time.Sleep(retryDelay)
+				// Wait before retrying, but bail promptly if the job is cancelled.
+				select {
+				case <-ctx.Done():
+					return nil, fmt.Errorf("oc login cancelled while waiting for admin to activate: %w", ctx.Err())
+				case <-time.After(retryDelay):
+				}
 				continue
 			}
 			// Final attempt failed
@@ -643,6 +660,7 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 		}
 
 		// Success
+		log.Printf("ROSA admin oc login succeeded for %s on attempt %d/%d", clusterName, attempt, maxRetries)
 		break
 	}
 
