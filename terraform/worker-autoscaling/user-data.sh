@@ -59,10 +59,12 @@ aws s3 cp "$WORKER_BINARY_URL" /usr/local/bin/ocpctl-worker
 chmod +x /usr/local/bin/ocpctl-worker
 chown root:root /usr/local/bin/ocpctl-worker
 
-# Download profile definitions
+# Download profile definitions. Must land directly in /opt/ocpctl/profiles to match
+# PROFILES_DIR in the shared worker.env (the primary-host layout); a nested
+# definitions/ subdir leaves the worker finding zero profiles and exiting (#80).
 echo "Downloading profile definitions"
-mkdir -p /opt/ocpctl/profiles/definitions
-aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/definitions/
+mkdir -p /opt/ocpctl/profiles
+aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
 
 # Download CLI login hooks + installer script referenced by the worker service.

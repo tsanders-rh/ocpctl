@@ -380,14 +380,41 @@ ensure_azure_cli() {
 
     log "Installing Azure CLI..."
 
-    # Install Azure CLI using Microsoft's official script
-    if curl -sL https://aka.ms/InstallAzureCLIDeb | bash > /dev/null 2>&1; then
-        log "✓ Installed Azure CLI"
-        return 0
-    else
-        log "ERROR: Failed to install Azure CLI"
+    # Debian/Ubuntu (the primary hybrid host): Microsoft's apt install script.
+    if command -v apt-get &> /dev/null; then
+        if curl -sL https://aka.ms/InstallAzureCLIDeb | bash > /dev/null 2>&1; then
+            log "✓ Installed Azure CLI (deb)"
+            return 0
+        fi
+        log "ERROR: Failed to install Azure CLI (deb)"
         return 1
     fi
+
+    # RHEL / Amazon Linux (autoscaled workers): the Deb script does not work here,
+    # so use Microsoft's yum/dnf repo. Without this az is absent and azure-login.sh
+    # silently skips, so ARO jobs cannot run on autoscaled workers (#80).
+    if command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+        local pkgmgr
+        pkgmgr=$(command -v dnf || command -v yum)
+        rpm --import https://packages.microsoft.com/keys/microsoft.asc > /dev/null 2>&1
+        cat > /etc/yum.repos.d/azure-cli.repo <<'AZREPO'
+[azure-cli]
+name=Azure CLI
+baseurl=https://packages.microsoft.com/yumrepos/azure-cli
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+AZREPO
+        if "$pkgmgr" install -y azure-cli > /dev/null 2>&1; then
+            log "✓ Installed Azure CLI (rpm)"
+            return 0
+        fi
+        log "ERROR: Failed to install Azure CLI (rpm)"
+        return 1
+    fi
+
+    log "ERROR: Failed to install Azure CLI (no supported package manager)"
+    return 1
 }
 
 ensure_gcloud() {

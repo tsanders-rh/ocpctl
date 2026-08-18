@@ -59,11 +59,12 @@ resource "aws_launch_template" "worker" {
   # - OpenShift installer binaries for multiple versions (~3GB)
   # - Cluster work directories (~5GB per concurrent cluster)
   # - Journal logs and temp files (~2GB)
-  # Minimum: 30GB for workers running up to 3 concurrent clusters
+  # Raised to 80GB in production for more binary storage (was 30GB); adopted here so
+  # terraform does not revert the volume size on the next apply.
   block_device_mappings {
     device_name = "/dev/xvda"
     ebs {
-      volume_size           = 30
+      volume_size           = 80
       volume_type           = "gp3"
       delete_on_termination = true
       encrypted             = true
