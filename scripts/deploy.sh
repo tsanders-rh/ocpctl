@@ -279,7 +279,7 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Requeue any RUNNING jobs before stopping worker (prevents orphaned jobs)
     echo -e "${YELLOW}  Requeuing any in-progress jobs...${NC}"
     # Extract DATABASE_URL from worker.env and use it for RDS connection
-    REQUEUED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2-); psql "$DATABASE_URL" -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    REQUEUED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(sudo grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2- | tr -d "\""); psql "$DATABASE_URL" -t -c "UPDATE jobs SET status = '"'"'PENDING'"'"', started_at = NULL WHERE status = '"'"'RUNNING'"'"' RETURNING id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
     if [ "$REQUEUED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Requeued $REQUEUED job(s) to PENDING status${NC}"
     else
@@ -289,7 +289,7 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Clear any stale job locks from this worker (prevents blocked jobs after restart)
     echo -e "${YELLOW}  Clearing stale job locks...${NC}"
     INSTANCE_ID=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'ec2-metadata --instance-id 2>/dev/null | cut -d " " -f 2' || echo "unknown")
-    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2-); psql "$DATABASE_URL" -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
+    LOCKS_CLEARED=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'DATABASE_URL=$(sudo grep "^DATABASE_URL=" /etc/ocpctl/worker.env | cut -d= -f2- | tr -d "\""); psql "$DATABASE_URL" -t -c "DELETE FROM job_locks WHERE locked_by LIKE '"'"'%'$INSTANCE_ID'%'"'"' RETURNING job_id;" 2>/dev/null | grep -o "-" | wc -l | tr -d " "' || echo "0")
     if [ "$LOCKS_CLEARED" -gt 0 ] 2>/dev/null; then
         echo -e "${GREEN}✓ Cleared $LOCKS_CLEARED stale lock(s)${NC}"
     else
