@@ -218,3 +218,75 @@ func TestNewInstallerForVersionDevPreviewParsing(t *testing.T) {
 		})
 	}
 }
+
+func TestIsAdminAlreadyExists(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{
+			name: "rosa create admin exact error (#87)",
+			in:   "ERR: Cluster 'octl-mman-rosa-minimal-test' already has 'cluster-admin' user",
+			want: true,
+		},
+		{
+			name: "wrapped go error string",
+			in:   "rosa create admin failed: exit status 1\nStderr: ERR: Cluster 'x' already has 'cluster-admin' user",
+			want: true,
+		},
+		{
+			name: "admin variant wording",
+			in:   "Cluster 'x' already has 'admin' user",
+			want: true,
+		},
+		{
+			name: "unrelated failure",
+			in:   "rosa create admin failed: cluster is not ready",
+			want: false,
+		},
+		{
+			name: "empty",
+			in:   "",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAdminAlreadyExists(tt.in); got != tt.want {
+				t.Errorf("isAdminAlreadyExists(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsAdminNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{
+			name: "no admin present",
+			in:   "ERR: Cluster 'x' has no admin user",
+			want: true,
+		},
+		{
+			name: "not found wording",
+			in:   "admin user not found",
+			want: true,
+		},
+		{
+			name: "unrelated failure is not treated as absent",
+			in:   "rosa delete admin failed: connection refused",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAdminNotFound(tt.in); got != tt.want {
+				t.Errorf("isAdminNotFound(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

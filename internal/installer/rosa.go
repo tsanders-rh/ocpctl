@@ -571,17 +571,14 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 		}
 	}
 
-	// Create admin user and get login command
-	// rosa create admin --cluster <name>
-	cmd := exec.CommandContext(ctx, r.binaryPath, "create", "admin",
-		"--cluster", clusterName)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("rosa create admin failed: %w\nStderr: %s", err, stderr.String())
+	// Create (or recover) the cluster-admin user and get the login command.
+	// rosa create admin is NOT idempotent: on a CREATE retry where the admin was
+	// created by an earlier attempt it fails with "already has 'cluster-admin'
+	// user", which used to fail the whole job even though the cluster is healthy
+	// (issue #87). ensureAdmin recovers by delete+recreate so retries succeed.
+	output, err := r.ensureAdmin(ctx, clusterName)
+	if err != nil {
+		return nil, err
 	}
 
 	// Output contains multiple INFO lines, need to extract just the "oc login" command
@@ -592,7 +589,6 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 	//      oc login https://api.xxx --username cluster-admin --password xxx
 	//
 	//   INFO: It may take several minutes...
-	output := stdout.String()
 
 	// Find the line containing "oc login"
 	var loginCmd string
@@ -655,6 +651,97 @@ func (r *ROSAInstaller) GetKubeconfig(ctx context.Context, clusterName, outputPa
 		Username: username,
 		Password: password,
 	}, nil
+}
+
+// ensureAdmin creates the cluster-admin user and returns the `rosa create admin`
+// stdout (which embeds the `oc login` command with credentials). Because
+// `rosa create admin` is not idempotent and rosa never re-displays an existing
+// admin's password, an admin left over from a prior CREATE attempt is recovered
+// by deleting and recreating it so the retry yields fresh, usable credentials
+// rather than failing the job (issue #87). This runs at create time, so no
+// external consumer depends on the discarded password.
+func (r *ROSAInstaller) ensureAdmin(ctx context.Context, clusterName string) (string, error) {
+	out, err := r.createAdmin(ctx, clusterName)
+	if err == nil {
+		return out, nil
+	}
+	if !isAdminAlreadyExists(err.Error()) {
+		return "", err
+	}
+
+	// Admin exists from an earlier attempt — delete it, then recreate. IDP
+	// changes propagate asynchronously, so retry the recreate briefly while rosa
+	// still reports the admin as present.
+	if derr := r.deleteAdmin(ctx, clusterName); derr != nil {
+		return "", fmt.Errorf("recover existing cluster-admin: %w", derr)
+	}
+
+	const (
+		recreateAttempts = 6
+		recreateDelay    = 10 * time.Second
+	)
+	var lastErr error
+	for attempt := 1; attempt <= recreateAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(recreateDelay):
+		}
+		out, err = r.createAdmin(ctx, clusterName)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+		if !isAdminAlreadyExists(err.Error()) {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("recreate cluster-admin after delete (still reports existing after %d attempts): %w", recreateAttempts, lastErr)
+}
+
+// createAdmin runs `rosa create admin` and returns its stdout, which carries the
+// `oc login` command and the generated credentials.
+func (r *ROSAInstaller) createAdmin(ctx context.Context, clusterName string) (string, error) {
+	cmd := exec.CommandContext(ctx, r.binaryPath, "create", "admin", "--cluster", clusterName)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("rosa create admin failed: %w\nStderr: %s", err, stderr.String())
+	}
+	return stdout.String(), nil
+}
+
+// deleteAdmin removes the cluster-admin user so it can be recreated. A missing
+// admin is treated as success so the recovery path stays idempotent.
+func (r *ROSAInstaller) deleteAdmin(ctx context.Context, clusterName string) error {
+	cmd := exec.CommandContext(ctx, r.binaryPath, "delete", "admin", "--cluster", clusterName, "--yes")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if isAdminNotFound(stderr.String()) {
+			return nil
+		}
+		return fmt.Errorf("rosa delete admin failed: %w\nStderr: %s", err, stderr.String())
+	}
+	return nil
+}
+
+// isAdminAlreadyExists reports whether rosa output indicates the cluster-admin
+// user already exists (e.g. "Cluster 'x' already has 'cluster-admin' user").
+func isAdminAlreadyExists(s string) bool {
+	l := strings.ToLower(s)
+	return strings.Contains(l, "already has 'cluster-admin'") ||
+		strings.Contains(l, "already has 'admin'") ||
+		(strings.Contains(l, "cluster-admin") && strings.Contains(l, "already"))
+}
+
+// isAdminNotFound reports whether rosa output indicates there is no admin user to
+// delete, so deleteAdmin can treat that as success.
+func isAdminNotFound(s string) bool {
+	l := strings.ToLower(s)
+	return (strings.Contains(l, "no") && strings.Contains(l, "admin")) ||
+		strings.Contains(l, "not found")
 }
 
 // ListMachinePools lists all machine pools for a ROSA cluster
