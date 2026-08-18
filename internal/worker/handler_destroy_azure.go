@@ -64,6 +64,18 @@ func (h *DestroyHandler) handleARODestroy(ctx context.Context, job *types.Job, c
 		}
 	}
 
+	// Best-effort cleanup of the per-cluster service principal (#88). Create names
+	// it deterministically as ocpctl-aro-<clusterID>, so destroy can find and delete
+	// it by name without relying on workdir metadata (absent on fresh workers).
+	// A failure here must not fail destroy — the cluster and its RG are already gone;
+	// a lingering SP is a minor Entra ID cleanup, not a resource cost. When creation
+	// fell back to the shared SP no dedicated SP exists and this is a harmless no-op.
+	spName := fmt.Sprintf("ocpctl-aro-%s", cluster.ID)
+	log.Printf("[JOB %s] Cleaning up service principal: %s", job.ID, spName)
+	if err := aroInstaller.DeleteServicePrincipal(ctx, spName); err != nil {
+		log.Printf("[JOB %s] Warning: failed to delete service principal %s (manual cleanup may be needed): %v", job.ID, spName, err)
+	}
+
 	// Update cluster status to DESTROYED
 	if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 		return fmt.Errorf("mark cluster destroyed: %w", err)

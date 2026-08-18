@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -105,17 +106,42 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	// Resolve the cluster service principal (Red Hat recommended BYO-SP pattern).
-	// Passing an existing SP to az aro create avoids the Entra ID app-registration
-	// write (Microsoft Graph) permission the worker SP does not have. Prefer a
-	// dedicated ARO SP, falling back to the worker's Azure SP credentials.
-	clientID := os.Getenv("ARO_CLIENT_ID")
-	if clientID == "" {
-		clientID = os.Getenv("AZURE_CLIENT_ID")
+	// Azure binds each ARO cluster to its SP by client id, so a shared SP can back
+	// only one ARO cluster at a time — concurrent creates on a shared SP collide
+	// with DuplicateClientID (#88). Provision a dedicated per-cluster SP so multiple
+	// ARO clusters can exist at once. The SP name is deterministic so destroy can
+	// find and delete it without relying on workdir metadata (which is absent on
+	// freshly autoscaled workers).
+	spName := fmt.Sprintf("ocpctl-aro-%s", cluster.ID)
+	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+
+	var clientID, clientSecret string
+	dedicatedSP := ""
+	sp, spErr := aroInstaller.CreateServicePrincipal(ctx, spName, subscriptionID, resourceGroup)
+	switch {
+	case spErr == nil:
+		log.Printf("[JOB %s] Created dedicated service principal %s (client id %s)", job.ID, spName, sp.ClientID)
+		clientID = sp.ClientID
+		clientSecret = sp.ClientSecret
+		dedicatedSP = spName
+	case errors.Is(spErr, installer.ErrInsufficientGraphPermissions):
+		// The worker SP cannot create app registrations (Microsoft Graph
+		// Application.ReadWrite.OwnedBy not granted). Fall back to the shared SP so
+		// creation still works — but that SP backs only one ARO cluster at a time,
+		// so concurrent ARO creates will fail until the Graph grant is in place.
+		log.Printf("[JOB %s] WARNING: cannot create a per-cluster service principal (worker SP lacks Microsoft Graph Application.ReadWrite.OwnedBy); falling back to the shared SP. Concurrent ARO creates will fail with DuplicateClientID until the grant is added (#88).", job.ID)
+		clientID = os.Getenv("ARO_CLIENT_ID")
+		if clientID == "" {
+			clientID = os.Getenv("AZURE_CLIENT_ID")
+		}
+		clientSecret = os.Getenv("ARO_CLIENT_SECRET")
+		if clientSecret == "" {
+			clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
+		}
+	default:
+		return fmt.Errorf("create ARO service principal: %w", spErr)
 	}
-	clientSecret := os.Getenv("ARO_CLIENT_SECRET")
-	if clientSecret == "" {
-		clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
-	}
+
 	if clientID == "" || clientSecret == "" {
 		return fmt.Errorf("ARO service principal not configured: set ARO_CLIENT_ID/ARO_CLIENT_SECRET or AZURE_CLIENT_ID/AZURE_CLIENT_SECRET")
 	}
@@ -179,6 +205,11 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		"region":         cluster.Region,
 		"platform":       "azure",
 		"cluster_type":   "aro",
+	}
+	// Record the dedicated SP name (empty when we fell back to the shared SP) so
+	// destroy has a record, though destroy also reconstructs it deterministically.
+	if dedicatedSP != "" {
+		metadata["service_principal"] = dedicatedSP
 	}
 	if err := aroInstaller.SaveMetadata(workDir, metadata); err != nil {
 		return fmt.Errorf("save metadata: %w", err)
