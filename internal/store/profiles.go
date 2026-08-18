@@ -165,6 +165,27 @@ func (s *Store) DeleteProfile(ctx context.Context, name string) error {
 	return nil
 }
 
+// DeleteProfilesNotIn removes every profile whose name is not in keep, returning
+// the number deleted. The startup sync calls this after upserting the current
+// YAML profiles so that a profile whose source file was renamed or removed does
+// not linger as a stale row. Without it, renaming azure-aro-standard.yaml to
+// aro-standard.yaml left both rows in the table and the UI rendered two identical
+// ARO cards.
+func (s *Store) DeleteProfilesNotIn(ctx context.Context, keep []string) (int, error) {
+	// Guard against wiping the whole table if the caller passes an empty set
+	// (e.g. profiles failed to load) — pruning to zero is never intended.
+	if len(keep) == 0 {
+		return 0, nil
+	}
+
+	result, err := s.pool.Exec(ctx, `DELETE FROM profiles WHERE name != ALL($1)`, keep)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune profiles: %w", err)
+	}
+
+	return int(result.RowsAffected()), nil
+}
+
 // UpdateProfileVersions updates the version allowlist and default for a profile
 func (s *Store) UpdateProfileVersions(ctx context.Context, name string, addVersions []string, removeVersions []string, newDefault *string) error {
 	// Get current profile
