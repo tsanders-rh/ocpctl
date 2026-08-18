@@ -235,7 +235,7 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	log.Printf("[JOB %s] Uploading artifacts to S3", job.ID)
-	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, cluster.ID); err != nil {
+	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		return fmt.Errorf("upload artifacts: %w", err)
 	}
 
@@ -256,7 +256,7 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	// Store artifacts
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
@@ -415,7 +415,7 @@ func (h *CreateHandler) handleAKSCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	log.Printf("[JOB %s] Uploading artifacts to S3", job.ID)
-	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, cluster.ID); err != nil {
+	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		return fmt.Errorf("upload artifacts: %w", err)
 	}
 
@@ -436,7 +436,7 @@ func (h *CreateHandler) handleAKSCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	// Store artifacts
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
