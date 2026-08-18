@@ -33,8 +33,15 @@ func NewArtifactStorage(ctx context.Context, bucketName string) (*ArtifactStorag
 	}, nil
 }
 
-// UploadClusterArtifacts uploads all cluster artifacts to S3
-func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, clusterID string) error {
+// UploadClusterArtifacts uploads all cluster artifacts to S3.
+//
+// metadataRequired controls whether a missing metadata.json is a hard failure.
+// metadata.json is produced by openshift-install (OpenShift IPI clusters); managed
+// cluster types (ROSA, EKS, GKE, IKS, ARO, AKS) never generate one, so treating it
+// as required for them fails the whole create at upload even though the cluster
+// installed successfully (#87 exposed this for ROSA). Callers pass true only for
+// OpenShift IPI.
+func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, clusterID string, metadataRequired bool) error {
 	log.Printf("[ArtifactStorage] Uploading artifacts for cluster %s from %s", clusterID, workDir)
 
 	// List of artifacts to upload with their S3 keys
@@ -55,11 +62,11 @@ func (a *ArtifactStorage) UploadClusterArtifacts(ctx context.Context, workDir, c
 			Required:  false, // Only exists for OpenShift IPI clusters
 		},
 
-		// Metadata
+		// Metadata (only openshift-install/IPI produces metadata.json)
 		{
 			LocalPath: filepath.Join(workDir, "metadata.json"),
 			S3Key:     fmt.Sprintf("clusters/%s/artifacts/metadata.json", clusterID),
-			Required:  true,
+			Required:  metadataRequired,
 		},
 
 		// AWS cleanup manifest (for fast destroy)

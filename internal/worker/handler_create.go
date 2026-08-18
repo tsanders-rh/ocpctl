@@ -338,8 +338,9 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		}
 	}
 
-	// Store artifacts (kubeconfig, metadata, install dir)
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	// Store artifacts (kubeconfig, metadata, install dir). OpenShift IPI produces
+	// metadata.json, so require it here.
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, true); err != nil {
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
@@ -584,8 +585,12 @@ func (h *CreateHandler) updateArtifactURIs(ctx context.Context, clusterID string
 	return nil
 }
 
-// storeArtifacts stores cluster artifacts (kubeconfig, logs, metadata)
-func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID string) error {
+// storeArtifacts stores cluster artifacts (kubeconfig, logs, metadata).
+//
+// metadataRequired should be true only for OpenShift IPI clusters, which are the
+// only type that produces metadata.json; passing true for managed types (ROSA,
+// EKS, GKE, IKS, ARO, AKS) would fail the upload since they never create it.
+func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID string, metadataRequired bool) error {
 	// Create artifact storage client
 	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
 	if err != nil {
@@ -593,7 +598,7 @@ func (h *CreateHandler) storeArtifacts(ctx context.Context, workDir, clusterID s
 	}
 
 	// Upload all artifacts to S3
-	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, clusterID); err != nil {
+	if err := artifactStorage.UploadClusterArtifacts(ctx, workDir, clusterID, metadataRequired); err != nil {
 		return fmt.Errorf("upload artifacts: %w", err)
 	}
 
@@ -901,8 +906,8 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		log.Printf("Warning: failed to store cluster outputs: %v", err)
 	}
 
-	// Store artifacts
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	// Store artifacts (managed cluster type: no metadata.json)
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
@@ -1112,8 +1117,8 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 		log.Printf("Warning: failed to store cluster outputs: %v", err)
 	}
 
-	// Store artifacts
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	// Store artifacts (managed cluster type: no metadata.json)
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		log.Printf("Warning: failed to store artifacts: %v", err)
 	}
 
@@ -1642,7 +1647,7 @@ func (h *CreateHandler) handleROSACreate(ctx context.Context, job *types.Job, cl
 	// Upload artifacts (kubeconfig, metadata) to S3 and rewrite KubeconfigS3URI
 	// to the s3:// location so the UI/API can serve the kubeconfig from any host.
 	// A failure must not leave the cluster READY with a missing kubeconfig.
-	if err := h.storeArtifacts(ctx, workDir, cluster.ID); err != nil {
+	if err := h.storeArtifacts(ctx, workDir, cluster.ID, false); err != nil {
 		return fmt.Errorf("store artifacts: %w", err)
 	}
 
