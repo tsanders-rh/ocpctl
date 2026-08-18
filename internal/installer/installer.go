@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -221,6 +222,101 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		timeout:     120 * time.Minute,
 		useSTSCreds: useSTSCreds,
 	}, nil
+}
+
+// NewInstallerForDestroy creates an installer suitable for tearing a cluster down.
+//
+// Unlike NewInstallerForVersion, it never hard-fails on an unsupported version.
+// `openshift-install destroy cluster` only reads the cluster's metadata.json and
+// deletes the tagged cloud resources — it does not install anything — so it does
+// not require the exact matching binary, and it must not be gated by the
+// create-time supported-version allowlist. Otherwise a cluster recorded with a
+// version outside that list (e.g. an old nightly like 4.23.0-0.nightly) can never
+// be destroyed, so its DESTROY job fails on every attempt and its cloud resources
+// leak indefinitely.
+//
+// It prefers the exact version-specific installer when the version is supported
+// and its binary is available; otherwise it falls back to the newest installer
+// binary present on the host, which can destroy across versions.
+func NewInstallerForDestroy(version string) *Installer {
+	// Preferred path: exact version-specific installer.
+	if inst, err := NewInstallerForVersion(version); err == nil {
+		return inst
+	} else {
+		log.Printf("Destroy: version-specific installer unavailable for %q (%v); falling back to best-available installer", version, err)
+	}
+
+	binaryPath := bestAvailableInstallerBinary()
+
+	ccoCtlPath := os.Getenv("CCOCTL_BINARY")
+	if ccoCtlPath == "" {
+		ccoCtlPath = "ccoctl"
+	}
+
+	log.Printf("Destroy: using best-available installer binary: %s", binaryPath)
+
+	return &Installer{
+		binaryPath:  binaryPath,
+		ccoCtlPath:  ccoCtlPath,
+		timeout:     120 * time.Minute,
+		useSTSCreds: detectSTSCredentials(),
+	}
+}
+
+// bestAvailableInstallerBinary returns the newest version-specific
+// openshift-install binary installed under /usr/local/bin (comparing by
+// major.minor, e.g. 5.0 > 4.22 > 4.14), or the generic "openshift-install" from
+// OPENSHIFT_INSTALL_BINARY / PATH when none are installed. Used by destroy, which
+// just needs any working binary to read metadata.json and delete tagged resources.
+func bestAvailableInstallerBinary() string {
+	matches, _ := filepath.Glob("/usr/local/bin/openshift-install-*")
+	if best := selectNewestInstaller(matches); best != "" {
+		return best
+	}
+
+	if env := os.Getenv("OPENSHIFT_INSTALL_BINARY"); env != "" {
+		return env
+	}
+	return "openshift-install"
+}
+
+// selectNewestInstaller returns the path from paths whose "openshift-install-<ver>"
+// suffix has the highest major.minor, or "" if none parse as a version. Paths that
+// don't carry a parseable version (e.g. "openshift-install-4.22-patched") are
+// skipped. Split out from bestAvailableInstallerBinary so the ordering is testable
+// without touching the host filesystem.
+func selectNewestInstaller(paths []string) string {
+	best := ""
+	bestMajor, bestMinor := -1, -1
+	for _, p := range paths {
+		mm := extractMajorMinor(strings.TrimPrefix(filepath.Base(p), "openshift-install-"))
+		major, minor, ok := parseMajorMinor(mm)
+		if !ok {
+			continue
+		}
+		if major > bestMajor || (major == bestMajor && minor > bestMinor) {
+			bestMajor, bestMinor, best = major, minor, p
+		}
+	}
+	return best
+}
+
+// parseMajorMinor parses a "MAJOR.MINOR" string (as returned by extractMajorMinor)
+// into its integer components. ok is false when the input is not two integers.
+func parseMajorMinor(majorMinor string) (major, minor int, ok bool) {
+	parts := strings.Split(majorMinor, ".")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // downloadInstallerOnDemand attempts to download the OpenShift installer for a specific version

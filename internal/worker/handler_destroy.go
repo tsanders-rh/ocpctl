@@ -145,12 +145,13 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		log.Printf("Warning: failed to start log streaming: %v", err)
 	}
 
-	// Create version-specific installer for this cluster
-	log.Printf("Creating installer for OpenShift version %s", cluster.Version)
-	inst, err := installer.NewInstallerForVersion(cluster.Version)
-	if err != nil {
-		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
-	}
+	// Create an installer for this cluster. Use the destroy-tolerant constructor:
+	// destroy only reads metadata.json to delete tagged resources, so it must not
+	// hard-fail when cluster.Version is outside the create-time supported-version
+	// allowlist (e.g. an old nightly), which would otherwise leave the cluster's
+	// cloud resources orphaned with no way to clean them up.
+	log.Printf("Creating installer for OpenShift version %s (destroy)", cluster.Version)
+	inst := installer.NewInstallerForDestroy(cluster.Version)
 
 	// Run openshift-install destroy cluster with explicit timeout
 	log.Printf("Running openshift-install destroy cluster for %s (version %s, timeout: %v)", cluster.Name, cluster.Version, DestroyOperationTimeout)

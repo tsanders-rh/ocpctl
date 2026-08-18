@@ -1085,12 +1085,11 @@ func (w *Worker) cleanupOpenShiftDeployment(ctx context.Context, job *types.Job,
 		return
 	}
 
-	// Create version-specific installer
-	inst, err := installer.NewInstallerForVersion(cluster.Version)
-	if err != nil {
-		log.Printf("Warning: failed to create installer for version %s: %v", cluster.Version, err)
-		return
-	}
+	// Use the destroy-tolerant installer: cleanup runs `openshift-install destroy`
+	// against metadata.json, so it must not hard-fail on a version outside the
+	// create-time allowlist — otherwise partial infrastructure from a failed
+	// create of such a version leaks with nothing to clean it up.
+	inst := installer.NewInstallerForDestroy(cluster.Version)
 
 	// Run openshift-install destroy to clean up partial infrastructure
 	output, err := inst.DestroyCluster(ctx, workDir)

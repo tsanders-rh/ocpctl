@@ -109,6 +109,110 @@ func TestExtractMajorMinor(t *testing.T) {
 	}
 }
 
+func TestParseMajorMinor(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantMajor int
+		wantMinor int
+		wantOK    bool
+	}{
+		{name: "standard 4.22", input: "4.22", wantMajor: 4, wantMinor: 22, wantOK: true},
+		{name: "next major 5.0", input: "5.0", wantMajor: 5, wantMinor: 0, wantOK: true},
+		{name: "single digit minor", input: "4.9", wantMajor: 4, wantMinor: 9, wantOK: true},
+		{name: "empty", input: "", wantOK: false},
+		{name: "single part", input: "4", wantOK: false},
+		{name: "three parts", input: "4.22.1", wantOK: false},
+		{name: "non-numeric minor", input: "4.x", wantOK: false},
+		{name: "non-numeric major", input: "v4.22", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			major, minor, ok := parseMajorMinor(tt.input)
+			if ok != tt.wantOK {
+				t.Fatalf("parseMajorMinor(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			}
+			if ok && (major != tt.wantMajor || minor != tt.wantMinor) {
+				t.Errorf("parseMajorMinor(%q) = (%d, %d), want (%d, %d)",
+					tt.input, major, minor, tt.wantMajor, tt.wantMinor)
+			}
+		})
+	}
+}
+
+func TestSelectNewestInstaller(t *testing.T) {
+	tests := []struct {
+		name  string
+		paths []string
+		want  string
+	}{
+		{
+			name:  "empty list",
+			paths: nil,
+			want:  "",
+		},
+		{
+			name: "picks highest major over minor",
+			paths: []string{
+				"/usr/local/bin/openshift-install-4.22",
+				"/usr/local/bin/openshift-install-5.0",
+				"/usr/local/bin/openshift-install-4.14",
+			},
+			want: "/usr/local/bin/openshift-install-5.0",
+		},
+		{
+			name: "picks highest minor within same major",
+			paths: []string{
+				"/usr/local/bin/openshift-install-4.18",
+				"/usr/local/bin/openshift-install-4.22",
+				"/usr/local/bin/openshift-install-4.20",
+			},
+			want: "/usr/local/bin/openshift-install-4.22",
+		},
+		{
+			name: "extracts major.minor from patch and prerelease suffixes",
+			paths: []string{
+				"/usr/local/bin/openshift-install-4.21.19",
+				"/usr/local/bin/openshift-install-4.22.0-ec.5",
+			},
+			want: "/usr/local/bin/openshift-install-4.22.0-ec.5",
+		},
+		{
+			name: "labeled build still parses to its major.minor",
+			paths: []string{
+				"/usr/local/bin/openshift-install-4.22-patched",
+				"/usr/local/bin/openshift-install-4.20",
+			},
+			want: "/usr/local/bin/openshift-install-4.22-patched",
+		},
+		{
+			name: "skips non-version suffixes",
+			paths: []string{
+				"/usr/local/bin/openshift-install-latest",
+				"/usr/local/bin/openshift-install-4.20",
+			},
+			want: "/usr/local/bin/openshift-install-4.20",
+		},
+		{
+			name: "all unparseable yields empty",
+			paths: []string{
+				"/usr/local/bin/openshift-install-latest",
+				"/usr/local/bin/openshift-install-patched",
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectNewestInstaller(tt.paths); got != tt.want {
+				t.Errorf("selectNewestInstaller(%v) = %q, want %q", tt.paths, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDevPreviewVersion(t *testing.T) {
 	tests := []struct {
 		name     string
