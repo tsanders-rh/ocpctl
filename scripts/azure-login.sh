@@ -27,6 +27,9 @@ if az login \
     --output none 2>&1; then
     echo "[azure-login] ✓ Azure CLI authenticated successfully"
 else
-    echo "[azure-login] WARNING: Azure CLI authentication failed (non-fatal)"
-    exit 0
+    # Credentials ARE configured (checked above) but the login failed. Fail hard so
+    # the worker does not start and silently accept Azure/ARO jobs it cannot run
+    # (see #80). Workers without Azure credentials skip this via the early exit above.
+    echo "[azure-login] ERROR: Azure credentials are configured but 'az login' failed" >&2
+    exit 1
 fi

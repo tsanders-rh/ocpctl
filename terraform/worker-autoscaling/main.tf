@@ -87,14 +87,14 @@ resource "aws_launch_template" "worker" {
     instance_metadata_tags      = "enabled"
   }
 
-  # User data script to start worker service
+  # User data script to start worker service.
+  # Only the (non-secret) binary URL is rendered into user-data. Worker runtime config
+  # — DATABASE_URL, the pull secret, and all cloud credentials (incl. the Azure service
+  # principal) — is pulled from s3://ocpctl-binaries/config/worker.env at boot so no
+  # secrets land in the launch template or tfstate, and there is a single source of
+  # truth shared with the primary workers (#80).
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    database_url           = var.database_url
-    work_dir               = var.work_dir
-    worker_poll_interval   = var.worker_poll_interval
-    worker_max_concurrent  = var.worker_max_concurrent
-    worker_binary_url      = var.worker_binary_url
-    openshift_pull_secret  = var.openshift_pull_secret
+    worker_binary_url = var.worker_binary_url
   }))
 
   tag_specifications {
@@ -127,12 +127,12 @@ resource "aws_iam_instance_profile" "worker" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "worker" {
-  name                = "${var.project_name}-worker-asg"
-  vpc_zone_identifier = data.aws_subnets.private.ids
-  min_size            = var.asg_min_size
-  max_size            = var.asg_max_size
-  desired_capacity    = var.asg_desired_capacity
-  health_check_type   = "EC2"
+  name                      = "${var.project_name}-worker-asg"
+  vpc_zone_identifier       = data.aws_subnets.private.ids
+  min_size                  = var.asg_min_size
+  max_size                  = var.asg_max_size
+  desired_capacity          = var.asg_desired_capacity
+  health_check_type         = "EC2"
   health_check_grace_period = 300
 
   launch_template {

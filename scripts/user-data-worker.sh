@@ -24,7 +24,9 @@ fi
 # Create ocpctl user if doesn't exist
 if ! id ocpctl &>/dev/null; then
     echo "Creating ocpctl user..."
-    useradd -r -s /bin/false ocpctl
+    # Home must be /opt/ocpctl (created and chowned below) so the CLI login hooks
+    # can persist ~/.azure etc.; the default /home/ocpctl is never created (#80).
+    useradd -r -s /bin/bash -d /opt/ocpctl ocpctl
 fi
 
 # Create directory structure

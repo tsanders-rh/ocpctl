@@ -8,6 +8,12 @@ Type=simple
 User=ocpctl
 WorkingDirectory=/opt/ocpctl
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Pin HOME so the az/gcloud/ibmcloud CLI sessions written by the ExecStartPre
+# login hooks and read by the worker land in one deterministic location
+# (/opt/ocpctl/.azure), independent of the ocpctl user's passwd home. Autoscaled
+# workers otherwise default to an uncreated /home/ocpctl, so `az login` fails and
+# the worker starts with no Azure session (see #80).
+Environment="HOME=/opt/ocpctl"
 EnvironmentFile=/etc/ocpctl/worker.env
 
 # Ensure installer binaries are available before starting (runs as root with + prefix)
