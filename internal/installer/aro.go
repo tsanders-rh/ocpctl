@@ -40,11 +40,23 @@ type AROClusterConfig struct {
 
 // AROClusterInfo represents cluster information from Azure
 type AROClusterInfo struct {
-	Name              string            `json:"name"`
-	ProvisioningState string            `json:"provisioningState"`
-	ConsoleURL        string            `json:"consoleProfile.url"`
-	APIURL            string            `json:"apiserverProfile.url"`
-	Tags              map[string]string `json:"tags"`
+	Name              string `json:"name"`
+	ProvisioningState string `json:"provisioningState"`
+	// az aro show returns the URLs nested under consoleProfile/apiserverProfile.
+	// Go's encoding/json does not treat dotted json tags as nested-path access,
+	// so these must be modeled as nested structs and flattened after unmarshal.
+	ConsoleProfile struct {
+		URL string `json:"url"`
+	} `json:"consoleProfile"`
+	APIServerProfile struct {
+		URL string `json:"url"`
+	} `json:"apiserverProfile"`
+	Tags map[string]string `json:"tags"`
+
+	// ConsoleURL/APIURL are flattened from the nested profiles above in
+	// GetClusterInfo so callers keep a stable, simple accessor.
+	ConsoleURL string `json:"-"`
+	APIURL     string `json:"-"`
 }
 
 // NewAROInstaller creates a new ARO installer instance
@@ -294,6 +306,10 @@ func (a *AROInstaller) GetClusterInfo(ctx context.Context, resourceGroup, cluste
 	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
 		return nil, fmt.Errorf("parse cluster info: %w", err)
 	}
+
+	// Flatten the nested profile URLs into the simple accessors.
+	info.ConsoleURL = info.ConsoleProfile.URL
+	info.APIURL = info.APIServerProfile.URL
 
 	return &info, nil
 }
