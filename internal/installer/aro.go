@@ -4,12 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+)
+
+// Sentinel errors for ARO service-principal handling (#88).
+var (
+	// ErrInsufficientGraphPermissions is returned by CreateServicePrincipal when
+	// the logged-in identity lacks Microsoft Graph write (Application.ReadWrite.
+	// OwnedBy) and therefore cannot create a per-cluster service principal. Callers
+	// use it to fall back to a shared SP instead of failing the create.
+	ErrInsufficientGraphPermissions = errors.New("insufficient Microsoft Graph permissions to create a service principal")
+
+	// ErrDuplicateClientID is returned when az aro create rejects the cluster's
+	// service principal because Azure has it bound to another ARO cluster (a shared
+	// SP can back only one ARO cluster at a time).
+	ErrDuplicateClientID = errors.New("service principal already in use by another ARO cluster")
 )
 
 // AROInstaller wraps the Azure CLI for ARO cluster operations
@@ -192,6 +207,180 @@ func (a *AROInstaller) ResolveVersion(ctx context.Context, region, version strin
 	return best, nil
 }
 
+// ServicePrincipal is a freshly created Azure AD application/service principal
+// used as a cluster's BYO SP for az aro create.
+type ServicePrincipal struct {
+	DisplayName  string
+	ClientID     string // appId
+	ClientSecret string // password
+}
+
+// CreateServicePrincipal creates a dedicated Azure AD app + service principal for
+// one ARO cluster and grants it Contributor on the cluster's resource group only.
+//
+// Why per-cluster (#88): Azure binds an ARO cluster to its SP by client ID, so a
+// single shared SP can back only one ARO cluster at a time — a second concurrent
+// create fails with DuplicateClientID. Giving every cluster its own SP removes
+// that ceiling. It also shrinks #81's blast radius: each secret is ephemeral,
+// scoped to a single resource group, and deleted when the cluster is destroyed.
+//
+// The cluster SP needs only Contributor on its RG. The *caller* (the worker SP
+// running az aro create) is the identity that assigns the ARO resource-provider
+// roles on the VNet and therefore needs User Access Administrator — the cluster
+// SP does not.
+//
+// Requires the logged-in worker SP to hold Microsoft Graph Application.ReadWrite.
+// OwnedBy. When that grant is absent az fails with an authorization error; this
+// returns ErrInsufficientGraphPermissions so the caller can fall back to a shared
+// SP rather than failing the create outright.
+func (a *AROInstaller) CreateServicePrincipal(ctx context.Context, displayName, subscriptionID, resourceGroup string) (*ServicePrincipal, error) {
+	if subscriptionID == "" || resourceGroup == "" {
+		return nil, fmt.Errorf("CreateServicePrincipal: subscriptionID and resourceGroup are required")
+	}
+
+	scope := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
+	args := []string{
+		"ad", "sp", "create-for-rbac",
+		"--name", displayName,
+		"--role", "Contributor",
+		"--scopes", scope,
+		"--output", "json",
+	}
+
+	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		combined := stdout.String() + stderr.String()
+		if isInsufficientGraphPermissions(combined) {
+			return nil, ErrInsufficientGraphPermissions
+		}
+		return nil, fmt.Errorf("az ad sp create-for-rbac failed: %w: %s", err, stderr.String())
+	}
+
+	// create-for-rbac emits {"appId","password","tenant","displayName"}.
+	var out struct {
+		AppID       string `json:"appId"`
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		return nil, fmt.Errorf("parse create-for-rbac output: %w", err)
+	}
+	if out.AppID == "" || out.Password == "" {
+		return nil, fmt.Errorf("create-for-rbac returned an empty appId/password")
+	}
+
+	sp := &ServicePrincipal{
+		DisplayName:  displayName,
+		ClientID:     out.AppID,
+		ClientSecret: out.Password,
+	}
+
+	// Wait for the new SP to replicate through Azure AD before az aro create tries
+	// to authenticate with it. Using the credential too soon yields AADSTS7000215
+	// ("invalid client secret") purely from propagation lag, not a bad secret.
+	if err := a.waitForServicePrincipal(ctx, sp.ClientID); err != nil {
+		return nil, fmt.Errorf("service principal %s did not become available: %w", displayName, err)
+	}
+
+	return sp, nil
+}
+
+// waitForServicePrincipal polls until the service principal object is visible in
+// Azure AD, then adds a short buffer for token-endpoint propagation. az ad sp show
+// is a read against the worker's existing session, so it does not disturb the
+// active az login used by az aro create.
+func (a *AROInstaller) waitForServicePrincipal(ctx context.Context, clientID string) error {
+	const (
+		maxWait  = 3 * time.Minute
+		interval = 10 * time.Second
+	)
+	deadline := time.Now().Add(maxWait)
+	for {
+		showCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		cmd := exec.CommandContext(showCtx, a.binaryPath, "ad", "sp", "show", "--id", clientID, "--output", "json")
+		err := cmd.Run()
+		cancel()
+		if err == nil {
+			// Object is queryable; give the token endpoint a moment to catch up
+			// before the credential is used to authenticate.
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(30 * time.Second):
+			}
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for service principal %s", maxWait, clientID)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+// DeleteServicePrincipal removes the Azure AD application (and its backing service
+// principal) identified by display name. It is best-effort and idempotent: a
+// missing SP is treated as success so cluster destroy never blocks on it. Deleting
+// the app registration cascades to the service principal.
+func (a *AROInstaller) DeleteServicePrincipal(ctx context.Context, displayName string) error {
+	// Look up the app registration by display name to get its appId.
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	listCmd := exec.CommandContext(listCtx, a.binaryPath,
+		"ad", "app", "list", "--display-name", displayName, "--query", "[].appId", "--output", "tsv")
+	var stdout, stderr bytes.Buffer
+	listCmd.Stdout = &stdout
+	listCmd.Stderr = &stderr
+	if err := listCmd.Run(); err != nil {
+		return fmt.Errorf("az ad app list for %s failed: %w: %s", displayName, err, stderr.String())
+	}
+
+	appIDs := strings.Fields(stdout.String())
+	if len(appIDs) == 0 {
+		// Nothing to delete (never created, or already cleaned up).
+		return nil
+	}
+
+	for _, appID := range appIDs {
+		delCtx, cancelDel := context.WithTimeout(ctx, 60*time.Second)
+		delCmd := exec.CommandContext(delCtx, a.binaryPath, "ad", "app", "delete", "--id", appID)
+		var delErr bytes.Buffer
+		delCmd.Stderr = &delErr
+		err := delCmd.Run()
+		cancelDel()
+		if err != nil {
+			return fmt.Errorf("az ad app delete %s failed: %w: %s", appID, err, delErr.String())
+		}
+	}
+
+	return nil
+}
+
+// isInsufficientGraphPermissions reports whether az output indicates the caller
+// lacks Microsoft Graph write permission to create an app/service principal.
+func isInsufficientGraphPermissions(s string) bool {
+	l := strings.ToLower(s)
+	return strings.Contains(l, "authorization_requestdenied") ||
+		strings.Contains(l, "insufficient privileges") ||
+		strings.Contains(l, "does not have permission") ||
+		(strings.Contains(l, "graph") && strings.Contains(l, "forbidden"))
+}
+
+// isDuplicateClientID reports whether az aro create failed because the supplied
+// service principal is already bound to another ARO cluster.
+func isDuplicateClientID(s string) bool {
+	l := strings.ToLower(s)
+	return strings.Contains(l, "duplicateclientid") ||
+		(strings.Contains(l, "client id") && strings.Contains(l, "already"))
+}
+
 // CreateCluster creates an ARO cluster using az aro create
 func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConfig, logFile string, vnetName, masterSubnetName, workerSubnetName string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
@@ -258,6 +447,12 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 
 	if err := cmd.Run(); err != nil {
 		logData, _ := os.ReadFile(logFile)
+		// Fail fast with an actionable error when Azure rejects the SP because it
+		// already backs another ARO cluster. Retrying is pointless — the operator
+		// must supply a distinct SP (per-cluster SP creation, #88).
+		if isDuplicateClientID(string(logData)) {
+			return string(logData), fmt.Errorf("%w: client id %s is already assigned to another ARO cluster; a service principal can back only one ARO cluster at a time", ErrDuplicateClientID, config.ClientID)
+		}
 		return string(logData), fmt.Errorf("az aro create failed: %w", err)
 	}
 
