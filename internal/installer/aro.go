@@ -219,7 +219,23 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 	// stops az aro create from creating a new app registration in Entra ID, which
 	// requires Microsoft Graph write permissions the worker SP lacks.
 	if config.ClientID != "" && config.ClientSecret != "" {
-		args = append(args, "--client-id", config.ClientID, "--client-secret", config.ClientSecret)
+		// Pass the client secret via Azure CLI's @<file> convention instead of as a
+		// literal argument, so the secret never appears in the process argument list
+		// (readable by any local user via `ps`) (#81). os.CreateTemp makes the file
+		// 0600; it is removed when this function returns.
+		secretFile, err := os.CreateTemp("", "aro-client-secret-*")
+		if err != nil {
+			return "", fmt.Errorf("create client-secret temp file: %w", err)
+		}
+		defer os.Remove(secretFile.Name())
+		if _, err := secretFile.WriteString(config.ClientSecret); err != nil {
+			secretFile.Close()
+			return "", fmt.Errorf("write client-secret temp file: %w", err)
+		}
+		if err := secretFile.Close(); err != nil {
+			return "", fmt.Errorf("close client-secret temp file: %w", err)
+		}
+		args = append(args, "--client-id", config.ClientID, "--client-secret", "@"+secretFile.Name())
 	}
 
 	// Add pull secret
