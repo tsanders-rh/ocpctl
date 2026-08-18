@@ -185,6 +185,20 @@ func main() {
 	}
 	log.Printf("✓ Synced %d profiles to database", syncedCount)
 
+	// Prune profiles whose YAML source was renamed or removed. The upsert loop
+	// above only ever adds/updates, so without this a renamed profile leaves its
+	// old row behind and the UI shows a duplicate card (the pre-rename
+	// azure-aro-standard lingered in the DB alongside aro-standard).
+	keepProfiles := make([]string, 0, len(allProfiles))
+	for _, prof := range allProfiles {
+		keepProfiles = append(keepProfiles, prof.Name)
+	}
+	if pruned, err := st.DeleteProfilesNotIn(ctx, keepProfiles); err != nil {
+		log.Printf("Warning: Failed to prune stale profiles: %v", err)
+	} else if pruned > 0 {
+		log.Printf("✓ Pruned %d stale profile(s) from database", pruned)
+	}
+
 	// Sync add-ons from YAML to database
 	log.Println("Syncing add-ons from YAML...")
 	addonsDir := os.Getenv("ADDONS_DIR")

@@ -159,11 +159,13 @@ ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo mkdir -p ${REMOTE_BASE}/releases/${V
 scp -i "$SSH_KEY" bin/ocpctl-api-${VERSION} $SSH_USER@$API_HOST:/tmp/ocpctl-api-${VERSION}
 ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo install -m 755 /tmp/ocpctl-api-${VERSION} ${REMOTE_BASE}/releases/${VERSION}/ocpctl-api && rm /tmp/ocpctl-api-${VERSION}"
 
-# Deploy profiles directory
+# Deploy profiles directory. Clear the destination first so a profile whose YAML
+# was renamed or removed does not linger on the host and get reloaded into the DB
+# as a stale duplicate (cp alone never deletes; see the azure-aro-standard dupe).
 echo -e "${YELLOW}  Deploying profiles directory...${NC}"
 ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
 scp -i "$SSH_KEY" -r internal/profile/definitions/* $SSH_USER@$API_HOST:/tmp/profiles/
-ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+ssh -i "$SSH_KEY" $SSH_USER@$API_HOST "sudo rm -f ${REMOTE_BASE}/profiles/*.yaml ${REMOTE_BASE}/profiles/*.yml && sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
 
 # Deploy add-ons directory
 echo -e "${YELLOW}  Deploying add-ons directory...${NC}"
@@ -252,11 +254,13 @@ for host in "${WORKER_HOSTS[@]}"; do
     scp -i "$SSH_KEY" scripts/configure-shared-migration-storage.sh $SSH_USER@$host:/tmp/worker-scripts/ 2>/dev/null || true
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp /tmp/worker-scripts/* ${REMOTE_BASE}/releases/${VERSION}/scripts/ 2>/dev/null || true && sudo chmod +x ${REMOTE_BASE}/releases/${VERSION}/scripts/*.sh 2>/dev/null || true && rm -rf /tmp/worker-scripts"
 
-    # Deploy profiles directory
+    # Deploy profiles directory. Clear the destination first so a renamed/removed
+    # profile does not linger on the host and get reloaded into the DB as a stale
+    # duplicate (cp alone never deletes; see the azure-aro-standard dupe).
     echo -e "${YELLOW}  Deploying profiles directory...${NC}"
     ssh -i "$SSH_KEY" $SSH_USER@$host "mkdir -p /tmp/profiles && sudo mkdir -p ${REMOTE_BASE}/profiles"
     scp -i "$SSH_KEY" -r internal/profile/definitions/* $SSH_USER@$host:/tmp/profiles/
-    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo rm -f ${REMOTE_BASE}/profiles/*.yaml ${REMOTE_BASE}/profiles/*.yml && sudo cp -r /tmp/profiles/* ${REMOTE_BASE}/profiles/ && sudo chown -R ocpctl:ocpctl ${REMOTE_BASE}/profiles && rm -rf /tmp/profiles"
 
     # Deploy worker.env configuration
     if [ -f config/worker.env ]; then
