@@ -218,24 +218,15 @@ func (a *AROInstaller) CreateCluster(ctx context.Context, config *AROClusterConf
 	// BYO service principal (Red Hat recommended pattern). Passing an existing SP
 	// stops az aro create from creating a new app registration in Entra ID, which
 	// requires Microsoft Graph write permissions the worker SP lacks.
+	//
+	// The secret is passed on argv (visible via ps, see #81). This was tried via
+	// Azure CLI's @<file> convention to keep it out of argv, but az does NOT expand
+	// @file for --client-secret (verified: az login -p @file yields AADSTS7000215
+	// "Invalid client secret" — the literal "@/path" is sent). argv is the only
+	// supported form, so #81 must be mitigated by blast-radius reduction instead
+	// (dedicated least-privilege ARO SP / short-lived secret / managed identity).
 	if config.ClientID != "" && config.ClientSecret != "" {
-		// Pass the client secret via Azure CLI's @<file> convention instead of as a
-		// literal argument, so the secret never appears in the process argument list
-		// (readable by any local user via `ps`) (#81). os.CreateTemp makes the file
-		// 0600; it is removed when this function returns.
-		secretFile, err := os.CreateTemp("", "aro-client-secret-*")
-		if err != nil {
-			return "", fmt.Errorf("create client-secret temp file: %w", err)
-		}
-		defer os.Remove(secretFile.Name())
-		if _, err := secretFile.WriteString(config.ClientSecret); err != nil {
-			secretFile.Close()
-			return "", fmt.Errorf("write client-secret temp file: %w", err)
-		}
-		if err := secretFile.Close(); err != nil {
-			return "", fmt.Errorf("close client-secret temp file: %w", err)
-		}
-		args = append(args, "--client-id", config.ClientID, "--client-secret", "@"+secretFile.Name())
+		args = append(args, "--client-id", config.ClientID, "--client-secret", config.ClientSecret)
 	}
 
 	// Add pull secret
