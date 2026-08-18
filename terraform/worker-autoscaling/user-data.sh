@@ -4,13 +4,13 @@ set -e
 # User data script for OCPCTL worker instances
 # This script downloads the worker binary and starts the worker service
 
-# Configuration from Terraform template variables
-DATABASE_URL="${database_url}"
-WORK_DIR="${work_dir}"
-POLL_INTERVAL="${worker_poll_interval}"
-MAX_CONCURRENT="${worker_max_concurrent}"
+# Configuration from Terraform template variables.
+# NOTE: worker runtime config (DATABASE_URL, pull secret, cloud credentials incl.
+# the Azure service principal) is NOT rendered here — it is pulled from
+# s3://ocpctl-binaries/config/worker.env at boot so secrets never land in the
+# launch template / tfstate, and there is a single source of truth shared with the
+# primary workers (#80).
 WORKER_BINARY_URL="${worker_binary_url}"
-OPENSHIFT_PULL_SECRET='${openshift_pull_secret}'
 
 # Install required packages
 yum update -y
@@ -47,12 +47,11 @@ yum install -y google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin
 echo "gcloud version: $(gcloud version --format='value(version)' 2>/dev/null || echo 'error')"
 echo "gke-gcloud-auth-plugin version: $(gke-gcloud-auth-plugin --version 2>/dev/null || echo 'error')"
 
-# Create ocpctl user
-useradd -r -s /bin/false ocpctl || true
-
-# Create work directory
-mkdir -p "$WORK_DIR"
-chown ocpctl:ocpctl "$WORK_DIR"
+# Create ocpctl user. Home must be /opt/ocpctl so CLI login hooks can persist
+# ~/.azure etc.; the default /home/ocpctl is never created (#80).
+useradd -r -s /bin/bash -d /opt/ocpctl ocpctl || true
+mkdir -p /opt/ocpctl
+chown ocpctl:ocpctl /opt/ocpctl
 
 # Download worker binary
 echo "Downloading worker binary from $WORKER_BINARY_URL"
@@ -66,66 +65,45 @@ mkdir -p /opt/ocpctl/profiles/definitions
 aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/definitions/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
 
-# Download ensure-installers script (installs OpenShift/eksctl/gcloud/etc. CLIs)
-# This runs asynchronously AFTER the worker starts to avoid blocking worker startup
-echo "Downloading ensure-installers.sh script"
-aws s3 cp s3://ocpctl-binaries/scripts/ensure-installers.sh /usr/local/bin/ensure-installers.sh
-chmod +x /usr/local/bin/ensure-installers.sh
+# Download CLI login hooks + installer script referenced by the worker service.
+echo "Downloading worker scripts from S3"
+mkdir -p /opt/ocpctl/scripts
+aws s3 cp s3://ocpctl-binaries/scripts/ensure-installers.sh /opt/ocpctl/scripts/ensure-installers.sh
+aws s3 cp s3://ocpctl-binaries/scripts/azure-login.sh       /opt/ocpctl/scripts/azure-login.sh
+aws s3 cp s3://ocpctl-binaries/scripts/ibmcloud-login.sh    /opt/ocpctl/scripts/ibmcloud-login.sh
+chmod 755 /opt/ocpctl/scripts/*.sh
+chown -R ocpctl:ocpctl /opt/ocpctl/scripts
 
-# Run ensure-installers in background (non-blocking)
-# Installer binaries will be available when needed by first CREATE job
-# The script has retry logic and won't fail the entire worker if one download fails
-echo "Running ensure-installers.sh in background (will complete after worker starts)..."
-nohup /usr/local/bin/ensure-installers.sh > /var/log/ensure-installers.log 2>&1 &
+# Install all cluster CLIs (openshift-install, oc, eksctl, gcloud, az, ibmcloud, ...)
+# synchronously here so that az/etc. exist BEFORE the azure-login ExecStartPre hook
+# runs at service start (otherwise the worker would come up with no Azure session,
+# #80). Worker ASG uses EC2 health checks, so a longer cloud-init does not fail the
+# instance. Non-fatal: the script has its own retry logic.
+echo "Running ensure-installers.sh (foreground)..."
+/opt/ocpctl/scripts/ensure-installers.sh > /var/log/ensure-installers.log 2>&1 || \
+  echo "WARNING: ensure-installers.sh returned non-zero (continuing)"
 
-# Create config directory and environment file
+# Pull worker runtime config from S3 — single source of truth shared with the
+# primary workers. Includes DATABASE_URL, the pull secret, and all cloud
+# credentials (incl. the Azure service principal). Pulling it here means no secrets
+# are rendered into the launch template / tfstate.
 mkdir -p /etc/ocpctl
-
-# Write pull secret to separate JSON file (better security and reliability)
-cat > /etc/ocpctl/pull-secret.json <<'PULLSECRETEOF'
-${openshift_pull_secret}
-PULLSECRETEOF
-
-chown ocpctl:ocpctl /etc/ocpctl/pull-secret.json
-chmod 400 /etc/ocpctl/pull-secret.json
-
-# Get AWS region from instance metadata
-DETECTED_AWS_REGION=$(ec2-metadata --availability-zone | cut -d' ' -f2 | sed 's/[a-z]$//')
-
-# Write environment file - use bash variables that were set at the top
-cat > /etc/ocpctl/worker.env <<EOF
-DATABASE_URL=$DATABASE_URL
-WORKER_WORK_DIR=$WORK_DIR
-WORKER_POLL_INTERVAL=$${POLL_INTERVAL}s
-WORKER_MAX_CONCURRENT=$MAX_CONCURRENT
-OPENSHIFT_PULL_SECRET_FILE=/etc/ocpctl/pull-secret.json
-PROFILES_DIR=/opt/ocpctl/profiles/definitions
-AWS_REGION=$DETECTED_AWS_REGION
-
-# Static AWS credentials for OpenShift 4.22 compatibility (if needed)
-# These should be provided via instance metadata or environment variables
-# NOT hardcoded in user-data for security reasons
-EOF
-
+echo "Downloading worker.env from S3"
+aws s3 cp s3://ocpctl-binaries/config/worker.env /etc/ocpctl/worker.env
 chown ocpctl:ocpctl /etc/ocpctl/worker.env
-chmod 400 /etc/ocpctl/worker.env
+chmod 600 /etc/ocpctl/worker.env
 
-# Debug: Show the environment file contents and verify pull secret file exists
-echo "Environment file contents:"
-cat /etc/ocpctl/worker.env
-echo ""
-echo "Pull secret file check:"
-ls -lh /etc/ocpctl/pull-secret.json
+# Create the work directory declared in worker.env (default if unset).
+WORKER_WORK_DIR=$(grep -E '^WORKER_WORK_DIR=' /etc/ocpctl/worker.env | cut -d= -f2- | tr -d '"')
+WORKER_WORK_DIR=$${WORKER_WORK_DIR:-/var/lib/ocpctl}
+mkdir -p "$WORKER_WORK_DIR"
+chown -R ocpctl:ocpctl "$WORKER_WORK_DIR"
 
-# Test worker startup and capture any errors
-echo "Testing worker binary with environment..."
-set +e
-source /etc/ocpctl/worker.env && /usr/local/bin/ocpctl-worker --version 2>&1 || echo "Worker binary execution failed with exit code $?"
-echo "Attempting to start worker with current config..."
-timeout 5 bash -c 'source /etc/ocpctl/worker.env && /usr/local/bin/ocpctl-worker' 2>&1 | head -20
-set -e
-
-# Create systemd service
+# Install the worker systemd service. HOME is pinned to /opt/ocpctl so the az/gcloud/
+# ibmcloud sessions written by the login hooks persist where the worker reads them
+# (#80). azure-login.sh fails hard when Azure creds are set but login fails, so the
+# worker will not silently accept ARO jobs it cannot run; Restart=on-failure retries
+# transient AAD propagation errors.
 cat > /etc/systemd/system/ocpctl-worker.service <<'SERVICEEOF'
 [Unit]
 Description=OCPCTL Worker
@@ -135,7 +113,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=ocpctl
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=/opt/ocpctl"
 EnvironmentFile=/etc/ocpctl/worker.env
+
+# Authenticate cloud CLIs before the worker starts.
+ExecStartPre=/opt/ocpctl/scripts/azure-login.sh
+ExecStartPre=/opt/ocpctl/scripts/ibmcloud-login.sh
+
 ExecStart=/usr/local/bin/ocpctl-worker
 Restart=on-failure
 RestartSec=10
@@ -162,6 +147,6 @@ systemctl start ocpctl-worker
 
 # Log status
 sleep 5
-systemctl status ocpctl-worker
+systemctl status ocpctl-worker --no-pager || true
 
 echo "OCPCTL worker instance setup complete"
