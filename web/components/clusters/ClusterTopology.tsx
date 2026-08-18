@@ -12,6 +12,17 @@ interface ClusterTopologyProps {
   outputs?: ClusterOutputs;
 }
 
+// Human-readable label for each platform. Kept as an exhaustive map so a new
+// Platform value shows its raw enum value rather than silently mislabeling
+// (previously anything that wasn't AWS/GCP fell through to "IBM Cloud", so
+// Azure/ARO clusters were shown as IBM Cloud).
+const PLATFORM_LABELS: Record<Platform, string> = {
+  [Platform.AWS]: "Amazon Web Services (AWS)",
+  [Platform.GCP]: "Google Cloud Platform (GCP)",
+  [Platform.Azure]: "Microsoft Azure",
+  [Platform.IBMCloud]: "IBM Cloud",
+};
+
 export function ClusterTopology({ cluster, outputs }: ClusterTopologyProps) {
   // Fetch profile data
   const { data: profile, isLoading: profileLoading, error: profileError } = useProfile(cluster.profile);
@@ -59,11 +70,7 @@ export function ClusterTopology({ cluster, outputs }: ClusterTopologyProps) {
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground">Platform:</span>
             <span className="text-sm text-muted-foreground">
-              {layout.platform === Platform.AWS
-                ? "Amazon Web Services (AWS)"
-                : layout.platform === Platform.GCP
-                ? "Google Cloud Platform (GCP)"
-                : "IBM Cloud"}
+              {PLATFORM_LABELS[layout.platform] ?? layout.platform}
             </span>
           </div>
           <div className="h-4 w-px bg-border" />
