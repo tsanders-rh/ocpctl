@@ -246,8 +246,8 @@ export default function NewClusterPage() {
       // Use setTimeout to ensure Select components are rendered with options before setting values
       setTimeout(() => {
         // Set version based on cluster type
-        // ROSA uses OpenShift versions like OpenShift IPI
-        const defaultVersion = (watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa")
+        // ROSA and ARO use OpenShift versions like OpenShift IPI
+        const defaultVersion = (watchedValues.cluster_type === "openshift" || watchedValues.cluster_type === "rosa" || watchedValues.cluster_type === "aro")
           ? selectedProfile.openshift_versions?.default
           : selectedProfile.kubernetes_versions?.default;
         if (defaultVersion) {
