@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -247,30 +248,58 @@ func (a *AROInstaller) CreateServicePrincipal(ctx context.Context, displayName, 
 		"--output", "json",
 	}
 
-	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		combined := stdout.String() + stderr.String()
-		if isInsufficientGraphPermissions(combined) {
-			return nil, ErrInsufficientGraphPermissions
-		}
-		return nil, fmt.Errorf("az ad sp create-for-rbac failed: %w: %s", err, stderr.String())
-	}
-
 	// create-for-rbac emits {"appId","password","tenant","displayName"}.
 	var out struct {
 		AppID       string `json:"appId"`
 		Password    string `json:"password"`
 		DisplayName string `json:"displayName"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		return nil, fmt.Errorf("parse create-for-rbac output: %w", err)
-	}
-	if out.AppID == "" || out.Password == "" {
-		return nil, fmt.Errorf("create-for-rbac returned an empty appId/password")
+
+	// create-for-rbac creates the app registration and then, in the same call,
+	// creates the Contributor role assignment that references the freshly created
+	// principal. Azure AD is eventually consistent, so that assignment step can fire
+	// before the new principal has replicated, failing with "Resource ... does not
+	// exist or one of its queried reference-property objects are not present" (#88).
+	// Retry to let replication catch up. create-for-rbac is idempotent by display
+	// name: a retry reuses the same app registration (stable appId) and only needs
+	// the role assignment to succeed once the principal is visible.
+	const maxAttempts = 5
+	const retryDelay = 20 * time.Second
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		cmd := exec.CommandContext(ctx, a.binaryPath, args...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		err := cmd.Run()
+		if err == nil {
+			if jerr := json.Unmarshal(stdout.Bytes(), &out); jerr != nil {
+				return nil, fmt.Errorf("parse create-for-rbac output: %w", jerr)
+			}
+			if out.AppID == "" || out.Password == "" {
+				return nil, fmt.Errorf("create-for-rbac returned an empty appId/password")
+			}
+			break
+		}
+
+		combined := stdout.String() + stderr.String()
+		if isInsufficientGraphPermissions(combined) {
+			return nil, ErrInsufficientGraphPermissions
+		}
+		lastErr = fmt.Errorf("az ad sp create-for-rbac failed (attempt %d/%d): %w: %s",
+			attempt, maxAttempts, err, strings.TrimSpace(stderr.String()))
+		if isTransientAADReplication(combined) && attempt < maxAttempts {
+			log.Printf("ARO service principal %s not yet replicated in Azure AD (attempt %d/%d), retrying in %s",
+				displayName, attempt, maxAttempts, retryDelay)
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("cancelled while waiting for service principal to replicate: %w", ctx.Err())
+			case <-time.After(retryDelay):
+			}
+			continue
+		}
+		return nil, lastErr
 	}
 
 	sp := &ServicePrincipal{
@@ -371,6 +400,16 @@ func isInsufficientGraphPermissions(s string) bool {
 		strings.Contains(l, "insufficient privileges") ||
 		strings.Contains(l, "does not have permission") ||
 		(strings.Contains(l, "graph") && strings.Contains(l, "forbidden"))
+}
+
+// isTransientAADReplication reports whether az output indicates a transient Azure
+// AD eventual-consistency failure — the created principal is not yet visible to a
+// dependent operation (e.g. create-for-rbac's role assignment). These clear on
+// their own once replication completes, so callers should retry rather than fail.
+func isTransientAADReplication(s string) bool {
+	l := strings.ToLower(s)
+	return strings.Contains(l, "does not exist or one of its queried reference-property objects are not present") ||
+		strings.Contains(l, "reference-property objects are not present")
 }
 
 // isDuplicateClientID reports whether az aro create failed because the supplied
