@@ -107,25 +107,45 @@ export function getTopologyLayout(
 
   // Determine cluster type from profile
   const isEKS = layout.cluster_type === ClusterType.EKS;
-  const isIKS = layout.cluster_type === ClusterType.IKS;
   const isOpenShift = layout.cluster_type === ClusterType.OpenShift;
-  // ROSA is a managed OpenShift service: the control plane is hosted/managed by
-  // Red Hat (no user-managed control-plane nodes), so it lays out like EKS with a
-  // single managed control-plane box rather than individual CP node boxes.
+  // ROSA/ARO are managed OpenShift services and EKS/AKS/GKE are managed Kubernetes
+  // services: in every case the cloud/vendor hosts the control plane (there are no
+  // user-managed control-plane nodes), so they lay out with a single managed
+  // control-plane box rather than individual CP node boxes. Without this, ARO/AKS/GKE
+  // fell through to the self-managed branch and rendered bogus "CP-1/CP-2/CP-3 unknown"
+  // boxes with a diagonal connection crossing the worker tier.
   const isROSA = layout.cluster_type === ClusterType.ROSA;
-  const isManagedControlPlane = isEKS || isROSA;
+  const isARO = layout.cluster_type === ClusterType.ARO;
+  const isAKS = layout.cluster_type === ClusterType.AKS;
+  const isGKE = layout.cluster_type === ClusterType.GKE;
+  const isManagedControlPlane = isEKS || isROSA || isARO || isAKS || isGKE;
 
   // 1. Control Plane Section
   const cpSectionStart = currentY;
   if (isManagedControlPlane) {
-    // EKS/ROSA: Managed control plane
+    // EKS/ROSA/ARO/AKS/GKE: vendor-hosted (managed) control plane
+    let managedLabel = "EKS Control Plane";
+    let managedDetail = "AWS Managed";
+    if (isROSA) {
+      managedLabel = "ROSA Control Plane";
+      managedDetail = "Red Hat Managed";
+    } else if (isARO) {
+      managedLabel = "ARO Control Plane";
+      managedDetail = "Microsoft Managed";
+    } else if (isAKS) {
+      managedLabel = "AKS Control Plane";
+      managedDetail = "Microsoft Managed";
+    } else if (isGKE) {
+      managedLabel = "GKE Control Plane";
+      managedDetail = "Google Managed";
+    }
     elements.push({
       id: "managed-cp",
       type: "managed-control-plane",
-      label: isROSA ? "ROSA Control Plane" : "EKS Control Plane",
+      label: managedLabel,
       status: cluster.status,
       metadata: {
-        detail: isROSA ? "Red Hat Managed" : "AWS Managed",
+        detail: managedDetail,
       },
       position: { x: CANVAS_WIDTH / 2 - NODE_DIMENSIONS["managed-control-plane"].width / 2, y: currentY },
       size: NODE_DIMENSIONS["managed-control-plane"],
@@ -332,7 +352,7 @@ export function getTopologyLayout(
     currentY += NODE_DIMENSIONS.access.height + NODE_SPACING;
   }
 
-  if (outputs?.console_url && (isOpenShift || isROSA)) {
+  if (outputs?.console_url && (isOpenShift || isROSA || isARO)) {
     accessElements.push({
       id: "console-access",
       type: "access",
@@ -402,22 +422,61 @@ export function getTopologyLayout(
     });
   }
 
-  // EKS/IKS: Control Plane/Workers → Single Load Balancer
-  if ((controlPlanes.length > 0 || workers.length > 0) && loadBalancers.length === 1 && !apiLB) {
+  // Single-LB clusters (EKS/ROSA/ARO/AKS/GKE/IKS): route traffic down the stacked
+  // tiers — Control Plane → Workers → Load Balancer — so every line connects only
+  // vertically adjacent, horizontally-centered boxes. A single control-plane→LB line
+  // would cut diagonally across the centered Worker Nodes box (the broken ARO arrow).
+  if (loadBalancers.length === 1 && !apiLB) {
     const lb = loadBalancers[0];
-    const source = controlPlanes.length > 0 ? controlPlanes[0] : workers[0];
-    connections.push({
-      id: "nodes-to-lb",
-      from: {
-        x: source.position.x + source.size.width / 2,
-        y: source.position.y + source.size.height
-      },
-      to: {
-        x: lb.position.x + lb.size.width / 2,
-        y: lb.position.y
-      },
-      type: "data-flow",
-    });
+    const cp = controlPlanes[0];
+    const topWorker = workers[0];
+    const bottomWorker = workers[workers.length - 1];
+
+    if (cp && topWorker) {
+      // Control Plane → Workers (top of the worker stack)
+      connections.push({
+        id: "cp-to-workers",
+        from: {
+          x: cp.position.x + cp.size.width / 2,
+          y: cp.position.y + cp.size.height,
+        },
+        to: {
+          x: topWorker.position.x + topWorker.size.width / 2,
+          y: topWorker.position.y,
+        },
+        type: "data-flow",
+      });
+    }
+
+    if (bottomWorker) {
+      // Workers (bottom of the stack) → Load Balancer
+      connections.push({
+        id: "workers-to-lb",
+        from: {
+          x: bottomWorker.position.x + bottomWorker.size.width / 2,
+          y: bottomWorker.position.y + bottomWorker.size.height,
+        },
+        to: {
+          x: lb.position.x + lb.size.width / 2,
+          y: lb.position.y,
+        },
+        type: "data-flow",
+      });
+    } else if (cp) {
+      // No workers (e.g. SNO) → Control Plane connects straight to the Load Balancer
+      connections.push({
+        id: "cp-to-lb",
+        from: {
+          x: cp.position.x + cp.size.width / 2,
+          y: cp.position.y + cp.size.height,
+        },
+        to: {
+          x: lb.position.x + lb.size.width / 2,
+          y: lb.position.y,
+        },
+        type: "data-flow",
+      });
+    }
   }
 
   // Load Balancers → Storage
