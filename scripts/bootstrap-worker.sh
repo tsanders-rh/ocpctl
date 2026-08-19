@@ -34,6 +34,17 @@ if [ -L "${REMOTE_BASE}/current" ]; then
     fi
 fi
 
+# Create runtime directories used by the worker.
+# TMPDIR (worker.env) points at /var/lib/ocpctl/tmp and openshift-install writes
+# its bootstrap ignition + CAPI/envtest scratch files there; a missing dir makes
+# a create fail with ENOENT. WORKER_WORK_DIR uses /var/lib/ocpctl/clusters.
+# user-data-worker.sh creates these on first boot, but ASG relaunches run this
+# script directly, so create them here too. Owned by the worker service user.
+mkdir -p /var/lib/ocpctl/tmp /var/lib/ocpctl/clusters
+if id ocpctl >/dev/null 2>&1; then
+    chown -R ocpctl:ocpctl /var/lib/ocpctl
+fi
+
 # Create versioned directory
 mkdir -p ${REMOTE_BASE}/releases/${VERSION}
 

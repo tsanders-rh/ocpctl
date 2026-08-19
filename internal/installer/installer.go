@@ -469,6 +469,26 @@ func (i *Installer) SetCredentialsMode(mode string) {
 	i.credentialsMode = mode
 }
 
+// ensureTempDir makes sure the directory openshift-install writes its scratch
+// files to ($TMPDIR, honored by Go's os.TempDir) exists before we invoke it.
+//
+// The installer writes artifacts like the bootstrap ignition tmp file and the
+// CAPI/envtest serving certs directly into $TMPDIR and fails hard with ENOENT
+// if that directory is missing ("failed to create tmp file for bootstrap
+// ignition: ... no such file or directory"). Freshly ASG-launched workers
+// bootstrap via scripts/bootstrap-worker.sh, which historically did not create
+// /var/lib/ocpctl/tmp, so a create that landed on such a worker died on the
+// spot. This makes a missing/transient TMPDIR self-heal instead of failing.
+func ensureTempDir() {
+	tmpDir := os.TempDir()
+	if tmpDir == "" {
+		return
+	}
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		log.Printf("Warning: could not ensure temp dir %q exists: %v", tmpDir, err)
+	}
+}
+
 // CreateCluster runs openshift-install create cluster
 // Detects credentials mode and routes to appropriate workflow
 func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata *ClusterMetadata) (string, error) {
@@ -495,6 +515,7 @@ func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata 
 // CreateClusterDirect runs openshift-install create cluster directly without CCO workflow
 // Used for IBM Cloud (CCO already done) or static credentials
 func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (string, error) {
+	ensureTempDir()
 	cmd := exec.CommandContext(ctx, i.binaryPath, "create", "cluster", "--dir", workDir, "--log-level=debug")
 
 	var stdout, stderr bytes.Buffer
@@ -609,6 +630,7 @@ func (i *Installer) CCOCtlPath() string {
 
 // CreateManifests runs openshift-install create manifests
 func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
+	ensureTempDir()
 	cmd := exec.CommandContext(ctx, i.binaryPath, "create", "manifests", "--dir", workDir, "--log-level=debug")
 
 	var stdout, stderr bytes.Buffer
