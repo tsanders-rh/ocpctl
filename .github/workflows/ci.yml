@@ -48,23 +48,12 @@ jobs:
       - name: go test
         run: go test -race ./...
 
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          # Pinned to the last v1 release to match the v1-style .golangci.yml.
-          # If bumping to v2, migrate the config (adds `version: "2"`).
-          version: v1.64.8
-          # Only fail on issues introduced by the PR, not the pre-existing
-          # backlog. Drop this once the legacy findings are cleared.
-          only-new-issues: true
+  # NOTE: golangci-lint is intentionally NOT wired up yet.
+  # The last v1 release (v1.64.8) is built with go1.24 and refuses to run
+  # against a go1.25 module ("Go language version used to build golangci-lint
+  # is lower than the targeted Go version"). Enabling it requires migrating
+  # .golangci.yml to the v2 config format and bumping the action to v2.
+  # Tracked as follow-up hardening (see docs/development/CONTRIBUTING.md §6).
 
   web:
     runs-on: ubuntu-latest
