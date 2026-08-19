@@ -740,6 +740,30 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-08-19**: TMPDIR Permission Fix on Autoscale Workers
+- Fixed Azure (and any) IPI creates failing on autoscale workers — after the
+  Azure credential fix, creates advanced to "Generating Cluster Infrastructure
+  Variables" then died with `failed to create tmp file for bootstrap ignition:
+  open /var/lib/ocpctl/tmp/...: no such file or directory`
+- Root cause: the TF ASG user-data ran `mkdir -p /var/lib/ocpctl/clusters` as
+  **root** and only chowned the `clusters` subdir to `ocpctl`, leaving the parent
+  `/var/lib/ocpctl` owned `root:root`. The worker runs as `ocpctl` and so could
+  not create the sibling `TMPDIR` (`/var/lib/ocpctl/tmp`). The Go `ensureTempDir()`
+  self-heal can't fix this either — a non-root process can't `mkdir` under a
+  root-owned parent (journal: `Warning: could not ensure temp dir ... permission
+  denied`)
+- Fix: `terraform/worker-autoscaling/user-data.sh` now reads `TMPDIR` from
+  `worker.env`, creates both `clusters` and `tmp`, and does
+  `chown -R ocpctl:ocpctl /var/lib/ocpctl` (the **parent**). Applied via
+  `terraform apply` in `terraform/worker-autoscaling/` (launch template v24 → v25;
+  ASG tracks `$Latest`, so future scale-outs self-heal). Live worker was unblocked
+  in place (`mkdir -p /var/lib/ocpctl/tmp && chown -R ocpctl:ocpctl
+  /var/lib/ocpctl`)
+- SAME class of bug as the azure-login fix: the earlier TMPDIR fix (commit
+  `f63ca03`) landed in the legacy `scripts/bootstrap-worker.sh`, which the prod ASG
+  does NOT use. The durable fix must go in the TF user-data (LT change → requires
+  `terraform apply`, NOT `deploy.sh`)
+
 **2026-08-19**: Azure Credential Fix on Autoscale Workers
 - Fixed Azure IPI creates failing on autoscale workers with "creating Azure
   session: failed to retrieve credentials from user: EOF"
@@ -835,4 +859,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-08-19 (Added autoscale worker self-heal + Azure credential fix documentation)
+**Last Updated**: 2026-08-19 (Added TMPDIR permission fix on autoscale workers; autoscale worker self-heal + Azure credential fix documentation)
