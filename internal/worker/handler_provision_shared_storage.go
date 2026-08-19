@@ -32,13 +32,13 @@ func NewProvisionSharedStorageHandler(config *Config, st *store.Store) *Provisio
 
 // SharedStorageScriptOutput represents the JSON output from configure-shared-migration-storage.sh
 type SharedStorageScriptOutput struct {
-	EFSID               string `json:"efs_id"`
-	EFSAccessPointID    string `json:"efs_access_point_id"`
-	EFSSecurityGroupID  string `json:"efs_security_group_id"`
-	S3Bucket            string `json:"s3_bucket"`
-	Region              string `json:"region"`
-	SourceCluster       string `json:"source_cluster"`
-	TargetCluster       string `json:"target_cluster"`
+	EFSID              string `json:"efs_id"`
+	EFSAccessPointID   string `json:"efs_access_point_id"`
+	EFSSecurityGroupID string `json:"efs_security_group_id"`
+	S3Bucket           string `json:"s3_bucket"`
+	Region             string `json:"region"`
+	SourceCluster      string `json:"source_cluster"`
+	TargetCluster      string `json:"target_cluster"`
 }
 
 // Handle provisions shared storage between two clusters
@@ -150,7 +150,7 @@ func (h *ProvisionSharedStorageHandler) Handle(ctx context.Context, job *types.J
 		return fmt.Errorf("failed to find JSON output markers in script output")
 	}
 
-	jsonStr := outputStr[startIdx+len(startMarker):endIdx]
+	jsonStr := outputStr[startIdx+len(startMarker) : endIdx]
 	jsonStr = strings.TrimSpace(jsonStr)
 
 	var scriptOutput SharedStorageScriptOutput

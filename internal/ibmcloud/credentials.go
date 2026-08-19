@@ -276,15 +276,15 @@ func GetDefaultResourceGroup(ctx context.Context, client *Client) (string, error
 // ValidateRegion validates that the specified region is valid
 func ValidateRegion(region string) error {
 	validRegions := map[string]bool{
-		"us-south":   true,
-		"us-east":    true,
-		"eu-de":      true,
-		"eu-gb":      true,
-		"jp-tok":     true,
-		"jp-osa":     true,
-		"au-syd":     true,
-		"ca-tor":     true,
-		"br-sao":     true,
+		"us-south": true,
+		"us-east":  true,
+		"eu-de":    true,
+		"eu-gb":    true,
+		"jp-tok":   true,
+		"jp-osa":   true,
+		"au-syd":   true,
+		"ca-tor":   true,
+		"br-sao":   true,
 	}
 
 	if !validRegions[region] {

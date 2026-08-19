@@ -18,25 +18,25 @@ import (
 
 // ClusterOutputsResponse represents the cluster outputs (kubeconfig, credentials, etc.)
 type ClusterOutputsResponse struct {
-	ClusterID           string                 `json:"cluster_id"`
-	ClusterName         string                 `json:"cluster_name"`
-	Status              string                 `json:"status"`
-	APIUrl              string                 `json:"api_url,omitempty"`
-	ConsoleURL          string                 `json:"console_url,omitempty"`
-	DashboardToken      string                 `json:"dashboard_token,omitempty"`      // Kubernetes Dashboard bearer token
-	Kubeconfig          string                 `json:"kubeconfig,omitempty"`           // Full kubeconfig content
-	KubeconfigS3URI     string                 `json:"kubeconfig_s3_uri,omitempty"`    // S3 URI to kubeconfig file
-	Kubeadmin           *KubeadminCredentials  `json:"kubeadmin,omitempty"`            // Actual credentials
-	KubeadminSecretRef  string                 `json:"kubeadmin_secret_ref,omitempty"` // Reference to secret location
+	ClusterID          string                `json:"cluster_id"`
+	ClusterName        string                `json:"cluster_name"`
+	Status             string                `json:"status"`
+	APIUrl             string                `json:"api_url,omitempty"`
+	ConsoleURL         string                `json:"console_url,omitempty"`
+	DashboardToken     string                `json:"dashboard_token,omitempty"`      // Kubernetes Dashboard bearer token
+	Kubeconfig         string                `json:"kubeconfig,omitempty"`           // Full kubeconfig content
+	KubeconfigS3URI    string                `json:"kubeconfig_s3_uri,omitempty"`    // S3 URI to kubeconfig file
+	Kubeadmin          *KubeadminCredentials `json:"kubeadmin,omitempty"`            // Actual credentials
+	KubeadminSecretRef string                `json:"kubeadmin_secret_ref,omitempty"` // Reference to secret location
 
 	// ServiceAccount credentials for pool clusters
-	SAName              string    `json:"sa_name,omitempty"`
-	SANamespace         string    `json:"sa_namespace,omitempty"`
-	SAToken             string    `json:"sa_token,omitempty"`
-	SATokenExpiresAt    *time.Time `json:"sa_token_expires_at,omitempty"`
-	OcLoginCommand      string    `json:"oc_login_command,omitempty"`
+	SAName           string     `json:"sa_name,omitempty"`
+	SANamespace      string     `json:"sa_namespace,omitempty"`
+	SAToken          string     `json:"sa_token,omitempty"`
+	SATokenExpiresAt *time.Time `json:"sa_token_expires_at,omitempty"`
+	OcLoginCommand   string     `json:"oc_login_command,omitempty"`
 
-	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // KubeadminCredentials holds the kubeadmin username and password
@@ -142,13 +142,13 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		ClusterName: cluster.Name,
 		Status:      string(cluster.Status),
 		Metadata: map[string]interface{}{
-			"platform":     cluster.Platform,
-			"region":       cluster.Region,
-			"version":      cluster.Version,
-			"base_domain":  cluster.BaseDomain,
-			"profile":      cluster.Profile,
-			"created_at":   cluster.CreatedAt,
-			"destroy_at":   cluster.DestroyAt,
+			"platform":    cluster.Platform,
+			"region":      cluster.Region,
+			"version":     cluster.Version,
+			"base_domain": cluster.BaseDomain,
+			"profile":     cluster.Profile,
+			"created_at":  cluster.CreatedAt,
+			"destroy_at":  cluster.DestroyAt,
 		},
 	}
 

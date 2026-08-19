@@ -25,14 +25,14 @@ import (
 
 // Config holds worker configuration
 type Config struct {
-	WorkerID       string
-	PollInterval   time.Duration
-	LockTimeout    time.Duration
-	WorkDir        string
-	S3BucketName   string // S3 bucket for storing cluster artifacts
-	MaxConcurrent  int
-	RetryBackoff   time.Duration
-	MaxRetries     int
+	WorkerID      string
+	PollInterval  time.Duration
+	LockTimeout   time.Duration
+	WorkDir       string
+	S3BucketName  string // S3 bucket for storing cluster artifacts
+	MaxConcurrent int
+	RetryBackoff  time.Duration
+	MaxRetries    int
 }
 
 // DefaultConfig returns default worker configuration
@@ -196,9 +196,9 @@ type Worker struct {
 	stopping   atomic.Bool // Set on graceful shutdown; poll() stops claiming new jobs when true
 	ctx        context.Context
 	cancel     context.CancelFunc
-	jobWg      sync.WaitGroup               // Tracks running job goroutines for graceful shutdown
-	activeJobs map[string]*ActiveJobInfo    // Tracks currently running jobs
-	jobsMu     sync.RWMutex                 // Protects activeJobs map
+	jobWg      sync.WaitGroup            // Tracks running job goroutines for graceful shutdown
+	activeJobs map[string]*ActiveJobInfo // Tracks currently running jobs
+	jobsMu     sync.RWMutex              // Protects activeJobs map
 }
 
 // NewWorker creates a new worker instance

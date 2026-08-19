@@ -39,7 +39,7 @@ type ROSAMachinePool struct {
 	InstanceType string `json:"instance_type"`
 	Replicas     int    `json:"replicas"`
 	Autoscaling  struct {
-		Enabled    bool `json:"enabled"`
+		Enabled     bool `json:"enabled"`
 		MinReplicas int  `json:"min_replicas"`
 		MaxReplicas int  `json:"max_replicas"`
 	} `json:"autoscaling"`
@@ -930,9 +930,9 @@ func (r *ROSAInstaller) Version() (string, error) {
 
 // ROSAOperatorRole represents a ROSA operator IAM role
 type ROSAOperatorRole struct {
-	ID          string `json:"id"`
-	RoleName    string `json:"role_name"`
-	RoleARN     string `json:"role_arn"`
+	ID             string `json:"id"`
+	RoleName       string `json:"role_name"`
+	RoleARN        string `json:"role_arn"`
 	ServiceAccount string `json:"service_account"`
 }
 

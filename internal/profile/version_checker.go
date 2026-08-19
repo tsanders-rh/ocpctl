@@ -29,27 +29,27 @@ type VersionCache struct {
 
 // ProfileVersionStatus represents version update availability for a profile
 type ProfileVersionStatus struct {
-	ProfileName        string    `json:"profile_name"`
-	ClusterType        string    `json:"cluster_type"`        // openshift, eks, gke, iks
-	CurrentVersions    []string  `json:"current_versions"`
-	DefaultVersion     string    `json:"default_version"`
-	AvailableVersions  []string  `json:"available_versions"`
-	NewVersions        []string  `json:"new_versions"`        // Versions not in current list
-	UpdateCount        int       `json:"update_count"`
-	LastChecked        time.Time `json:"last_checked"`
+	ProfileName       string    `json:"profile_name"`
+	ClusterType       string    `json:"cluster_type"` // openshift, eks, gke, iks
+	CurrentVersions   []string  `json:"current_versions"`
+	DefaultVersion    string    `json:"default_version"`
+	AvailableVersions []string  `json:"available_versions"`
+	NewVersions       []string  `json:"new_versions"` // Versions not in current list
+	UpdateCount       int       `json:"update_count"`
+	LastChecked       time.Time `json:"last_checked"`
 }
 
 // VersionChecker checks for profile version updates
 type VersionChecker struct {
-	cache       *VersionCache
-	cacheTTL    time.Duration
-	httpClient  *http.Client
+	cache      *VersionCache
+	cacheTTL   time.Duration
+	httpClient *http.Client
 }
 
 // NewVersionChecker creates a new version checker
 func NewVersionChecker() *VersionChecker {
 	return &VersionChecker{
-		cache: &VersionCache{},
+		cache:    &VersionCache{},
 		cacheTTL: 6 * time.Hour,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,

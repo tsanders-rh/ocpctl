@@ -33,10 +33,10 @@ type MetricsSnapshot struct {
 }
 
 type APIMetricsSnapshot struct {
-	RequestsPerSecond float64         `json:"requests_per_second"`
-	ActiveConnections int64           `json:"active_connections"`
-	ErrorRate         float64         `json:"error_rate"`
-	RequestsByStatus  map[string]int  `json:"requests_by_status"`
+	RequestsPerSecond float64        `json:"requests_per_second"`
+	ActiveConnections int64          `json:"active_connections"`
+	ErrorRate         float64        `json:"error_rate"`
+	RequestsByStatus  map[string]int `json:"requests_by_status"`
 }
 
 type WorkerMetricsSnapshot struct {

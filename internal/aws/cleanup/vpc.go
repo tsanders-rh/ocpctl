@@ -95,15 +95,15 @@ func isServiceManagedENI(eni *types.NetworkInterface) bool {
 	// Check interface type - certain types are always service-managed
 	interfaceType := string(eni.InterfaceType)
 	serviceManagedTypes := []string{
-		"load_balancer",           // Elastic Load Balancer
-		"nat_gateway",             // NAT Gateway
-		"gateway_load_balancer",   // Gateway Load Balancer
+		"load_balancer",         // Elastic Load Balancer
+		"nat_gateway",           // NAT Gateway
+		"gateway_load_balancer", // Gateway Load Balancer
 		"gateway_load_balancer_endpoint",
-		"network_load_balancer",   // Network Load Balancer
-		"lambda",                  // Lambda function
-		"efs",                     // Elastic File System
-		"api_gateway_managed",     // API Gateway
-		"transit_gateway",         // Transit Gateway
+		"network_load_balancer", // Network Load Balancer
+		"lambda",                // Lambda function
+		"efs",                   // Elastic File System
+		"api_gateway_managed",   // API Gateway
+		"transit_gateway",       // Transit Gateway
 		"global_accelerator_managed",
 		"aws_codestar_connections_managed",
 		"iot_rules_managed",

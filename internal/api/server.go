@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	echoSwagger "github.com/swaggo/echo-swagger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	echoSwagger "github.com/swaggo/echo-swagger"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -60,7 +60,7 @@ func DefaultServerConfig() *ServerConfig {
 		EnableIAMAuth:     false, // Disabled by default, enable with ENABLE_IAM_AUTH=true
 		JWTSecret:         "change-me-in-production-min-32-chars",
 		JWTAccessTTL:      15 * time.Minute,
-		JWTRefreshTTL:     7 * 24 * time.Hour, // 7 days
+		JWTRefreshTTL:     7 * 24 * time.Hour,                // 7 days
 		AllowedOrigins:    []string{"http://localhost:3000"}, // Next.js dev server
 		MaxBodySize:       "1M",
 		RateLimitRequests: 300, // Increased to support auto-refresh UI patterns
@@ -236,8 +236,8 @@ func (s *Server) setupRoutes() {
 
 	// Strict rate limiting for login to prevent brute force
 	authGroup.POST("/login", authHandler.Login, apimiddleware.StrictRateLimitWithMessage(5, "too many login attempts, please wait a minute and try again")) // 5 requests/minute
-	authGroup.POST("/logout", authHandler.Logout, apimiddleware.StrictRateLimit(10))   // 10 requests/minute
-	authGroup.POST("/refresh", authHandler.Refresh, apimiddleware.StrictRateLimit(10)) // 10 requests/minute
+	authGroup.POST("/logout", authHandler.Logout, apimiddleware.StrictRateLimit(10))                                                                        // 10 requests/minute
+	authGroup.POST("/refresh", authHandler.Refresh, apimiddleware.StrictRateLimit(10))                                                                      // 10 requests/minute
 
 	// Protected auth routes (require authentication)
 	authProtected := authGroup.Group("", auth.RequireAuthDual(s.auth, s.iamAuth))
@@ -249,10 +249,10 @@ func (s *Server) setupRoutes() {
 	apiKeyHandler := NewAPIKeyHandler(s.store)
 	apiKeysGroup := v1.Group("/api-keys", auth.RequireAuthDual(s.auth, s.iamAuth))
 	apiKeysGroup.GET("", apiKeyHandler.List)
-	apiKeysGroup.POST("", apiKeyHandler.Create, apimiddleware.StrictRateLimit(5))       // 5 creates/minute
-	apiKeysGroup.PATCH("/:id", apiKeyHandler.Update, apimiddleware.StrictRateLimit(10)) // 10 updates/minute
+	apiKeysGroup.POST("", apiKeyHandler.Create, apimiddleware.StrictRateLimit(5))             // 5 creates/minute
+	apiKeysGroup.PATCH("/:id", apiKeyHandler.Update, apimiddleware.StrictRateLimit(10))       // 10 updates/minute
 	apiKeysGroup.POST("/:id/revoke", apiKeyHandler.Revoke, apimiddleware.StrictRateLimit(10)) // 10 revocations/minute
-	apiKeysGroup.DELETE("/:id", apiKeyHandler.Delete, apimiddleware.StrictRateLimit(10)) // 10 deletions/minute
+	apiKeysGroup.DELETE("/:id", apiKeyHandler.Delete, apimiddleware.StrictRateLimit(10))      // 10 deletions/minute
 
 	// User management routes (admin only)
 	userHandler := NewUserHandler(s.store)
@@ -335,10 +335,10 @@ func (s *Server) setupRoutes() {
 	// Cluster pool lease/release routes (CI/CD integration, requires auth)
 	poolLeaseHandler := NewPoolLeaseHandler(s.store)
 	poolsGroup := v1.Group("/pools", auth.RequireAuthDual(s.auth, s.iamAuth))
-	poolsGroup.GET("", poolHandler.ListPools)                                                                        // List enabled pools (all authenticated users)
+	poolsGroup.GET("", poolHandler.ListPools) // List enabled pools (all authenticated users)
 	poolsGroup.GET("/:pool_name/stats", poolLeaseHandler.GetPoolStats)
-	poolsGroup.GET("/:pool_name/clusters", poolLeaseHandler.GetPoolClusters)                                         // Get clusters in pool
-	poolsGroup.POST("/:pool_name/lease", poolLeaseHandler.LeaseCluster, apimiddleware.StrictRateLimit(20))           // 20 requests/minute
+	poolsGroup.GET("/:pool_name/clusters", poolLeaseHandler.GetPoolClusters)                                             // Get clusters in pool
+	poolsGroup.POST("/:pool_name/lease", poolLeaseHandler.LeaseCluster, apimiddleware.StrictRateLimit(20))               // 20 requests/minute
 	poolsGroup.POST("/clusters/:cluster_id/release", poolLeaseHandler.ReleaseCluster, apimiddleware.StrictRateLimit(20)) // 20 requests/minute
 
 	// Cluster routes (all require authentication)
@@ -390,15 +390,15 @@ func (s *Server) setupRoutes() {
 	// Post-config add-ons routes (require authentication)
 	addonsHandler := NewAddonsHandler(s.store, s.registry)
 	postConfigGroup := v1.Group("/post-config", auth.RequireAuthDual(s.auth, s.iamAuth))
-	postConfigGroup.GET("/addons", addonsHandler.List)                  // List with categories (for cluster creation)
-	postConfigGroup.GET("/addons/all", addonsHandler.ListAll)           // List all as flat array (for addon management)
-	postConfigGroup.GET("/addons/my", addonsHandler.ListUserAddons)     // Get user's custom addons
-	postConfigGroup.GET("/addons/:id", addonsHandler.GetByID)            // Get specific addon
-	postConfigGroup.POST("/addons", addonsHandler.Create)                // Create new addon
-	postConfigGroup.PUT("/addons/:id", addonsHandler.Update)             // Update draft addon
-	postConfigGroup.DELETE("/addons/:id", addonsHandler.Delete)          // Delete addon
-	postConfigGroup.POST("/addons/:id/publish", addonsHandler.Publish)   // Publish addon
-	postConfigGroup.POST("/addons/:id/clone", addonsHandler.Clone)       // Clone addon
+	postConfigGroup.GET("/addons", addonsHandler.List)                 // List with categories (for cluster creation)
+	postConfigGroup.GET("/addons/all", addonsHandler.ListAll)          // List all as flat array (for addon management)
+	postConfigGroup.GET("/addons/my", addonsHandler.ListUserAddons)    // Get user's custom addons
+	postConfigGroup.GET("/addons/:id", addonsHandler.GetByID)          // Get specific addon
+	postConfigGroup.POST("/addons", addonsHandler.Create)              // Create new addon
+	postConfigGroup.PUT("/addons/:id", addonsHandler.Update)           // Update draft addon
+	postConfigGroup.DELETE("/addons/:id", addonsHandler.Delete)        // Delete addon
+	postConfigGroup.POST("/addons/:id/publish", addonsHandler.Publish) // Publish addon
+	postConfigGroup.POST("/addons/:id/clone", addonsHandler.Clone)     // Clone addon
 
 	// Post-config validation and templates
 	postConfigHandler := NewPostConfigHandler()
@@ -446,8 +446,8 @@ func (s *Server) healthCheck(c echo.Context) error {
 		"status": "healthy",
 		"time":   time.Now().Format(time.RFC3339),
 		"auth": map[string]interface{}{
-			"jwt_enabled": s.config.EnableAuth,
-			"iam_enabled": s.config.EnableIAMAuth,
+			"jwt_enabled":   s.config.EnableAuth,
+			"iam_enabled":   s.config.EnableIAMAuth,
 			"iam_available": s.iamAuth != nil,
 		},
 	}

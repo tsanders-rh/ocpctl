@@ -120,7 +120,7 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 		Version:     defaultVersion,
 		Profile:     pool.Profile,
 		Region:      prof.Regions.Default,
-		BaseDomain:  baseDomain, // Required for OpenShift clusters
+		BaseDomain:  baseDomain,     // Required for OpenShift clusters
 		Owner:       ownerUsername,  // Use username for display
 		OwnerID:     pool.CreatedBy, // Pool creator owns pool clusters
 		Team:        "pool-managed",
@@ -158,9 +158,9 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 		Attempt:     1,
 		MaxAttempts: 3,
 		Metadata: types.JobMetadata{
-			"pool_id":         pool.ID,
-			"pool_name":       pool.Name,
-			"triggered_by":    "pool_refresh",
+			"pool_id":          pool.ID,
+			"pool_name":        pool.Name,
+			"triggered_by":     "pool_refresh",
 			"replaced_cluster": cluster.ID,
 		},
 	}
@@ -194,11 +194,11 @@ func (h *PoolRefreshHandler) Handle(ctx context.Context, job *types.Job) error {
 		Attempt:     1,
 		MaxAttempts: 3,
 		Metadata: types.JobMetadata{
-			"pool_id":       pool.ID,
-			"pool_name":     pool.Name,
-			"triggered_by":  "pool_refresh",
-			"reason":        "expired",
-			"replacement":   newCluster.ID,
+			"pool_id":      pool.ID,
+			"pool_name":    pool.Name,
+			"triggered_by": "pool_refresh",
+			"reason":       "expired",
+			"replacement":  newCluster.ID,
 		},
 	}
 

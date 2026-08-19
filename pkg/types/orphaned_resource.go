@@ -80,22 +80,22 @@ func (t *OrphanedResourceTags) Scan(value interface{}) error {
 
 // OrphanedResource represents a cloud resource that exists but has no matching cluster
 type OrphanedResource struct {
-	ID              string                   `db:"id" json:"id"`
-	ResourceType    OrphanedResourceType     `db:"resource_type" json:"resource_type"`
-	ResourceID      string                   `db:"resource_id" json:"resource_id"`
-	ResourceName    string                   `db:"resource_name" json:"resource_name"`
-	Region          string                   `db:"region" json:"region"`
-	ClusterName     string                   `db:"cluster_name" json:"cluster_name"`
-	Tags            OrphanedResourceTags     `db:"tags" json:"tags"`
-	FirstDetectedAt time.Time                `db:"first_detected_at" json:"first_detected_at"`
-	LastDetectedAt  time.Time                `db:"last_detected_at" json:"last_detected_at"`
-	DetectionCount  int                      `db:"detection_count" json:"detection_count"`
-	Status          OrphanedResourceStatus   `db:"status" json:"status"`
-	ResolvedAt      *time.Time               `db:"resolved_at" json:"resolved_at,omitempty"`
-	ResolvedBy      *string                  `db:"resolved_by" json:"resolved_by,omitempty"`
-	Notes           *string                  `db:"notes" json:"notes,omitempty"`
-	CreatedAt       time.Time                `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time                `db:"updated_at" json:"updated_at"`
+	ID              string                 `db:"id" json:"id"`
+	ResourceType    OrphanedResourceType   `db:"resource_type" json:"resource_type"`
+	ResourceID      string                 `db:"resource_id" json:"resource_id"`
+	ResourceName    string                 `db:"resource_name" json:"resource_name"`
+	Region          string                 `db:"region" json:"region"`
+	ClusterName     string                 `db:"cluster_name" json:"cluster_name"`
+	Tags            OrphanedResourceTags   `db:"tags" json:"tags"`
+	FirstDetectedAt time.Time              `db:"first_detected_at" json:"first_detected_at"`
+	LastDetectedAt  time.Time              `db:"last_detected_at" json:"last_detected_at"`
+	DetectionCount  int                    `db:"detection_count" json:"detection_count"`
+	Status          OrphanedResourceStatus `db:"status" json:"status"`
+	ResolvedAt      *time.Time             `db:"resolved_at" json:"resolved_at,omitempty"`
+	ResolvedBy      *string                `db:"resolved_by" json:"resolved_by,omitempty"`
+	Notes           *string                `db:"notes" json:"notes,omitempty"`
+	CreatedAt       time.Time              `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time              `db:"updated_at" json:"updated_at"`
 }
 
 // OrphanedResourceStats represents summary statistics for orphaned resources

@@ -10,11 +10,11 @@ import (
 
 // Config holds database configuration
 type Config struct {
-	DatabaseURL      string
-	MaxConnections   int
-	MinConnections   int
-	MaxConnLifetime  time.Duration
-	MaxConnIdleTime  time.Duration
+	DatabaseURL       string
+	MaxConnections    int
+	MinConnections    int
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
 	HealthCheckPeriod time.Duration
 }
 

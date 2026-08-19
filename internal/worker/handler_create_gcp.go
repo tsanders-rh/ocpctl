@@ -255,7 +255,7 @@ func sanitizeGCPLabel(s string) string {
 
 		// For keys (first position), ensure it starts with a letter
 		// If first character is not a letter, prepend 'x'
-		if i == 0 && !((r >= 'a' && r <= 'z')) {
+		if i == 0 && !(r >= 'a' && r <= 'z') {
 			// Move to beginning
 			temp := result.String()
 			result.Reset()

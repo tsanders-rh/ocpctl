@@ -38,19 +38,19 @@ type CreateWindowsSnapshotRequest struct {
 	Region           string  `json:"region" validate:"required"`
 	Version          string  `json:"version" validate:"required"`
 	S3SourceURL      *string `json:"s3_source_url,omitempty"`
-	CreationMethod   *string `json:"creation_method,omitempty"`   // "regenerate" or "copy"
+	CreationMethod   *string `json:"creation_method,omitempty"`    // "regenerate" or "copy"
 	SourceSnapshotID *string `json:"source_snapshot_id,omitempty"` // For copy method
 	SourceRegion     *string `json:"source_region,omitempty"`      // For copy method
 }
 
 // WindowsSnapshotCoverage represents snapshot availability across regions
 type WindowsSnapshotCoverage struct {
-	TotalRegions     int                        `json:"total_regions"`
-	CoveredRegions   int                        `json:"covered_regions"`
-	CoveragePercent  float64                    `json:"coverage_percent"`
-	LatestVersion    string                     `json:"latest_version"`
-	MissingRegions   []string                   `json:"missing_regions"`
-	OutdatedRegions  []string                   `json:"outdated_regions"`
+	TotalRegions      int                         `json:"total_regions"`
+	CoveredRegions    int                         `json:"covered_regions"`
+	CoveragePercent   float64                     `json:"coverage_percent"`
+	LatestVersion     string                      `json:"latest_version"`
+	MissingRegions    []string                    `json:"missing_regions"`
+	OutdatedRegions   []string                    `json:"outdated_regions"`
 	SnapshotsByRegion map[string]*WindowsSnapshot `json:"snapshots_by_region"`
 }
 

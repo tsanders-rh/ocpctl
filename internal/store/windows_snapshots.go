@@ -263,12 +263,12 @@ func (s *Store) GetWindowsSnapshotCoverage(ctx context.Context, allRegions []str
 	}
 
 	return &types.WindowsSnapshotCoverage{
-		TotalRegions:     totalCount,
-		CoveredRegions:   coveredCount,
-		CoveragePercent:  coveragePercent,
-		LatestVersion:    latestVersion,
-		MissingRegions:   missingRegions,
-		OutdatedRegions:  outdatedRegions,
+		TotalRegions:      totalCount,
+		CoveredRegions:    coveredCount,
+		CoveragePercent:   coveragePercent,
+		LatestVersion:     latestVersion,
+		MissingRegions:    missingRegions,
+		OutdatedRegions:   outdatedRegions,
 		SnapshotsByRegion: snapshotsByRegion,
 	}, nil
 }

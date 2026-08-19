@@ -21,10 +21,10 @@ type ServiceAccountManager struct {
 
 // PoolLeaseCredentials contains ServiceAccount credentials for pool cluster leasing
 type PoolLeaseCredentials struct {
-	SAName          string
-	SANamespace     string
-	Token           string
-	TokenExpiresAt  time.Time
+	SAName         string
+	SANamespace    string
+	Token          string
+	TokenExpiresAt time.Time
 }
 
 // NewServiceAccountManager creates a new ServiceAccount manager from a kubeconfig file

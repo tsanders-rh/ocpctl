@@ -336,16 +336,16 @@ type OwnerIDOrLeasedByFilter struct {
 
 // ListFilters contains filter options for listing clusters
 type ListFilters struct {
-	Status             *types.ClusterStatus
-	Platform           *types.Platform
-	Owner              *string                      // Filter by owner email
-	OwnerID            *string                      // Filter by owner user ID
-	Team               *string                      // Filter by specific team
-	OwnerIDOrTeams     *OwnerIDOrTeamsFilter        // Filter by owner ID OR team membership OR leased (for team admins)
-	OwnerIDOrLeasedBy  *OwnerIDOrLeasedByFilter     // Filter by owner ID OR leased_by email (for regular users)
-	Profile            *string
-	Limit              int
-	Offset             int
+	Status            *types.ClusterStatus
+	Platform          *types.Platform
+	Owner             *string                  // Filter by owner email
+	OwnerID           *string                  // Filter by owner user ID
+	Team              *string                  // Filter by specific team
+	OwnerIDOrTeams    *OwnerIDOrTeamsFilter    // Filter by owner ID OR team membership OR leased (for team admins)
+	OwnerIDOrLeasedBy *OwnerIDOrLeasedByFilter // Filter by owner ID OR leased_by email (for regular users)
+	Profile           *string
+	Limit             int
+	Offset            int
 }
 
 // List retrieves clusters with optional filtering and pagination.
@@ -1090,10 +1090,10 @@ type ClusterStatsByStatus struct {
 
 // ClusterStatsByProfile represents cluster count by profile with owner info for cost calculation
 type ClusterStatsByProfile struct {
-	Profile  string
-	Status   string
-	OwnerID  string
-	Count    int
+	Profile string
+	Status  string
+	OwnerID string
+	Count   int
 }
 
 // ClusterStatsByPlatform represents cluster count by platform

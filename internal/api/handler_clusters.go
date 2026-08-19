@@ -104,30 +104,30 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
-	Name             string                    `json:"name" validate:"required,min=3,max=63,cluster_name"`
-	Platform         string                    `json:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
-	ClusterType      string                    `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke aro aks"`
-	Version          string                    `json:"version" validate:"required"`
-	Profile          string                    `json:"profile" validate:"required"`
-	Region           string                    `json:"region" validate:"required"`
-	BaseDomain       string                    `json:"base_domain,omitempty"` // Only required for OpenShift
-	Owner            string                    `json:"owner" validate:"required,email"`
-	Team             string                    `json:"team" validate:"required"`
-	CostCenter       string                    `json:"cost_center" validate:"required"`
-	TTLHours         *int                      `json:"ttl_hours,omitempty"`
-	SSHPublicKey     *string                   `json:"ssh_public_key,omitempty"`
-	ExtraTags        map[string]string         `json:"extra_tags,omitempty"`
-	OffhoursOptIn      bool                      `json:"offhours_opt_in,omitempty"`
-	WorkHoursEnabled   *bool                     `json:"work_hours_enabled,omitempty"`
-	WorkHours          *types.WorkHoursSchedule  `json:"work_hours,omitempty"`
-	SkipPostDeployment bool                       `json:"skip_post_deployment,omitempty"`
-	EnableEFSStorage   bool                       `json:"enable_efs_storage,omitempty"`
-	PostConfigAddOns   []types.AddonSelection     `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
-	CustomPostConfig   *types.CustomPostConfig    `json:"customPostConfig,omitempty"`                                                        // Custom post-deployment operators, scripts, and manifests
-	PreserveOnFailure  bool                       `json:"preserve_on_failure,omitempty"`
-	CredentialsMode    *string                    `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Auto Manual Passthrough Mint Static"`
-	CustomPullSecret   *string                    `json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge with standard pull secret
-	IdempotencyKey     string                     `json:"idempotency_key,omitempty"`
+	Name               string                   `json:"name" validate:"required,min=3,max=63,cluster_name"`
+	Platform           string                   `json:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
+	ClusterType        string                   `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke aro aks"`
+	Version            string                   `json:"version" validate:"required"`
+	Profile            string                   `json:"profile" validate:"required"`
+	Region             string                   `json:"region" validate:"required"`
+	BaseDomain         string                   `json:"base_domain,omitempty"` // Only required for OpenShift
+	Owner              string                   `json:"owner" validate:"required,email"`
+	Team               string                   `json:"team" validate:"required"`
+	CostCenter         string                   `json:"cost_center" validate:"required"`
+	TTLHours           *int                     `json:"ttl_hours,omitempty"`
+	SSHPublicKey       *string                  `json:"ssh_public_key,omitempty"`
+	ExtraTags          map[string]string        `json:"extra_tags,omitempty"`
+	OffhoursOptIn      bool                     `json:"offhours_opt_in,omitempty"`
+	WorkHoursEnabled   *bool                    `json:"work_hours_enabled,omitempty"`
+	WorkHours          *types.WorkHoursSchedule `json:"work_hours,omitempty"`
+	SkipPostDeployment bool                     `json:"skip_post_deployment,omitempty"`
+	EnableEFSStorage   bool                     `json:"enable_efs_storage,omitempty"`
+	PostConfigAddOns   []types.AddonSelection   `json:"postConfigAddOns,omitempty"` // Pre-approved add-ons with version selection
+	CustomPostConfig   *types.CustomPostConfig  `json:"customPostConfig,omitempty"` // Custom post-deployment operators, scripts, and manifests
+	PreserveOnFailure  bool                     `json:"preserve_on_failure,omitempty"`
+	CredentialsMode    *string                  `json:"credentials_mode,omitempty" validate:"omitempty,oneof=Auto Manual Passthrough Mint Static"`
+	CustomPullSecret   *string                  `json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge with standard pull secret
+	IdempotencyKey     string                   `json:"idempotency_key,omitempty"`
 }
 
 // ExtendClusterRequest represents the API request to extend cluster TTL
@@ -485,8 +485,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	// Set initial post_deploy_status based on profile configuration, selected addons, or custom config
 	// This prevents hibernation from blocking clusters that don't have post-deployment config
 	// Reuse profile loaded earlier for validation
-	hasPostDeployment := (profileForValidation.PostDeployment != nil && (
-		len(profileForValidation.PostDeployment.Operators) > 0 ||
+	hasPostDeployment := (profileForValidation.PostDeployment != nil && (len(profileForValidation.PostDeployment.Operators) > 0 ||
 		len(profileForValidation.PostDeployment.Scripts) > 0 ||
 		len(profileForValidation.PostDeployment.Manifests) > 0 ||
 		len(profileForValidation.PostDeployment.HelmCharts) > 0)) ||
@@ -600,8 +599,7 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 	log.Printf("Final addon list after conflict resolution: %v", finalSelectedAddonIDs)
 
 	// Check if user provided custom post-config (operators/scripts/manifests/helm charts)
-	hasCustomPostConfig := req.CustomPostConfig != nil && (
-		len(req.CustomPostConfig.Operators) > 0 ||
+	hasCustomPostConfig := req.CustomPostConfig != nil && (len(req.CustomPostConfig.Operators) > 0 ||
 		len(req.CustomPostConfig.Scripts) > 0 ||
 		len(req.CustomPostConfig.Manifests) > 0 ||
 		len(req.CustomPostConfig.HelmCharts) > 0)
@@ -959,9 +957,9 @@ func (h *ClusterHandler) Get(c echo.Context) error {
 
 	// Add execution order metadata if there's any post-config
 	hasPostConfig := len(combinedConfig.Operators) > 0 ||
-					len(combinedConfig.Scripts) > 0 ||
-					len(combinedConfig.Manifests) > 0 ||
-					len(combinedConfig.HelmCharts) > 0
+		len(combinedConfig.Scripts) > 0 ||
+		len(combinedConfig.Manifests) > 0 ||
+		len(combinedConfig.HelmCharts) > 0
 
 	if hasPostConfig {
 		executionOrder, err := h.buildExecutionOrderMetadata(combinedConfig, taskAddonSource)
@@ -981,7 +979,7 @@ type TaskExecutionInfo struct {
 	Name         string                 `json:"name"`
 	Type         string                 `json:"type"` // "operator", "script", "manifest", "helmChart"
 	Dependencies []string               `json:"dependencies"`
-	Order        int                    `json:"order"` // Execution order (1-based)
+	Order        int                    `json:"order"`              // Execution order (1-based)
 	Metadata     map[string]interface{} `json:"metadata,omitempty"` // Type-specific metadata
 }
 
@@ -1701,16 +1699,16 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 
 // ClusterStatistics represents aggregated cluster statistics
 type ClusterStatistics struct {
-	TotalClusters      int                       `json:"total_clusters"`
-	ClustersByStatus   []ClusterStatusCount      `json:"clusters_by_status"`
-	ClustersByProfile  []ClusterProfileCount     `json:"clusters_by_profile"`
-	ClustersByPlatform []ClusterPlatformCount    `json:"clusters_by_platform"`
-	ActiveClusters     int                       `json:"active_clusters"`
-	TotalHourlyCost    float64                   `json:"total_hourly_cost"`
-	TotalDailyCost     float64                   `json:"total_daily_cost"`
-	TotalMonthlyCost   float64                   `json:"total_monthly_cost"`
-	CostByProfile      []ProfileCostBreakdown    `json:"cost_by_profile"`
-	CostByUser         []UserCostBreakdown       `json:"cost_by_user"`
+	TotalClusters      int                    `json:"total_clusters"`
+	ClustersByStatus   []ClusterStatusCount   `json:"clusters_by_status"`
+	ClustersByProfile  []ClusterProfileCount  `json:"clusters_by_profile"`
+	ClustersByPlatform []ClusterPlatformCount `json:"clusters_by_platform"`
+	ActiveClusters     int                    `json:"active_clusters"`
+	TotalHourlyCost    float64                `json:"total_hourly_cost"`
+	TotalDailyCost     float64                `json:"total_daily_cost"`
+	TotalMonthlyCost   float64                `json:"total_monthly_cost"`
+	CostByProfile      []ProfileCostBreakdown `json:"cost_by_profile"`
+	CostByUser         []UserCostBreakdown    `json:"cost_by_user"`
 }
 
 // ClusterStatusCount represents cluster count per status
@@ -1733,11 +1731,11 @@ type ClusterPlatformCount struct {
 
 // ProfileCostBreakdown represents cost breakdown by profile
 type ProfileCostBreakdown struct {
-	Profile     string  `json:"profile"`
+	Profile      string  `json:"profile"`
 	ClusterCount int     `json:"cluster_count"`
-	HourlyCost  float64 `json:"hourly_cost"`
-	DailyCost   float64 `json:"daily_cost"`
-	MonthlyCost float64 `json:"monthly_cost"`
+	HourlyCost   float64 `json:"hourly_cost"`
+	DailyCost    float64 `json:"daily_cost"`
+	MonthlyCost  float64 `json:"monthly_cost"`
 }
 
 // UserCostBreakdown represents cost breakdown by user
@@ -2176,10 +2174,10 @@ func (h *ClusterHandler) getGKEInstances(ctx context.Context, cluster *types.Clu
 
 	// Parse node pool information
 	var nodePools []struct {
-		Name              string `json:"name"`
-		InitialNodeCount  int    `json:"initialNodeCount"`
-		Status            string `json:"status"`
-		Config            struct {
+		Name             string `json:"name"`
+		InitialNodeCount int    `json:"initialNodeCount"`
+		Status           string `json:"status"`
+		Config           struct {
 			MachineType string            `json:"machineType"`
 			Labels      map[string]string `json:"labels"`
 		} `json:"config"`
@@ -2314,14 +2312,14 @@ func (h *ClusterHandler) getGKENodePoolInstances(ctx context.Context, clusterNam
 			}
 
 			var instanceDetail struct {
-				Name         string `json:"name"`
-				MachineType  string `json:"machineType"`
-				Status       string `json:"status"`
-				Zone         string `json:"zone"`
-				CreationTimestamp string `json:"creationTimestamp"`
-				Labels       map[string]string `json:"labels"`
+				Name              string            `json:"name"`
+				MachineType       string            `json:"machineType"`
+				Status            string            `json:"status"`
+				Zone              string            `json:"zone"`
+				CreationTimestamp string            `json:"creationTimestamp"`
+				Labels            map[string]string `json:"labels"`
 				NetworkInterfaces []struct {
-					NetworkIP string `json:"networkIP"`
+					NetworkIP     string `json:"networkIP"`
 					AccessConfigs []struct {
 						NatIP string `json:"natIP"`
 					} `json:"accessConfigs"`
@@ -2424,14 +2422,14 @@ func (h *ClusterHandler) getGCPComputeInstances(ctx context.Context, cluster *ty
 	output := []byte(stdout.String())
 
 	var gcpInstances []struct {
-		Name         string `json:"name"`
-		MachineType  string `json:"machineType"`
-		Status       string `json:"status"`
-		Zone         string `json:"zone"`
-		CreationTimestamp string `json:"creationTimestamp"`
-		Labels       map[string]string `json:"labels"`
+		Name              string            `json:"name"`
+		MachineType       string            `json:"machineType"`
+		Status            string            `json:"status"`
+		Zone              string            `json:"zone"`
+		CreationTimestamp string            `json:"creationTimestamp"`
+		Labels            map[string]string `json:"labels"`
 		NetworkInterfaces []struct {
-			NetworkIP string `json:"networkIP"`
+			NetworkIP     string `json:"networkIP"`
 			AccessConfigs []struct {
 				NatIP string `json:"natIP"`
 			} `json:"accessConfigs"`
@@ -2877,6 +2875,7 @@ func (h *ClusterHandler) getClusterStorageClasses(ctx context.Context, cluster *
 
 	return storageClasses, nil
 }
+
 // checkInfraIDCollision checks if the cluster name could collide with recently destroyed clusters
 // OpenShift generates infra IDs by truncating cluster names to ~27 chars + 5-char random suffix
 // Similar names can generate the same infra ID if created close together

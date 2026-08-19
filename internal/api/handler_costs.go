@@ -118,11 +118,11 @@ func (h *CostHandler) getCostsByCluster(ctx context.Context, startDate, endDate 
 		}
 
 		clusterCosts[cluster.Name] = map[string]interface{}{
-			"cluster_id":  cluster.ID,
-			"total_cost":  summary.TotalCost,
-			"breakdown":   summary.Breakdown,
-			"period":      summary.Period,
-			"profile":     cluster.Profile,
+			"cluster_id":   cluster.ID,
+			"total_cost":   summary.TotalCost,
+			"breakdown":    summary.Breakdown,
+			"period":       summary.Period,
+			"profile":      cluster.Profile,
 			"cluster_type": cluster.ClusterType,
 		}
 

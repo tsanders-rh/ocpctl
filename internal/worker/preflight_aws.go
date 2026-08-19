@@ -16,7 +16,7 @@ import (
 
 // AWSPreflightChecker validates AWS resource availability before cluster creation
 type AWSPreflightChecker struct {
-	region string
+	region    string
 	ec2Client *ec2.Client
 }
 

@@ -24,11 +24,11 @@ func NewConfigurationHandler(store *store.Store) *ConfigurationHandler {
 
 // JobRetryInfo contains retry information for a POST_CONFIGURE job
 type JobRetryInfo struct {
-	JobID           string                     `json:"job_id,omitempty"`
-	Status          types.JobStatus            `json:"status,omitempty"`
-	Attempt         int                        `json:"attempt"`
-	MaxAttempts     int                        `json:"max_attempts"`
-	RetryHistory    []*store.JobRetryHistory   `json:"retry_history,omitempty"`
+	JobID        string                   `json:"job_id,omitempty"`
+	Status       types.JobStatus          `json:"status,omitempty"`
+	Attempt      int                      `json:"attempt"`
+	MaxAttempts  int                      `json:"max_attempts"`
+	RetryHistory []*store.JobRetryHistory `json:"retry_history,omitempty"`
 }
 
 // ListClusterConfigurations handles GET /api/v1/clusters/:id/configurations
@@ -98,11 +98,11 @@ func (h *ConfigurationHandler) ListClusterConfigurations(c echo.Context) error {
 	}
 
 	return SuccessOK(c, map[string]interface{}{
-		"cluster_id":      cluster.ID,
-		"cluster_name":    cluster.Name,
-		"configurations":  configs,
-		"total":           len(configs),
-		"job_retry_info":  jobRetryInfo,
+		"cluster_id":     cluster.ID,
+		"cluster_name":   cluster.Name,
+		"configurations": configs,
+		"total":          len(configs),
+		"job_retry_info": jobRetryInfo,
 	})
 }
 
@@ -171,9 +171,9 @@ func (h *ConfigurationHandler) RetryConfiguration(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":        "Configuration retry initiated",
+		"message":          "Configuration retry initiated",
 		"configuration_id": configID,
-		"job_id":         job.ID,
+		"job_id":           job.ID,
 	})
 }
 
@@ -219,7 +219,7 @@ func (h *ConfigurationHandler) TriggerPostConfiguration(c echo.Context) error {
 
 	for _, job := range existingJobs {
 		if job.JobType == types.JobTypePostConfigure &&
-		   (job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning) {
+			(job.Status == types.JobStatusPending || job.Status == types.JobStatusRunning) {
 			return ErrorBadRequest(c, "Post-configuration job already in progress")
 		}
 	}

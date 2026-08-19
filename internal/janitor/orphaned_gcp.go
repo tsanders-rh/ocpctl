@@ -610,9 +610,9 @@ func (j *Janitor) detectOrphanedGKEClusters(ctx context.Context, project string,
 	}
 
 	var gkeClusters []struct {
-		Name              string            `json:"name"`
-		Location          string            `json:"location"`
-		ResourceLabels    map[string]string `json:"resourceLabels"`
+		Name           string            `json:"name"`
+		Location       string            `json:"location"`
+		ResourceLabels map[string]string `json:"resourceLabels"`
 	}
 
 	if err := json.Unmarshal(output, &gkeClusters); err != nil {

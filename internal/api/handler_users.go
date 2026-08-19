@@ -67,8 +67,8 @@ func (h *UserHandler) logAudit(c echo.Context, action string, targetUserID strin
 //	@Router			/users [get]
 func (h *UserHandler) List(c echo.Context) error {
 	// Parse pagination parameters from query string
-	limit := 50  // Default limit
-	offset := 0  // Default offset
+	limit := 50 // Default limit
+	offset := 0 // Default offset
 
 	// Parse limit parameter
 	if limitStr := c.QueryParam("limit"); limitStr != "" {

@@ -13,11 +13,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/eks"
-	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
 	"github.com/tsanders-rh/ocpctl/internal/installer"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 	"github.com/tsanders-rh/ocpctl/internal/store"
@@ -656,7 +656,7 @@ func (h *ResumeHandler) waitForCNIPods(ctx context.Context, kubeconfigPath strin
 	maxAttempts := 60 // 60 attempts * 10 seconds = 10 minutes
 	retryDelay := 10 * time.Second
 	stabilityChecks := 3 // Pods must stay healthy for this many consecutive checks
-	stableCount := 0      // Track consecutive healthy checks
+	stableCount := 0     // Track consecutive healthy checks
 
 	// Track if we've already attempted remediation to avoid infinite loops
 	remediationAttempted := false

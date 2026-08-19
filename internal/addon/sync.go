@@ -131,9 +131,9 @@ func (s *Syncer) syncVersion(ctx context.Context, addon *AddonDefinition, versio
 		DisplayName:        version.DisplayName,
 		IsDefault:          version.IsDefault,
 		MetadataJSON:       metadataJSON,
-		AddonSource:        "system",     // YAML-sourced addons are system addons
-		IsPublished:        false,         // System addons don't use published status
-		IsImmutable:        false,         // System addons are updateable when YAML changes
-		VersionNumber:      1,             // Initial version
+		AddonSource:        "system", // YAML-sourced addons are system addons
+		IsPublished:        false,    // System addons don't use published status
+		IsImmutable:        false,    // System addons are updateable when YAML changes
+		VersionNumber:      1,        // Initial version
 	})
 }

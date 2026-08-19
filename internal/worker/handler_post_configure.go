@@ -438,7 +438,7 @@ func (h *PostConfigureHandler) exposeDashboardNodePort(ctx context.Context, kube
 
 	// Parse cluster info to extract Ingress hostname and secret
 	var clusterInfo struct {
-		IngressHostname  string `json:"ingressHostname"`
+		IngressHostname   string `json:"ingressHostname"`
 		IngressSecretName string `json:"ingressSecretName"`
 	}
 	if err := json.Unmarshal(clusterInfoOutput, &clusterInfo); err != nil {
@@ -2153,19 +2153,19 @@ func isValidEnvVarName(name string) bool {
 func isDangerousEnvVar(name string) bool {
 	// Blocklist of dangerous environment variables
 	dangerousVars := map[string]bool{
-		"LD_PRELOAD":       true, // Can hijack dynamic linker
-		"LD_LIBRARY_PATH":  true, // Can override library loading
-		"PYTHONPATH":       true, // Can inject Python modules
-		"PATH":             true, // Can prepend malicious binaries
-		"PERL5LIB":         true, // Can inject Perl modules
-		"RUBYLIB":          true, // Can inject Ruby modules
-		"NODE_PATH":        true, // Can inject Node.js modules
-		"CLASSPATH":        true, // Can inject Java classes
+		"LD_PRELOAD":        true, // Can hijack dynamic linker
+		"LD_LIBRARY_PATH":   true, // Can override library loading
+		"PYTHONPATH":        true, // Can inject Python modules
+		"PATH":              true, // Can prepend malicious binaries
+		"PERL5LIB":          true, // Can inject Perl modules
+		"RUBYLIB":           true, // Can inject Ruby modules
+		"NODE_PATH":         true, // Can inject Node.js modules
+		"CLASSPATH":         true, // Can inject Java classes
 		"JAVA_TOOL_OPTIONS": true, // Can inject Java agents
-		"PROMPT_COMMAND":   true, // Executes on each shell prompt
-		"BASH_ENV":         true, // Executes on shell startup
-		"ENV":              true, // Executes on shell startup
-		"IFS":              true, // Can break command parsing
+		"PROMPT_COMMAND":    true, // Executes on each shell prompt
+		"BASH_ENV":          true, // Executes on shell startup
+		"ENV":               true, // Executes on shell startup
+		"IFS":               true, // Can break command parsing
 	}
 
 	return dangerousVars[name]
@@ -2177,23 +2177,23 @@ func isValidEnvVarValue(value string) bool {
 	// List of dangerous shell metacharacters and sequences
 	// These could be used for command injection if environment variables are used in shell contexts
 	dangerousChars := []string{
-		"$(",  // Command substitution
-		"${",  // Parameter expansion
-		"`",   // Command substitution (backticks)
-		";",   // Command separator
-		"|",   // Pipe
-		"&",   // Background process / AND
-		">",   // Redirection
-		"<",   // Redirection
-		"\n",  // Newline (command separator)
-		"\r",  // Carriage return
-		"\\",  // Escape character
-		"*",   // Glob pattern
-		"?",   // Glob pattern
-		"[",   // Glob pattern
-		"]",   // Glob pattern
-		"!",   // History expansion (in some shells)
-		"#",   // Comment (could hide malicious code)
+		"$(", // Command substitution
+		"${", // Parameter expansion
+		"`",  // Command substitution (backticks)
+		";",  // Command separator
+		"|",  // Pipe
+		"&",  // Background process / AND
+		">",  // Redirection
+		"<",  // Redirection
+		"\n", // Newline (command separator)
+		"\r", // Carriage return
+		"\\", // Escape character
+		"*",  // Glob pattern
+		"?",  // Glob pattern
+		"[",  // Glob pattern
+		"]",  // Glob pattern
+		"!",  // History expansion (in some shells)
+		"#",  // Comment (could hide malicious code)
 	}
 
 	for _, dangerous := range dangerousChars {
@@ -2471,7 +2471,7 @@ func (h *PostConfigureHandler) applyCustomManifest(ctx context.Context, cluster 
 	// Set path or URL based on which was provided
 	if customManifest.URL != "" {
 		profileManifest.URL = customManifest.URL
-	} else{
+	} else {
 		profileManifest.Path = manifestPath
 	}
 
@@ -2764,6 +2764,7 @@ func extractCRDNameFromManifest(content string) string {
 
 	return plural + "." + group
 }
+
 // resolveSelectedAddons fetches addon configurations for the cluster's selected addon IDs
 // This includes draft addons owned by the cluster owner, allowing users to test their addons
 func (h *PostConfigureHandler) resolveSelectedAddons(ctx context.Context, cluster *types.Cluster) ([]types.PostConfigAddon, error) {
@@ -2846,9 +2847,9 @@ func (h *PostConfigureHandler) mergeAddonConfigs(addons []types.PostConfigAddon)
 	}
 
 	merged := &types.CustomPostConfig{
-		Operators: []types.CustomOperatorConfig{},
-		Scripts:   []types.CustomScriptConfig{},
-		Manifests: []types.CustomManifestConfig{},
+		Operators:  []types.CustomOperatorConfig{},
+		Scripts:    []types.CustomScriptConfig{},
+		Manifests:  []types.CustomManifestConfig{},
 		HelmCharts: []types.CustomHelmChartConfig{},
 	}
 

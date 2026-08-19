@@ -17,15 +17,15 @@ import (
 
 // Config holds janitor configuration
 type Config struct {
-	CheckInterval                  time.Duration
-	StuckJobThreshold              time.Duration
-	ExpiredLockCleanup             bool
-	ExpiredKeyCleanup              bool
-	OrphanDetection                bool
-	OrphanCheckInterval            time.Duration
-	DestroyedClusterRetentionDays  int  // Days to keep DESTROYED cluster records before deleting
-	FailedClusterDirRetentionDays  int  // Days to keep work directories for FAILED clusters
-	OrphanedDirCleanup             bool // Enable cleanup of orphaned work directories
+	CheckInterval                 time.Duration
+	StuckJobThreshold             time.Duration
+	ExpiredLockCleanup            bool
+	ExpiredKeyCleanup             bool
+	OrphanDetection               bool
+	OrphanCheckInterval           time.Duration
+	DestroyedClusterRetentionDays int  // Days to keep DESTROYED cluster records before deleting
+	FailedClusterDirRetentionDays int  // Days to keep work directories for FAILED clusters
+	OrphanedDirCleanup            bool // Enable cleanup of orphaned work directories
 }
 
 // DefaultConfig returns default janitor configuration

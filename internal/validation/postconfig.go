@@ -378,19 +378,19 @@ func isDangerousEnvVar(name string) bool {
 	// Blocklist of dangerous environment variables that can lead to
 	// privilege escalation or code injection
 	dangerousVars := map[string]bool{
-		"LD_PRELOAD":         true, // Can hijack dynamic linker
-		"LD_LIBRARY_PATH":    true, // Can override library loading
-		"PYTHONPATH":         true, // Can inject Python modules
-		"PATH":               true, // Can prepend malicious binaries
-		"PERL5LIB":           true, // Can inject Perl modules
-		"RUBYLIB":            true, // Can inject Ruby modules
-		"NODE_PATH":          true, // Can inject Node.js modules
-		"CLASSPATH":          true, // Can inject Java classes
+		"LD_PRELOAD":        true, // Can hijack dynamic linker
+		"LD_LIBRARY_PATH":   true, // Can override library loading
+		"PYTHONPATH":        true, // Can inject Python modules
+		"PATH":              true, // Can prepend malicious binaries
+		"PERL5LIB":          true, // Can inject Perl modules
+		"RUBYLIB":           true, // Can inject Ruby modules
+		"NODE_PATH":         true, // Can inject Node.js modules
+		"CLASSPATH":         true, // Can inject Java classes
 		"JAVA_TOOL_OPTIONS": true, // Can inject Java agents
-		"BASH_ENV":           true, // Executes file on Bash startup
-		"ENV":                true, // Executes on shell startup
-		"IFS":                true, // Can break command parsing
-		"SHELL":              true, // Can change shell interpreter
+		"BASH_ENV":          true, // Executes file on Bash startup
+		"ENV":               true, // Executes on shell startup
+		"IFS":               true, // Can break command parsing
+		"SHELL":             true, // Can change shell interpreter
 	}
 
 	return dangerousVars[strings.ToUpper(name)]

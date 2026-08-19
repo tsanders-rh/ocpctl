@@ -237,7 +237,7 @@ func (s *Scheduler) checkPoolReplenishment(ctx context.Context) error {
 			// Create POOL_REPLENISH job
 			replenishJob := &types.Job{
 				ID:          uuid.New().String(),
-				ClusterID:   "",  // POOL_REPLENISH jobs don't have a cluster_id (pool_id is in metadata)
+				ClusterID:   "", // POOL_REPLENISH jobs don't have a cluster_id (pool_id is in metadata)
 				JobType:     types.JobTypePoolReplenish,
 				Status:      types.JobStatusPending,
 				Attempt:     1,

@@ -18,7 +18,7 @@ const (
 	ClusterStatusResuming         ClusterStatus = "RESUMING"
 	ClusterStatusDestroying       ClusterStatus = "DESTROYING"
 	ClusterStatusDestroyVerifying ClusterStatus = "DESTROY_VERIFYING" // Verifying all resources deleted
-	ClusterStatusDestroyFailed    ClusterStatus = "DESTROY_FAILED"     // Destroy attempted but resources remain
+	ClusterStatusDestroyFailed    ClusterStatus = "DESTROY_FAILED"    // Destroy attempted but resources remain
 	ClusterStatusDestroyed        ClusterStatus = "DESTROYED"
 	ClusterStatusFailed           ClusterStatus = "FAILED"
 )
@@ -108,79 +108,79 @@ func ProvenanceTags(clusterID, clusterName string, createdAt time.Time) map[stri
 
 // Cluster represents a cluster record in the database
 type Cluster struct {
-	ID             string        `db:"id" json:"id"`
-	Name           string        `db:"name" json:"name"`
-	Platform       Platform      `db:"platform" json:"platform"`
-	ClusterType    ClusterType   `db:"cluster_type" json:"cluster_type"`
-	Version        string        `db:"version" json:"version"`
-	Profile        string        `db:"profile" json:"profile"`
-	Region         string        `db:"region" json:"region"`
-	BaseDomain     *string       `db:"base_domain" json:"base_domain,omitempty"`
-	Owner          string        `db:"owner" json:"owner"`           // Email for display/metadata
-	OwnerID        string        `db:"owner_id" json:"owner_id"`        // Foreign key to users table
-	Team           string        `db:"team" json:"team"`
-	CostCenter     string        `db:"cost_center" json:"cost_center"`
-	Status         ClusterStatus `db:"status" json:"status"`
-	RequestedBy    string        `db:"requested_by" json:"requested_by"` // IAM principal ARN
-	TTLHours       int           `db:"ttl_hours" json:"ttl_hours"`
-	DestroyAt      *time.Time    `db:"destroy_at" json:"destroy_at"`
-	CreatedAt      time.Time     `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time     `db:"updated_at" json:"updated_at"`
-	DestroyedAt    *time.Time    `db:"destroyed_at" json:"destroyed_at"`
-	RequestTags         Tags           `db:"request_tags" json:"request_tags"`
-	EffectiveTags       Tags           `db:"effective_tags" json:"effective_tags"`
-	SSHPublicKey        *string        `db:"ssh_public_key" json:"ssh_public_key"`
-	OffhoursOptIn       bool           `db:"offhours_opt_in" json:"offhours_opt_in"`
-	WorkHoursEnabled    *bool          `db:"work_hours_enabled" json:"work_hours_enabled"`       // NULL = use user default
-	WorkHoursStart      *time.Time     `db:"work_hours_start" json:"work_hours_start"`
-	WorkHoursEnd        *time.Time     `db:"work_hours_end" json:"work_hours_end"`
-	WorkDays            *int16         `db:"work_days" json:"work_days"`
-	LastWorkHoursCheck  *time.Time     `db:"last_work_hours_check" json:"last_work_hours_check"`
-	PostDeployStatus    *string        `db:"post_deploy_status" json:"post_deploy_status,omitempty"`
-	PostDeployCompletedAt *time.Time   `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
-	SkipPostDeployment  bool           `db:"skip_post_deployment" json:"skip_post_deployment"`
-	CustomPostConfig    *CustomPostConfig `db:"custom_post_config" json:"custom_post_config,omitempty"`
-	SelectedAddonIDs    []string       `db:"selected_addon_ids" json:"selected_addon_ids,omitempty"`
-	StorageConfig       *StorageConfig `db:"storage_config" json:"storage_config,omitempty"`
-	PreserveOnFailure   bool           `db:"preserve_on_failure" json:"preserve_on_failure"`
-	CredentialsMode     *string        `db:"credentials_mode" json:"credentials_mode,omitempty"`
-	CustomPullSecret    *string        `db:"custom_pull_secret" json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge
+	ID                    string            `db:"id" json:"id"`
+	Name                  string            `db:"name" json:"name"`
+	Platform              Platform          `db:"platform" json:"platform"`
+	ClusterType           ClusterType       `db:"cluster_type" json:"cluster_type"`
+	Version               string            `db:"version" json:"version"`
+	Profile               string            `db:"profile" json:"profile"`
+	Region                string            `db:"region" json:"region"`
+	BaseDomain            *string           `db:"base_domain" json:"base_domain,omitempty"`
+	Owner                 string            `db:"owner" json:"owner"`       // Email for display/metadata
+	OwnerID               string            `db:"owner_id" json:"owner_id"` // Foreign key to users table
+	Team                  string            `db:"team" json:"team"`
+	CostCenter            string            `db:"cost_center" json:"cost_center"`
+	Status                ClusterStatus     `db:"status" json:"status"`
+	RequestedBy           string            `db:"requested_by" json:"requested_by"` // IAM principal ARN
+	TTLHours              int               `db:"ttl_hours" json:"ttl_hours"`
+	DestroyAt             *time.Time        `db:"destroy_at" json:"destroy_at"`
+	CreatedAt             time.Time         `db:"created_at" json:"created_at"`
+	UpdatedAt             time.Time         `db:"updated_at" json:"updated_at"`
+	DestroyedAt           *time.Time        `db:"destroyed_at" json:"destroyed_at"`
+	RequestTags           Tags              `db:"request_tags" json:"request_tags"`
+	EffectiveTags         Tags              `db:"effective_tags" json:"effective_tags"`
+	SSHPublicKey          *string           `db:"ssh_public_key" json:"ssh_public_key"`
+	OffhoursOptIn         bool              `db:"offhours_opt_in" json:"offhours_opt_in"`
+	WorkHoursEnabled      *bool             `db:"work_hours_enabled" json:"work_hours_enabled"` // NULL = use user default
+	WorkHoursStart        *time.Time        `db:"work_hours_start" json:"work_hours_start"`
+	WorkHoursEnd          *time.Time        `db:"work_hours_end" json:"work_hours_end"`
+	WorkDays              *int16            `db:"work_days" json:"work_days"`
+	LastWorkHoursCheck    *time.Time        `db:"last_work_hours_check" json:"last_work_hours_check"`
+	PostDeployStatus      *string           `db:"post_deploy_status" json:"post_deploy_status,omitempty"`
+	PostDeployCompletedAt *time.Time        `db:"post_deploy_completed_at" json:"post_deploy_completed_at,omitempty"`
+	SkipPostDeployment    bool              `db:"skip_post_deployment" json:"skip_post_deployment"`
+	CustomPostConfig      *CustomPostConfig `db:"custom_post_config" json:"custom_post_config,omitempty"`
+	SelectedAddonIDs      []string          `db:"selected_addon_ids" json:"selected_addon_ids,omitempty"`
+	StorageConfig         *StorageConfig    `db:"storage_config" json:"storage_config,omitempty"`
+	PreserveOnFailure     bool              `db:"preserve_on_failure" json:"preserve_on_failure"`
+	CredentialsMode       *string           `db:"credentials_mode" json:"credentials_mode,omitempty"`
+	CustomPullSecret      *string           `db:"custom_pull_secret" json:"custom_pull_secret,omitempty"` // Optional custom pull secret JSON to merge
 
 	// Cluster pool tracking
-	PoolID          *string                `db:"pool_id" json:"pool_id,omitempty"`
-	PoolState       *PoolState             `db:"pool_state" json:"pool_state,omitempty"`
-	LeasedBy        *string                `db:"leased_by" json:"leased_by,omitempty"`
-	LeasedAt        *time.Time             `db:"leased_at" json:"leased_at,omitempty"`
-	LeaseExpiresAt  *time.Time             `db:"lease_expires_at" json:"lease_expires_at,omitempty"`
-	LeaseMetadata   map[string]interface{} `db:"lease_metadata" json:"lease_metadata,omitempty"`
-	PoolGeneration  int                    `db:"pool_generation" json:"pool_generation,omitempty"`
-	LastCleanedAt   *time.Time             `db:"last_cleaned_at" json:"last_cleaned_at,omitempty"`
+	PoolID         *string                `db:"pool_id" json:"pool_id,omitempty"`
+	PoolState      *PoolState             `db:"pool_state" json:"pool_state,omitempty"`
+	LeasedBy       *string                `db:"leased_by" json:"leased_by,omitempty"`
+	LeasedAt       *time.Time             `db:"leased_at" json:"leased_at,omitempty"`
+	LeaseExpiresAt *time.Time             `db:"lease_expires_at" json:"lease_expires_at,omitempty"`
+	LeaseMetadata  map[string]interface{} `db:"lease_metadata" json:"lease_metadata,omitempty"`
+	PoolGeneration int                    `db:"pool_generation" json:"pool_generation,omitempty"`
+	LastCleanedAt  *time.Time             `db:"last_cleaned_at" json:"last_cleaned_at,omitempty"`
 
 	// Cluster outputs (joined from cluster_outputs table)
-	APIURL              *string        `db:"api_url" json:"api_url,omitempty"`
-	ConsoleURL          *string        `db:"console_url" json:"console_url,omitempty"`
+	APIURL     *string `db:"api_url" json:"api_url,omitempty"`
+	ConsoleURL *string `db:"console_url" json:"console_url,omitempty"`
 }
 
 // ClusterOutputs represents cluster access information
 type ClusterOutputs struct {
-	ID                  string     `db:"id" json:"id"`
-	ClusterID           string     `db:"cluster_id" json:"cluster_id"`
-	APIURL              *string    `db:"api_url" json:"api_url"`
-	ConsoleURL          *string    `db:"console_url" json:"console_url"`
-	KubeconfigS3URI     *string    `db:"kubeconfig_s3_uri" json:"kubeconfig_s3_uri"`
-	KubeadminSecretRef  *string    `db:"kubeadmin_secret_ref" json:"kubeadmin_secret_ref"`
-	MetadataS3URI       *string    `db:"metadata_s3_uri" json:"metadata_s3_uri"`
-	DashboardToken      *string    `db:"dashboard_token" json:"dashboard_token,omitempty"`
+	ID                 string  `db:"id" json:"id"`
+	ClusterID          string  `db:"cluster_id" json:"cluster_id"`
+	APIURL             *string `db:"api_url" json:"api_url"`
+	ConsoleURL         *string `db:"console_url" json:"console_url"`
+	KubeconfigS3URI    *string `db:"kubeconfig_s3_uri" json:"kubeconfig_s3_uri"`
+	KubeadminSecretRef *string `db:"kubeadmin_secret_ref" json:"kubeadmin_secret_ref"`
+	MetadataS3URI      *string `db:"metadata_s3_uri" json:"metadata_s3_uri"`
+	DashboardToken     *string `db:"dashboard_token" json:"dashboard_token,omitempty"`
 
 	// ServiceAccount credentials (pool clusters only)
-	SAName             *string    `db:"sa_name" json:"sa_name,omitempty"`
-	SANamespace        *string    `db:"sa_namespace" json:"sa_namespace,omitempty"`
-	SAToken            *string    `db:"sa_token" json:"sa_token,omitempty"`
-	SATokenExpiresAt   *time.Time `db:"sa_token_expires_at" json:"sa_token_expires_at,omitempty"`
-	OcLoginCommand     *string    `db:"oc_login_command" json:"oc_login_command,omitempty"`
+	SAName           *string    `db:"sa_name" json:"sa_name,omitempty"`
+	SANamespace      *string    `db:"sa_namespace" json:"sa_namespace,omitempty"`
+	SAToken          *string    `db:"sa_token" json:"sa_token,omitempty"`
+	SATokenExpiresAt *time.Time `db:"sa_token_expires_at" json:"sa_token_expires_at,omitempty"`
+	OcLoginCommand   *string    `db:"oc_login_command" json:"oc_login_command,omitempty"`
 
-	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // ArtifactType represents the type of artifact stored
@@ -236,33 +236,33 @@ const (
 
 // ClusterConfiguration represents a post-deployment configuration task
 type ClusterConfiguration struct {
-	ID                string        `db:"id" json:"id"`
-	ClusterID         string        `db:"cluster_id" json:"cluster_id"`
-	ConfigType        ConfigType    `db:"config_type" json:"config_type"`
-	ConfigName        string        `db:"config_name" json:"config_name"`
-	Status            ConfigStatus  `db:"status" json:"status"`
-	ErrorMessage      *string       `db:"error_message" json:"error_message,omitempty"`
-	CreatedAt         time.Time     `db:"created_at" json:"created_at"`
-	CompletedAt       *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
-	Metadata          JobMetadata   `db:"metadata" json:"metadata,omitempty"`
-	UserDefined       bool          `db:"user_defined" json:"user_defined"`
-	CreatedByUserID   *string       `db:"created_by_user_id" json:"created_by_user_id,omitempty"`
-	Source            *ConfigSource `db:"source" json:"source,omitempty"`
+	ID              string        `db:"id" json:"id"`
+	ClusterID       string        `db:"cluster_id" json:"cluster_id"`
+	ConfigType      ConfigType    `db:"config_type" json:"config_type"`
+	ConfigName      string        `db:"config_name" json:"config_name"`
+	Status          ConfigStatus  `db:"status" json:"status"`
+	ErrorMessage    *string       `db:"error_message" json:"error_message,omitempty"`
+	CreatedAt       time.Time     `db:"created_at" json:"created_at"`
+	CompletedAt     *time.Time    `db:"completed_at" json:"completed_at,omitempty"`
+	Metadata        JobMetadata   `db:"metadata" json:"metadata,omitempty"`
+	UserDefined     bool          `db:"user_defined" json:"user_defined"`
+	CreatedByUserID *string       `db:"created_by_user_id" json:"created_by_user_id,omitempty"`
+	Source          *ConfigSource `db:"source" json:"source,omitempty"`
 }
 
 // DestroyAudit tracks destroy attempts for forensics and reconciliation
 type DestroyAudit struct {
-	ID                   string     `db:"id" json:"id"`
-	ClusterID            string     `db:"cluster_id" json:"cluster_id"`
-	JobID                string     `db:"job_id" json:"job_id"`
-	WorkerID             string     `db:"worker_id" json:"worker_id"`
-	DestroyStartedAt     time.Time  `db:"destroy_started_at" json:"destroy_started_at"`
-	LastVerifiedAt       *time.Time `db:"last_verified_at" json:"last_verified_at,omitempty"`
-	VerificationPassed   *bool      `db:"verification_passed" json:"verification_passed,omitempty"`
-	LastResourcePresent  *string    `db:"last_resource_present" json:"last_resource_present,omitempty"`
-	TerminalReason       *string    `db:"terminal_reason" json:"terminal_reason,omitempty"`
+	ID                   string      `db:"id" json:"id"`
+	ClusterID            string      `db:"cluster_id" json:"cluster_id"`
+	JobID                string      `db:"job_id" json:"job_id"`
+	WorkerID             string      `db:"worker_id" json:"worker_id"`
+	DestroyStartedAt     time.Time   `db:"destroy_started_at" json:"destroy_started_at"`
+	LastVerifiedAt       *time.Time  `db:"last_verified_at" json:"last_verified_at,omitempty"`
+	VerificationPassed   *bool       `db:"verification_passed" json:"verification_passed,omitempty"`
+	LastResourcePresent  *string     `db:"last_resource_present" json:"last_resource_present,omitempty"`
+	TerminalReason       *string     `db:"terminal_reason" json:"terminal_reason,omitempty"`
 	ResourcesSnapshot    JobMetadata `db:"resources_snapshot" json:"resources_snapshot,omitempty"`
 	VerificationSnapshot JobMetadata `db:"verification_snapshot" json:"verification_snapshot,omitempty"`
-	CreatedAt            time.Time  `db:"created_at" json:"created_at"`
-	CompletedAt          *time.Time `db:"completed_at" json:"completed_at,omitempty"`
+	CreatedAt            time.Time   `db:"created_at" json:"created_at"`
+	CompletedAt          *time.Time  `db:"completed_at" json:"completed_at,omitempty"`
 }

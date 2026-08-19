@@ -4,29 +4,29 @@ import "github.com/tsanders-rh/ocpctl/pkg/types"
 
 // Profile represents a complete cluster profile loaded from YAML
 type Profile struct {
-	Name               string                 `yaml:"name" validate:"required"`
-	DisplayName        string                 `yaml:"displayName" validate:"required"`
-	Description        string                 `yaml:"description" validate:"required"`
-	Platform           types.Platform         `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
-	ClusterType        types.ClusterType      `yaml:"clusterType,omitempty"`
-	Track              string                 `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
-	Enabled            bool                   `yaml:"enabled"`
-	CredentialsMode    string                 `yaml:"credentialsMode,omitempty"`                                // Default credentials mode (Mint, Passthrough, Manual, Static)
-	OpenshiftVersions  *VersionConfig         `yaml:"openshiftVersions,omitempty"`
-	KubernetesVersions *VersionConfig         `yaml:"kubernetesVersions,omitempty"`
-	Regions            RegionConfig           `yaml:"regions" validate:"required"`
-	Zones              *ZoneConfig            `yaml:"zones,omitempty"`
-	BaseDomains        *BaseDomainConfig      `yaml:"baseDomains,omitempty"`
-	Compute            ComputeConfig          `yaml:"compute" validate:"required"`
-	Lifecycle          LifecycleConfig        `yaml:"lifecycle" validate:"required"`
-	Networking         *NetworkingConfig      `yaml:"networking,omitempty"`
-	Tags               TagsConfig             `yaml:"tags" validate:"required"`
-	Features           FeaturesConfig         `yaml:"features"`
-	CostControls       CostControlsConfig     `yaml:"costControls"`
-	PlatformConfig     PlatformConfig         `yaml:"platformConfig"`
-	PostDeployment     *PostDeploymentConfig  `yaml:"postDeployment,omitempty"`
-	DefaultAddons      []AddonReference       `yaml:"defaultAddons,omitempty" json:"default_addons,omitempty"`
-	Metadata           *MetadataConfig        `yaml:"metadata,omitempty"`
+	Name               string                `yaml:"name" validate:"required"`
+	DisplayName        string                `yaml:"displayName" validate:"required"`
+	Description        string                `yaml:"description" validate:"required"`
+	Platform           types.Platform        `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
+	ClusterType        types.ClusterType     `yaml:"clusterType,omitempty"`
+	Track              string                `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
+	Enabled            bool                  `yaml:"enabled"`
+	CredentialsMode    string                `yaml:"credentialsMode,omitempty"` // Default credentials mode (Mint, Passthrough, Manual, Static)
+	OpenshiftVersions  *VersionConfig        `yaml:"openshiftVersions,omitempty"`
+	KubernetesVersions *VersionConfig        `yaml:"kubernetesVersions,omitempty"`
+	Regions            RegionConfig          `yaml:"regions" validate:"required"`
+	Zones              *ZoneConfig           `yaml:"zones,omitempty"`
+	BaseDomains        *BaseDomainConfig     `yaml:"baseDomains,omitempty"`
+	Compute            ComputeConfig         `yaml:"compute" validate:"required"`
+	Lifecycle          LifecycleConfig       `yaml:"lifecycle" validate:"required"`
+	Networking         *NetworkingConfig     `yaml:"networking,omitempty"`
+	Tags               TagsConfig            `yaml:"tags" validate:"required"`
+	Features           FeaturesConfig        `yaml:"features"`
+	CostControls       CostControlsConfig    `yaml:"costControls"`
+	PlatformConfig     PlatformConfig        `yaml:"platformConfig"`
+	PostDeployment     *PostDeploymentConfig `yaml:"postDeployment,omitempty"`
+	DefaultAddons      []AddonReference      `yaml:"defaultAddons,omitempty" json:"default_addons,omitempty"`
+	Metadata           *MetadataConfig       `yaml:"metadata,omitempty"`
 }
 
 // VersionConfig defines OpenShift version constraints
@@ -55,10 +55,10 @@ type BaseDomainConfig struct {
 
 // ComputeConfig defines compute resource configuration
 type ComputeConfig struct {
-	ControlPlane       *ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Workers            *WorkersConfig      `yaml:"workers,omitempty" json:"workers,omitempty"`
-	NodeGroups         []NodeGroupConfig   `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"`                 // For EKS (unmanaged)
-	ManagedNodeGroups  []NodeGroupConfig   `yaml:"managedNodeGroups,omitempty" json:"managed_node_groups,omitempty"` // For EKS (managed)
+	ControlPlane      *ControlPlaneConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Workers           *WorkersConfig      `yaml:"workers,omitempty" json:"workers,omitempty"`
+	NodeGroups        []NodeGroupConfig   `yaml:"nodeGroups,omitempty" json:"node_groups,omitempty"`                // For EKS (unmanaged)
+	ManagedNodeGroups []NodeGroupConfig   `yaml:"managedNodeGroups,omitempty" json:"managed_node_groups,omitempty"` // For EKS (managed)
 }
 
 // ControlPlaneConfig defines control plane node configuration
@@ -96,10 +96,10 @@ type NodeGroupConfig struct {
 
 // LifecycleConfig defines cluster lifecycle policies
 type LifecycleConfig struct {
-	MaxTTLHours              int  `yaml:"maxTTLHours" json:"max_ttl_hours" validate:"required,min=1"`
-	DefaultTTLHours          int  `yaml:"defaultTTLHours" json:"default_ttl_hours" validate:"required,min=1,ltefield=MaxTTLHours"`
-	AllowCustomTTL           bool `yaml:"allowCustomTTL" json:"allow_custom_ttl"`
-	WarnBeforeDestroyHours   int  `yaml:"warnBeforeDestroyHours" json:"warn_before_destroy_hours" validate:"min=0"`
+	MaxTTLHours            int  `yaml:"maxTTLHours" json:"max_ttl_hours" validate:"required,min=1"`
+	DefaultTTLHours        int  `yaml:"defaultTTLHours" json:"default_ttl_hours" validate:"required,min=1,ltefield=MaxTTLHours"`
+	AllowCustomTTL         bool `yaml:"allowCustomTTL" json:"allow_custom_ttl"`
+	WarnBeforeDestroyHours int  `yaml:"warnBeforeDestroyHours" json:"warn_before_destroy_hours" validate:"min=0"`
 }
 
 // NetworkingConfig defines networking configuration
@@ -126,9 +126,9 @@ type MachineNetworkConfig struct {
 
 // TagsConfig defines tag requirements
 type TagsConfig struct {
-	Required       map[string]string `yaml:"required" json:"required"`
-	Defaults       map[string]string `yaml:"defaults" json:"defaults"`
-	AllowUserTags  bool              `yaml:"allowUserTags" json:"allow_user_tags"`
+	Required      map[string]string `yaml:"required" json:"required"`
+	Defaults      map[string]string `yaml:"defaults" json:"defaults"`
+	AllowUserTags bool              `yaml:"allowUserTags" json:"allow_user_tags"`
 }
 
 // FeaturesConfig defines feature flags
@@ -166,9 +166,9 @@ type PlatformConfig struct {
 
 // AWSConfig contains AWS-specific settings
 type AWSConfig struct {
-	InstanceMetadataService string          `yaml:"instanceMetadataService"`
-	RootVolume              *AWSRootVolume  `yaml:"rootVolume"`
-	Subnets                 []string        `yaml:"subnets,omitempty"`
+	InstanceMetadataService string         `yaml:"instanceMetadataService"`
+	RootVolume              *AWSRootVolume `yaml:"rootVolume"`
+	Subnets                 []string       `yaml:"subnets,omitempty"`
 }
 
 // AWSRootVolume defines root volume configuration
@@ -203,66 +203,66 @@ type EKSConfig struct {
 
 // GCPConfig contains GCP-specific settings for OpenShift on GCP
 type GCPConfig struct {
-	Project              string              `yaml:"project" json:"project"`
-	Network              string              `yaml:"network,omitempty" json:"network,omitempty"`
-	Subnetwork           string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
-	ControlPlane         *GCPMachineConfig   `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Compute              *GCPMachineConfig   `yaml:"compute,omitempty" json:"compute,omitempty"`
-	ServiceAccount       string              `yaml:"serviceAccount,omitempty" json:"service_account,omitempty"`
-	SecureBootPolicy     string              `yaml:"secureBootPolicy,omitempty" json:"secure_boot_policy,omitempty"`
+	Project          string            `yaml:"project" json:"project"`
+	Network          string            `yaml:"network,omitempty" json:"network,omitempty"`
+	Subnetwork       string            `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
+	ControlPlane     *GCPMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Compute          *GCPMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
+	ServiceAccount   string            `yaml:"serviceAccount,omitempty" json:"service_account,omitempty"`
+	SecureBootPolicy string            `yaml:"secureBootPolicy,omitempty" json:"secure_boot_policy,omitempty"`
 }
 
 // GCPMachineConfig defines GCP machine configuration
 type GCPMachineConfig struct {
-	MachineType          string  `yaml:"machineType" json:"machine_type"`
-	DiskSizeGB           int     `yaml:"diskSizeGB" json:"disk_size_gb"`
-	DiskType             string  `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
+	MachineType string `yaml:"machineType" json:"machine_type"`
+	DiskSizeGB  int    `yaml:"diskSizeGB" json:"disk_size_gb"`
+	DiskType    string `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
 }
 
 // GKEConfig contains GKE-specific settings
 type GKEConfig struct {
-	EnabledClusterLogTypes []string          `yaml:"enabledClusterLogTypes,omitempty" json:"enabled_cluster_log_types,omitempty"`
-	PublicAccess           bool              `yaml:"publicAccess,omitempty" json:"public_access,omitempty"`
-	PrivateAccess          bool              `yaml:"privateAccess,omitempty" json:"private_access,omitempty"`
-	EnableWorkloadIdentity bool              `yaml:"enableWorkloadIdentity,omitempty" json:"enable_workload_identity,omitempty"`
-	ReleaseChannel         string            `yaml:"releaseChannel,omitempty" json:"release_channel,omitempty"` // "rapid", "regular", "stable"
+	EnabledClusterLogTypes []string            `yaml:"enabledClusterLogTypes,omitempty" json:"enabled_cluster_log_types,omitempty"`
+	PublicAccess           bool                `yaml:"publicAccess,omitempty" json:"public_access,omitempty"`
+	PrivateAccess          bool                `yaml:"privateAccess,omitempty" json:"private_access,omitempty"`
+	EnableWorkloadIdentity bool                `yaml:"enableWorkloadIdentity,omitempty" json:"enable_workload_identity,omitempty"`
+	ReleaseChannel         string              `yaml:"releaseChannel,omitempty" json:"release_channel,omitempty"` // "rapid", "regular", "stable"
 	NodePools              []GKENodePoolConfig `yaml:"nodePools,omitempty" json:"node_pools,omitempty"`
 }
 
 // GKENodePoolConfig defines a GKE node pool configuration
 type GKENodePoolConfig struct {
-	Name           string `yaml:"name" json:"name"`
-	MachineType    string `yaml:"machineType" json:"machine_type"`
-	DiskSizeGB     int    `yaml:"diskSizeGB" json:"disk_size_gb"`
-	DiskType       string `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
-	NodeCount      int    `yaml:"nodeCount" json:"node_count"`
-	MinNodeCount   int    `yaml:"minNodeCount,omitempty" json:"min_node_count,omitempty"`
-	MaxNodeCount   int    `yaml:"maxNodeCount,omitempty" json:"max_node_count,omitempty"`
-	EnableAutoScale bool  `yaml:"enableAutoScale,omitempty" json:"enable_auto_scale,omitempty"`
+	Name            string `yaml:"name" json:"name"`
+	MachineType     string `yaml:"machineType" json:"machine_type"`
+	DiskSizeGB      int    `yaml:"diskSizeGB" json:"disk_size_gb"`
+	DiskType        string `yaml:"diskType,omitempty" json:"disk_type,omitempty"`
+	NodeCount       int    `yaml:"nodeCount" json:"node_count"`
+	MinNodeCount    int    `yaml:"minNodeCount,omitempty" json:"min_node_count,omitempty"`
+	MaxNodeCount    int    `yaml:"maxNodeCount,omitempty" json:"max_node_count,omitempty"`
+	EnableAutoScale bool   `yaml:"enableAutoScale,omitempty" json:"enable_auto_scale,omitempty"`
 }
 
 // AzureConfig contains Azure-specific settings for self-managed OpenShift
 type AzureConfig struct {
-	SubscriptionID            string              `yaml:"subscriptionId" json:"subscription_id"`
-	BaseDomainResourceGroup   string              `yaml:"baseDomainResourceGroup" json:"base_domain_resource_group"`
-	ResourceGroupPrefix       string              `yaml:"resourceGroupPrefix,omitempty" json:"resource_group_prefix,omitempty"`
-	Network                   string              `yaml:"network,omitempty" json:"network,omitempty"`
-	Subnetwork                string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
-	ControlPlane              *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
-	Compute                   *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
+	SubscriptionID          string              `yaml:"subscriptionId" json:"subscription_id"`
+	BaseDomainResourceGroup string              `yaml:"baseDomainResourceGroup" json:"base_domain_resource_group"`
+	ResourceGroupPrefix     string              `yaml:"resourceGroupPrefix,omitempty" json:"resource_group_prefix,omitempty"`
+	Network                 string              `yaml:"network,omitempty" json:"network,omitempty"`
+	Subnetwork              string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
+	ControlPlane            *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
+	Compute                 *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
 }
 
 // AzureMachineConfig defines Azure VM configuration
 type AzureMachineConfig struct {
-	VMSize       string `yaml:"vmSize" json:"vm_size"`                                      // e.g., "Standard_D8s_v3"
+	VMSize       string `yaml:"vmSize" json:"vm_size"` // e.g., "Standard_D8s_v3"
 	OSDiskSizeGB int    `yaml:"osDiskSizeGB" json:"os_disk_size_gb"`
 	OSDiskType   string `yaml:"osDiskType,omitempty" json:"os_disk_type,omitempty"` // StandardSSD_LRS, Premium_LRS
 }
 
 // AROConfig contains ARO-specific settings
 type AROConfig struct {
-	MasterVMSize     string `yaml:"masterVMSize" json:"master_vm_size"`              // e.g., "Standard_D8s_v3"
-	WorkerVMSize     string `yaml:"workerVMSize" json:"worker_vm_size"`              // e.g., "Standard_D4s_v3"
+	MasterVMSize     string `yaml:"masterVMSize" json:"master_vm_size"` // e.g., "Standard_D8s_v3"
+	WorkerVMSize     string `yaml:"workerVMSize" json:"worker_vm_size"` // e.g., "Standard_D4s_v3"
 	WorkerCount      int    `yaml:"workerCount" json:"worker_count"`
 	OpenShiftVersion string `yaml:"openshiftVersion,omitempty" json:"openshift_version,omitempty"`
 	PullSecretPath   string `yaml:"pullSecretPath,omitempty" json:"pull_secret_path,omitempty"`
@@ -279,7 +279,7 @@ type AKSConfig struct {
 // AKSNodePoolConfig defines an AKS node pool configuration
 type AKSNodePoolConfig struct {
 	Name            string `yaml:"name" json:"name"`
-	VMSize          string `yaml:"vmSize" json:"vm_size"`                                    // e.g., "Standard_D4s_v3"
+	VMSize          string `yaml:"vmSize" json:"vm_size"` // e.g., "Standard_D4s_v3"
 	Count           int    `yaml:"count" json:"count"`
 	MinCount        int    `yaml:"minCount,omitempty" json:"min_count,omitempty"`
 	MaxCount        int    `yaml:"maxCount,omitempty" json:"max_count,omitempty"`
@@ -289,21 +289,21 @@ type AKSNodePoolConfig struct {
 
 // PostDeploymentConfig defines automated post-deployment configuration
 type PostDeploymentConfig struct {
-	Enabled    bool                 `yaml:"enabled" json:"enabled"`
-	Timeout    string               `yaml:"timeout,omitempty" json:"timeout,omitempty"` // Duration string, e.g. "30m"
-	Operators  []OperatorConfig     `yaml:"operators,omitempty" json:"operators,omitempty"`
-	Scripts    []ScriptConfig       `yaml:"scripts,omitempty" json:"scripts,omitempty"`
-	Manifests  []ManifestConfig     `yaml:"manifests,omitempty" json:"manifests,omitempty"`
-	HelmCharts []HelmChartConfig    `yaml:"helmCharts,omitempty" json:"helm_charts,omitempty"`
+	Enabled    bool              `yaml:"enabled" json:"enabled"`
+	Timeout    string            `yaml:"timeout,omitempty" json:"timeout,omitempty"` // Duration string, e.g. "30m"
+	Operators  []OperatorConfig  `yaml:"operators,omitempty" json:"operators,omitempty"`
+	Scripts    []ScriptConfig    `yaml:"scripts,omitempty" json:"scripts,omitempty"`
+	Manifests  []ManifestConfig  `yaml:"manifests,omitempty" json:"manifests,omitempty"`
+	HelmCharts []HelmChartConfig `yaml:"helmCharts,omitempty" json:"helm_charts,omitempty"`
 }
 
 // OperatorConfig defines an operator to install post-deployment
 type OperatorConfig struct {
-	Name           string                 `yaml:"name" json:"name" validate:"required"`
-	Namespace      string                 `yaml:"namespace" json:"namespace" validate:"required"`
-	Source         string                 `yaml:"source,omitempty" json:"source,omitempty"` // e.g. "redhat-operators" (optional - OLM will search all catalogs if omitted)
-	Channel        string                 `yaml:"channel" json:"channel" validate:"required"`
-	CustomResource *CustomResourceConfig  `yaml:"customResource,omitempty" json:"custom_resource,omitempty"`
+	Name           string                `yaml:"name" json:"name" validate:"required"`
+	Namespace      string                `yaml:"namespace" json:"namespace" validate:"required"`
+	Source         string                `yaml:"source,omitempty" json:"source,omitempty"` // e.g. "redhat-operators" (optional - OLM will search all catalogs if omitted)
+	Channel        string                `yaml:"channel" json:"channel" validate:"required"`
+	CustomResource *CustomResourceConfig `yaml:"customResource,omitempty" json:"custom_resource,omitempty"`
 }
 
 // CustomResourceConfig defines a custom resource to create after operator installation
@@ -326,8 +326,8 @@ type ScriptConfig struct {
 // ManifestConfig defines a manifest file to apply post-deployment
 type ManifestConfig struct {
 	Name        string `yaml:"name" json:"name" validate:"required"`
-	Path        string `yaml:"path,omitempty" json:"path,omitempty"`           // Local file path
-	URL         string `yaml:"url,omitempty" json:"url,omitempty"`             // Remote URL (e.g. GitHub raw URL)
+	Path        string `yaml:"path,omitempty" json:"path,omitempty"` // Local file path
+	URL         string `yaml:"url,omitempty" json:"url,omitempty"`   // Remote URL (e.g. GitHub raw URL)
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Namespace   string `yaml:"namespace,omitempty" json:"namespace,omitempty"` // Target namespace for the manifest
 }
@@ -348,9 +348,9 @@ type AddonReference struct {
 
 // MetadataConfig contains profile metadata for documentation
 type MetadataConfig struct {
-	Capabilities []string          `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Capabilities []string               `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 	Capacity     map[string]interface{} `yaml:"capacity,omitempty" json:"capacity,omitempty"`
-	Notes        []string          `yaml:"notes,omitempty" json:"notes,omitempty"`
+	Notes        []string               `yaml:"notes,omitempty" json:"notes,omitempty"`
 }
 
 // ReservedTagKeys are tag keys that cannot be overridden by users

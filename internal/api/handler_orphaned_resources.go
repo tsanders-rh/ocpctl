@@ -371,7 +371,7 @@ func (h *OrphanedResourceHandler) deleteHostedZone(ctx context.Context, hostedZo
 
 		// Skip NS and SOA records at the zone apex - these will be deleted automatically
 		if (recordType == route53types.RRTypeNs || recordType == route53types.RRTypeSoa) &&
-		   strings.TrimSuffix(recordName, ".") == strings.TrimSuffix(hostedZoneName, ".") {
+			strings.TrimSuffix(recordName, ".") == strings.TrimSuffix(hostedZoneName, ".") {
 			continue
 		}
 

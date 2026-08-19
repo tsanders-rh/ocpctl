@@ -26,8 +26,8 @@ func NewRenderer(registry *Registry) *Renderer {
 
 // InstallConfigData holds data for rendering install-config.yaml
 type InstallConfigData struct {
-	ClusterName   string
-	BaseDomain    string
+	ClusterName     string
+	BaseDomain      string
 	PullSecret      string
 	SSHKey          string
 	Platform        string

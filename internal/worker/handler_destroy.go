@@ -241,16 +241,16 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 		// GCP cleanup - verify authentication and clean up any orphaned resources
 		log.Printf("Running GCP post-destruction cleanup...")
 		if err := h.HandleGCPOpenShiftDestroy(ctx, job, cluster, workDir); err != nil {
-				errMsg := fmt.Sprintf("GCP cleanup failed: %v", err)
-				log.Printf("Warning: %s", errMsg)
-				cleanupWarnings = append(cleanupWarnings, errMsg)
-				cleanupResults["platform_cleanup"] = "failed"
-				cleanupResults["platform_cleanup_error"] = err.Error()
-				platformCleanupSucceeded = false
-			} else {
-				cleanupResults["platform_cleanup"] = "success"
-				log.Printf("✓ GCP cleanup completed successfully")
-			}
+			errMsg := fmt.Sprintf("GCP cleanup failed: %v", err)
+			log.Printf("Warning: %s", errMsg)
+			cleanupWarnings = append(cleanupWarnings, errMsg)
+			cleanupResults["platform_cleanup"] = "failed"
+			cleanupResults["platform_cleanup_error"] = err.Error()
+			platformCleanupSucceeded = false
+		} else {
+			cleanupResults["platform_cleanup"] = "success"
+			log.Printf("✓ GCP cleanup completed successfully")
+		}
 	}
 
 	// Clean up work directory (OPTIONAL: local disk cleanup)
@@ -545,9 +545,9 @@ func (h *DestroyHandler) handleEKSDestroy(ctx context.Context, job *types.Job, c
 			}
 
 			if err := h.metricsPublisher.PublishCount(ctx, metrics.MetricDestroyVerificationFailed, 1, map[string]string{
-				"ClusterType":       string(cluster.ClusterType),
-				"Platform":          string(cluster.Platform),
-				"Region":            cluster.Region,
+				"ClusterType":        string(cluster.ClusterType),
+				"Platform":           string(cluster.Platform),
+				"Region":             cluster.Region,
 				"RemainingResources": fmt.Sprintf("%d", totalRemaining),
 			}); err != nil {
 				log.Printf("Warning: failed to publish destroy verification failed metric: %v", err)
@@ -777,8 +777,8 @@ func (h *DestroyHandler) handleROSADestroy(ctx context.Context, job *types.Job, 
 		// - "does not exist"
 		// - "There is no cluster with identifier or name"
 		if strings.Contains(output, "not found") ||
-		   strings.Contains(output, "does not exist") ||
-		   strings.Contains(output, "There is no cluster") {
+			strings.Contains(output, "does not exist") ||
+			strings.Contains(output, "There is no cluster") {
 			log.Printf("ROSA cluster %s does not exist - treating as already destroyed", cluster.Name)
 			log.Printf("ROSA response: %s", output)
 			clusterNotFound = true

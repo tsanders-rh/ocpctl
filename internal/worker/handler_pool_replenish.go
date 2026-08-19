@@ -15,8 +15,8 @@ import (
 
 // PoolReplenishHandler handles pool replenishment jobs
 type PoolReplenishHandler struct {
-	config       *Config
-	store        *store.Store
+	config        *Config
+	store         *store.Store
 	createHandler *CreateHandler
 }
 
@@ -177,7 +177,7 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 			Version:          defaultVersion,
 			Profile:          pool.Profile,
 			Region:           prof.Regions.Default,
-			BaseDomain:       baseDomain, // Required for OpenShift clusters
+			BaseDomain:       baseDomain,     // Required for OpenShift clusters
 			Owner:            ownerUsername,  // Use username for display
 			OwnerID:          pool.CreatedBy, // Pool creator owns pool clusters
 			Team:             "pool-managed",
@@ -217,8 +217,8 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 			Attempt:     1,
 			MaxAttempts: 3,
 			Metadata: types.JobMetadata{
-				"pool_id":   poolID,
-				"pool_name": pool.Name,
+				"pool_id":      poolID,
+				"pool_name":    pool.Name,
 				"triggered_by": "pool_replenish",
 			},
 		}

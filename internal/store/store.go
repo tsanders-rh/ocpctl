@@ -33,34 +33,34 @@ const (
 type Store struct {
 	pool *pgxpool.Pool
 
-	Clusters             *ClusterStore
-	Jobs                 *JobStore
-	JobLocks             *JobLockStore
-	JobRetryHistory      *JobRetryHistoryStore
-	Idempotency          *IdempotencyStore
-	RBAC                 *RBACStore
-	Audit                *AuditStore
-	DestroyAudit         *DestroyAuditStore
-	ClusterOutputs       *ClusterOutputsStore
-	Artifacts            *ArtifactStore
-	Usage                *UsageStore
-	Users                *UserStore
-	RefreshTokens        *RefreshTokenStore
-	APIKeys              *APIKeyStore
-	IAMMappings          *IAMMappingStore
-	DeploymentLogs       *DeploymentLogStore
-	StorageGroups             *StorageGroupStore
-	ClusterStorageLinks       *ClusterStorageLinkStore
-	OrphanedResources         *OrphanedResourceStore
-	ClusterConfigurations     *ClusterConfigurationStore
-	ProfileDeploymentMetrics  *ProfileDeploymentMetricsStore
-	PostConfigAddons          *PostConfigAddonStore
-	PostConfigTemplates       *PostConfigTemplateStore
-	ClusterTemplates          *ClusterTemplateStore
-	Teams                     *TeamStore
-	TeamAdmins                *TeamAdminStore
-	TeamMemberships           *TeamMembershipStore
-	Pools                     *PoolStore
+	Clusters                 *ClusterStore
+	Jobs                     *JobStore
+	JobLocks                 *JobLockStore
+	JobRetryHistory          *JobRetryHistoryStore
+	Idempotency              *IdempotencyStore
+	RBAC                     *RBACStore
+	Audit                    *AuditStore
+	DestroyAudit             *DestroyAuditStore
+	ClusterOutputs           *ClusterOutputsStore
+	Artifacts                *ArtifactStore
+	Usage                    *UsageStore
+	Users                    *UserStore
+	RefreshTokens            *RefreshTokenStore
+	APIKeys                  *APIKeyStore
+	IAMMappings              *IAMMappingStore
+	DeploymentLogs           *DeploymentLogStore
+	StorageGroups            *StorageGroupStore
+	ClusterStorageLinks      *ClusterStorageLinkStore
+	OrphanedResources        *OrphanedResourceStore
+	ClusterConfigurations    *ClusterConfigurationStore
+	ProfileDeploymentMetrics *ProfileDeploymentMetricsStore
+	PostConfigAddons         *PostConfigAddonStore
+	PostConfigTemplates      *PostConfigTemplateStore
+	ClusterTemplates         *ClusterTemplateStore
+	Teams                    *TeamStore
+	TeamAdmins               *TeamAdminStore
+	TeamMemberships          *TeamMembershipStore
+	Pools                    *PoolStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -178,11 +178,11 @@ func NewStore(databaseURL string) (*Store, error) {
 	}
 
 	// Configure connection pool timeouts
-	config.MaxConns = 20                        // Maximum number of connections
-	config.MinConns = 2                         // Minimum number of connections
-	config.MaxConnLifetime = 1 * time.Hour      // Max lifetime of a connection
-	config.MaxConnIdleTime = 30 * time.Minute   // Max idle time before closing
-	config.HealthCheckPeriod = 1 * time.Minute  // How often to check connection health
+	config.MaxConns = 20                       // Maximum number of connections
+	config.MinConns = 2                        // Minimum number of connections
+	config.MaxConnLifetime = 1 * time.Hour     // Max lifetime of a connection
+	config.MaxConnIdleTime = 30 * time.Minute  // Max idle time before closing
+	config.HealthCheckPeriod = 1 * time.Minute // How often to check connection health
 
 	// Get statement timeout from environment or use default
 	statementTimeout := DefaultStatementTimeout
