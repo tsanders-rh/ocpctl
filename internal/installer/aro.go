@@ -582,6 +582,46 @@ func (a *AROInstaller) GetKubeconfig(ctx context.Context, resourceGroup, cluster
 	return nil
 }
 
+// AROCredentials holds the kubeadmin console credentials for an ARO cluster,
+// as returned by `az aro list-credentials`.
+type AROCredentials struct {
+	KubeadminUsername string `json:"kubeadminUsername"`
+	KubeadminPassword string `json:"kubeadminPassword"`
+}
+
+// ListCredentials retrieves the kubeadmin username/password for an ARO cluster
+// via `az aro list-credentials`. Azure manages these credentials (they are not
+// derivable from the kubeconfig), so this is the only way to surface console
+// login credentials for ARO — mirroring the admin credentials ROSA/IPI persist.
+func (a *AROInstaller) ListCredentials(ctx context.Context, resourceGroup, clusterName string) (*AROCredentials, error) {
+	args := []string{
+		"aro", "list-credentials",
+		"--resource-group", resourceGroup,
+		"--name", clusterName,
+		"--output", "json",
+	}
+
+	cmd := exec.CommandContext(ctx, a.binaryPath, args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("az aro list-credentials failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+
+	var creds AROCredentials
+	if err := json.Unmarshal(stdout.Bytes(), &creds); err != nil {
+		return nil, fmt.Errorf("parse aro credentials: %w", err)
+	}
+	if creds.KubeadminUsername == "" || creds.KubeadminPassword == "" {
+		return nil, fmt.Errorf("az aro list-credentials returned empty credentials")
+	}
+
+	return &creds, nil
+}
+
 // CreateResourceGroup creates an Azure resource group
 func (a *AROInstaller) CreateResourceGroup(ctx context.Context, name, region string, tags map[string]string) error {
 	args := []string{

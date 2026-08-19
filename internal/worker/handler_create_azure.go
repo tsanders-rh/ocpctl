@@ -228,6 +228,19 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("get cluster info: %w", err)
 	}
 
+	// Fetch kubeadmin console credentials. Azure manages these separately from the
+	// kubeconfig, so without this the web UI has no username/password to show (#97).
+	// Best-effort: a failure here must not fail an otherwise healthy cluster — the
+	// kubeconfig still provides CLI access, and credentials can be re-fetched later.
+	var kubeadminRef string
+	if creds, err := aroInstaller.ListCredentials(ctx, resourceGroup, cluster.Name); err != nil {
+		log.Printf("[JOB %s] Warning: failed to fetch ARO kubeadmin credentials: %v", job.ID, err)
+	} else {
+		// Store as username:password, the same format the UI parses for ROSA.
+		kubeadminRef = fmt.Sprintf("%s:%s", creds.KubeadminUsername, creds.KubeadminPassword)
+		log.Printf("[JOB %s] Retrieved ARO kubeadmin credentials", job.ID)
+	}
+
 	// Upload artifacts to S3
 	artifactStorage, err := NewArtifactStorage(ctx, h.config.S3BucketName)
 	if err != nil {
@@ -249,6 +262,9 @@ func (h *CreateHandler) handleAROCreate(ctx context.Context, job *types.Job, clu
 		KubeconfigS3URI: &kubeconfigS3URI,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
+	}
+	if kubeadminRef != "" {
+		outputs.KubeadminSecretRef = &kubeadminRef
 	}
 
 	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
