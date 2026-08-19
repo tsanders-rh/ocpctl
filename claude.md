@@ -83,11 +83,11 @@ sudo systemctl restart ocpctl-worker
 
 ### Dev Server
 - **Hostname**: ocpctl-dev
-- **IP**: 54.167.79.11
+- **IP**: 44.214.230.178
 - **Domain**: dev.ocpctl.mg.dog8code.com
 - **Instance Type**: t3.medium (2 vCPU, 4GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **SSH**: `ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11`
+- **SSH**: `ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178`
 
 ### Service Ports
 - **API Server**: 8080 (internal, proxied via nginx)
@@ -154,7 +154,7 @@ sudo systemctl restart ocpctl-web
 ### Dev Server Access
 ```bash
 # SSH to dev
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178
 
 # Check service status
 sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
@@ -538,7 +538,7 @@ psql $DATABASE_URL -c "SELECT version();"
 ### Dev Server Access
 ```bash
 # SSH to dev
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11
+ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178
 
 # Check service status
 sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
