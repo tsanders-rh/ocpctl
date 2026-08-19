@@ -33,3 +33,27 @@ else
     echo "[azure-login] ERROR: Azure credentials are configured but 'az login' failed" >&2
     exit 1
 fi
+
+# Write the service-principal credentials file that openshift-install reads for
+# Azure IPI. Without it the installer prompts interactively and fails with
+# "failed to retrieve credentials from user: EOF". ensure-installers.sh also
+# writes this file, but autoscale workers run a systemd unit whose ExecStartPre
+# does not invoke ensure-installers.sh — so create it here too, since azure-login.sh
+# is wired into the unit and runs on every worker as the ocpctl user with
+# HOME=/opt/ocpctl (guaranteeing correct location and ownership).
+if [ -n "$AZURE_SUBSCRIPTION_ID" ]; then
+    mkdir -p ~/.azure
+    umask 077
+    cat > ~/.azure/osServicePrincipal.json <<EOF
+{
+  "subscriptionId": "$AZURE_SUBSCRIPTION_ID",
+  "clientId": "$AZURE_CLIENT_ID",
+  "clientSecret": "$AZURE_CLIENT_SECRET",
+  "tenantId": "$AZURE_TENANT_ID"
+}
+EOF
+    chmod 600 ~/.azure/osServicePrincipal.json
+    echo "[azure-login] ✓ Wrote Azure credentials to ~/.azure/osServicePrincipal.json"
+else
+    echo "[azure-login] WARNING: AZURE_SUBSCRIPTION_ID not set; skipping osServicePrincipal.json (openshift-install will fail for Azure)" >&2
+fi

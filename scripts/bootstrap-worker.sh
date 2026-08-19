@@ -118,6 +118,22 @@ else
     echo "WARNING: Failed to download ensure-installers.sh from S3"
 fi
 
+# Download cloud CLI login hooks referenced by the systemd unit's ExecStartPre.
+# These are baked into the AMI, but the unit runs whatever is at these paths;
+# refresh them from S3 on every boot so autoscale workers pick up fixes without
+# an AMI rebuild. In particular azure-login.sh writes ~/.azure/osServicePrincipal.json
+# which openshift-install needs for Azure IPI (without it: "failed to retrieve
+# credentials from user: EOF").
+for hook in azure-login.sh ibmcloud-login.sh; do
+    echo "Downloading ${hook} from S3..."
+    if aws s3 cp ${S3_BUCKET}/scripts/${hook} ${REMOTE_BASE}/scripts/${hook}; then
+        chmod +x ${REMOTE_BASE}/scripts/${hook}
+        echo "✓ ${hook} downloaded and made executable"
+    else
+        echo "WARNING: Failed to download ${hook} from S3 (unit may use stale AMI copy)"
+    fi
+done
+
 # Cleanup old versions (keep last 3)
 echo "Cleaning up old releases (keeping last 3)..."
 cd ${REMOTE_BASE}/releases
