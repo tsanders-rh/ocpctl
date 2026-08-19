@@ -1,0 +1,98 @@
+# NIGHTLY PIPELINE — DISABLED until secrets are configured.
+#
+# This file is intentionally named *.yml.disabled so GitHub Actions does NOT run
+# it. It provisions a real (billable) AWS SNO cluster and needs repo secrets.
+#
+# To enable (see docs/development/NIGHTLY_PIPELINE.md §6):
+#   1. Add the secrets listed under `env:` / steps below.
+#   2. git mv .github/workflows/nightly.yml.disabled .github/workflows/nightly.yml
+#   3. Trigger once via workflow_dispatch and verify the cluster is destroyed.
+#
+name: Nightly (dev smoke)
+
+on:
+  schedule:
+    - cron: "0 7 * * *"     # 07:00 UTC ≈ 03:00 ET
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build-test-deploy-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: ocpctl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/ocpctl_test
+      API: https://dev.ocpctl.mg.dog8code.com
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 1. Hard test gate (matches CI + deploy-script gate)
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race ./...
+
+      # 2. Deploy to dev (deploy-env.sh re-runs the unit-test gate internally)
+      - name: Install dev SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/ocpctl-dev-key
+          chmod 600 ~/.ssh/ocpctl-dev-key
+          ssh-keyscan 44.214.230.178 >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Deploy to dev
+        run: ./scripts/deploy-env.sh dev
+
+      # 3-4. Smoke: create AWS SNO → poll until READY
+      - name: Smoke test (AWS SNO)
+        id: smoke
+        env:
+          DEV_API_TOKEN: ${{ secrets.DEV_API_TOKEN }}
+        run: ./scripts/nightly-smoke.sh
+
+      # 5. Teardown — always, even on failure/cancel
+      - name: Teardown cluster
+        if: always()
+        env:
+          DEV_API_TOKEN: ${{ secrets.DEV_API_TOKEN }}
+        run: ./scripts/nightly-smoke.sh --teardown
+
+      # 6. Notify on failure
+      - name: Open failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Nightly dev smoke failed — ${new Date().toISOString().slice(0,10)}`,
+              body: `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['nightly', 'ci']
+            })

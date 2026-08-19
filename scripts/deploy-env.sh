@@ -113,6 +113,22 @@ fi
 echo -e "${YELLOW}Building binaries with version metadata...${NC}"
 cd "$(dirname "$0")/.."
 
+# Gate the build on unit tests — a failing test must abort the deploy so we never
+# ship a binary that does not pass `go test`. Set SKIP_TESTS=1 ONLY for an
+# emergency hotfix (see docs/development/DEVOPS.md).
+if [ "${SKIP_TESTS:-0}" != "1" ]; then
+    echo -e "${YELLOW}Running unit tests (go test -race ./...)...${NC}"
+    if ! go test -race ./...; then
+        echo -e "${RED}✗ Unit tests failed — aborting build/deploy${NC}"
+        echo -e "${RED}  (set SKIP_TESTS=1 to override for an emergency hotfix)${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Unit tests passed${NC}"
+    echo ""
+else
+    echo -e "${RED}⚠ SKIP_TESTS=1 set — skipping unit tests (emergency override)${NC}"
+fi
+
 LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME} -X main.Environment=${ENVIRONMENT}"
 
 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/ocpctl-api-${VERSION} ./cmd/api
