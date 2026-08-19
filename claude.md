@@ -387,6 +387,37 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl
 ./scripts/deploy.sh v0.20260413.1346b69
 ```
 
+### Autoscale Worker Self-Heal (from S3)
+
+**Two kinds of worker, two update paths.** The static API/worker hosts are
+updated directly by `deploy.sh` (scp + `install` + `systemctl restart`).
+**Autoscale workers** (ASG) instead boot from an AMI and pull everything they
+need from `s3://ocpctl-binaries/` at launch — so anything **baked into the AMI**
+can silently go stale.
+
+**Update chain on an autoscale worker boot:**
+1. `user-data-worker.sh` runs on first boot. It downloads `bootstrap.sh`, the
+   systemd unit, and `worker.env` from S3 **only `if [ ! -f ]`** — so an
+   AMI-baked copy of any of these is *never* refreshed by user-data.
+2. It then runs `bootstrap-worker.sh latest`, which on **every** boot pulls the
+   fresh binary, profiles, manifests, `ensure-installers.sh`, the cloud login
+   hooks (`azure-login.sh`, `ibmcloud-login.sh`), **and the systemd unit** from
+   S3 (`daemon-reload` only when the unit changed).
+
+This means: to fix worker startup/credential behavior you edit the script in the
+repo, `deploy.sh` uploads it to S3, and **new autoscale workers self-heal on next
+boot without an AMI rebuild.** Existing autoscale workers keep their old copy
+until replaced — terminate them so the ASG relaunches fresh ones to pick up a fix.
+
+**Gotcha that caused Azure "EOF" failures (Aug 2026):** the AMI's baked systemd
+unit was missing the `ensure-installers.sh` ExecStartPre (the only thing that
+wrote `~/.azure/osServicePrincipal.json`), and user-data's `if [ ! -f ]` guard
+meant it never got the fixed unit. Now (a) `azure-login.sh` also writes
+`osServicePrincipal.json` (it's in the unit and runs on every worker as `ocpctl`
+with `HOME=/opt/ocpctl`), and (b) `bootstrap-worker.sh` refreshes the login hooks
+**and** the systemd unit from S3 every boot. See `scripts/azure-login.sh` and
+`scripts/bootstrap-worker.sh`.
+
 ---
 
 ## Common Patterns & Debugging
@@ -680,6 +711,19 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-08-19**: Autoscale Worker Self-Heal + Azure Credential Fix
+- Fixed Azure IPI creates failing on autoscale workers with "creating Azure
+  session: failed to retrieve credentials from user: EOF"
+- Root cause: only `ensure-installers.sh` wrote `~/.azure/osServicePrincipal.json`,
+  but the AMI-baked systemd unit lacked its ExecStartPre and user-data's
+  `if [ ! -f ]` guard meant the fixed unit was never pulled
+- `azure-login.sh` now also writes `osServicePrincipal.json` (runs on every worker)
+- `bootstrap-worker.sh` now refreshes the login hooks AND the systemd unit from S3
+  on every boot, so autoscale workers self-heal without an AMI rebuild
+- Also fixed Azure `userTags` (strip `ocpctl:` colons, cap at installer's 10-tag
+  limit, keep provenance tags) in `internal/profile/renderer.go`
+- See "Autoscale Worker Self-Heal (from S3)" under Deployment Process
+
 **2026-06-27**: Dev Environment Setup Complete
 - Provisioned complete dev infrastructure with Terraform (EC2, RDS PostgreSQL 17.9, S3, Route53)
 - Deployed API server, worker service, and Next.js web frontend
@@ -757,4 +801,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-06-27 (Added dev environment documentation)
+**Last Updated**: 2026-08-19 (Added autoscale worker self-heal + Azure credential fix documentation)
