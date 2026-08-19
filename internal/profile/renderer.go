@@ -3,6 +3,9 @@ package profile
 import (
 	"bytes"
 	"fmt"
+	"log"
+	"sort"
+	"strings"
 	"text/template"
 
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -156,6 +159,9 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 
 	if prof.Platform == "azure" && prof.PlatformConfig.Azure != nil {
 		data.AzureBaseDomainResourceGroup = prof.PlatformConfig.Azure.BaseDomainResourceGroup
+		// Azure tag keys forbid ':' and the installer caps userTags at 10, so
+		// sanitize keys and trim to an Azure-compliant subset (provenance kept).
+		data.UserTags = azureUserTags(mergedTags)
 	}
 
 	// Select appropriate template
@@ -291,6 +297,112 @@ func gcpLabelValue(value string) string {
 	}
 
 	return string(result)
+}
+
+// azureMaxUserTags is the maximum number of userTags the OpenShift installer
+// accepts for the Azure platform (platform.azure.userTags).
+const azureMaxUserTags = 10
+
+// azureRedundantTagKeys are request tag keys that duplicate information already
+// carried by the ocpctl provenance tags (or are otherwise trivially inferable),
+// so they are the first to be dropped when trimming to Azure's 10-tag limit.
+var azureRedundantTagKeys = map[string]bool{
+	"ClusterName": true, // duplicates ocpctl:cluster-name
+	"Platform":    true, // always the cluster's platform
+	"ManagedBy":   true, // always "ocpctl"; duplicates ocpctl:managed
+}
+
+// azureUserTags returns an Azure-compliant subset of tags for
+// platform.azure.userTags. Azure tag keys forbid ':' (used by the "ocpctl:"
+// provenance prefix) and the installer rejects more than 10 userTags, so this:
+//   - sanitizes every key (see sanitizeAzureTagKey),
+//   - always retains the 4 ocpctl provenance tags (needed for orphan cleanup),
+//   - fills the remaining slots with request tags up to azureMaxUserTags,
+//     dropping redundant keys first and then alphabetically (deterministic).
+//
+// Dropped keys are logged so the trimming is visible in worker logs.
+func azureUserTags(merged map[string]string) map[string]string {
+	provenanceKeys := map[string]bool{
+		types.TagKeyManaged:     true,
+		types.TagKeyClusterID:   true,
+		types.TagKeyClusterName: true,
+		types.TagKeyCreatedAt:   true,
+	}
+
+	result := make(map[string]string, azureMaxUserTags)
+
+	// Always keep provenance tags (with sanitized keys).
+	for k, v := range merged {
+		if provenanceKeys[k] {
+			if sk := sanitizeAzureTagKey(k); sk != "" {
+				result[sk] = v
+			}
+		}
+	}
+
+	// Order request (non-provenance) keys so non-redundant keys come first
+	// (alphabetically) and redundant keys last; this makes redundant keys the
+	// first to be dropped when we exceed the limit.
+	var requestKeys []string
+	for k := range merged {
+		if !provenanceKeys[k] {
+			requestKeys = append(requestKeys, k)
+		}
+	}
+	sort.Slice(requestKeys, func(i, j int) bool {
+		ri, rj := azureRedundantTagKeys[requestKeys[i]], azureRedundantTagKeys[requestKeys[j]]
+		if ri != rj {
+			return !ri // non-redundant sorts before redundant
+		}
+		return requestKeys[i] < requestKeys[j]
+	})
+
+	var dropped []string
+	for _, k := range requestKeys {
+		sk := sanitizeAzureTagKey(k)
+		if sk == "" || len(result) >= azureMaxUserTags {
+			dropped = append(dropped, k)
+			continue
+		}
+		if _, exists := result[sk]; exists {
+			// Sanitized key collides with a provenance/earlier key; skip.
+			dropped = append(dropped, k)
+			continue
+		}
+		result[sk] = merged[k]
+	}
+
+	if len(dropped) > 0 {
+		log.Printf("Azure userTags: kept %d of %d tags (installer limit %d); dropped: %v",
+			len(result), len(merged), azureMaxUserTags, dropped)
+	}
+
+	return result
+}
+
+// sanitizeAzureTagKey converts a tag key to an Azure-compliant tag key. Azure
+// keys may contain only alphanumerics and '_', '.', '-' (notably no ':'), must
+// begin with a letter, must end with a letter, number or underscore, and are at
+// most 128 characters. Invalid characters (e.g. the ':' in "ocpctl:managed")
+// are replaced with '_'. Returns "" if nothing valid remains.
+func sanitizeAzureTagKey(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '.' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	// Must begin with a letter and end with a letter, number or underscore.
+	s := strings.TrimLeft(b.String(), "_.-0123456789")
+	s = strings.TrimRight(s, ".-")
+	if len(s) > 128 {
+		s = strings.TrimRight(s[:128], ".-")
+	}
+	return s
 }
 
 // awsInstallConfigTemplate is the template for AWS install-config.yaml
