@@ -38,8 +38,8 @@ const (
 type JobStatus string
 
 const (
-	JobStatusPending  JobStatus = "PENDING"
-	JobStatusRunning  JobStatus = "RUNNING"
+	JobStatusPending   JobStatus = "PENDING"
+	JobStatusRunning   JobStatus = "RUNNING"
 	JobStatusSucceeded JobStatus = "SUCCEEDED"
 	JobStatusFailed    JobStatus = "FAILED"
 	JobStatusRetrying  JobStatus = "RETRYING"
@@ -78,19 +78,19 @@ func (m *JobMetadata) Scan(value interface{}) error {
 
 // Job represents an async job record
 type Job struct {
-	ID          string      `db:"id" json:"id"`
-	ClusterID   string      `db:"cluster_id" json:"cluster_id"`
-	JobType     JobType     `db:"job_type" json:"job_type"`
-	Status      JobStatus   `db:"status" json:"status"`
-	Attempt     int         `db:"attempt" json:"attempt"`
-	MaxAttempts int         `db:"max_attempts" json:"max_attempts"`
-	ErrorCode   *string     `db:"error_code" json:"error_code"`
-	ErrorMessage *string    `db:"error_message" json:"error_message"`
-	StartedAt   *time.Time  `db:"started_at" json:"started_at"`
-	EndedAt     *time.Time  `db:"ended_at" json:"ended_at"`
-	CreatedAt   time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time   `db:"updated_at" json:"updated_at"`
-	Metadata    JobMetadata `db:"metadata" json:"metadata"`
+	ID           string      `db:"id" json:"id"`
+	ClusterID    string      `db:"cluster_id" json:"cluster_id"`
+	JobType      JobType     `db:"job_type" json:"job_type"`
+	Status       JobStatus   `db:"status" json:"status"`
+	Attempt      int         `db:"attempt" json:"attempt"`
+	MaxAttempts  int         `db:"max_attempts" json:"max_attempts"`
+	ErrorCode    *string     `db:"error_code" json:"error_code"`
+	ErrorMessage *string     `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time  `db:"started_at" json:"started_at"`
+	EndedAt      *time.Time  `db:"ended_at" json:"ended_at"`
+	CreatedAt    time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time   `db:"updated_at" json:"updated_at"`
+	Metadata     JobMetadata `db:"metadata" json:"metadata"`
 }
 
 // JobLock represents a cluster lock held by a worker

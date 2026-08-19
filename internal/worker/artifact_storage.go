@@ -250,10 +250,10 @@ func (a *ArtifactStorage) uploadFile(ctx context.Context, localPath, s3Key strin
 
 	// Upload to S3
 	_, err = a.s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(a.bucketName),
-		Key:           aws.String(s3Key),
-		Body:          file,
-		ContentLength: aws.Int64(stat.Size()),
+		Bucket:               aws.String(a.bucketName),
+		Key:                  aws.String(s3Key),
+		Body:                 file,
+		ContentLength:        aws.Int64(stat.Size()),
 		ServerSideEncryption: "AES256", // Encrypt artifacts at rest
 	})
 	if err != nil {

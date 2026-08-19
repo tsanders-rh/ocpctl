@@ -44,12 +44,12 @@ type PersistentDiskConfig struct {
 
 // GCSBucketConfig represents GCS bucket configuration
 type GCSBucketConfig struct {
-	Name              string
-	Location          string // us-central1, us, eu, asia, etc.
-	StorageClass      string // STANDARD, NEARLINE, COLDLINE, ARCHIVE
-	Labels            map[string]string
-	LifecycleRules    []LifecycleRule
-	Versioning        bool
+	Name               string
+	Location           string // us-central1, us, eu, asia, etc.
+	StorageClass       string // STANDARD, NEARLINE, COLDLINE, ARCHIVE
+	Labels             map[string]string
+	LifecycleRules     []LifecycleRule
+	Versioning         bool
 	UniformBucketLevel bool
 }
 
@@ -67,7 +67,7 @@ type LifecycleAction struct {
 
 // LifecycleCondition represents lifecycle condition
 type LifecycleCondition struct {
-	Age              int      // days
+	Age              int // days
 	MatchesPrefix    []string
 	MatchesSuffix    []string
 	NumNewerVersions int
@@ -75,25 +75,25 @@ type LifecycleCondition struct {
 
 // FilestoreConfig represents Filestore instance configuration
 type FilestoreConfig struct {
-	Name         string
-	Tier         string // BASIC_HDD, BASIC_SSD, HIGH_SCALE_SSD, ENTERPRISE
-	Capacity     int    // GB, minimum 1024 for BASIC_HDD
-	Network      string
+	Name          string
+	Tier          string // BASIC_HDD, BASIC_SSD, HIGH_SCALE_SSD, ENTERPRISE
+	Capacity      int    // GB, minimum 1024 for BASIC_HDD
+	Network       string
 	FileShareName string
-	Location     string
-	Labels       map[string]string
+	Location      string
+	Labels        map[string]string
 }
 
 // DiskInfo represents persistent disk information
 type DiskInfo struct {
-	Name        string            `json:"name"`
-	Zone        string            `json:"zone"`
-	Type        string            `json:"type"`
-	SizeGB      int               `json:"sizeGb,string"`
-	Status      string            `json:"status"`
-	CreatedAt   time.Time         `json:"creationTimestamp"`
-	Labels      map[string]string `json:"labels"`
-	SourceSnapshot string         `json:"sourceSnapshot"`
+	Name           string            `json:"name"`
+	Zone           string            `json:"zone"`
+	Type           string            `json:"type"`
+	SizeGB         int               `json:"sizeGb,string"`
+	Status         string            `json:"status"`
+	CreatedAt      time.Time         `json:"creationTimestamp"`
+	Labels         map[string]string `json:"labels"`
+	SourceSnapshot string            `json:"sourceSnapshot"`
 }
 
 // BucketInfo represents GCS bucket information
@@ -637,7 +637,7 @@ func sanitizeGCPLabel(s string) string {
 			result.WriteRune('-')
 		}
 
-		if i == 0 && !((r >= 'a' && r <= 'z')) {
+		if i == 0 && !(r >= 'a' && r <= 'z') {
 			temp := result.String()
 			result.Reset()
 			result.WriteString("x")

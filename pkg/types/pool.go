@@ -18,11 +18,11 @@ const (
 
 // ClusterPool represents a pre-provisioned pool of clusters
 type ClusterPool struct {
-	ID          string    `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	DisplayName string    `json:"display_name" db:"display_name"`
-	Description string    `json:"description,omitempty" db:"description"`
-	Profile     string    `json:"profile" db:"profile"`
+	ID          string `json:"id" db:"id"`
+	Name        string `json:"name" db:"name"`
+	DisplayName string `json:"display_name" db:"display_name"`
+	Description string `json:"description,omitempty" db:"description"`
+	Profile     string `json:"profile" db:"profile"`
 
 	// Pool sizing
 	TargetSize int `json:"target_size" db:"target_size"`
@@ -77,7 +77,7 @@ type ClusterPoolStats struct {
 	AvgClusterAge    time.Duration `json:"avg_cluster_age,omitempty" swaggertype:"integer"`
 
 	// Lease metrics
-	ActiveLeases   int           `json:"active_leases"`
+	ActiveLeases     int           `json:"active_leases"`
 	AvgLeaseDuration time.Duration `json:"avg_lease_duration,omitempty" swaggertype:"integer"`
 
 	// Last update
@@ -86,9 +86,9 @@ type ClusterPoolStats struct {
 
 // LeaseRequest represents a request to lease a cluster from a pool
 type LeaseRequest struct {
-	LeasedBy string                 `json:"leased_by"` // User, service account, or job ID
+	LeasedBy string                 `json:"leased_by"`                // User, service account, or job ID
 	Duration *int                   `json:"duration_hours,omitempty"` // Override default lease duration
-	Metadata map[string]interface{} `json:"metadata,omitempty"` // Custom metadata (job_id, build_url, etc.)
+	Metadata map[string]interface{} `json:"metadata,omitempty"`       // Custom metadata (job_id, build_url, etc.)
 }
 
 // LeaseResponse contains information about a leased cluster
@@ -101,13 +101,13 @@ type LeaseResponse struct {
 	LeaseMetadata  map[string]interface{} `json:"lease_metadata,omitempty"`
 
 	// Cluster access information
-	APIUrl          string     `json:"api_url,omitempty"`
-	ConsoleUrl      string     `json:"console_url,omitempty"`
-	KubeconfigPath  string     `json:"kubeconfig_path,omitempty"`
-	SAToken         string     `json:"sa_token,omitempty"`
+	APIUrl           string     `json:"api_url,omitempty"`
+	ConsoleUrl       string     `json:"console_url,omitempty"`
+	KubeconfigPath   string     `json:"kubeconfig_path,omitempty"`
+	SAToken          string     `json:"sa_token,omitempty"`
 	SATokenExpiresAt *time.Time `json:"sa_token_expires_at,omitempty"`
-	OcLoginCommand  string     `json:"oc_login_command,omitempty"`
-	Kubeadmin       *struct {
+	OcLoginCommand   string     `json:"oc_login_command,omitempty"`
+	Kubeadmin        *struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	} `json:"kubeadmin,omitempty"`

@@ -13,10 +13,10 @@ import (
 
 // IBMCloudCCOConfig holds IBM Cloud-specific CCO configuration
 type IBMCloudCCOConfig struct {
-	APIKey         string
-	Region         string
-	ResourceGroup  string
-	AccountID      string
+	APIKey        string
+	Region        string
+	ResourceGroup string
+	AccountID     string
 }
 
 // RunCCOCtlIBMCloud runs ccoctl for IBM Cloud to create service IDs and API keys

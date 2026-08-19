@@ -20,13 +20,13 @@ type EKSInstaller struct {
 
 // EKSClusterConfig represents an eksctl cluster configuration
 type EKSClusterConfig struct {
-	APIVersion        string                 `yaml:"apiVersion"`
-	Kind              string                 `yaml:"kind"`
-	Metadata          EKSMetadata            `yaml:"metadata"`
-	IAM               *EKSIAM                `yaml:"iam,omitempty"`
-	NodeGroups        []EKSNodeGroup         `yaml:"nodeGroups,omitempty"`
-	ManagedNodeGroups []EKSManagedNodeGroup  `yaml:"managedNodeGroups,omitempty"`
-	VPC               *EKSVPC                `yaml:"vpc,omitempty"`
+	APIVersion        string                `yaml:"apiVersion"`
+	Kind              string                `yaml:"kind"`
+	Metadata          EKSMetadata           `yaml:"metadata"`
+	IAM               *EKSIAM               `yaml:"iam,omitempty"`
+	NodeGroups        []EKSNodeGroup        `yaml:"nodeGroups,omitempty"`
+	ManagedNodeGroups []EKSManagedNodeGroup `yaml:"managedNodeGroups,omitempty"`
+	VPC               *EKSVPC               `yaml:"vpc,omitempty"`
 }
 
 // EKSMetadata represents cluster metadata
@@ -77,7 +77,7 @@ type EKSManagedNodeGroup struct {
 
 // EKSVPC represents VPC configuration
 type EKSVPC struct {
-	CIDR string `yaml:"cidr,omitempty"`
+	CIDR string  `yaml:"cidr,omitempty"`
 	NAT  *EKSNAT `yaml:"nat,omitempty"`
 }
 

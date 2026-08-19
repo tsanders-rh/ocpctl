@@ -15,10 +15,10 @@ func (e ValidationError) Error() string {
 
 // ValidationResult contains the outcome of policy validation
 type ValidationResult struct {
-	Valid       bool
-	Errors      []ValidationError
-	MergedTags  map[string]string
-	DestroyAt   string // ISO8601 timestamp
+	Valid      bool
+	Errors     []ValidationError
+	MergedTags map[string]string
+	DestroyAt  string // ISO8601 timestamp
 }
 
 // AddError adds a validation error

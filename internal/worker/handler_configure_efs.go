@@ -30,12 +30,12 @@ func NewConfigureEFSHandler(config *Config, st *store.Store) *ConfigureEFSHandle
 
 // EFSScriptOutput represents the JSON output from configure-efs-storage.sh
 type EFSScriptOutput struct {
-	EFSID               string  `json:"efs_id"`
-	EFSSecurityGroupID  string  `json:"efs_security_group_id"`
-	Region              string  `json:"region"`
-	StorageClass        string  `json:"storage_class"`
-	AuthMode            *string `json:"auth_mode,omitempty"`
-	IAMRoleARN          *string `json:"iam_role_arn,omitempty"`
+	EFSID              string  `json:"efs_id"`
+	EFSSecurityGroupID string  `json:"efs_security_group_id"`
+	Region             string  `json:"region"`
+	StorageClass       string  `json:"storage_class"`
+	AuthMode           *string `json:"auth_mode,omitempty"`
+	IAMRoleARN         *string `json:"iam_role_arn,omitempty"`
 }
 
 // Handle configures EFS storage for a cluster
@@ -91,7 +91,7 @@ func (h *ConfigureEFSHandler) Handle(ctx context.Context, job *types.Job) error 
 		return fmt.Errorf("failed to find JSON output markers in script output")
 	}
 
-	jsonStr := outputStr[startIdx+len(startMarker):endIdx]
+	jsonStr := outputStr[startIdx+len(startMarker) : endIdx]
 	jsonStr = strings.TrimSpace(jsonStr)
 
 	var scriptOutput EFSScriptOutput

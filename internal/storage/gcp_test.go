@@ -171,4 +171,3 @@ func TestSanitizeGCPLabel_Storage(t *testing.T) {
 		})
 	}
 }
-

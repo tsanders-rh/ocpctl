@@ -56,10 +56,10 @@ func TestClusterHandler_List_TeamAdminAccess(t *testing.T) {
 		require.Contains(t, teamAdmin.ManagedTeams, "engineering")
 
 		// Create clusters
-		clusterOwned := createTestCluster(t, s, teamAdmin.ID, "engineering")      // Should see
-		clusterTeam := createTestCluster(t, s, otherUser.ID, "engineering")       // Should see
-		clusterSales := createTestCluster(t, s, otherUser.ID, "sales")            // Should NOT see
-		clusterOwnedSales := createTestCluster(t, s, teamAdmin.ID, "sales")       // Should see (owned)
+		clusterOwned := createTestCluster(t, s, teamAdmin.ID, "engineering") // Should see
+		clusterTeam := createTestCluster(t, s, otherUser.ID, "engineering")  // Should see
+		clusterSales := createTestCluster(t, s, otherUser.ID, "sales")       // Should NOT see
+		clusterOwnedSales := createTestCluster(t, s, teamAdmin.ID, "sales")  // Should see (owned)
 
 		// Create request
 		e := echo.New()

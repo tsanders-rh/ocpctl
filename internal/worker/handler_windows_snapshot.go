@@ -242,18 +242,18 @@ func (h *WindowsSnapshotHandler) createTemporaryCluster(ctx context.Context, reg
 
 	// Create cluster record
 	cluster := &types.Cluster{
-		ID:               clusterID,
-		Name:             clusterName,
-		Platform:         types.PlatformAWS,
-		ClusterType:      types.ClusterTypeOpenShift,
-		Region:           region,
-		BaseDomain:       &baseDomain,             // Required for OpenShift installer
-		Profile:          "aws-virtualization-ga", // Use virtualization profile for CNV support
-		Version:          "4.21.10",               // Use profile default version
-		Status:           types.ClusterStatusPending,
-		Owner:            "system",
-		OwnerID:          "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
-		TTLHours:         2, // Short TTL - 2 hours max
+		ID:          clusterID,
+		Name:        clusterName,
+		Platform:    types.PlatformAWS,
+		ClusterType: types.ClusterTypeOpenShift,
+		Region:      region,
+		BaseDomain:  &baseDomain,             // Required for OpenShift installer
+		Profile:     "aws-virtualization-ga", // Use virtualization profile for CNV support
+		Version:     "4.21.10",               // Use profile default version
+		Status:      types.ClusterStatusPending,
+		Owner:       "system",
+		OwnerID:     "a0000000-0000-0000-0000-000000000001", // Default admin user for system clusters
+		TTLHours:    2,                                      // Short TTL - 2 hours max
 		SelectedAddonIDs: []string{
 			"cnv", // CNV addon (will use default version with Windows VM support)
 		},
@@ -754,10 +754,10 @@ func (h *WindowsSnapshotHandler) waitForImportComplete(ctx context.Context, impo
 		var result struct {
 			ImportSnapshotTasks []struct {
 				SnapshotTaskDetail struct {
-					Status      string `json:"Status"`
+					Status        string `json:"Status"`
 					StatusMessage string `json:"StatusMessage"`
-					Progress    string `json:"Progress"`
-					SnapshotID  string `json:"SnapshotId"`
+					Progress      string `json:"Progress"`
+					SnapshotID    string `json:"SnapshotId"`
 				} `json:"SnapshotTaskDetail"`
 			} `json:"ImportSnapshotTasks"`
 		}

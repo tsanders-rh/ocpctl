@@ -11,20 +11,20 @@ import (
 
 // JobProcessor processes jobs by type
 type JobProcessor struct {
-	config                          *Config
-	store                           *store.Store
-	createHandler                   *CreateHandler
-	destroyHandler                  *DestroyHandler
-	configureEFSHandler             *ConfigureEFSHandler
-	provisionSharedStorageHandler   *ProvisionSharedStorageHandler
-	unlinkSharedStorageHandler      *UnlinkSharedStorageHandler
-	hibernateHandler                *HibernateHandler
-	resumeHandler                   *ResumeHandler
-	postConfigureHandler            *PostConfigureHandler
-	poolReplenishHandler            *PoolReplenishHandler
-	poolCleanHandler                *PoolCleanHandler
-	poolRefreshHandler              *PoolRefreshHandler
-	windowsSnapshotHandler          *WindowsSnapshotHandler
+	config                        *Config
+	store                         *store.Store
+	createHandler                 *CreateHandler
+	destroyHandler                *DestroyHandler
+	configureEFSHandler           *ConfigureEFSHandler
+	provisionSharedStorageHandler *ProvisionSharedStorageHandler
+	unlinkSharedStorageHandler    *UnlinkSharedStorageHandler
+	hibernateHandler              *HibernateHandler
+	resumeHandler                 *ResumeHandler
+	postConfigureHandler          *PostConfigureHandler
+	poolReplenishHandler          *PoolReplenishHandler
+	poolCleanHandler              *PoolCleanHandler
+	poolRefreshHandler            *PoolRefreshHandler
+	windowsSnapshotHandler        *WindowsSnapshotHandler
 }
 
 // NewJobProcessor creates a new job processor

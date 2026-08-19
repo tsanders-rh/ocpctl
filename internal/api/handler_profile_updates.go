@@ -48,21 +48,21 @@ type CheckVersionsResponse struct {
 
 // UpdateVersionsRequest represents the request to update profile versions
 type UpdateVersionsRequest struct {
-	OpenshiftVersions       []string `json:"openshift_versions,omitempty"`
-	KubernetesVersions      []string `json:"kubernetes_versions,omitempty"`
-	OpenshiftDefaultVersion string   `json:"openshift_default_version,omitempty"`
+	OpenshiftVersions        []string `json:"openshift_versions,omitempty"`
+	KubernetesVersions       []string `json:"kubernetes_versions,omitempty"`
+	OpenshiftDefaultVersion  string   `json:"openshift_default_version,omitempty"`
 	KubernetesDefaultVersion string   `json:"kubernetes_default_version,omitempty"`
-	DryRun                  bool     `json:"dry_run,omitempty"`
+	DryRun                   bool     `json:"dry_run,omitempty"`
 }
 
 // UpdateVersionsResponse represents the response after updating versions
 type UpdateVersionsResponse struct {
-	Success       bool      `json:"success"`
-	ProfileName   string    `json:"profile_name"`
-	BackupPath    string    `json:"backup_path,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	AuditEventID  string    `json:"audit_event_id,omitempty"`
-	DryRun        bool      `json:"dry_run,omitempty"`
+	Success        bool             `json:"success"`
+	ProfileName    string           `json:"profile_name"`
+	BackupPath     string           `json:"backup_path,omitempty"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+	AuditEventID   string           `json:"audit_event_id,omitempty"`
+	DryRun         bool             `json:"dry_run,omitempty"`
 	PreviewProfile *profile.Profile `json:"preview_profile,omitempty"`
 }
 
@@ -73,19 +73,19 @@ type ReloadProfilesResponse struct {
 	ReloadedAt     time.Time `json:"reloaded_at"`
 }
 
-//	@Summary		Check profiles for version updates
-//	@Description	Checks all enabled profiles for available OpenShift and Kubernetes version updates from official release channels
-//	@Tags			admin
-//	@Produce		json
-//	@Param			refresh		query		bool	false	"Force refresh version cache"
-//	@Param			includeRC	query		bool	false	"Include release candidate versions"
-//	@Param			includeCI	query		bool	false	"Include OpenShift CI releases"
-//	@Success		200			{object}	CheckVersionsResponse
-//	@Failure		401			{object}	ErrorResponse	"Unauthorized"
-//	@Failure		403			{object}	ErrorResponse	"Forbidden - Admin access required"
-//	@Failure		500			{object}	ErrorResponse	"Internal server error"
-//	@Security		BearerAuth
-//	@Router			/admin/profiles/version-check [get]
+// @Summary		Check profiles for version updates
+// @Description	Checks all enabled profiles for available OpenShift and Kubernetes version updates from official release channels
+// @Tags			admin
+// @Produce		json
+// @Param			refresh		query		bool	false	"Force refresh version cache"
+// @Param			includeRC	query		bool	false	"Include release candidate versions"
+// @Param			includeCI	query		bool	false	"Include OpenShift CI releases"
+// @Success		200			{object}	CheckVersionsResponse
+// @Failure		401			{object}	ErrorResponse	"Unauthorized"
+// @Failure		403			{object}	ErrorResponse	"Forbidden - Admin access required"
+// @Failure		500			{object}	ErrorResponse	"Internal server error"
+// @Security		BearerAuth
+// @Router			/admin/profiles/version-check [get]
 func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -155,21 +155,21 @@ func (h *ProfileUpdateHandler) HandleCheckVersions(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-//	@Summary		Update profile versions
-//	@Description	Updates the OpenShift or Kubernetes version allowlist and default version for a specific profile. Creates a backup before updating.
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Param			name	path		string					true	"Profile name"
-//	@Param			request	body		UpdateVersionsRequest	true	"Version update request"
-//	@Success		200		{object}	UpdateVersionsResponse
-//	@Failure		400		{object}	ErrorResponse	"Invalid request"
-//	@Failure		401		{object}	ErrorResponse	"Unauthorized"
-//	@Failure		403		{object}	ErrorResponse	"Forbidden - Admin access required"
-//	@Failure		404		{object}	ErrorResponse	"Profile not found"
-//	@Failure		500		{object}	ErrorResponse	"Internal server error"
-//	@Security		BearerAuth
-//	@Router			/admin/profiles/{name}/update-versions [post]
+// @Summary		Update profile versions
+// @Description	Updates the OpenShift or Kubernetes version allowlist and default version for a specific profile. Creates a backup before updating.
+// @Tags			admin
+// @Accept			json
+// @Produce		json
+// @Param			name	path		string					true	"Profile name"
+// @Param			request	body		UpdateVersionsRequest	true	"Version update request"
+// @Success		200		{object}	UpdateVersionsResponse
+// @Failure		400		{object}	ErrorResponse	"Invalid request"
+// @Failure		401		{object}	ErrorResponse	"Unauthorized"
+// @Failure		403		{object}	ErrorResponse	"Forbidden - Admin access required"
+// @Failure		404		{object}	ErrorResponse	"Profile not found"
+// @Failure		500		{object}	ErrorResponse	"Internal server error"
+// @Security		BearerAuth
+// @Router			/admin/profiles/{name}/update-versions [post]
 func (h *ProfileUpdateHandler) HandleUpdateVersions(c echo.Context) error {
 	ctx := c.Request().Context()
 	profileName := c.Param("name")
@@ -282,16 +282,16 @@ func (h *ProfileUpdateHandler) HandleUpdateVersions(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-//	@Summary		Reload all profiles
-//	@Description	Forces a reload of all profiles from the profiles directory into the in-memory registry. Useful after manual profile file changes.
-//	@Tags			admin
-//	@Produce		json
-//	@Success		200	{object}	ReloadProfilesResponse
-//	@Failure		401	{object}	ErrorResponse	"Unauthorized"
-//	@Failure		403	{object}	ErrorResponse	"Forbidden - Admin access required"
-//	@Failure		500	{object}	ErrorResponse	"Internal server error"
-//	@Security		BearerAuth
-//	@Router			/admin/profiles/reload [post]
+// @Summary		Reload all profiles
+// @Description	Forces a reload of all profiles from the profiles directory into the in-memory registry. Useful after manual profile file changes.
+// @Tags			admin
+// @Produce		json
+// @Success		200	{object}	ReloadProfilesResponse
+// @Failure		401	{object}	ErrorResponse	"Unauthorized"
+// @Failure		403	{object}	ErrorResponse	"Forbidden - Admin access required"
+// @Failure		500	{object}	ErrorResponse	"Internal server error"
+// @Security		BearerAuth
+// @Router			/admin/profiles/reload [post]
 func (h *ProfileUpdateHandler) HandleReloadProfiles(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -334,18 +334,18 @@ func (h *ProfileUpdateHandler) HandleReloadProfiles(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-//	@Summary		Rollback profile to backup
-//	@Description	Rolls back a profile to its latest backup file. This restores the previous version of the profile configuration before the last update.
-//	@Tags			admin
-//	@Produce		json
-//	@Param			name	path		string	true	"Profile name"
-//	@Success		200		{object}	map[string]interface{}
-//	@Failure		401		{object}	ErrorResponse	"Unauthorized"
-//	@Failure		403		{object}	ErrorResponse	"Forbidden - Admin access required"
-//	@Failure		404		{object}	ErrorResponse	"Profile not found or no backup available"
-//	@Failure		500		{object}	ErrorResponse	"Internal server error"
-//	@Security		BearerAuth
-//	@Router			/admin/profiles/{name}/rollback [post]
+// @Summary		Rollback profile to backup
+// @Description	Rolls back a profile to its latest backup file. This restores the previous version of the profile configuration before the last update.
+// @Tags			admin
+// @Produce		json
+// @Param			name	path		string	true	"Profile name"
+// @Success		200		{object}	map[string]interface{}
+// @Failure		401		{object}	ErrorResponse	"Unauthorized"
+// @Failure		403		{object}	ErrorResponse	"Forbidden - Admin access required"
+// @Failure		404		{object}	ErrorResponse	"Profile not found or no backup available"
+// @Failure		500		{object}	ErrorResponse	"Internal server error"
+// @Security		BearerAuth
+// @Router			/admin/profiles/{name}/rollback [post]
 func (h *ProfileUpdateHandler) HandleRollbackProfile(c echo.Context) error {
 	ctx := c.Request().Context()
 	profileName := c.Param("name")
@@ -384,8 +384,8 @@ func (h *ProfileUpdateHandler) HandleRollbackProfile(c echo.Context) error {
 	go h.syncProfileToS3(profileName)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success":      true,
-		"profile_name": profileName,
+		"success":        true,
+		"profile_name":   profileName,
 		"rolled_back_at": time.Now(),
 	})
 }

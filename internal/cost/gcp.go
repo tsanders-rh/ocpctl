@@ -15,7 +15,7 @@ import (
 
 // GCPCostTracker tracks actual GCP costs using the Cloud Billing API
 type GCPCostTracker struct {
-	project       string
+	project        string
 	billingEnabled bool
 }
 
@@ -41,7 +41,7 @@ func NewGCPCostTracker() *GCPCostTracker {
 	}
 
 	return &GCPCostTracker{
-		project:       project,
+		project:        project,
 		billingEnabled: billingEnabled,
 	}
 }
@@ -147,8 +147,8 @@ func (t *GCPCostTracker) queryBillingData(ctx context.Context, cluster *types.Cl
 
 	// Parse query results
 	var results []struct {
-		Service    string  `json:"service"`
-		TotalCost  float64 `json:"total_cost"`
+		Service   string  `json:"service"`
+		TotalCost float64 `json:"total_cost"`
 	}
 
 	if err := json.Unmarshal(output, &results); err != nil {

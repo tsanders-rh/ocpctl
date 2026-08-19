@@ -29,8 +29,8 @@ type ValidateResponse struct {
 
 // DAGInfo provides information about the execution DAG
 type DAGInfo struct {
-	ExecutionOrder []string          `json:"executionOrder"`
-	TaskCount      int               `json:"taskCount"`
+	ExecutionOrder []string            `json:"executionOrder"`
+	TaskCount      int                 `json:"taskCount"`
 	Dependencies   map[string][]string `json:"dependencies"`
 }
 

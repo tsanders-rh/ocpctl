@@ -130,23 +130,23 @@ func TestGCPCostTracker_BreakdownPercentages(t *testing.T) {
 
 func TestGCPCostTracker_HourlyCostEstimates(t *testing.T) {
 	tests := []struct {
-		name             string
-		clusterType      types.ClusterType
+		name               string
+		clusterType        types.ClusterType
 		expectedHourlyCost float64
 	}{
 		{
-			name:             "GKE cluster",
-			clusterType:      types.ClusterTypeGKE,
+			name:               "GKE cluster",
+			clusterType:        types.ClusterTypeGKE,
 			expectedHourlyCost: 0.05,
 		},
 		{
-			name:             "OpenShift on GCP",
-			clusterType:      types.ClusterTypeOpenShift,
+			name:               "OpenShift on GCP",
+			clusterType:        types.ClusterTypeOpenShift,
 			expectedHourlyCost: 0.35,
 		},
 		{
-			name:             "Unknown cluster type",
-			clusterType:      "unknown",
+			name:               "Unknown cluster type",
+			clusterType:        "unknown",
 			expectedHourlyCost: 0.10,
 		},
 	}
@@ -191,33 +191,33 @@ func TestGCPCostTracker_DateRangeCalculations(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		startDate    time.Time
-		endDate      time.Time
+		name          string
+		startDate     time.Time
+		endDate       time.Time
 		expectedHours float64
 	}{
 		{
-			name:         "1 hour",
-			startDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:      time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC),
+			name:          "1 hour",
+			startDate:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:       time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC),
 			expectedHours: 1.0,
 		},
 		{
-			name:         "24 hours (1 day)",
-			startDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:      time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			name:          "24 hours (1 day)",
+			startDate:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 			expectedHours: 24.0,
 		},
 		{
-			name:         "168 hours (1 week)",
-			startDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:      time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC),
+			name:          "168 hours (1 week)",
+			startDate:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:       time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC),
 			expectedHours: 168.0,
 		},
 		{
-			name:         "720 hours (30 days)",
-			startDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:      time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+			name:          "720 hours (30 days)",
+			startDate:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:       time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
 			expectedHours: 720.0,
 		},
 	}
@@ -246,18 +246,18 @@ func TestGCPCostTracker_MonthlyCostEstimates(t *testing.T) {
 	endDate := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC) // 31 days
 
 	tests := []struct {
-		name              string
-		clusterType       types.ClusterType
+		name                string
+		clusterType         types.ClusterType
 		expectedMonthlyCost float64
 	}{
 		{
-			name:              "GKE monthly (31 days)",
-			clusterType:       types.ClusterTypeGKE,
+			name:                "GKE monthly (31 days)",
+			clusterType:         types.ClusterTypeGKE,
 			expectedMonthlyCost: 37.2, // 0.05/hr * 24hrs * 31days
 		},
 		{
-			name:              "OpenShift monthly (31 days)",
-			clusterType:       types.ClusterTypeOpenShift,
+			name:                "OpenShift monthly (31 days)",
+			clusterType:         types.ClusterTypeOpenShift,
 			expectedMonthlyCost: 260.4, // 0.35/hr * 24hrs * 31days
 		},
 	}

@@ -83,7 +83,7 @@ func TestRegistry_Exists(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, registry.Exists("aws-minimal-test"))
-	assert.False(t, registry.Exists("aws-standard")) // Disabled profile
+	assert.False(t, registry.Exists("aws-standard"))         // Disabled profile
 	assert.True(t, registry.Exists("ibmcloud-minimal-test")) // Now enabled
 	assert.True(t, registry.Exists("ibmcloud-standard"))     // Now enabled
 	assert.False(t, registry.Exists("non-existent"))
@@ -97,7 +97,7 @@ func TestRegistry_Count(t *testing.T) {
 	total := registry.Count()
 	enabled := registry.CountEnabled()
 
-	assert.GreaterOrEqual(t, total, 4) // 4 profiles defined
-	assert.GreaterOrEqual(t, enabled, 2) // At least 2 AWS profiles enabled
+	assert.GreaterOrEqual(t, total, 4)    // 4 profiles defined
+	assert.GreaterOrEqual(t, enabled, 2)  // At least 2 AWS profiles enabled
 	assert.LessOrEqual(t, enabled, total) // Enabled <= total
 }

@@ -447,11 +447,11 @@ func (m *GCPNetworkManager) GetVPCInfo(ctx context.Context, name string) (*VPCIn
 
 // VPCInfo represents VPC network information
 type VPCInfo struct {
-	Name              string            `json:"name"`
-	Description       string            `json:"description"`
-	AutoCreateSubnets bool              `json:"autoCreateSubnets"`
-	Subnets           []string          `json:"subnetworks"`
-	SelfLink          string            `json:"selfLink"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	AutoCreateSubnets bool     `json:"autoCreateSubnets"`
+	Subnets           []string `json:"subnetworks"`
+	SelfLink          string   `json:"selfLink"`
 }
 
 // SetupClusterNetworking creates all networking resources for a cluster
@@ -591,7 +591,7 @@ func sanitizeGCPLabel(s string) string {
 			result.WriteRune('-')
 		}
 
-		if i == 0 && !((r >= 'a' && r <= 'z')) {
+		if i == 0 && !(r >= 'a' && r <= 'z') {
 			temp := result.String()
 			result.Reset()
 			result.WriteString("x")

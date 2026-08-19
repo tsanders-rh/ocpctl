@@ -21,13 +21,13 @@ type IKSInstaller struct {
 
 // IKSClusterCreateOptions represents options for creating an IKS cluster
 type IKSClusterCreateOptions struct {
-	Name             string
-	Zone             string
-	MachineType      string
-	Workers          int
-	KubeVersion      string
-	PublicVLAN       string
-	PrivateVLAN      string
+	Name                   string
+	Zone                   string
+	MachineType            string
+	Workers                int
+	KubeVersion            string
+	PublicVLAN             string
+	PrivateVLAN            string
 	PublicServiceEndpoint  bool
 	PrivateServiceEndpoint bool
 }

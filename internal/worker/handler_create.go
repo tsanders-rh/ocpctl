@@ -1014,13 +1014,13 @@ func (h *CreateHandler) handleIKSCreate(ctx context.Context, job *types.Job, clu
 	}
 
 	createOpts := &installer.IKSClusterCreateOptions{
-		Name:         cluster.Name,
-		Zone:         zone,
-		MachineType:  machineType,
-		Workers:      workerCount,
-		KubeVersion:  cluster.Version,
-		PublicVLAN:   publicVLAN,
-		PrivateVLAN:  privateVLAN,
+		Name:                   cluster.Name,
+		Zone:                   zone,
+		MachineType:            machineType,
+		Workers:                workerCount,
+		KubeVersion:            cluster.Version,
+		PublicVLAN:             publicVLAN,
+		PrivateVLAN:            privateVLAN,
 		PublicServiceEndpoint:  prof.Features.PublicServiceEndpoint,
 		PrivateServiceEndpoint: prof.Features.PrivateServiceEndpoint,
 	}
@@ -1162,8 +1162,7 @@ func (h *CreateHandler) handlePostDeployment(ctx context.Context, cluster *types
 	}
 
 	// Check if cluster has custom post-config (user-defined or add-ons)
-	hasCustomPostConfig := cluster.CustomPostConfig != nil && (
-		len(cluster.CustomPostConfig.Operators) > 0 ||
+	hasCustomPostConfig := cluster.CustomPostConfig != nil && (len(cluster.CustomPostConfig.Operators) > 0 ||
 		len(cluster.CustomPostConfig.Scripts) > 0 ||
 		len(cluster.CustomPostConfig.Manifests) > 0 ||
 		len(cluster.CustomPostConfig.HelmCharts) > 0)

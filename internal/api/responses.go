@@ -9,8 +9,8 @@ import (
 
 // PaginatedResponse represents a paginated API response
 type PaginatedResponse struct {
-	Data       interface{}      `json:"data"`
-	Pagination PaginationMeta   `json:"pagination"`
+	Data       interface{}            `json:"data"`
+	Pagination PaginationMeta         `json:"pagination"`
 	Filters    map[string]interface{} `json:"filters,omitempty"`
 }
 

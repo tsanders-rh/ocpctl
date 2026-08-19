@@ -9,8 +9,8 @@ type IBMCloudInstallConfigData struct {
 	InstallConfigData
 
 	// IBM Cloud platform fields
-	ResourceGroupName string
-	VPCName           string
+	ResourceGroupName   string
+	VPCName             string
 	ControlPlaneSubnets []string
 	ComputeSubnets      []string
 
@@ -105,11 +105,11 @@ func validateIBMCloudInstanceType(instanceType string) error {
 		"bx2-48x192": true,
 
 		// Compute Optimized Gen 2
-		"cx2-2x4":    true,
-		"cx2-4x8":    true,
-		"cx2-8x16":   true,
-		"cx2-16x32":  true,
-		"cx2-32x64":  true,
+		"cx2-2x4":   true,
+		"cx2-4x8":   true,
+		"cx2-8x16":  true,
+		"cx2-16x32": true,
+		"cx2-32x64": true,
 
 		// Memory Optimized Gen 2
 		"mx2-2x16":   true,
@@ -119,20 +119,20 @@ func validateIBMCloudInstanceType(instanceType string) error {
 		"mx2-32x256": true,
 
 		// Balanced Gen 3
-		"bx3-2x10":   true,
-		"bx3-4x20":   true,
-		"bx3-8x40":   true,
-		"bx3-16x80":  true,
+		"bx3-2x10":  true,
+		"bx3-4x20":  true,
+		"bx3-8x40":  true,
+		"bx3-16x80": true,
 
 		// Very High Memory
-		"vx2-2x28":   true,
-		"vx2-4x56":   true,
-		"vx2-8x112":  true,
+		"vx2-2x28":  true,
+		"vx2-4x56":  true,
+		"vx2-8x112": true,
 
 		// Ultra High Memory
-		"ux2-2x56":   true,
-		"ux2-4x112":  true,
-		"ux2-8x224":  true,
+		"ux2-2x56":  true,
+		"ux2-4x112": true,
+		"ux2-8x224": true,
 	}
 
 	if !validTypes[instanceType] {

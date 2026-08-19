@@ -95,11 +95,20 @@ aws s3 cp s3://ocpctl-binaries/config/worker.env /etc/ocpctl/worker.env
 chown ocpctl:ocpctl /etc/ocpctl/worker.env
 chmod 600 /etc/ocpctl/worker.env
 
-# Create the work directory declared in worker.env (default if unset).
+# Create the runtime directories declared in worker.env and hand the whole
+# /var/lib/ocpctl tree to the worker user. openshift-install writes its bootstrap
+# ignition + CAPI/envtest scratch into $TMPDIR; if that dir is missing — or its
+# parent is root-owned so the ocpctl-run worker cannot create it — a create fails
+# with ENOENT ("failed to create tmp file for bootstrap ignition: ... no such
+# file or directory"). WORKER_WORK_DIR holds the per-cluster install dirs. Both
+# live under /var/lib/ocpctl, so chown the parent too (a plain `mkdir -p .../foo`
+# leaves /var/lib/ocpctl itself root-owned).
 WORKER_WORK_DIR=$(grep -E '^WORKER_WORK_DIR=' /etc/ocpctl/worker.env | cut -d= -f2- | tr -d '"')
-WORKER_WORK_DIR=$${WORKER_WORK_DIR:-/var/lib/ocpctl}
-mkdir -p "$WORKER_WORK_DIR"
-chown -R ocpctl:ocpctl "$WORKER_WORK_DIR"
+WORKER_WORK_DIR=$${WORKER_WORK_DIR:-/var/lib/ocpctl/clusters}
+WORKER_TMPDIR=$(grep -E '^TMPDIR=' /etc/ocpctl/worker.env | cut -d= -f2- | tr -d '"')
+WORKER_TMPDIR=$${WORKER_TMPDIR:-/var/lib/ocpctl/tmp}
+mkdir -p "$WORKER_WORK_DIR" "$WORKER_TMPDIR"
+chown -R ocpctl:ocpctl /var/lib/ocpctl
 
 # Install the worker systemd service. HOME is pinned to /opt/ocpctl so the az/gcloud/
 # ibmcloud sessions written by the login hooks persist where the worker reads them

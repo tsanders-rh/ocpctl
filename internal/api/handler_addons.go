@@ -28,16 +28,16 @@ func NewAddonsHandler(store *store.Store, registry *profile.Registry) *AddonsHan
 
 // AddonWithVersions represents an add-on with all its versions
 type AddonWithVersions struct {
-	ID                 string                `json:"id" example:"oadp"`
-	Name               string                `json:"name" example:"OpenShift API for Data Protection (OADP)"`
-	Description        string                `json:"description" example:"Backup and restore OpenShift clusters and applications"`
-	Category           string                `json:"category" example:"backup"`
-	SupportedPlatforms []string              `json:"supportedPlatforms" example:"openshift"`
-	Enabled            bool                  `json:"enabled" example:"true"`
-	Versions           VersionsInfo          `json:"versions"`
-	Metadata           *types.AddonMetadata  `json:"metadata,omitempty"`
-	AddonSource        string                `json:"addonSource" example:"system"`
-	IsPublished        bool                  `json:"isPublished" example:"true"`
+	ID                 string               `json:"id" example:"oadp"`
+	Name               string               `json:"name" example:"OpenShift API for Data Protection (OADP)"`
+	Description        string               `json:"description" example:"Backup and restore OpenShift clusters and applications"`
+	Category           string               `json:"category" example:"backup"`
+	SupportedPlatforms []string             `json:"supportedPlatforms" example:"openshift"`
+	Enabled            bool                 `json:"enabled" example:"true"`
+	Versions           VersionsInfo         `json:"versions"`
+	Metadata           *types.AddonMetadata `json:"metadata,omitempty"`
+	AddonSource        string               `json:"addonSource" example:"system"`
+	IsPublished        bool                 `json:"isPublished" example:"true"`
 }
 
 // VersionsInfo contains version information
@@ -104,8 +104,8 @@ func (h *AddonsHandler) ListAll(c echo.Context) error {
 		searchLower := toLower(search)
 		for _, addon := range addons {
 			if contains(toLower(addon.Name), searchLower) ||
-			   contains(toLower(addon.Description), searchLower) ||
-			   contains(toLower(addon.AddonID), searchLower) {
+				contains(toLower(addon.Description), searchLower) ||
+				contains(toLower(addon.AddonID), searchLower) {
 				filteredAddons = append(filteredAddons, addon)
 			}
 		}
@@ -383,16 +383,16 @@ func (h *AddonsHandler) GetByID(c echo.Context) error {
 
 // CreateAddonRequest represents the request to create a new user addon
 type CreateAddonRequest struct {
-	AddonID            string              `json:"addonId" validate:"required,min=1,max=100"`
-	Name               string              `json:"name" validate:"required,min=1,max=200"`
-	Description        string              `json:"description" validate:"required"`
-	Category           string              `json:"category" validate:"required,oneof=backup migration cicd monitoring security storage networking virtualization"`
+	AddonID            string                 `json:"addonId" validate:"required,min=1,max=100"`
+	Name               string                 `json:"name" validate:"required,min=1,max=200"`
+	Description        string                 `json:"description" validate:"required"`
+	Category           string                 `json:"category" validate:"required,oneof=backup migration cicd monitoring security storage networking virtualization"`
 	Config             types.CustomPostConfig `json:"config" validate:"required"`
-	SupportedPlatforms []string            `json:"supportedPlatforms" validate:"required,min=1"`
-	Version            string              `json:"version" validate:"required"`
-	DisplayName        string              `json:"displayName" validate:"required"`
-	IsDefault          bool                `json:"isDefault"`
-	Metadata           *types.AddonMetadata `json:"metadata,omitempty"`
+	SupportedPlatforms []string               `json:"supportedPlatforms" validate:"required,min=1"`
+	Version            string                 `json:"version" validate:"required"`
+	DisplayName        string                 `json:"displayName" validate:"required"`
+	IsDefault          bool                   `json:"isDefault"`
+	Metadata           *types.AddonMetadata   `json:"metadata,omitempty"`
 }
 
 // Create creates a new user addon
@@ -456,15 +456,15 @@ func (h *AddonsHandler) Create(c echo.Context) error {
 
 // UpdateAddonRequest represents the request to update an addon
 type UpdateAddonRequest struct {
-	Name               *string              `json:"name,omitempty" validate:"omitempty,min=1,max=200"`
-	Description        *string              `json:"description,omitempty"`
-	Category           *string              `json:"category,omitempty" validate:"omitempty,oneof=backup migration cicd monitoring security storage networking virtualization"`
+	Name               *string                 `json:"name,omitempty" validate:"omitempty,min=1,max=200"`
+	Description        *string                 `json:"description,omitempty"`
+	Category           *string                 `json:"category,omitempty" validate:"omitempty,oneof=backup migration cicd monitoring security storage networking virtualization"`
 	Config             *types.CustomPostConfig `json:"config,omitempty"`
-	SupportedPlatforms []string             `json:"supportedPlatforms,omitempty" validate:"omitempty,min=1"`
-	Version            *string              `json:"version,omitempty"`
-	DisplayName        *string              `json:"displayName,omitempty"`
-	IsDefault          *bool                `json:"isDefault,omitempty"`
-	Metadata           *types.AddonMetadata `json:"metadata,omitempty"`
+	SupportedPlatforms []string                `json:"supportedPlatforms,omitempty" validate:"omitempty,min=1"`
+	Version            *string                 `json:"version,omitempty"`
+	DisplayName        *string                 `json:"displayName,omitempty"`
+	IsDefault          *bool                   `json:"isDefault,omitempty"`
+	Metadata           *types.AddonMetadata    `json:"metadata,omitempty"`
 }
 
 // Update updates an existing user addon (draft only)

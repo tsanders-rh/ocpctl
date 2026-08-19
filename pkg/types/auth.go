@@ -60,11 +60,11 @@ type AuditEvent struct {
 
 // IdempotencyKey represents a cached request for idempotent operations
 type IdempotencyKey struct {
-	ID                 string     `db:"id"`
-	Key                string     `db:"key"`
-	RequestHash        string     `db:"request_hash"`
-	ResponseStatusCode *int       `db:"response_status_code"`
-	ResponseBody       []byte     `db:"response_body"`
-	CreatedAt          time.Time  `db:"created_at"`
-	ExpiresAt          time.Time  `db:"expires_at"`
+	ID                 string    `db:"id"`
+	Key                string    `db:"key"`
+	RequestHash        string    `db:"request_hash"`
+	ResponseStatusCode *int      `db:"response_status_code"`
+	ResponseBody       []byte    `db:"response_body"`
+	CreatedAt          time.Time `db:"created_at"`
+	ExpiresAt          time.Time `db:"expires_at"`
 }

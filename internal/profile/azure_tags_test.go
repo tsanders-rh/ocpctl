@@ -69,7 +69,7 @@ func TestSanitizeAzureTagKey(t *testing.T) {
 		"ocpctl:created-at":   "ocpctl_created-at",
 		"Owner":               "Owner",
 		"":                    "",
-		":::":                 "",   // nothing valid remains
+		":::":                 "",    // nothing valid remains
 		"1abc":                "abc", // must begin with a letter
 	}
 	for in, want := range cases {

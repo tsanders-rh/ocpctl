@@ -1906,7 +1906,7 @@ func (i *Installer) tagOIDCBucket(ctx context.Context, infraID, region string, t
 	// Verify bucket ownership before tagging (defense against bucket hijacking)
 	// Check that bucket creation time is recent (within last 2 hours of cluster creation)
 	headOutput, err := s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(bucketName),
+		Bucket:              aws.String(bucketName),
 		ExpectedBucketOwner: aws.String(accountID), // Fails if bucket owned by different account
 	})
 	if err != nil {
@@ -1919,7 +1919,7 @@ func (i *Installer) tagOIDCBucket(ctx context.Context, infraID, region string, t
 	// Additional safety check: Verify bucket region matches expected region
 	// This prevents cross-region bucket attacks
 	bucketLocation, err := s3Client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-		Bucket: aws.String(bucketName),
+		Bucket:              aws.String(bucketName),
 		ExpectedBucketOwner: aws.String(accountID),
 	})
 	if err != nil {

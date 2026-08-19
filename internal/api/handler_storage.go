@@ -47,10 +47,10 @@ type StorageGroupResponse struct {
 
 // ClusterStorageLinkResponse represents a cluster linked to a storage group
 type ClusterStorageLinkResponse struct {
-	ClusterID   string                      `json:"cluster_id"`
-	ClusterName string                      `json:"cluster_name"`
+	ClusterID   string                       `json:"cluster_id"`
+	ClusterName string                       `json:"cluster_name"`
 	Role        types.ClusterStorageLinkRole `json:"role"`
-	LinkedAt    time.Time                   `json:"linked_at"`
+	LinkedAt    time.Time                    `json:"linked_at"`
 }
 
 // LinkToCluster handles POST /api/v1/clusters/:id/storage/link
@@ -164,11 +164,11 @@ func (h *StorageHandler) LinkToCluster(c echo.Context) error {
 
 	// Return 202 Accepted with job ID
 	return c.JSON(202, map[string]interface{}{
-		"message":          "Shared storage provisioning initiated",
-		"job_id":           jobID,
-		"source_cluster":   sourceCluster.Name,
-		"target_cluster":   targetCluster.Name,
-		"estimated_time":   "5-10 minutes",
+		"message":        "Shared storage provisioning initiated",
+		"job_id":         jobID,
+		"source_cluster": sourceCluster.Name,
+		"target_cluster": targetCluster.Name,
+		"estimated_time": "5-10 minutes",
 	})
 }
 

@@ -13,11 +13,11 @@ import (
 
 // Client wraps IBM Cloud SDK clients for VPC and IAM operations
 type Client struct {
-	apiKey   string
-	region   string
-	vpcSvc   *vpcv1.VpcV1
-	iamSvc   *iamidentityv1.IamIdentityV1
-	rmSvc    *resourcemanagerv2.ResourceManagerV2
+	apiKey        string
+	region        string
+	vpcSvc        *vpcv1.VpcV1
+	iamSvc        *iamidentityv1.IamIdentityV1
+	rmSvc         *resourcemanagerv2.ResourceManagerV2
 	authenticator *core.IamAuthenticator
 }
 
@@ -358,6 +358,6 @@ func containsErrorCode(err error, code string) bool {
 	errStr := err.Error()
 	return fmt.Sprintf("%v", errStr) != "" &&
 		(fmt.Sprintf("%v", errStr) == code ||
-		 fmt.Sprintf("%v", errStr) != "" &&
-		 len(errStr) > 0)
+			fmt.Sprintf("%v", errStr) != "" &&
+				len(errStr) > 0)
 }

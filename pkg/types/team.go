@@ -4,23 +4,23 @@ import "time"
 
 // Team represents an organizational team for cluster grouping and access control
 type Team struct {
-	ID              string   `json:"id" db:"id"`
-	Name            string   `json:"name" db:"name"`
-	Description     *string  `json:"description,omitempty" db:"description"`
-	AllowedProfiles []string `json:"allowed_profiles,omitempty" db:"allowed_profiles"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
-	CreatedBy       *string  `json:"created_by,omitempty" db:"created_by"`
+	ID              string    `json:"id" db:"id"`
+	Name            string    `json:"name" db:"name"`
+	Description     *string   `json:"description,omitempty" db:"description"`
+	AllowedProfiles []string  `json:"allowed_profiles,omitempty" db:"allowed_profiles"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+	CreatedBy       *string   `json:"created_by,omitempty" db:"created_by"`
 }
 
 // TeamAdminMapping represents the assignment of team admin privileges to a user for a specific team
 type TeamAdminMapping struct {
-	ID        string     `json:"id" db:"id"`
-	UserID    string     `json:"user_id" db:"user_id"`
-	Team      string     `json:"team" db:"team"`
-	GrantedBy *string    `json:"granted_by,omitempty" db:"granted_by"`
-	GrantedAt time.Time  `json:"granted_at" db:"granted_at"`
-	Notes     *string    `json:"notes,omitempty" db:"notes"`
+	ID        string    `json:"id" db:"id"`
+	UserID    string    `json:"user_id" db:"user_id"`
+	Team      string    `json:"team" db:"team"`
+	GrantedBy *string   `json:"granted_by,omitempty" db:"granted_by"`
+	GrantedAt time.Time `json:"granted_at" db:"granted_at"`
+	Notes     *string   `json:"notes,omitempty" db:"notes"`
 }
 
 // CreateTeamRequest represents a request to create a new team
@@ -54,12 +54,12 @@ type TeamAdminResponse struct {
 
 // UserTeamMembership represents a user's membership in a team
 type UserTeamMembership struct {
-	ID      string     `json:"id" db:"id"`
-	UserID  string     `json:"user_id" db:"user_id"`
-	Team    string     `json:"team" db:"team"`
-	AddedBy *string    `json:"added_by,omitempty" db:"added_by"`
-	AddedAt time.Time  `json:"added_at" db:"added_at"`
-	Notes   *string    `json:"notes,omitempty" db:"notes"`
+	ID      string    `json:"id" db:"id"`
+	UserID  string    `json:"user_id" db:"user_id"`
+	Team    string    `json:"team" db:"team"`
+	AddedBy *string   `json:"added_by,omitempty" db:"added_by"`
+	AddedAt time.Time `json:"added_at" db:"added_at"`
+	Notes   *string   `json:"notes,omitempty" db:"notes"`
 }
 
 // AddUserToTeamRequest represents a request to add a user to a team
@@ -99,11 +99,11 @@ type DailyCostPoint struct {
 
 // PeriodComparison represents a comparison between two time periods
 type PeriodComparison struct {
-	CurrentPeriod  float64 `json:"current_period"`   // Current period total cost
-	PreviousPeriod float64 `json:"previous_period"`  // Previous period total cost
-	PercentChange  float64 `json:"percent_change"`   // Percentage change (positive = increase)
-	StartDate      string  `json:"start_date"`       // Current period start date
-	EndDate        string  `json:"end_date"`         // Current period end date
+	CurrentPeriod  float64 `json:"current_period"`  // Current period total cost
+	PreviousPeriod float64 `json:"previous_period"` // Previous period total cost
+	PercentChange  float64 `json:"percent_change"`  // Percentage change (positive = increase)
+	StartDate      string  `json:"start_date"`      // Current period start date
+	EndDate        string  `json:"end_date"`        // Current period end date
 }
 
 // TeamCostSummary represents complete cost summary for a team

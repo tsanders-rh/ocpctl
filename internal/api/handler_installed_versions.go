@@ -24,30 +24,30 @@ func NewInstalledVersionsHandler() *InstalledVersionsHandler {
 
 // InstalledVersionsResponse represents the response for installed versions
 type InstalledVersionsResponse struct {
-	OpenShiftVersions  map[string]InstalledVersion `json:"openshift_versions"`
-	TotalInstalled     int                         `json:"total_installed"`
-	BinariesPath       string                      `json:"binaries_path"`
+	OpenShiftVersions map[string]InstalledVersion `json:"openshift_versions"`
+	TotalInstalled    int                         `json:"total_installed"`
+	BinariesPath      string                      `json:"binaries_path"`
 }
 
 // InstalledVersion represents details about an installed version
 type InstalledVersion struct {
-	MajorMinor        string   `json:"major_minor"`    // e.g., "4.20"
-	ExactVersion      string   `json:"exact_version"`  // e.g., "4.20.17"
-	BinaryPath        string   `json:"binary_path"`    // e.g., "/usr/local/bin/openshift-install-4.20"
-	CcoctlPath        string   `json:"ccoctl_path,omitempty"` // e.g., "/usr/local/bin/ccoctl-4.20"
+	MajorMinor        string   `json:"major_minor"`                  // e.g., "4.20"
+	ExactVersion      string   `json:"exact_version"`                // e.g., "4.20.17"
+	BinaryPath        string   `json:"binary_path"`                  // e.g., "/usr/local/bin/openshift-install-4.20"
+	CcoctlPath        string   `json:"ccoctl_path,omitempty"`        // e.g., "/usr/local/bin/ccoctl-4.20"
 	ProfileReferences []string `json:"profile_references,omitempty"` // e.g., ["4.20", "4.20.3", "4.20.4"]
 }
 
-//	@Summary		Get installed OpenShift versions
-//	@Description	Returns all OpenShift installer versions currently installed on the server by checking /usr/local/bin/openshift-install-* binaries
-//	@Tags			admin
-//	@Produce		json
-//	@Success		200	{object}	InstalledVersionsResponse
-//	@Failure		401	{object}	ErrorResponse	"Unauthorized"
-//	@Failure		403	{object}	ErrorResponse	"Forbidden - Admin access required"
-//	@Failure		500	{object}	ErrorResponse	"Internal server error"
-//	@Security		BearerAuth
-//	@Router			/admin/installed-versions [get]
+// @Summary		Get installed OpenShift versions
+// @Description	Returns all OpenShift installer versions currently installed on the server by checking /usr/local/bin/openshift-install-* binaries
+// @Tags			admin
+// @Produce		json
+// @Success		200	{object}	InstalledVersionsResponse
+// @Failure		401	{object}	ErrorResponse	"Unauthorized"
+// @Failure		403	{object}	ErrorResponse	"Forbidden - Admin access required"
+// @Failure		500	{object}	ErrorResponse	"Internal server error"
+// @Security		BearerAuth
+// @Router			/admin/installed-versions [get]
 func (h *InstalledVersionsHandler) HandleGetInstalledVersions(c echo.Context) error {
 	versions := make(map[string]InstalledVersion)
 	binariesPath := "/usr/local/bin"
@@ -77,8 +77,8 @@ func (h *InstalledVersionsHandler) HandleGetInstalledVersions(c echo.Context) er
 
 		// Skip non-standard variants (rhel9, standard, patched, etc.)
 		if strings.Contains(filename, "-rhel9") ||
-		   strings.Contains(filename, "-standard") ||
-		   strings.Contains(filename, "-patched") {
+			strings.Contains(filename, "-standard") ||
+			strings.Contains(filename, "-patched") {
 			continue
 		}
 
@@ -120,10 +120,10 @@ func (h *InstalledVersionsHandler) HandleGetInstalledVersions(c echo.Context) er
 		}
 
 		versions[majorMinor] = InstalledVersion{
-			MajorMinor:        majorMinor,
-			ExactVersion:      exactVersion,
-			BinaryPath:        binaryPath,
-			CcoctlPath:        func() string {
+			MajorMinor:   majorMinor,
+			ExactVersion: exactVersion,
+			BinaryPath:   binaryPath,
+			CcoctlPath: func() string {
 				if ccoctlExists {
 					return ccoctlPath
 				}

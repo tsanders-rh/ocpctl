@@ -22,29 +22,29 @@ type GKEInstaller struct {
 // GKEClusterConfig represents a GKE cluster configuration
 // This mirrors the structure that can be created via gcloud commands
 type GKEClusterConfig struct {
-	Name                   string                `json:"name"`
-	Project                string                `json:"project"`
-	Zone                   string                `json:"zone,omitempty"`
-	Region                 string                `json:"region,omitempty"`
-	ClusterVersion         string                `json:"cluster_version"`
-	ReleaseChannel         string                `json:"release_channel,omitempty"` // rapid, regular, stable
-	Network                string                `json:"network,omitempty"`
-	Subnetwork             string                `json:"subnetwork,omitempty"`
-	EnableWorkloadIdentity bool                  `json:"enable_workload_identity,omitempty"`
-	EnableAutoscaling      bool                  `json:"enable_autoscaling,omitempty"`
-	MinNodes               int                   `json:"min_nodes,omitempty"`
-	MaxNodes               int                   `json:"max_nodes,omitempty"`
-	NumNodes               int                   `json:"num_nodes,omitempty"`
-	MachineType            string                `json:"machine_type,omitempty"`
-	DiskType               string                `json:"disk_type,omitempty"`
-	DiskSize               int                   `json:"disk_size_gb,omitempty"`
-	Labels                 map[string]string     `json:"labels,omitempty"`
-	Tags                   []string              `json:"tags,omitempty"`
-	NodePools              []GKENodePoolConfig   `json:"node_pools,omitempty"`
-	EnableClusterLogging   []string              `json:"enable_logging,omitempty"`   // SYSTEM_COMPONENTS, WORKLOADS
-	EnableClusterMonitoring []string             `json:"enable_monitoring,omitempty"` // SYSTEM_COMPONENTS, WORKLOADS
-	PublicAccess           bool                  `json:"public_access,omitempty"`
-	PrivateAccess          bool                  `json:"private_access,omitempty"`
+	Name                    string              `json:"name"`
+	Project                 string              `json:"project"`
+	Zone                    string              `json:"zone,omitempty"`
+	Region                  string              `json:"region,omitempty"`
+	ClusterVersion          string              `json:"cluster_version"`
+	ReleaseChannel          string              `json:"release_channel,omitempty"` // rapid, regular, stable
+	Network                 string              `json:"network,omitempty"`
+	Subnetwork              string              `json:"subnetwork,omitempty"`
+	EnableWorkloadIdentity  bool                `json:"enable_workload_identity,omitempty"`
+	EnableAutoscaling       bool                `json:"enable_autoscaling,omitempty"`
+	MinNodes                int                 `json:"min_nodes,omitempty"`
+	MaxNodes                int                 `json:"max_nodes,omitempty"`
+	NumNodes                int                 `json:"num_nodes,omitempty"`
+	MachineType             string              `json:"machine_type,omitempty"`
+	DiskType                string              `json:"disk_type,omitempty"`
+	DiskSize                int                 `json:"disk_size_gb,omitempty"`
+	Labels                  map[string]string   `json:"labels,omitempty"`
+	Tags                    []string            `json:"tags,omitempty"`
+	NodePools               []GKENodePoolConfig `json:"node_pools,omitempty"`
+	EnableClusterLogging    []string            `json:"enable_logging,omitempty"`    // SYSTEM_COMPONENTS, WORKLOADS
+	EnableClusterMonitoring []string            `json:"enable_monitoring,omitempty"` // SYSTEM_COMPONENTS, WORKLOADS
+	PublicAccess            bool                `json:"public_access,omitempty"`
+	PrivateAccess           bool                `json:"private_access,omitempty"`
 }
 
 // GKENodePoolConfig represents a GKE node pool configuration
@@ -63,14 +63,14 @@ type GKENodePoolConfig struct {
 
 // GKEClusterInfo represents cluster information retrieved from GCP
 type GKEClusterInfo struct {
-	Name              string    `json:"name"`
-	Status            string    `json:"status"`
-	Endpoint          string    `json:"endpoint"`
-	MasterVersion     string    `json:"currentMasterVersion"`
-	NodeVersion       string    `json:"currentNodeVersion"`
-	Location          string    `json:"location"`
-	CreateTime        string    `json:"createTime"`
-	Labels            map[string]string `json:"resourceLabels,omitempty"`
+	Name          string            `json:"name"`
+	Status        string            `json:"status"`
+	Endpoint      string            `json:"endpoint"`
+	MasterVersion string            `json:"currentMasterVersion"`
+	NodeVersion   string            `json:"currentNodeVersion"`
+	Location      string            `json:"location"`
+	CreateTime    string            `json:"createTime"`
+	Labels        map[string]string `json:"resourceLabels,omitempty"`
 }
 
 // NewGKEInstaller creates a new GKE installer instance

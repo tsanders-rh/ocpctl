@@ -38,26 +38,26 @@ type EKSDestroyState struct {
 	FargateProfiles      []string
 	CloudFormationStacks []string
 	// VPC-level resources
-	VPCID                 string
-	NetworkInterfaceIDs   []string
-	LoadBalancerARNs      []string // Application/Network Load Balancers (v2)
-	ClassicLoadBalancers  []string // Classic Load Balancers (v1)
-	TargetGroupARNs       []string
-	InstanceIDs           []string
-	SecurityGroupIDs      []string
+	VPCID                string
+	NetworkInterfaceIDs  []string
+	LoadBalancerARNs     []string // Application/Network Load Balancers (v2)
+	ClassicLoadBalancers []string // Classic Load Balancers (v1)
+	TargetGroupARNs      []string
+	InstanceIDs          []string
+	SecurityGroupIDs     []string
 }
 
 // EKSDestroyReconciler implements reconciliation-based EKS cluster deletion
 type EKSDestroyReconciler struct {
-	store        *store.Store
-	eksClient    *eks.Client
-	cfnClient    *cloudformation.Client
-	ec2Client    *ec2.Client
-	elbClient    *elasticloadbalancing.Client
-	elbv2Client  *elasticloadbalancingv2.Client
-	clusterName  string
-	region       string
-	clusterID    string
+	store       *store.Store
+	eksClient   *eks.Client
+	cfnClient   *cloudformation.Client
+	ec2Client   *ec2.Client
+	elbClient   *elasticloadbalancing.Client
+	elbv2Client *elasticloadbalancingv2.Client
+	clusterName string
+	region      string
+	clusterID   string
 }
 
 // NewEKSDestroyReconciler creates a new EKS destroy reconciler

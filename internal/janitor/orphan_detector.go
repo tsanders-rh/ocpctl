@@ -862,9 +862,10 @@ func tagsToMap(tags []ec2types.Tag) map[string]string {
 
 // extractClusterName extracts the cluster name from a resource name
 // Examples:
-//   "d-cluster-lqrc7-vpc" -> "d-cluster"
-//   "d-cluster-lqrc7-ext" -> "d-cluster"
-//   "c-cluster-dhbrh-bootstrap" -> "c-cluster"
+//
+//	"d-cluster-lqrc7-vpc" -> "d-cluster"
+//	"d-cluster-lqrc7-ext" -> "d-cluster"
+//	"c-cluster-dhbrh-bootstrap" -> "c-cluster"
 func extractClusterName(resourceName string) string {
 	parts := strings.Split(resourceName, "-")
 	if len(parts) < 3 {
@@ -884,8 +885,9 @@ func extractClusterName(resourceName string) string {
 
 // extractClusterNameFromDNS extracts cluster name from DNS record or hosted zone
 // Examples:
-//   "api.d-cluster.mg.dog8code.com." -> "d-cluster"
-//   "d-cluster.mg.dog8code.com." -> "d-cluster"
+//
+//	"api.d-cluster.mg.dog8code.com." -> "d-cluster"
+//	"d-cluster.mg.dog8code.com." -> "d-cluster"
 func extractClusterNameFromDNS(dnsName string) string {
 	// Remove trailing dot
 	dnsName = strings.TrimSuffix(dnsName, ".")
@@ -911,9 +913,10 @@ func extractClusterNameFromDNS(dnsName string) string {
 
 // extractClusterNameFromIAMRole extracts cluster name from IAM role name
 // Examples:
-//   "sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden" -> "sanders12"
-//   "sanders12-9hfvt-master-role" -> "sanders12"
-//   "d-cluster-lqrc7-openshift-ingress-operator-cloud-credentials" -> "d-cluster"
+//
+//	"sanders12-9hfvt-openshift-cloud-credential-operator-cloud-creden" -> "sanders12"
+//	"sanders12-9hfvt-master-role" -> "sanders12"
+//	"d-cluster-lqrc7-openshift-ingress-operator-cloud-credentials" -> "d-cluster"
 func extractClusterNameFromIAMRole(roleName string) string {
 	// IAM roles follow pattern: <cluster-name>-<5-char-infra-id>-openshift-* or <cluster-name>-<5-char-infra-id>-master-role
 
@@ -987,7 +990,7 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 		for _, tag := range volume.Tags {
 			key := aws.ToString(tag.Key)
 			if strings.HasPrefix(key, "kubernetes.io/cluster/") &&
-			   (aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
+				(aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
 				kubernetesClusterName = strings.TrimPrefix(key, "kubernetes.io/cluster/")
 				break
 			}
@@ -1083,7 +1086,7 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 		for _, tag := range address.Tags {
 			key := aws.ToString(tag.Key)
 			if strings.HasPrefix(key, "kubernetes.io/cluster/") &&
-			   (aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
+				(aws.ToString(tag.Value) == "owned" || aws.ToString(tag.Value) == "shared") {
 				kubernetesClusterName = strings.TrimPrefix(key, "kubernetes.io/cluster/")
 				break
 			}

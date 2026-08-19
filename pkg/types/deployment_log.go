@@ -6,20 +6,20 @@ import "time"
 type DeploymentLogSource string
 
 const (
-	DeploymentLogSourceInstaller  DeploymentLogSource = "installer"  // openshift-install CLI output
-	DeploymentLogSourceWorker     DeploymentLogSource = "worker"     // ocpctl worker logs
-	DeploymentLogSourceTerraform  DeploymentLogSource = "terraform"  // future: terraform output
-	DeploymentLogSourceScript     DeploymentLogSource = "script"     // post-deployment script output
+	DeploymentLogSourceInstaller DeploymentLogSource = "installer" // openshift-install CLI output
+	DeploymentLogSourceWorker    DeploymentLogSource = "worker"    // ocpctl worker logs
+	DeploymentLogSourceTerraform DeploymentLogSource = "terraform" // future: terraform output
+	DeploymentLogSourceScript    DeploymentLogSource = "script"    // post-deployment script output
 )
 
 // DeploymentLogLevel represents the severity level of a log entry
 type DeploymentLogLevel string
 
 const (
-	DeploymentLogLevelDebug   DeploymentLogLevel = "debug"
-	DeploymentLogLevelInfo    DeploymentLogLevel = "info"
-	DeploymentLogLevelWarn    DeploymentLogLevel = "warn"
-	DeploymentLogLevelError   DeploymentLogLevel = "error"
+	DeploymentLogLevelDebug DeploymentLogLevel = "debug"
+	DeploymentLogLevelInfo  DeploymentLogLevel = "info"
+	DeploymentLogLevelWarn  DeploymentLogLevel = "warn"
+	DeploymentLogLevelError DeploymentLogLevel = "error"
 )
 
 // DeploymentLog represents a single log entry from a cluster deployment operation

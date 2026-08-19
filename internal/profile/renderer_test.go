@@ -144,16 +144,16 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 
 	t.Run("handles missing SSH key", func(t *testing.T) {
 		req := &policy.CreateClusterRequest{
-			Name:       "test-cluster-01",
-			Platform:   "aws",
-			Version:    "4.20.3",
-			Profile:    "aws-minimal-test",
-			Region:     "us-east-1",
-			BaseDomain: "labs.example.com",
-			Owner:      "test-user",
-			Team:       "platform-team",
-			CostCenter: "engineering",
-			TTLHours:   24,
+			Name:         "test-cluster-01",
+			Platform:     "aws",
+			Version:      "4.20.3",
+			Profile:      "aws-minimal-test",
+			Region:       "us-east-1",
+			BaseDomain:   "labs.example.com",
+			Owner:        "test-user",
+			Team:         "platform-team",
+			CostCenter:   "engineering",
+			TTLHours:     24,
 			SSHPublicKey: nil, // No SSH key
 		}
 
@@ -333,7 +333,6 @@ func TestRenderer_RenderInstallConfig(t *testing.T) {
 		assert.True(t, ok, "install-config must have publish field")
 		assert.Equal(t, "External", publish, "public clusters should have publish: External")
 	})
-
 
 	// Test all AWS profiles to ensure they all have publish field
 	t.Run("all AWS profiles include publish field", func(t *testing.T) {

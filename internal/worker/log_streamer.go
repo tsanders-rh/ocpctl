@@ -17,14 +17,14 @@ import (
 
 // LogStreamer tails a log file and streams entries to the database
 type LogStreamer struct {
-	store      *store.Store
-	clusterID  string
-	jobID      string
-	logPath    string
-	sequence   int64
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
-	batchSize  int
+	store         *store.Store
+	clusterID     string
+	jobID         string
+	logPath       string
+	sequence      int64
+	stopCh        chan struct{}
+	wg            sync.WaitGroup
+	batchSize     int
 	flushInterval time.Duration
 
 	// Regular expression for parsing openshift-install log format
@@ -46,7 +46,7 @@ func NewLogStreamer(store *store.Store, clusterID, jobID, logPath string) *LogSt
 		flushInterval: 2 * time.Second,
 		// Regex to extract level from openshift-install logs
 		// Matches: level=info, level=error, level=warn, level=debug
-		logRegex:      regexp.MustCompile(`level=(\w+)`),
+		logRegex: regexp.MustCompile(`level=(\w+)`),
 	}
 }
 

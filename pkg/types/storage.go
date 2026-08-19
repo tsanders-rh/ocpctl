@@ -15,8 +15,8 @@ type StorageConfig struct {
 	SharedS3Bucket  *string `json:"shared_s3_bucket,omitempty"`
 	StorageGroupID  *string `json:"storage_group_id,omitempty"`
 	SecurityGroupID *string `json:"security_group_id,omitempty"`
-	AuthMode        *string `json:"auth_mode,omitempty"`        // "sts" or "static"
-	IAMRoleARN      *string `json:"iam_role_arn,omitempty"`     // For STS-enabled clusters
+	AuthMode        *string `json:"auth_mode,omitempty"`    // "sts" or "static"
+	IAMRoleARN      *string `json:"iam_role_arn,omitempty"` // For STS-enabled clusters
 }
 
 // Value implements driver.Valuer for database serialization
@@ -87,16 +87,16 @@ func (m *StorageGroupMetadata) Scan(value interface{}) error {
 
 // StorageGroup represents a shared storage resource (EFS + S3) for migration testing
 type StorageGroup struct {
-	ID                 string                `db:"id" json:"id"`
-	Name               string                `db:"name" json:"name"`
-	EFSID              *string               `db:"efs_id" json:"efs_id,omitempty"`
-	EFSSecurityGroupID *string               `db:"efs_security_group_id" json:"efs_security_group_id,omitempty"`
-	S3Bucket           *string               `db:"s3_bucket" json:"s3_bucket,omitempty"`
-	Region             string                `db:"region" json:"region"`
-	Status             StorageGroupStatus    `db:"status" json:"status"`
-	Metadata           StorageGroupMetadata  `db:"metadata" json:"metadata,omitempty"`
-	CreatedAt          time.Time             `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time             `db:"updated_at" json:"updated_at"`
+	ID                 string               `db:"id" json:"id"`
+	Name               string               `db:"name" json:"name"`
+	EFSID              *string              `db:"efs_id" json:"efs_id,omitempty"`
+	EFSSecurityGroupID *string              `db:"efs_security_group_id" json:"efs_security_group_id,omitempty"`
+	S3Bucket           *string              `db:"s3_bucket" json:"s3_bucket,omitempty"`
+	Region             string               `db:"region" json:"region"`
+	Status             StorageGroupStatus   `db:"status" json:"status"`
+	Metadata           StorageGroupMetadata `db:"metadata" json:"metadata,omitempty"`
+	CreatedAt          time.Time            `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time            `db:"updated_at" json:"updated_at"`
 }
 
 // ClusterStorageLinkRole represents the role of a cluster in a storage group
@@ -110,9 +110,9 @@ const (
 
 // ClusterStorageLink represents a link between a cluster and a storage group
 type ClusterStorageLink struct {
-	ID             string                  `db:"id" json:"id"`
-	ClusterID      string                  `db:"cluster_id" json:"cluster_id"`
-	StorageGroupID string                  `db:"storage_group_id" json:"storage_group_id"`
-	Role           ClusterStorageLinkRole  `db:"role" json:"role"`
-	CreatedAt      time.Time               `db:"created_at" json:"created_at"`
+	ID             string                 `db:"id" json:"id"`
+	ClusterID      string                 `db:"cluster_id" json:"cluster_id"`
+	StorageGroupID string                 `db:"storage_group_id" json:"storage_group_id"`
+	Role           ClusterStorageLinkRole `db:"role" json:"role"`
+	CreatedAt      time.Time              `db:"created_at" json:"created_at"`
 }

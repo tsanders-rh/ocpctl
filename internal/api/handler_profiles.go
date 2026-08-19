@@ -26,26 +26,26 @@ func NewProfileHandler(registry *profile.Registry, st *store.Store) *ProfileHand
 
 // ProfileResponse represents a profile in API responses
 type ProfileResponse struct {
-	Name               string                            `json:"name"`
-	DisplayName        string                            `json:"display_name"`
-	Description        string                            `json:"description"`
-	Platform           string                            `json:"platform"`
-	Track              string                            `json:"track,omitempty"`
-	Enabled            bool                              `json:"enabled"`
-	CredentialsMode    string                            `json:"credentials_mode,omitempty"`
-	OpenshiftVersions  *profile.VersionConfig            `json:"openshift_versions,omitempty"`
-	KubernetesVersions *profile.VersionConfig            `json:"kubernetes_versions,omitempty"`
-	Regions            profile.RegionConfig              `json:"regions"`
-	BaseDomains        *profile.BaseDomainConfig         `json:"base_domains,omitempty"`
-	Compute            profile.ComputeConfig             `json:"compute"`
-	Lifecycle          profile.LifecycleConfig           `json:"lifecycle"`
-	Networking         *profile.NetworkingConfig         `json:"networking,omitempty"`
-	Tags               profile.TagsConfig                `json:"tags"`
-	Features           profile.FeaturesConfig            `json:"features"`
-	CostControls       *profile.CostControlsConfig       `json:"cost_controls,omitempty"`
-	PostDeployment     *profile.PostDeploymentConfig     `json:"post_deployment,omitempty"`
-	DefaultAddons      []profile.AddonReference          `json:"default_addons,omitempty"`
-	DeploymentMetrics  *types.ProfileDeploymentMetrics   `json:"deployment_metrics,omitempty"`
+	Name               string                          `json:"name"`
+	DisplayName        string                          `json:"display_name"`
+	Description        string                          `json:"description"`
+	Platform           string                          `json:"platform"`
+	Track              string                          `json:"track,omitempty"`
+	Enabled            bool                            `json:"enabled"`
+	CredentialsMode    string                          `json:"credentials_mode,omitempty"`
+	OpenshiftVersions  *profile.VersionConfig          `json:"openshift_versions,omitempty"`
+	KubernetesVersions *profile.VersionConfig          `json:"kubernetes_versions,omitempty"`
+	Regions            profile.RegionConfig            `json:"regions"`
+	BaseDomains        *profile.BaseDomainConfig       `json:"base_domains,omitempty"`
+	Compute            profile.ComputeConfig           `json:"compute"`
+	Lifecycle          profile.LifecycleConfig         `json:"lifecycle"`
+	Networking         *profile.NetworkingConfig       `json:"networking,omitempty"`
+	Tags               profile.TagsConfig              `json:"tags"`
+	Features           profile.FeaturesConfig          `json:"features"`
+	CostControls       *profile.CostControlsConfig     `json:"cost_controls,omitempty"`
+	PostDeployment     *profile.PostDeploymentConfig   `json:"post_deployment,omitempty"`
+	DefaultAddons      []profile.AddonReference        `json:"default_addons,omitempty"`
+	DeploymentMetrics  *types.ProfileDeploymentMetrics `json:"deployment_metrics,omitempty"`
 }
 
 // toProfileResponse converts a profile to API response format

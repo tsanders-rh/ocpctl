@@ -17,9 +17,9 @@ type TaskNode struct {
 
 // ExecutionDAG represents a directed acyclic graph of tasks
 type ExecutionDAG struct {
-	Nodes           []*TaskNode
-	AdjacencyList   map[string][]string // task name -> dependencies
-	ExecutionOrder  []string            // Topologically sorted task names
+	Nodes          []*TaskNode
+	AdjacencyList  map[string][]string // task name -> dependencies
+	ExecutionOrder []string            // Topologically sorted task names
 }
 
 // BuildExecutionDAG builds a DAG from custom post-config and returns execution order

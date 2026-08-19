@@ -319,19 +319,19 @@ func (h *PoolCleanHandler) recreateServiceAccount(ctx context.Context, cluster *
 	// Update existing outputs record with new ServiceAccount credentials
 	// Use all fields from existing record to avoid nulling out other fields
 	updatedOutputs := &types.ClusterOutputs{
-		ID:               outputs.ID, // Preserve existing ID for upsert
-		ClusterID:        cluster.ID,
-		APIURL:           outputs.APIURL,
-		ConsoleURL:       outputs.ConsoleURL,
-		KubeconfigS3URI:  outputs.KubeconfigS3URI,
+		ID:                 outputs.ID, // Preserve existing ID for upsert
+		ClusterID:          cluster.ID,
+		APIURL:             outputs.APIURL,
+		ConsoleURL:         outputs.ConsoleURL,
+		KubeconfigS3URI:    outputs.KubeconfigS3URI,
 		KubeadminSecretRef: outputs.KubeadminSecretRef,
-		MetadataS3URI:    outputs.MetadataS3URI,
-		DashboardToken:   outputs.DashboardToken,
-		SAName:           &creds.SAName,
-		SANamespace:      &creds.SANamespace,
-		SAToken:          &creds.Token,
-		SATokenExpiresAt: &creds.TokenExpiresAt,
-		OcLoginCommand:   &ocLoginCmd,
+		MetadataS3URI:      outputs.MetadataS3URI,
+		DashboardToken:     outputs.DashboardToken,
+		SAName:             &creds.SAName,
+		SANamespace:        &creds.SANamespace,
+		SAToken:            &creds.Token,
+		SATokenExpiresAt:   &creds.TokenExpiresAt,
+		OcLoginCommand:     &ocLoginCmd,
 	}
 
 	// Upsert to update existing record
