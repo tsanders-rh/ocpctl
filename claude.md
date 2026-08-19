@@ -387,36 +387,65 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl
 ./scripts/deploy.sh v0.20260413.1346b69
 ```
 
-### Autoscale Worker Self-Heal (from S3)
+### How Autoscale Workers Boot (and self-update from S3)
 
 **Two kinds of worker, two update paths.** The static API/worker hosts are
 updated directly by `deploy.sh` (scp + `install` + `systemctl restart`).
-**Autoscale workers** (ASG) instead boot from an AMI and pull everything they
-need from `s3://ocpctl-binaries/` at launch — so anything **baked into the AMI**
-can silently go stale.
+**Autoscale workers** (the `ocpctl-worker-asg` ASG) boot from the **Terraform
+launch-template user-data** — source `terraform/worker-autoscaling/user-data.sh`,
+rendered into launch-template versions. The ASG tracks `$Latest`, so whichever LT
+version is newest is what new instances use.
 
-**Update chain on an autoscale worker boot:**
-1. `user-data-worker.sh` runs on first boot. It downloads `bootstrap.sh`, the
-   systemd unit, and `worker.env` from S3 **only `if [ ! -f ]`** — so an
-   AMI-baked copy of any of these is *never* refreshed by user-data.
-2. It then runs `bootstrap-worker.sh latest`, which on **every** boot pulls the
-   fresh binary, profiles, manifests, `ensure-installers.sh`, the cloud login
-   hooks (`azure-login.sh`, `ibmcloud-login.sh`), **and the systemd unit** from
-   S3 (`daemon-reload` only when the unit changed).
+```bash
+# Which LT version is live:
+aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ocpctl-worker-asg \
+  --query 'AutoScalingGroups[0].LaunchTemplate'          # -> Version: $Latest
+aws ec2 describe-launch-template-versions --launch-template-id <lt-id> \
+  --versions '$Latest' --query 'LaunchTemplateVersions[0].LaunchTemplateData.UserData' \
+  --output text | base64 -d                              # decode the actual user-data
+```
 
-This means: to fix worker startup/credential behavior you edit the script in the
-repo, `deploy.sh` uploads it to S3, and **new autoscale workers self-heal on next
-boot without an AMI rebuild.** Existing autoscale workers keep their old copy
-until replaced — terminate them so the ASG relaunches fresh ones to pick up a fix.
+**On every autoscale boot, the TF user-data:**
+1. Downloads the worker binary (`s3://ocpctl-binaries/binaries/ocpctl-worker`),
+   profiles, and the hook scripts `ensure-installers.sh`, `azure-login.sh`,
+   `ibmcloud-login.sh` — all **fresh from S3** into `/opt/ocpctl/scripts/`.
+2. Runs `ensure-installers.sh` in the foreground (installs `openshift-install`,
+   `oc`, `az`, `eksctl`, `gcloud`, `ibmcloud`, … — takes several minutes).
+3. Pulls `worker.env` (DATABASE_URL, pull secret, **all cloud creds incl. the
+   Azure service principal**) from `s3://ocpctl-binaries/config/worker.env` — the
+   single source of truth shared with the primary host; secrets never land in the
+   LT/tfstate.
+4. **Regenerates the systemd unit inline** with `HOME=/opt/ocpctl`,
+   `EnvironmentFile=/etc/ocpctl/worker.env`, and
+   `ExecStartPre=azure-login.sh` + `ExecStartPre=ibmcloud-login.sh`, then starts
+   the service.
 
-**Gotcha that caused Azure "EOF" failures (Aug 2026):** the AMI's baked systemd
-unit was missing the `ensure-installers.sh` ExecStartPre (the only thing that
-wrote `~/.azure/osServicePrincipal.json`), and user-data's `if [ ! -f ]` guard
-meant it never got the fixed unit. Now (a) `azure-login.sh` also writes
-`osServicePrincipal.json` (it's in the unit and runs on every worker as `ocpctl`
-with `HOME=/opt/ocpctl`), and (b) `bootstrap-worker.sh` refreshes the login hooks
-**and** the systemd unit from S3 every boot. See `scripts/azure-login.sh` and
-`scripts/bootstrap-worker.sh`.
+**Key implications:**
+- The unit is **regenerated from Terraform on every boot — there is no
+  AMI-baked/stale unit to drift.** To change the unit, edit
+  `terraform/worker-autoscaling/user-data.sh` and `terraform apply` (creates a new
+  LT version that `$Latest` picks up).
+- The hook scripts (`azure-login.sh` etc.) **are** pulled fresh from S3 each boot,
+  so to fix worker login/credential behavior you edit the script in the repo,
+  `deploy.sh` uploads it to S3, and **new autoscale workers self-heal on next
+  boot** (no AMI rebuild). `deploy.sh` already terminates all running autoscale
+  workers so the ASG relaunches them with the fix — no manual termination needed.
+- `ensure-installers.sh` runs here as **root** with **no `AZURE_*` env** (worker.env
+  is fetched afterward), so its own `osServicePrincipal.json` block is a no-op on
+  the ASG; the Azure SP file is written by the `azure-login.sh` ExecStartPre hook,
+  which runs as `ocpctl` with `HOME=/opt/ocpctl` and worker.env loaded.
+
+**Root cause of the Azure "EOF" failures (2026-08-19):** `azure-login.sh` used to
+only run `az login` and never wrote `~/.azure/osServicePrincipal.json`, so
+`openshift-install` for Azure prompted interactively and died with
+`failed to retrieve credentials from user: EOF`. Fix: `azure-login.sh` now writes
+that file after login. Verified on a fresh ASG worker (SP file present, owned by
+`ocpctl`, mode 600). See `scripts/azure-login.sh`.
+
+> **Legacy note:** `scripts/user-data-worker.sh` + `scripts/bootstrap-worker.sh`
+> are an older manual-AMI autoscaling approach (see
+> `docs/deployment/AUTOSCALING_SETUP.md`) and are **not** used by the current
+> Terraform-managed ASG. Don't rely on edits there reaching production workers.
 
 ---
 
@@ -711,18 +740,23 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
-**2026-08-19**: Autoscale Worker Self-Heal + Azure Credential Fix
+**2026-08-19**: Azure Credential Fix on Autoscale Workers
 - Fixed Azure IPI creates failing on autoscale workers with "creating Azure
   session: failed to retrieve credentials from user: EOF"
-- Root cause: only `ensure-installers.sh` wrote `~/.azure/osServicePrincipal.json`,
-  but the AMI-baked systemd unit lacked its ExecStartPre and user-data's
-  `if [ ! -f ]` guard meant the fixed unit was never pulled
-- `azure-login.sh` now also writes `osServicePrincipal.json` (runs on every worker)
-- `bootstrap-worker.sh` now refreshes the login hooks AND the systemd unit from S3
-  on every boot, so autoscale workers self-heal without an AMI rebuild
+- Root cause: `azure-login.sh` (an ExecStartPre hook on every worker) only ran
+  `az login` and never wrote `~/.azure/osServicePrincipal.json`, which
+  `openshift-install` needs — so it prompted interactively and hit EOF
+- Fix: `azure-login.sh` now writes `osServicePrincipal.json` after login. The
+  Terraform ASG user-data pulls this script fresh from S3 and runs it as an
+  ExecStartPre (as `ocpctl`, `HOME=/opt/ocpctl`), so new autoscale workers pick it
+  up on next boot; `deploy.sh` terminates existing workers so the ASG relaunches
+  them. Verified on a fresh ASG worker.
 - Also fixed Azure `userTags` (strip `ocpctl:` colons, cap at installer's 10-tag
   limit, keep provenance tags) in `internal/profile/renderer.go`
-- See "Autoscale Worker Self-Heal (from S3)" under Deployment Process
+- See "How Autoscale Workers Boot (and self-update from S3)" under Deployment
+  Process for the actual ASG boot flow (Terraform launch-template user-data)
+- NOTE: an interim fix also edited `scripts/bootstrap-worker.sh` to refresh the
+  systemd unit; that script is legacy and unused by the TF-managed ASG
 
 **2026-06-27**: Dev Environment Setup Complete
 - Provisioned complete dev infrastructure with Terraform (EC2, RDS PostgreSQL 17.9, S3, Route53)
