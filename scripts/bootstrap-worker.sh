@@ -134,6 +134,35 @@ for hook in azure-login.sh ibmcloud-login.sh; do
     fi
 done
 
+# Refresh the systemd unit from S3 so autoscale workers pick up unit changes
+# without an AMI rebuild. user-data-worker.sh only installs the unit when it is
+# absent (if [ ! -f ]), so a stale AMI-baked unit would otherwise persist
+# forever -- e.g. one missing the ensure-installers.sh ExecStartPre, which is
+# what left autoscale workers without Azure credentials. Only reload (and, if
+# already running, restart) when the unit actually changed.
+UNIT_PATH="/etc/systemd/system/ocpctl-worker.service"
+echo "Refreshing systemd unit from S3..."
+if aws s3 cp ${S3_BUCKET}/scripts/ocpctl-worker.service ${UNIT_PATH}.new; then
+    if ! cmp -s ${UNIT_PATH}.new "${UNIT_PATH}"; then
+        mv ${UNIT_PATH}.new "${UNIT_PATH}"
+        systemctl daemon-reload
+        echo "✓ systemd unit updated and daemon reloaded"
+        # On an ASG relaunch bootstrap may run against an already-active service;
+        # restart so the new unit takes effect. On first boot the service is not
+        # yet started (user-data starts it after this script), so this is skipped.
+        if systemctl is-active --quiet ocpctl-worker; then
+            systemctl restart ocpctl-worker
+            echo "✓ ocpctl-worker restarted to apply new unit"
+        fi
+    else
+        rm -f ${UNIT_PATH}.new
+        echo "✓ systemd unit already up to date"
+    fi
+else
+    rm -f ${UNIT_PATH}.new
+    echo "WARNING: Failed to download systemd unit from S3 (using existing unit)"
+fi
+
 # Cleanup old versions (keep last 3)
 echo "Cleaning up old releases (keeping last 3)..."
 cd ${REMOTE_BASE}/releases
