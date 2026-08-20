@@ -175,7 +175,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 				Tags:         types.OrphanedResourceTags(orphan.Tags),
 			}
 
-			if err := j.store.OrphanedResources.Upsert(ctx, dbOrphan); err != nil {
+			if err := j.stores.orphaned.Upsert(ctx, dbOrphan); err != nil {
 				log.Printf("  WARNING: Failed to persist orphaned resource to database: %v", err)
 			}
 		}
@@ -1216,7 +1216,7 @@ func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types
 	offset := 0
 	for {
 		// Fetch clusters in batches
-		batch, total, err := j.store.Clusters.List(ctx, store.ListFilters{
+		batch, total, err := j.stores.clusters.List(ctx, store.ListFilters{
 			Limit:  batchSize,
 			Offset: offset,
 		})
