@@ -14,9 +14,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
+// secretsAPI is the subset of the AWS Secrets Manager client used by Manager.
+// It is satisfied by *secretsmanager.Client and mocked in tests.
+type secretsAPI interface {
+	GetSecretValue(context.Context, *secretsmanager.GetSecretValueInput, ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
 // Manager handles retrieval of secrets from AWS Secrets Manager with caching
 type Manager struct {
-	client *secretsmanager.Client
+	client secretsAPI
 	cache  map[string]*cachedSecret
 	mu     sync.RWMutex
 	ttl    time.Duration
