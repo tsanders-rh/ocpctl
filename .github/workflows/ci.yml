@@ -45,8 +45,33 @@ jobs:
       - name: go build
         run: go build ./cmd/...
 
-      - name: go test
-        run: go test -race ./...
+      - name: go test (race + coverage)
+        run: |
+          # Per-package coverage lines are printed by `go test` itself; the merged
+          # profile feeds the total. tee preserves them for the summary step.
+          go test -race -covermode=atomic -coverprofile=coverage.out ./... \
+            | tee test-output.txt
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ ! -f coverage.out ]; then
+            echo "No coverage profile produced (tests failed to compile?)."
+            exit 0
+          fi
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
+          echo "Total coverage: ${total}"
+          {
+            echo "### Test coverage — total: ${total}"
+            echo ""
+            echo "Per-package (statements):"
+            echo '```'
+            # Package-level lines from the test run: "ok <pkg> ... coverage: X%"
+            # and "<pkg> [no test files]".
+            grep -E 'coverage:|no test files' test-output.txt \
+              | sed -E 's#github.com/tsanders-rh/ocpctl/##' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # NOTE: golangci-lint is intentionally NOT wired up yet.
   # The last v1 release (v1.64.8) is built with go1.24 and refuses to run
