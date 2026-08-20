@@ -1,0 +1,16 @@
+{
+  "name": "ocpctl-demo-recorder",
+  "version": "1.0.0",
+  "description": "Automated demo recording for ocpctl using Playwright",
+  "type": "module",
+  "scripts": {
+    "record": "node record-demo.js",
+    "install-browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.47.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

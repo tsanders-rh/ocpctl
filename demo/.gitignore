@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Recordings and screenshots
+recordings/
+screenshots/
+
+# Generated videos
+*.mp4
+*.webm
+*.mov
+*.avi
+
+# Logs
+*.log
+npm-debug.log*
