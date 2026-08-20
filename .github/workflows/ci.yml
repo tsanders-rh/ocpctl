@@ -73,6 +73,9 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Coverage floors (security-critical packages)
+        run: ./scripts/check-coverage.sh
+
   # NOTE: golangci-lint is intentionally NOT wired up yet.
   # The last v1 release (v1.64.8) is built with go1.24 and refuses to run
   # against a go1.25 module ("Go language version used to build golangci-lint
