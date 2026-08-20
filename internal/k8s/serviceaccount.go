@@ -14,9 +14,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// ServiceAccountManager manages Kubernetes ServiceAccounts for cluster pool leasing
+// ServiceAccountManager manages Kubernetes ServiceAccounts for cluster pool leasing.
+//
+// clientset is held as the kubernetes.Interface rather than the concrete
+// *kubernetes.Clientset so tests can inject a fake clientset; production wiring
+// via NewServiceAccountManager is unchanged (*Clientset satisfies the interface).
 type ServiceAccountManager struct {
-	clientset *kubernetes.Clientset
+	clientset kubernetes.Interface
 }
 
 // PoolLeaseCredentials contains ServiceAccount credentials for pool cluster leasing

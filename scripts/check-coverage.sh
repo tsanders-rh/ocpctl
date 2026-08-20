@@ -23,7 +23,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # pkg:floor (minimum statement coverage %, integer).
-# PR3 will add: internal/api/middleware, internal/poolscheduler, internal/auth (full)
+#
+# NOTE on internal/s3 and internal/poolscheduler: these are integration-shaped.
+# s3 wraps the AWS S3 client (presign/get/put) and poolscheduler runs raw
+# pgx.Rows SQL against the pool DB, so only their pure surface (S3 URI parsing,
+# config/constructor logic) is unit-testable today. Their floors gate that
+# surface against regression; raising them needs an S3-API / query-Rows seam.
 #
 # NOTE on internal/janitor: a store-interface seam (stores.go) now makes the
 # DB-driven safety/cleanup logic unit-testable, and janitor.go (the TTL reaper,
@@ -39,6 +44,11 @@ FLOORS=(
   "internal/secrets:65"
   "internal/aws/cleanup:70"
   "internal/janitor:28"
+  "internal/api/middleware:80"
+  "internal/auth:55"
+  "internal/k8s:75"
+  "internal/s3:15"
+  "internal/poolscheduler:3"
 )
 
 profile="$(mktemp)"
