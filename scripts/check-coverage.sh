@@ -25,17 +25,20 @@ cd "$(dirname "$0")/.."
 # pkg:floor (minimum statement coverage %, integer).
 # PR3 will add: internal/api/middleware, internal/poolscheduler, internal/auth (full)
 #
-# NOTE on internal/janitor: its floor covers only the pure classification/safety
-# helpers (orphan name/tag parsing, work-hours math). The bulk of the package is
-# DB- and cloud-bound methods whose dependencies (concrete pgxpool-backed stores
-# and inline-constructed AWS/GCP clients) are not injectable, so they can't be
-# unit-tested without a store/client-interface refactor. Raise this floor once
-# that refactor lands; until then it is an anti-regression gate on the helpers.
+# NOTE on internal/janitor: a store-interface seam (stores.go) now makes the
+# DB-driven safety/cleanup logic unit-testable, and janitor.go (the TTL reaper,
+# stuck-job recovery, work-hours hibernate/resume, directory cleanup, run/Start
+# orchestration) is ~80% covered. The PACKAGE total is nonetheless ~30% because
+# ~67% of the package's lines are the AWS/GCP orphan detectors
+# (orphan_detector.go, orphaned_gcp.go), which construct cloud clients inline and
+# cannot be unit-tested without a further client-interface refactor ("piece 2").
+# This floor gates the tested core against regression; raise it toward 60% only
+# after piece 2 lands and the detectors become mockable.
 FLOORS=(
   "internal/validation:90"
   "internal/secrets:65"
   "internal/aws/cleanup:70"
-  "internal/janitor:7"
+  "internal/janitor:28"
 )
 
 profile="$(mktemp)"

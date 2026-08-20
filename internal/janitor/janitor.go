@@ -46,7 +46,7 @@ func DefaultConfig() *Config {
 // Janitor performs periodic cleanup tasks
 type Janitor struct {
 	config           *Config
-	store            *store.Store
+	stores           janitorStores
 	workDir          string
 	running          bool
 	ctx              context.Context
@@ -69,7 +69,7 @@ func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 
 	return &Janitor{
 		config:           config,
-		store:            st,
+		stores:           storesFromStore(st),
 		workDir:          workDir,
 		running:          false,
 		metricsPublisher: metricsPublisher,
@@ -201,7 +201,7 @@ func (j *Janitor) run() {
 
 // cleanupExpiredClusters checks for clusters past their TTL and creates destroy jobs
 func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
-	expired, err := j.store.Clusters.GetExpiredClusters(ctx)
+	expired, err := j.stores.clusters.GetExpiredClusters(ctx)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
 		}
 
 		// Check if destroy job already exists
-		jobs, err := j.store.Jobs.ListByClusterID(ctx, cluster.ID)
+		jobs, err := j.stores.jobs.ListByClusterID(ctx, cluster.ID)
 		if err != nil {
 			log.Printf("Failed to list jobs for cluster %s: %v", cluster.ID, err)
 			continue
@@ -255,13 +255,13 @@ func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := j.store.Jobs.Create(ctx, nil, job); err != nil {
+		if err := j.stores.jobs.Create(ctx, nil, job); err != nil {
 			log.Printf("Failed to create destroy job for cluster %s: %v", cluster.Name, err)
 			continue
 		}
 
 		// Update cluster status to DESTROYING
-		if err := j.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroying); err != nil {
+		if err := j.stores.clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroying); err != nil {
 			log.Printf("Failed to update cluster %s status: %v", cluster.Name, err)
 		}
 
@@ -273,7 +273,7 @@ func (j *Janitor) cleanupExpiredClusters(ctx context.Context) error {
 
 // cleanupStuckJobs detects jobs stuck in RUNNING status
 func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
-	stuck, err := j.store.Jobs.GetStuckJobs(ctx, j.config.StuckJobThreshold)
+	stuck, err := j.stores.jobs.GetStuckJobs(ctx, j.config.StuckJobThreshold)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 			job.ID, job.JobType, job.ClusterID, job.StartedAt, job.Attempt, job.MaxAttempts)
 
 		// Release any locks held by this job first
-		if err := j.store.JobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
+		if err := j.stores.jobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
 			log.Printf("Failed to release lock for cluster %s: %v", job.ClusterID, err)
 		}
 
@@ -302,7 +302,7 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 			errorCode := "WORKER_CRASHED"
 			errorMessage := "Job exceeded maximum runtime (likely worker crash), resetting for retry"
 
-			if err := j.store.Jobs.MarkFailedForRetry(ctx, job.ID, errorCode, errorMessage); err != nil {
+			if err := j.stores.jobs.MarkFailedForRetry(ctx, job.ID, errorCode, errorMessage); err != nil {
 				log.Printf("Failed to reset job %s for retry: %v", job.ID, err)
 				continue
 			}
@@ -314,7 +314,7 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 			errorCode := "STUCK_JOB_TIMEOUT"
 			errorMessage := "Job exceeded maximum runtime and exhausted all retry attempts"
 
-			if err := j.store.Jobs.MarkFailed(ctx, job.ID, errorCode, errorMessage); err != nil {
+			if err := j.stores.jobs.MarkFailed(ctx, job.ID, errorCode, errorMessage); err != nil {
 				log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
 				continue
 			}
@@ -325,12 +325,12 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 				// The destroy job timed out or got stuck, so we don't know if AWS resources were deleted
 				// An admin can manually verify and mark as DESTROYED, or reconciliation can detect drift
 				log.Printf("Marking cluster %s as DESTROY_FAILED (stuck destroy job - verification required)", job.ClusterID)
-				if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusDestroyFailed); err != nil {
+				if err := j.stores.clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusDestroyFailed); err != nil {
 					log.Printf("Failed to mark cluster %s as destroy failed: %v", job.ClusterID, err)
 				}
 			} else {
 				// For other job types, mark cluster as FAILED
-				if err := j.store.Clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+				if err := j.stores.clusters.UpdateStatus(ctx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
 					log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
 				}
 			}
@@ -347,7 +347,7 @@ func (j *Janitor) cleanupStuckJobs(ctx context.Context) error {
 // crashed after marking a job as FAILED but before completing the cleanup process.
 func (j *Janitor) cleanupIncompleteFailedJobs(ctx context.Context) error {
 	// Get all incomplete failed jobs
-	incompleteJobs, err := j.store.Jobs.GetIncompleteFailedJobs(ctx)
+	incompleteJobs, err := j.stores.jobs.GetIncompleteFailedJobs(ctx)
 	if err != nil {
 		return fmt.Errorf("get incomplete failed jobs: %w", err)
 	}
@@ -363,13 +363,13 @@ func (j *Janitor) cleanupIncompleteFailedJobs(ctx context.Context) error {
 			job.ID, job.JobType, job.ClusterID, job.StartedAt)
 
 		// Release any locks held by this job
-		if err := j.store.JobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
+		if err := j.stores.jobLocks.Release(ctx, job.ClusterID, job.ID); err != nil {
 			log.Printf("Warning: Failed to release lock for cluster %s: %v", job.ClusterID, err)
 			// Continue even if lock release fails - we still want to set ended_at
 		}
 
 		// Complete the cleanup by setting ended_at
-		if err := j.store.Jobs.CompleteFailedJobCleanup(ctx, job.ID); err != nil {
+		if err := j.stores.jobs.CompleteFailedJobCleanup(ctx, job.ID); err != nil {
 			log.Printf("Failed to complete cleanup for job %s: %v", job.ID, err)
 			continue
 		}
@@ -387,7 +387,7 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 	// Stuck threshold: 96 minutes (80% of 120 minutes)
 	stuckThreshold := 96 * time.Minute
 
-	locks, err := j.store.JobLocks.GetStuckLocks(ctx, stuckThreshold)
+	locks, err := j.stores.jobLocks.GetStuckLocks(ctx, stuckThreshold)
 	if err != nil {
 		return err
 	}
@@ -407,13 +407,13 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 			lock.ClusterID, lock.JobID, lock.LockedBy, lockAge, timeUntilExpiry)
 
 		// Get cluster and job details for more context
-		cluster, clusterErr := j.store.Clusters.GetByID(ctx, lock.ClusterID)
+		cluster, clusterErr := j.stores.clusters.GetByID(ctx, lock.ClusterID)
 		if clusterErr == nil {
 			log.Printf("  Cluster: name=%s, status=%s, platform=%s, profile=%s",
 				cluster.Name, cluster.Status, cluster.Platform, cluster.Profile)
 		}
 
-		job, jobErr := j.store.Jobs.GetByID(ctx, lock.JobID)
+		job, jobErr := j.stores.jobs.GetByID(ctx, lock.JobID)
 		if jobErr == nil {
 			log.Printf("  Job: type=%s, status=%s, attempt=%d/%d, started=%v",
 				job.JobType, job.Status, job.Attempt, job.MaxAttempts, job.StartedAt)
@@ -465,7 +465,7 @@ func (j *Janitor) detectStuckLocks(ctx context.Context) error {
 
 // cleanupExpiredLocks removes expired job locks
 func (j *Janitor) cleanupExpiredLocks(ctx context.Context) error {
-	count, err := j.store.JobLocks.CleanupExpired(ctx)
+	count, err := j.stores.jobLocks.CleanupExpired(ctx)
 	if err != nil {
 		return err
 	}
@@ -486,7 +486,7 @@ func (j *Janitor) cleanupExpiredLocks(ctx context.Context) error {
 
 // cleanupExpiredKeys removes expired idempotency keys
 func (j *Janitor) cleanupExpiredKeys(ctx context.Context) error {
-	count, err := j.store.Idempotency.CleanupExpired(ctx)
+	count, err := j.stores.idempotency.CleanupExpired(ctx)
 	if err != nil {
 		return err
 	}
@@ -503,7 +503,7 @@ func (j *Janitor) cleanupDestroyedClusters(ctx context.Context) error {
 	// Calculate cutoff time based on retention days
 	cutoff := time.Now().AddDate(0, 0, -j.config.DestroyedClusterRetentionDays)
 
-	count, err := j.store.Clusters.DeleteDestroyedClusters(ctx, cutoff)
+	count, err := j.stores.clusters.DeleteDestroyedClusters(ctx, cutoff)
 	if err != nil {
 		return err
 	}
@@ -525,7 +525,7 @@ func (j *Janitor) cleanupFailedClusterDirs(ctx context.Context) error {
 		Offset: 0,
 	}
 
-	clusters, _, err := j.store.Clusters.List(ctx, filters)
+	clusters, _, err := j.stores.clusters.List(ctx, filters)
 	if err != nil {
 		return err
 	}
@@ -574,7 +574,7 @@ func (j *Janitor) cleanupOrphanedDirs(ctx context.Context) error {
 	validClusterIDs := make(map[string]bool)
 
 	// Use streaming iterator with 1000 clusters per batch
-	clustersCh, errCh := j.store.Clusters.ListAllStreaming(ctx, 1000)
+	clustersCh, errCh := j.stores.clusters.ListAllStreaming(ctx, 1000)
 
 	// Process batches as they arrive
 	for {
@@ -647,7 +647,7 @@ ProcessDirectories:
 // enforceWorkHours enforces work hours by hibernating/resuming clusters
 func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 	// Get clusters with work hours enabled
-	clusters, err := j.store.Clusters.GetClustersForWorkHoursEnforcement(ctx)
+	clusters, err := j.stores.clusters.GetClustersForWorkHoursEnforcement(ctx)
 	if err != nil {
 		return err
 	}
@@ -661,7 +661,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 	actionsCount := 0
 	for _, cluster := range clusters {
 		// Get the user to access their timezone and default work hours
-		user, err := j.store.Users.GetByID(ctx, cluster.OwnerID)
+		user, err := j.stores.users.GetByID(ctx, cluster.OwnerID)
 		if err != nil {
 			log.Printf("Failed to get user for cluster %s: %v", cluster.Name, err)
 			continue
@@ -742,7 +742,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 				(*cluster.PostDeployStatus == "pending" || *cluster.PostDeployStatus == "in_progress") {
 				log.Printf("[Work Hours Action] SKIPPING HIBERNATION for %s: post-deployment %s", cluster.Name, *cluster.PostDeployStatus)
 				// Update check timestamp so we don't spam logs
-				if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+				if err := j.stores.clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 					log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 				}
 				continue
@@ -759,7 +759,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		} else {
 			// No action needed, just update the check timestamp
 			log.Printf("[Work Hours Action] NO ACTION NEEDED for %s (Status: %s, Within hours: %v)", cluster.Name, cluster.Status, withinWorkHours)
-			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+			if err := j.stores.clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 			}
 			continue
@@ -769,7 +769,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 		if cluster.Platform != types.PlatformAWS {
 			log.Printf("Skipping %s for cluster %s: platform %s does not support hibernation (AWS only)", action, cluster.Name, cluster.Platform)
 			// Update the check timestamp so we don't log this repeatedly
-			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+			if err := j.stores.clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 			}
 			continue
@@ -777,7 +777,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 
 		// Check for ANY active jobs on this cluster
 		// We don't want to hibernate/resume while other jobs are running (POST_CONFIGURE, etc.)
-		allJobs, err := j.store.Jobs.ListByClusterID(ctx, cluster.ID)
+		allJobs, err := j.stores.jobs.ListByClusterID(ctx, cluster.ID)
 		if err != nil {
 			log.Printf("[Work Hours Action] CRITICAL: Failed to check for active jobs for cluster %s: %v", cluster.Name, err)
 			continue
@@ -806,7 +806,7 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			log.Printf("[Work Hours Action] Cluster %s has active %s job (ID: %s), skipping %s",
 				cluster.Name, activeJobType, activeJobID[:8], action)
 			// Update check timestamp so we don't spam logs
-			if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+			if err := j.stores.clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 				log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 			}
 			continue
@@ -828,19 +828,19 @@ func (j *Janitor) enforceWorkHours(ctx context.Context) error {
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := j.store.Jobs.Create(ctx, nil, job); err != nil {
+		if err := j.stores.jobs.Create(ctx, nil, job); err != nil {
 			log.Printf("Failed to create %s job for cluster %s: %v", action, cluster.Name, err)
 			continue
 		}
 
 		// Update cluster status
-		if err := j.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, newStatus); err != nil {
+		if err := j.stores.clusters.UpdateStatus(ctx, nil, cluster.ID, newStatus); err != nil {
 			log.Printf("Failed to update cluster %s status to %s: %v", cluster.Name, newStatus, err)
 			continue
 		}
 
 		// Update last check timestamp
-		if err := j.store.Clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
+		if err := j.stores.clusters.UpdateLastWorkHoursCheck(ctx, cluster.ID); err != nil {
 			log.Printf("Failed to update last_work_hours_check for cluster %s: %v", cluster.Name, err)
 		}
 
@@ -882,7 +882,7 @@ func isWithinWorkHours(now time.Time, start, end time.Time, workDaysMask int16) 
 // This runs every 5 minutes (as part of the janitor cycle) to keep metrics fresh based on
 // the last 30 successful CREATE jobs per profile.
 func (j *Janitor) updateDeploymentMetrics(ctx context.Context) error {
-	count, err := j.store.ProfileDeploymentMetrics.UpdateAllMetrics(ctx)
+	count, err := j.stores.deployMetrics.UpdateAllMetrics(ctx)
 	if err != nil {
 		return err
 	}
