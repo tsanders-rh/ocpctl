@@ -36,6 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.2
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.4
+	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.34.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.7
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0

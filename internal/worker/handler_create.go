@@ -117,6 +117,11 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 				// Use PreflightCheckError to prevent retries and provide clear error code
 				return types.NewPreflightCheckError("AWS capacity pre-flight check failed: %v", err)
 			}
+			// Quota headroom check (gateway VPC endpoints, VPCs, EIPs, vCPUs).
+			// Only blocks on a confirmed shortfall; lookup errors degrade to warnings.
+			if err := checker.CheckQuotas(ctx, prof); err != nil {
+				return types.NewPreflightCheckError("AWS quota pre-flight check failed: %v", err)
+			}
 		}
 	} else if cluster.Platform == types.PlatformGCP {
 		// GCP-specific pre-flight checks (machine type availability)
