@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,9 +46,12 @@ func DefaultConfig() *Config {
 
 // Janitor performs periodic cleanup tasks
 type Janitor struct {
-	config           *Config
-	stores           janitorStores
-	workDir          string
+	config  *Config
+	stores  janitorStores
+	workDir string
+	// mu guards the running/ctx/cancel handoff between Start (runs in its own
+	// goroutine) and Stop (called from the shutdown path on another goroutine).
+	mu               sync.Mutex
 	running          bool
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -78,8 +82,11 @@ func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 
 // Start starts the janitor loop
 func (j *Janitor) Start(ctx context.Context) error {
+	j.mu.Lock()
 	j.ctx, j.cancel = context.WithCancel(ctx)
 	j.running = true
+	jctx := j.ctx
+	j.mu.Unlock()
 
 	log.Printf("Janitor starting (check_interval=%s)", j.config.CheckInterval)
 
@@ -92,9 +99,9 @@ func (j *Janitor) Start(ctx context.Context) error {
 
 	for {
 		select {
-		case <-j.ctx.Done():
+		case <-jctx.Done():
 			log.Printf("Janitor shutting down")
-			return j.ctx.Err()
+			return jctx.Err()
 
 		case <-ticker.C:
 			j.run()
@@ -104,10 +111,14 @@ func (j *Janitor) Start(ctx context.Context) error {
 
 // Stop stops the janitor gracefully
 func (j *Janitor) Stop() {
-	if j.cancel != nil {
-		j.cancel()
-	}
+	j.mu.Lock()
+	cancel := j.cancel
 	j.running = false
+	j.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // run performs all cleanup tasks
