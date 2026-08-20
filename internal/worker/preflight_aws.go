@@ -11,13 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
 )
 
 // AWSPreflightChecker validates AWS resource availability before cluster creation
 type AWSPreflightChecker struct {
-	region    string
-	ec2Client *ec2.Client
+	region       string
+	ec2Client    *ec2.Client
+	quotasClient *servicequotas.Client
 }
 
 // NewAWSPreflightChecker creates a new AWS pre-flight checker
@@ -28,8 +30,9 @@ func NewAWSPreflightChecker(ctx context.Context, region string) (*AWSPreflightCh
 	}
 
 	return &AWSPreflightChecker{
-		region:    region,
-		ec2Client: ec2.NewFromConfig(cfg),
+		region:       region,
+		ec2Client:    ec2.NewFromConfig(cfg),
+		quotasClient: servicequotas.NewFromConfig(cfg),
 	}, nil
 }
 
