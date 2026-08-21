@@ -581,6 +581,18 @@ func (h *CreateHandler) updateArtifactURIs(ctx context.Context, clusterID string
 	metadataS3URI := fmt.Sprintf("s3://%s/clusters/%s/artifacts/metadata.json", h.config.S3BucketName, clusterID)
 	outputs.MetadataS3URI = &metadataS3URI
 
+	// Rewrite the kubeadmin secret ref to its S3 location, mirroring the
+	// kubeconfig/metadata rewrites above. This is guarded to only touch a
+	// worker-local file:// path: OpenShift IPI sets KubeadminSecretRef to
+	// file://<workDir>/auth/kubeadmin-password, which is unreadable from the API
+	// host once the worker's work dir is gone (or when worker and API run on
+	// separate hosts). ROSA/ARO instead store an inline "user:pass" value that
+	// must NOT be clobbered, so leave anything that isn't a file:// ref alone.
+	if outputs.KubeadminSecretRef != nil && strings.HasPrefix(*outputs.KubeadminSecretRef, "file://") {
+		kubeadminS3URI := fmt.Sprintf("s3://%s/clusters/%s/artifacts/auth/kubeadmin-password", h.config.S3BucketName, clusterID)
+		outputs.KubeadminSecretRef = &kubeadminS3URI
+	}
+
 	// Update in database
 	if err := h.store.ClusterOutputs.Update(ctx, outputs); err != nil {
 		return fmt.Errorf("update cluster outputs: %w", err)

@@ -696,8 +696,14 @@ export default function ClusterDetailPage() {
               </div>
             )}
 
-            {/* Admin credentials - show for non-pool clusters, admins, or current leasee */}
-            {outputs.kubeadmin_secret_ref && (
+            {/* Admin credentials - show for non-pool clusters, admins, or current leasee.
+                Only render for inline "user:pass" refs (ROSA/ARO). For OpenShift IPI,
+                kubeadmin_secret_ref is a storage URI (s3://, file://, or an arn:) that
+                is NOT a credential — splitting it on ':' would show "s3"/"file" as the
+                username. Those clusters surface creds via the Kubeadmin Credentials
+                block below (outputs.kubeadmin), populated from the stored password. */}
+            {outputs.kubeadmin_secret_ref &&
+              !/^(file|s3|arn):/.test(outputs.kubeadmin_secret_ref) && (
               !cluster.pool_id || // Not a pool cluster - show to everyone
               user?.role === UserRole.ADMIN || // Admin - show always
               (cluster.pool_id && cluster.leased_by === user?.email) // Pool cluster and current user is leasee
