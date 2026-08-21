@@ -887,9 +887,7 @@ export default function ClusterDetailPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {outputs.kubeconfig_s3_uri?.startsWith('s3://')
-                    ? `S3 URI - Use AWS CLI to download: aws s3 cp ${outputs.kubeconfig_s3_uri} ./kubeconfig`
-                    : `Local storage - Use download button above or access via API`}
+                  Click the download button to save the kubeconfig, or copy the URI for API access.
                 </p>
               </div>
             )}
