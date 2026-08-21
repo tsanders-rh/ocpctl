@@ -88,3 +88,28 @@ func TestClusterTemplateHandler_Create_StripsName(t *testing.T) {
 	require.NotContains(t, string(list[0].Config), "should-be-stripped")
 	require.NotContains(t, string(list[0].Config), `"name"`)
 }
+
+func TestClusterTemplateHandler_Create_StripsPullSecret(t *testing.T) {
+	s := dbtest.New(t)
+	user := newTemplateUser(t, s)
+	h := api.NewClusterTemplateHandler(s)
+
+	e := echo.New()
+	e.Validator = api.NewValidator()
+
+	body := `{"name":"has-secret","config":{"custom_pull_secret":"super-secret-token","platform":"aws"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cluster-templates", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	setAuthContext(c, user)
+	require.NoError(t, h.Create(c))
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	list, err := s.ClusterTemplates.List(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NotContains(t, string(list[0].Config), "super-secret-token")
+	require.NotContains(t, string(list[0].Config), "custom_pull_secret")
+	require.Contains(t, string(list[0].Config), "aws")
+}

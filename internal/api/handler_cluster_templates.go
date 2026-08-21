@@ -30,14 +30,21 @@ type ClusterTemplateRequest struct {
 	Config json.RawMessage `json:"config" validate:"required"`
 }
 
-// sanitizeTemplateConfig ensures the config is a JSON object and strips any
-// cluster "name" so a template can never carry a cluster name.
+// templateStrippedKeys are config keys that a template must never persist: the
+// cluster "name" (always chosen per cluster) and sensitive data such as the
+// pull secret (registry credentials).
+var templateStrippedKeys = []string{"name", "custom_pull_secret"}
+
+// sanitizeTemplateConfig ensures the config is a JSON object and strips keys a
+// template must never carry (see templateStrippedKeys).
 func sanitizeTemplateConfig(raw json.RawMessage) (json.RawMessage, bool) {
 	var obj map[string]interface{}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, false
 	}
-	delete(obj, "name")
+	for _, k := range templateStrippedKeys {
+		delete(obj, k)
+	}
 
 	cleaned, err := json.Marshal(obj)
 	if err != nil {
