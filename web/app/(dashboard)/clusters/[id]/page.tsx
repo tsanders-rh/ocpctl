@@ -863,7 +863,7 @@ export default function ClusterDetailPage() {
                           const url = window.URL.createObjectURL(blob);
                           const link = document.createElement('a');
                           link.href = url;
-                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          link.download = data.filename || `kubeconfig-${cluster.name}`;
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
@@ -872,7 +872,7 @@ export default function ClusterDetailPage() {
                           // For S3, use presigned URL directly (no auth needed)
                           const link = document.createElement('a');
                           link.href = data.download_url;
-                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          link.download = data.filename || `kubeconfig-${cluster.name}`;
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
@@ -887,9 +887,7 @@ export default function ClusterDetailPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {outputs.kubeconfig_s3_uri?.startsWith('s3://')
-                    ? `S3 URI - Use AWS CLI to download: aws s3 cp ${outputs.kubeconfig_s3_uri} ./kubeconfig`
-                    : `Local storage - Use download button above or access via API`}
+                  Click the download button to save the kubeconfig, or copy the URI for API access.
                 </p>
               </div>
             )}
