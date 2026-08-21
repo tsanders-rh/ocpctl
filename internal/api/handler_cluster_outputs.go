@@ -353,7 +353,7 @@ func (h *ClusterHandler) DownloadKubeconfig(c echo.Context) error {
 	}
 
 	// Set headers for file download
-	filename := fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name)
+	filename := fmt.Sprintf("kubeconfig-%s", cluster.Name)
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Response().Header().Set("Content-Type", "application/x-yaml")
 
@@ -513,7 +513,7 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 		return SuccessOK(c, map[string]interface{}{
 			"download_url": directDownloadURL,
 			"expires_in":   "session-based",
-			"filename":     fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name),
+			"filename":     fmt.Sprintf("kubeconfig-%s", cluster.Name),
 			"storage_type": "local",
 		})
 	}
@@ -526,7 +526,7 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 
 	// Generate presigned URL (valid for 15 minutes), forcing a cluster-specific
 	// download filename so multiple kubeconfigs can be told apart.
-	downloadFilename := fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name)
+	downloadFilename := fmt.Sprintf("kubeconfig-%s", cluster.Name)
 	presignedURL, err := s3Client.GeneratePresignedDownloadURL(ctx, kubeconfigURI, 15, downloadFilename)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("failed to generate presigned URL: %w", err))
@@ -567,7 +567,7 @@ func (h *ClusterHandler) GetKubeconfigDownloadURL(c echo.Context) error {
 	return SuccessOK(c, map[string]interface{}{
 		"download_url": presignedURL,
 		"expires_in":   "15 minutes",
-		"filename":     fmt.Sprintf("kubeconfig-%s.yaml", cluster.Name),
+		"filename":     fmt.Sprintf("kubeconfig-%s", cluster.Name),
 		"storage_type": "s3",
 	})
 }

@@ -863,7 +863,7 @@ export default function ClusterDetailPage() {
                           const url = window.URL.createObjectURL(blob);
                           const link = document.createElement('a');
                           link.href = url;
-                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          link.download = data.filename || `kubeconfig-${cluster.name}`;
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
@@ -872,7 +872,7 @@ export default function ClusterDetailPage() {
                           // For S3, use presigned URL directly (no auth needed)
                           const link = document.createElement('a');
                           link.href = data.download_url;
-                          link.download = data.filename || `kubeconfig-${cluster.name}.yaml`;
+                          link.download = data.filename || `kubeconfig-${cluster.name}`;
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
