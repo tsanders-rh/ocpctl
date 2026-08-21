@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tsanders-rh/ocpctl/internal/k8s"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 	"golang.org/x/crypto/bcrypt"
@@ -378,19 +379,32 @@ func (h *PoolCleanHandler) rotateKubeadminPassword(ctx context.Context, cluster 
 
 	log.Printf("Updated kubeadmin secret in cluster %s", cluster.Name)
 
-	// Update the kubeadmin-password file on disk if it exists
+	// Persist the new password to wherever KubeadminSecretRef points so the API
+	// (which reads it back to display console credentials) doesn't serve a stale
+	// value. For OpenShift IPI this is now an s3:// URI; legacy clusters may still
+	// carry a worker-local file:// path. A failure here is non-fatal: the
+	// in-cluster secret is already rotated.
 	if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
-		passwordPath := *outputs.KubeadminSecretRef
-		if strings.HasPrefix(passwordPath, "file://") {
-			passwordPath = passwordPath[7:] // Remove "file://" prefix
-		}
-
-		// Write new password to file
-		if err := os.WriteFile(passwordPath, []byte(newPassword), 0600); err != nil {
-			log.Printf("Warning: Failed to update kubeadmin-password file: %v", err)
-			// Don't fail the rotation if file update fails - the secret is updated
-		} else {
-			log.Printf("Updated kubeadmin-password file at %s", passwordPath)
+		ref := *outputs.KubeadminSecretRef
+		switch {
+		case strings.HasPrefix(ref, "s3://"):
+			bucket, key, err := s3.ParseS3URI(ref)
+			if err != nil {
+				log.Printf("Warning: invalid kubeadmin s3 uri %q: %v", ref, err)
+			} else if client, err := s3.NewClient(ctx); err != nil {
+				log.Printf("Warning: failed to create s3 client for kubeadmin update: %v", err)
+			} else if err := client.UploadFile(ctx, bucket, key, []byte(newPassword)); err != nil {
+				log.Printf("Warning: failed to update kubeadmin-password in s3: %v", err)
+			} else {
+				log.Printf("Updated kubeadmin-password in s3 at %s", ref)
+			}
+		case strings.HasPrefix(ref, "file://") || strings.HasPrefix(ref, "/"):
+			passwordPath := strings.TrimPrefix(ref, "file://")
+			if err := os.WriteFile(passwordPath, []byte(newPassword), 0600); err != nil {
+				log.Printf("Warning: Failed to update kubeadmin-password file: %v", err)
+			} else {
+				log.Printf("Updated kubeadmin-password file at %s", passwordPath)
+			}
 		}
 	}
 

@@ -212,28 +212,44 @@ func (h *ClusterHandler) GetOutputs(c echo.Context) error {
 		LogInfo(c, "no kubeconfig URI in outputs")
 	}
 
-	// Read kubeadmin password from disk if path is available
+	// Populate the kubeadmin credentials from KubeadminSecretRef, which is
+	// overloaded by cluster type:
+	//   - OpenShift IPI: an s3:// URI to the uploaded kubeadmin-password artifact
+	//     (legacy clusters may still carry a worker-local file:// path).
+	//   - ROSA/ARO: an inline "user:pass" string (handled by the frontend, not here).
+	// Only the file:// / s3:// forms name a password we can resolve into the
+	// structured Kubeadmin field; inline "user:pass" refs are left for the client.
 	if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
-		// Extract file path from file:// URI
-		passwordPath := *outputs.KubeadminSecretRef
-		if strings.HasPrefix(passwordPath, "file://") {
-			passwordPath = passwordPath[7:] // Remove "file://" prefix
-		}
-
-		// Validate path to prevent path traversal attacks
-		validatedPath, err := validateOutputFilePath(passwordPath)
-		if err != nil {
-			LogInfo(c, "invalid kubeadmin password path blocked", "error", err.Error(), "attempted_path", passwordPath)
-		} else {
-			LogInfo(c, "reading kubeadmin password", "path", validatedPath)
-			if passwordData, err := os.ReadFile(validatedPath); err == nil {
+		ref := *outputs.KubeadminSecretRef
+		switch {
+		case strings.HasPrefix(ref, "s3://"):
+			bucket, key, err := s3.ParseS3URI(ref)
+			if err != nil {
+				LogInfo(c, "invalid kubeadmin s3 uri", "error", err.Error(), "uri", ref)
+			} else if passwordData, err := s3.DownloadFile(ctx, bucket, key); err != nil {
+				LogInfo(c, "failed to download kubeadmin password from s3", "error", err.Error(), "uri", ref)
+			} else {
 				response.Kubeadmin = &KubeadminCredentials{
 					Username: "kubeadmin",
-					Password: string(passwordData),
+					Password: strings.TrimSpace(string(passwordData)),
+				}
+				LogInfo(c, "kubeadmin password read from s3")
+			}
+		case strings.HasPrefix(ref, "file://") || strings.HasPrefix(ref, "/"):
+			// Legacy worker-local path (only resolvable when the API and the
+			// worker that created the cluster share a host).
+			passwordPath := strings.TrimPrefix(ref, "file://")
+			validatedPath, err := validateOutputFilePath(passwordPath)
+			if err != nil {
+				LogInfo(c, "invalid kubeadmin password path blocked", "error", err.Error(), "attempted_path", passwordPath)
+			} else if passwordData, err := os.ReadFile(validatedPath); err != nil {
+				LogInfo(c, "failed to read kubeadmin password", "error", err.Error(), "path", validatedPath)
+			} else {
+				response.Kubeadmin = &KubeadminCredentials{
+					Username: "kubeadmin",
+					Password: strings.TrimSpace(string(passwordData)),
 				}
 				LogInfo(c, "kubeadmin password read successfully")
-			} else {
-				LogInfo(c, "failed to read kubeadmin password", "error", err.Error(), "path", validatedPath)
 			}
 		}
 	}

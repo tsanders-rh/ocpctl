@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/auth"
+	"github.com/tsanders-rh/ocpctl/internal/s3"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -119,29 +120,41 @@ func (h *PoolLeaseHandler) LeaseCluster(c echo.Context) error {
 			response.OcLoginCommand = *outputs.OcLoginCommand
 		}
 
-		// Add kubeadmin credentials for web console login
+		// Add kubeadmin credentials for web console login. KubeadminSecretRef is
+		// an s3:// URI for OpenShift IPI clusters (legacy clusters may carry a
+		// worker-local file:// path); resolve either into the password.
 		if outputs.KubeadminSecretRef != nil && *outputs.KubeadminSecretRef != "" {
-			passwordPath := *outputs.KubeadminSecretRef
-			if strings.HasPrefix(passwordPath, "file://") {
-				passwordPath = passwordPath[7:] // Remove "file://" prefix
+			ref := *outputs.KubeadminSecretRef
+			setKubeadmin := func(password string) {
+				response.Kubeadmin = &struct {
+					Username string `json:"username"`
+					Password string `json:"password"`
+				}{
+					Username: "kubeadmin",
+					Password: strings.TrimSpace(password),
+				}
 			}
-
-			// Validate path to prevent path traversal attacks
-			validatedPath, err := validateOutputFilePath(passwordPath)
-			if err != nil {
-				LogWarning(c, "invalid kubeadmin password path blocked", "error", err.Error(), "attempted_path", passwordPath)
-			} else {
-				if passwordData, err := os.ReadFile(validatedPath); err == nil {
-					response.Kubeadmin = &struct {
-						Username string `json:"username"`
-						Password string `json:"password"`
-					}{
-						Username: "kubeadmin",
-						Password: string(passwordData),
-					}
-					LogInfo(c, "kubeadmin password included in lease response")
+			switch {
+			case strings.HasPrefix(ref, "s3://"):
+				bucket, key, err := s3.ParseS3URI(ref)
+				if err != nil {
+					LogWarning(c, "invalid kubeadmin s3 uri", "error", err.Error(), "uri", ref)
+				} else if passwordData, err := s3.DownloadFile(ctx, bucket, key); err != nil {
+					LogWarning(c, "failed to download kubeadmin password from s3", "error", err.Error(), "uri", ref)
 				} else {
+					setKubeadmin(string(passwordData))
+					LogInfo(c, "kubeadmin password included in lease response")
+				}
+			case strings.HasPrefix(ref, "file://") || strings.HasPrefix(ref, "/"):
+				passwordPath := strings.TrimPrefix(ref, "file://")
+				validatedPath, err := validateOutputFilePath(passwordPath)
+				if err != nil {
+					LogWarning(c, "invalid kubeadmin password path blocked", "error", err.Error(), "attempted_path", passwordPath)
+				} else if passwordData, err := os.ReadFile(validatedPath); err != nil {
 					LogWarning(c, "failed to read kubeadmin password", "error", err.Error(), "path", validatedPath)
+				} else {
+					setKubeadmin(string(passwordData))
+					LogInfo(c, "kubeadmin password included in lease response")
 				}
 			}
 		}
