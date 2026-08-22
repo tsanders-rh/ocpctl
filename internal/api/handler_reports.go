@@ -126,6 +126,20 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		if u := usersByID[cl.OwnerID]; u != nil && u.Email != "" {
 			ownerKey = u.Email
 		}
+
+		// Per-cluster drill-down detail behind the profile aggregate.
+		pu.Clusters = append(pu.Clusters, types.ClusterUsage{
+			Name:          cl.Name,
+			Owner:         ownerKey,
+			Region:        cl.Region,
+			Status:        string(cl.Status),
+			ClusterType:   string(cl.ClusterType),
+			CreatedAt:     cl.CreatedAt,
+			DestroyedAt:   cl.DestroyedAt,
+			RuntimeHours:  clusterHours,
+			EstimatedCost: clusterCost,
+		})
+
 		uu := userAgg[ownerKey]
 		if uu == nil {
 			uu = &types.UserUsage{Owner: ownerKey}
@@ -135,8 +149,11 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		uu.RuntimeHours += clusterHours
 		uu.EstimatedCost += clusterCost
 
-		// Average lifetime (over clusters active in-window)
-		lifeEnd := end
+		// Average lifetime (over clusters active in-window). Cap still-running
+		// clusters at the current time, not the window end: the window end may be
+		// in the future (end-of-day today) or, for a past-dated range, long before
+		// now — either way it does not reflect a cluster's real age.
+		lifeEnd := now
 		if cl.Status == types.ClusterStatusDestroyed && cl.DestroyedAt != nil {
 			lifeEnd = *cl.DestroyedAt
 		}
@@ -159,6 +176,9 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 	// Sort profiles by cluster count desc, users by estimated cost desc.
 	profiles := make([]types.ProfileUsage, 0, len(profileAgg))
 	for _, pu := range profileAgg {
+		sort.Slice(pu.Clusters, func(i, j int) bool {
+			return pu.Clusters[i].EstimatedCost > pu.Clusters[j].EstimatedCost
+		})
 		profiles = append(profiles, *pu)
 	}
 	sort.Slice(profiles, func(i, j int) bool {

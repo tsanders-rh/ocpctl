@@ -15,11 +15,24 @@ export interface UsageCostSummary {
   };
 }
 
+export interface ClusterUsage {
+  name: string;
+  owner: string;
+  region: string;
+  status: string;
+  cluster_type: string;
+  created_at: string;
+  destroyed_at?: string;
+  runtime_hours: number;
+  estimated_cost: number;
+}
+
 export interface ProfileUsage {
   profile: string;
   cluster_count: number;
   runtime_hours: number;
   estimated_cost: number;
+  clusters: ClusterUsage[];
 }
 
 export interface UserUsage {

@@ -24,12 +24,28 @@ type UsageCostSummary struct {
 	PriorPeriodComparison *PeriodComparison `json:"prior_period_comparison,omitempty"` // vs. the equally-sized preceding window
 }
 
-// ProfileUsage aggregates usage for a single profile within the window.
+// ProfileUsage aggregates usage for a single profile within the window. Clusters
+// holds the individual clusters that make up the aggregate, for drill-down.
 type ProfileUsage struct {
-	Profile       string  `json:"profile"`
-	ClusterCount  int     `json:"cluster_count"`
-	RuntimeHours  float64 `json:"runtime_hours"`
-	EstimatedCost float64 `json:"estimated_cost"`
+	Profile       string         `json:"profile"`
+	ClusterCount  int            `json:"cluster_count"`
+	RuntimeHours  float64        `json:"runtime_hours"`
+	EstimatedCost float64        `json:"estimated_cost"`
+	Clusters      []ClusterUsage `json:"clusters"` // per-cluster detail, sorted by est. cost desc
+}
+
+// ClusterUsage is the per-cluster detail behind an aggregate row, with the
+// cluster's runtime and estimated cost over the report window.
+type ClusterUsage struct {
+	Name          string     `json:"name"`
+	Owner         string     `json:"owner"` // email when resolvable, else owner_id
+	Region        string     `json:"region"`
+	Status        string     `json:"status"`
+	ClusterType   string     `json:"cluster_type"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DestroyedAt   *time.Time `json:"destroyed_at,omitempty"`
+	RuntimeHours  float64    `json:"runtime_hours"`
+	EstimatedCost float64    `json:"estimated_cost"`
 }
 
 // UserUsage aggregates usage for a single owner within the window.

@@ -47,14 +47,16 @@ export function exportUsageReportPdf(report: UsageReport) {
       ...summaryBody,
       ["Total runtime hours", report.cost.total_runtime_hours.toFixed(1)],
       ["Clusters active", String(report.cost.clusters_active)],
-      ["Clusters created", String(report.lifecycle.created)],
-      ["Clusters destroyed", String(report.lifecycle.destroyed)],
-      ["Clusters hibernated", String(report.lifecycle.hibernated)],
+      ["Clusters created (in range)", String(report.lifecycle.created)],
+      ["Clusters destroyed (in range)", String(report.lifecycle.destroyed)],
+      ["Currently hibernated", String(report.lifecycle.by_status?.HIBERNATED ?? 0)],
       [
         "Create success rate",
-        `${(report.lifecycle.create_success_rate * 100).toFixed(1)}% (${
-          report.lifecycle.create_success
-        }/${report.lifecycle.create_success + report.lifecycle.create_failure})`,
+        report.lifecycle.create_success + report.lifecycle.create_failure > 0
+          ? `${(report.lifecycle.create_success_rate * 100).toFixed(1)}% (${
+              report.lifecycle.create_success
+            }/${report.lifecycle.create_success + report.lifecycle.create_failure})`
+          : "— (no create jobs in range)",
       ],
       ["Avg cluster lifetime (hrs)", report.lifecycle.avg_lifetime_hours.toFixed(1)],
     ],
@@ -63,7 +65,7 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
-  // Most used profiles
+  // Most used profiles (aggregate)
   autoTable(doc, {
     startY: (doc as any).lastAutoTable.finalY + 20,
     head: [["Most Used Profiles", "Clusters", "Runtime hrs", "Est. cost"]],
@@ -77,6 +79,27 @@ export function exportUsageReportPdf(report: UsageReport) {
     headStyles: { fillColor: [30, 41, 59] },
     margin: { left: marginX, right: marginX },
   });
+
+  // Per-profile drill-down: the clusters behind each aggregate row.
+  for (const p of report.profiles) {
+    if (!p.clusters || p.clusters.length === 0) continue;
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 16,
+      head: [[`Clusters — ${p.profile}`, "Owner", "Region", "Status", "Runtime hrs", "Est. cost"]],
+      body: p.clusters.map((c) => [
+        c.name,
+        c.owner || "—",
+        c.region || "—",
+        c.status,
+        c.runtime_hours.toFixed(1),
+        formatCurrency(c.estimated_cost),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
+      margin: { left: marginX, right: marginX },
+    });
+  }
 
   // Most active users
   autoTable(doc, {
