@@ -17,11 +17,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils/formatters";
-import { BarChart } from "@tremor/react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { Download, FileText, ChevronRight, ChevronDown } from "lucide-react";
 import type { ProfileUsage } from "@/lib/api/endpoints/reports";
 
 const fmt = (d: Date) => format(d, "yyyy-MM-dd");
+
+const profilesChartConfig = {
+  cluster_count: { label: "Clusters", color: "hsl(var(--chart-1))" },
+} satisfies ChartConfig;
+
+const usersChartConfig = {
+  estimated_cost: { label: "Est. cost", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig;
 
 type Preset = { label: string; range: () => [string, string] };
 
@@ -162,15 +176,27 @@ export default function UsageReportPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {report.profiles.length > 0 && (
-                <BarChart
-                  data={report.profiles.slice(0, 10)}
-                  index="profile"
-                  categories={["cluster_count"]}
-                  colors={["blue"]}
-                  showLegend={false}
-                  yAxisWidth={40}
-                  className="h-64"
-                />
+                <ChartContainer config={profilesChartConfig} className="h-64 w-full">
+                  <BarChart
+                    accessibilityLayer
+                    data={report.profiles.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 16 }}
+                  >
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" dataKey="cluster_count" allowDecimals={false} tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="profile"
+                      tickLine={false}
+                      axisLine={false}
+                      width={150}
+                      tickFormatter={(v: string) => (v.length > 22 ? `${v.slice(0, 21)}…` : v)}
+                    />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                    <Bar dataKey="cluster_count" fill="var(--color-cluster_count)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ChartContainer>
               )}
               <ProfileTable profiles={report.profiles} />
             </CardContent>
@@ -184,16 +210,44 @@ export default function UsageReportPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {report.users.length > 0 && (
-                <BarChart
-                  data={report.users.slice(0, 10)}
-                  index="owner"
-                  categories={["estimated_cost"]}
-                  colors={["emerald"]}
-                  showLegend={false}
-                  valueFormatter={(v) => formatCurrency(v)}
-                  yAxisWidth={64}
-                  className="h-64"
-                />
+                <ChartContainer config={usersChartConfig} className="h-64 w-full">
+                  <BarChart
+                    accessibilityLayer
+                    data={report.users.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 16 }}
+                  >
+                    <CartesianGrid horizontal={false} />
+                    <XAxis
+                      type="number"
+                      dataKey="estimated_cost"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => formatCurrency(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="owner"
+                      tickLine={false}
+                      axisLine={false}
+                      width={150}
+                      tickFormatter={(v: string) => (v.length > 22 ? `${v.slice(0, 21)}…` : v)}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value) => (
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {formatCurrency(Number(value))}
+                            </span>
+                          )}
+                        />
+                      }
+                    />
+                    <Bar dataKey="estimated_cost" fill="var(--color-estimated_cost)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ChartContainer>
               )}
               <UsageTable
                 rows={report.users}
