@@ -129,20 +129,28 @@ export default function UsageReportPage() {
             <SummaryCard
               title="Clusters active"
               value={String(report.cost.clusters_active)}
-              subtitle={`${report.lifecycle.created} created · ${report.lifecycle.destroyed} destroyed`}
+              subtitle={`${report.lifecycle.created} created · ${report.lifecycle.destroyed} destroyed in range`}
             />
             <SummaryCard
               title="Avg lifetime"
               value={`${report.lifecycle.avg_lifetime_hours.toFixed(1)} hrs`}
-              subtitle={`${report.lifecycle.hibernated} hibernated`}
+              subtitle={`${report.lifecycle.by_status?.HIBERNATED ?? 0} currently hibernated`}
             />
-            <SummaryCard
-              title="Create success rate"
-              value={`${(report.lifecycle.create_success_rate * 100).toFixed(0)}%`}
-              subtitle={`${report.lifecycle.create_success}/${
-                report.lifecycle.create_success + report.lifecycle.create_failure
-              } jobs`}
-            />
+            {(() => {
+              const completed =
+                report.lifecycle.create_success + report.lifecycle.create_failure;
+              return (
+                <SummaryCard
+                  title="Create success rate"
+                  value={completed > 0 ? `${(report.lifecycle.create_success_rate * 100).toFixed(0)}%` : "—"}
+                  subtitle={
+                    completed > 0
+                      ? `${report.lifecycle.create_success}/${completed} create jobs in range`
+                      : "no create jobs in range"
+                  }
+                />
+              );
+            })()}
           </div>
 
           {/* Most used profiles */}

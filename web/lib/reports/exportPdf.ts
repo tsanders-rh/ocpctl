@@ -47,14 +47,16 @@ export function exportUsageReportPdf(report: UsageReport) {
       ...summaryBody,
       ["Total runtime hours", report.cost.total_runtime_hours.toFixed(1)],
       ["Clusters active", String(report.cost.clusters_active)],
-      ["Clusters created", String(report.lifecycle.created)],
-      ["Clusters destroyed", String(report.lifecycle.destroyed)],
-      ["Clusters hibernated", String(report.lifecycle.hibernated)],
+      ["Clusters created (in range)", String(report.lifecycle.created)],
+      ["Clusters destroyed (in range)", String(report.lifecycle.destroyed)],
+      ["Currently hibernated", String(report.lifecycle.by_status?.HIBERNATED ?? 0)],
       [
         "Create success rate",
-        `${(report.lifecycle.create_success_rate * 100).toFixed(1)}% (${
-          report.lifecycle.create_success
-        }/${report.lifecycle.create_success + report.lifecycle.create_failure})`,
+        report.lifecycle.create_success + report.lifecycle.create_failure > 0
+          ? `${(report.lifecycle.create_success_rate * 100).toFixed(1)}% (${
+              report.lifecycle.create_success
+            }/${report.lifecycle.create_success + report.lifecycle.create_failure})`
+          : "— (no create jobs in range)",
       ],
       ["Avg cluster lifetime (hrs)", report.lifecycle.avg_lifetime_hours.toFixed(1)],
     ],

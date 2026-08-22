@@ -135,8 +135,11 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		uu.RuntimeHours += clusterHours
 		uu.EstimatedCost += clusterCost
 
-		// Average lifetime (over clusters active in-window)
-		lifeEnd := end
+		// Average lifetime (over clusters active in-window). Cap still-running
+		// clusters at the current time, not the window end: the window end may be
+		// in the future (end-of-day today) or, for a past-dated range, long before
+		// now — either way it does not reflect a cluster's real age.
+		lifeEnd := now
 		if cl.Status == types.ClusterStatusDestroyed && cl.DestroyedAt != nil {
 			lifeEnd = *cl.DestroyedAt
 		}
