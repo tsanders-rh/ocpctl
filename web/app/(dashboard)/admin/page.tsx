@@ -5,7 +5,9 @@ import { useClusters } from "@/lib/hooks/useClusters";
 import { useClusterStatistics } from "@/lib/hooks/useAdminStats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Layers, Activity, TrendingUp, DollarSign } from "lucide-react";
-import { DonutChart, BarList, Card as TremorCard, Title } from "@tremor/react";
+import { Cell, Pie, PieChart } from "recharts";
+import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
+import { BarList } from "@/components/ui/bar-list";
 
 export default function AdminDashboardPage() {
   const { data: usersData } = useUsers();
@@ -41,13 +43,13 @@ export default function AdminDashboardPage() {
 
   // Color mapping for status (both legend and chart)
   const statusConfig = {
-    READY: { chart: "emerald", legend: "bg-emerald-500" },
-    CREATING: { chart: "cyan", legend: "bg-cyan-500" },
-    DESTROYING: { chart: "amber", legend: "bg-amber-500" },
-    HIBERNATED: { chart: "slate", legend: "bg-slate-500" },
-    PROVISIONING: { chart: "blue", legend: "bg-blue-500" },
-    FAILED: { chart: "red", legend: "bg-red-500" },
-    UNKNOWN: { chart: "violet", legend: "bg-violet-500" },
+    READY: { hex: "#10b981", legend: "bg-emerald-500" },
+    CREATING: { hex: "#06b6d4", legend: "bg-cyan-500" },
+    DESTROYING: { hex: "#f59e0b", legend: "bg-amber-500" },
+    HIBERNATED: { hex: "#64748b", legend: "bg-slate-500" },
+    PROVISIONING: { hex: "#3b82f6", legend: "bg-blue-500" },
+    FAILED: { hex: "#ef4444", legend: "bg-red-500" },
+    UNKNOWN: { hex: "#8b5cf6", legend: "bg-violet-500" },
   } as const;
 
   // Sort data in consistent order for color mapping
@@ -63,15 +65,6 @@ export default function AdminDashboardPage() {
       return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
     }) || [];
 
-  // Build colors array matching the sorted data
-  const statusChartColors = statusChartData.map((item) =>
-    statusConfig[item.name as keyof typeof statusConfig]?.chart || "slate"
-  );
-
-  // Debug logging
-  console.log("Status Chart Data:", statusChartData);
-  console.log("Status Chart Colors:", statusChartColors);
-
   // Format data for profile bar list (sorted by count descending)
   const total = clusterStats?.active_clusters || 0;
   const profileListData = clusterStats?.clusters_by_profile
@@ -84,10 +77,10 @@ export default function AdminDashboardPage() {
 
   // Platform color mapping
   const platformConfig = {
-    aws: { chart: "blue", legend: "bg-blue-500" },
-    gcp: { chart: "green", legend: "bg-green-500" },
-    ibmcloud: { chart: "purple", legend: "bg-purple-500" },
-    azure: { chart: "cyan", legend: "bg-cyan-500" },
+    aws: { hex: "#3b82f6", legend: "bg-blue-500" },
+    gcp: { hex: "#22c55e", legend: "bg-green-500" },
+    ibmcloud: { hex: "#a855f7", legend: "bg-purple-500" },
+    azure: { hex: "#06b6d4", legend: "bg-cyan-500" },
   } as const;
 
   // Format data for platform donut chart
@@ -97,10 +90,6 @@ export default function AdminDashboardPage() {
       value: item.count,
     }))
     .sort((a, b) => b.value - a.value) || [];
-
-  const platformChartColors = platformChartData.map((item) =>
-    platformConfig[item.name.toLowerCase() as keyof typeof platformConfig]?.chart || "slate"
-  );
 
   // Format cost data for displays
   const costByProfileData = clusterStats?.cost_by_profile
@@ -127,6 +116,8 @@ export default function AdminDashboardPage() {
     })) || [];
 
   const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+
+  const donutConfig = { value: { label: "Clusters" } } satisfies ChartConfig;
 
   return (
     <div className="space-y-6">
@@ -162,8 +153,11 @@ export default function AdminDashboardPage() {
       {/* Cluster Statistics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Cluster Status Donut Chart */}
-        <TremorCard>
-          <Title>Active Clusters by Status</Title>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Active Clusters by Status</CardTitle>
+          </CardHeader>
+          <CardContent>
           {statsLoading ? (
             <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
               Loading statistics...
@@ -171,18 +165,25 @@ export default function AdminDashboardPage() {
           ) : statusChartData.length > 0 ? (
             <>
               <div className="relative">
-                <DonutChart
-                  className="mt-6 h-44"
-                  data={statusChartData}
-                  category="value"
-                  index="name"
-                  valueFormatter={(value: number) => `${value}`}
-                  colors={statusChartColors as any}
-                  showAnimation={true}
-                  showTooltip={false}
-                  showLabel={false}
-                  variant="donut"
-                />
+                <ChartContainer config={donutConfig} className="mx-auto mt-6 aspect-square h-44">
+                  <PieChart>
+                    <Pie
+                      data={statusChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={55}
+                      outerRadius={80}
+                      strokeWidth={2}
+                    >
+                      {statusChartData.map((item) => (
+                        <Cell
+                          key={item.name}
+                          fill={statusConfig[item.name as keyof typeof statusConfig]?.hex || "#64748b"}
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
                     {clusterStats?.active_clusters || 0}
@@ -215,11 +216,15 @@ export default function AdminDashboardPage() {
               No cluster data available
             </div>
           )}
-        </TremorCard>
+          </CardContent>
+        </Card>
 
         {/* Cluster Platform Donut Chart */}
-        <TremorCard>
-          <Title>Active Clusters by Platform</Title>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Active Clusters by Platform</CardTitle>
+          </CardHeader>
+          <CardContent>
           {statsLoading ? (
             <div className="mt-6 h-80 flex items-center justify-center text-muted-foreground">
               Loading statistics...
@@ -227,18 +232,25 @@ export default function AdminDashboardPage() {
           ) : platformChartData.length > 0 ? (
             <>
               <div className="relative">
-                <DonutChart
-                  className="mt-6 h-44"
-                  data={platformChartData}
-                  category="value"
-                  index="name"
-                  valueFormatter={(value: number) => `${value}`}
-                  colors={platformChartColors as any}
-                  showAnimation={true}
-                  showTooltip={false}
-                  showLabel={false}
-                  variant="donut"
-                />
+                <ChartContainer config={donutConfig} className="mx-auto mt-6 aspect-square h-44">
+                  <PieChart>
+                    <Pie
+                      data={platformChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={55}
+                      outerRadius={80}
+                      strokeWidth={2}
+                    >
+                      {platformChartData.map((item) => (
+                        <Cell
+                          key={item.name}
+                          fill={platformConfig[item.name.toLowerCase() as keyof typeof platformConfig]?.hex || "#64748b"}
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
                     {platformChartData.reduce((sum: number, item: { value: number }) => sum + item.value, 0)}
@@ -271,11 +283,15 @@ export default function AdminDashboardPage() {
               No platform data available
             </div>
           )}
-        </TremorCard>
+          </CardContent>
+        </Card>
 
         {/* Cluster by Profile Bar List */}
-        <TremorCard>
-          <Title>Active Clusters by Profile</Title>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Active Clusters by Profile</CardTitle>
+          </CardHeader>
+          <CardContent>
           {statsLoading ? (
             <div className="mt-6 flex items-center justify-center text-muted-foreground">
               Loading statistics...
@@ -284,8 +300,7 @@ export default function AdminDashboardPage() {
             <BarList
               data={profileListData}
               className="mt-6"
-              color="blue"
-              showAnimation={true}
+              color="hsl(var(--chart-1))"
               valueFormatter={(value: number) => {
                 const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
                 return `${value} (${percentage}%)`;
@@ -296,7 +311,8 @@ export default function AdminDashboardPage() {
               No cluster data available
             </div>
           )}
-        </TremorCard>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Resource & Cost Insights */}
@@ -352,8 +368,11 @@ export default function AdminDashboardPage() {
         {/* Cost Breakdown Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Cost by Profile */}
-          <TremorCard>
-            <Title>Cost by Profile</Title>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Cost by Profile</CardTitle>
+            </CardHeader>
+            <CardContent>
             {statsLoading ? (
               <div className="mt-6 flex items-center justify-center text-muted-foreground">
                 Loading statistics...
@@ -362,8 +381,7 @@ export default function AdminDashboardPage() {
               <BarList
                 data={costByProfileData}
                 className="mt-6"
-                color="emerald"
-                showAnimation={true}
+                color="hsl(var(--chart-2))"
                 valueFormatter={(value: number) => formatCurrency(value) + "/hr"}
               />
             ) : (
@@ -371,11 +389,15 @@ export default function AdminDashboardPage() {
                 No cost data available
               </div>
             )}
-          </TremorCard>
+            </CardContent>
+          </Card>
 
           {/* Cost by User */}
-          <TremorCard>
-            <Title>Cost by User</Title>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Cost by User</CardTitle>
+            </CardHeader>
+            <CardContent>
             {statsLoading ? (
               <div className="mt-6 flex items-center justify-center text-muted-foreground">
                 Loading statistics...
@@ -384,8 +406,7 @@ export default function AdminDashboardPage() {
               <BarList
                 data={costByUserData}
                 className="mt-6"
-                color="amber"
-                showAnimation={true}
+                color="hsl(var(--chart-3))"
                 valueFormatter={(value: number) => formatCurrency(value) + "/hr"}
               />
             ) : (
@@ -393,7 +414,8 @@ export default function AdminDashboardPage() {
                 No cost data available
               </div>
             )}
-          </TremorCard>
+            </CardContent>
+          </Card>
         </div>
       </div>
 

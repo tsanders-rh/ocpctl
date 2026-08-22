@@ -24,8 +24,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatDate, formatCurrency } from "@/lib/utils/formatters";
 import { ArrowLeft, UserPlus, Trash2, AlertCircle, CheckCircle, Save, Search, ChevronDown, ChevronRight, DollarSign, TrendingUp, TrendingDown, Calendar, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
-import { AreaChart, Card as TremorCard, Metric, Text, Flex, BadgeDelta } from "@tremor/react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { format } from "date-fns";
 import type { User, Profile } from "@/types/api";
+
+const trendChartConfig = {
+  total_cost: { label: "Daily cost", color: "hsl(var(--chart-1))" },
+} satisfies ChartConfig;
 
 export default function TeamDetailPage() {
   const params = useParams();
@@ -724,20 +735,54 @@ export default function TeamDetailPage() {
             </CardHeader>
             <CardContent>
               {costsData?.daily_trend && costsData.daily_trend.length > 0 ? (
-                <AreaChart
-                  className="h-72 mt-4"
-                  data={costsData.daily_trend}
-                  index="date"
-                  categories={["total_cost"]}
-                  colors={["blue"]}
-                  valueFormatter={(value) => formatCurrency(value)}
-                  yAxisWidth={60}
-                  showAnimation={true}
-                  showLegend={false}
-                  showGridLines={true}
-                  showXAxis={true}
-                  showYAxis={true}
-                />
+                <ChartContainer config={trendChartConfig} className="h-72 mt-4 w-full">
+                  <AreaChart
+                    accessibilityLayer
+                    data={costsData.daily_trend}
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      minTickGap={24}
+                      tickFormatter={(v: string) => format(new Date(v), "MMM d")}
+                    />
+                    <YAxis
+                      width={60}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => formatCurrency(v)}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(label) => format(new Date(label as string), "MMM d, yyyy")}
+                          formatter={(value) => (
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {formatCurrency(Number(value))}
+                            </span>
+                          )}
+                        />
+                      }
+                    />
+                    <defs>
+                      <linearGradient id="fillTotalCost" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-total_cost)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="var(--color-total_cost)" stopOpacity={0.1} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      dataKey="total_cost"
+                      type="natural"
+                      fill="url(#fillTotalCost)"
+                      stroke="var(--color-total_cost)"
+                    />
+                  </AreaChart>
+                </ChartContainer>
               ) : (
                 <div className="h-72 flex items-center justify-center border rounded-lg">
                   <p className="text-sm text-muted-foreground">No trend data available</p>
