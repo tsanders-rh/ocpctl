@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { format, subDays, startOfMonth, startOfQuarter } from "date-fns";
 import { useUsageReport } from "@/lib/hooks/useUsageReport";
 import { exportUsageReportPdf } from "@/lib/reports/exportPdf";
@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils/formatters";
 import { BarChart } from "@tremor/react";
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, ChevronRight, ChevronDown } from "lucide-react";
+import type { ProfileUsage } from "@/lib/api/endpoints/reports";
 
 const fmt = (d: Date) => format(d, "yyyy-MM-dd");
 
@@ -171,12 +172,7 @@ export default function UsageReportPage() {
                   className="h-64"
                 />
               )}
-              <UsageTable
-                rows={report.profiles}
-                nameHeader="Profile"
-                nameKey="profile"
-                emptyText="No profiles in range"
-              />
+              <ProfileTable profiles={report.profiles} />
             </CardContent>
           </Card>
 
@@ -279,6 +275,98 @@ function UsageTable({
             <TableCell className="text-right">{formatCurrency(r.estimated_cost)}</TableCell>
           </TableRow>
         ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function ProfileTable({ profiles }: { profiles: ProfileUsage[] }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  if (profiles.length === 0) {
+    return <p className="text-sm text-muted-foreground">No profiles in range</p>;
+  }
+
+  const toggle = (key: string) =>
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Profile</TableHead>
+          <TableHead className="text-right">Clusters</TableHead>
+          <TableHead className="text-right">Runtime hrs</TableHead>
+          <TableHead className="text-right">Est. cost</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {profiles.map((p) => {
+          const key = p.profile || "unknown";
+          const isOpen = !!expanded[key];
+          return (
+            <Fragment key={key}>
+              <TableRow
+                className="cursor-pointer"
+                onClick={() => toggle(key)}
+              >
+                <TableCell className="font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    {isOpen ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    {p.profile}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">{p.cluster_count}</TableCell>
+                <TableCell className="text-right">{p.runtime_hours.toFixed(1)}</TableCell>
+                <TableCell className="text-right">{formatCurrency(p.estimated_cost)}</TableCell>
+              </TableRow>
+              {isOpen && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4} className="bg-muted/30 p-0">
+                    <div className="p-3">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Cluster</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead>Region</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created</TableHead>
+                            <TableHead className="text-right">Runtime hrs</TableHead>
+                            <TableHead className="text-right">Est. cost</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {p.clusters.map((c) => (
+                            <TableRow key={c.name}>
+                              <TableCell className="font-medium">{c.name}</TableCell>
+                              <TableCell>{c.owner || "—"}</TableCell>
+                              <TableCell>{c.region || "—"}</TableCell>
+                              <TableCell>{c.status}</TableCell>
+                              <TableCell>
+                                {format(new Date(c.created_at), "MMM d, yyyy")}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {c.runtime_hours.toFixed(1)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(c.estimated_cost)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </Fragment>
+          );
+        })}
       </TableBody>
     </Table>
   );

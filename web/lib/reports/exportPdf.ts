@@ -65,7 +65,7 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
-  // Most used profiles
+  // Most used profiles (aggregate)
   autoTable(doc, {
     startY: (doc as any).lastAutoTable.finalY + 20,
     head: [["Most Used Profiles", "Clusters", "Runtime hrs", "Est. cost"]],
@@ -79,6 +79,27 @@ export function exportUsageReportPdf(report: UsageReport) {
     headStyles: { fillColor: [30, 41, 59] },
     margin: { left: marginX, right: marginX },
   });
+
+  // Per-profile drill-down: the clusters behind each aggregate row.
+  for (const p of report.profiles) {
+    if (!p.clusters || p.clusters.length === 0) continue;
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 16,
+      head: [[`Clusters — ${p.profile}`, "Owner", "Region", "Status", "Runtime hrs", "Est. cost"]],
+      body: p.clusters.map((c) => [
+        c.name,
+        c.owner || "—",
+        c.region || "—",
+        c.status,
+        c.runtime_hours.toFixed(1),
+        formatCurrency(c.estimated_cost),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
+      margin: { left: marginX, right: marginX },
+    });
+  }
 
   // Most active users
   autoTable(doc, {
