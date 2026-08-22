@@ -1,0 +1,105 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
+)
+
+// ReportStore provides aggregate read queries backing the usage report.
+type ReportStore struct {
+	pool *pgxpool.Pool
+}
+
+// GetClustersActiveInRange returns every cluster whose lifetime overlaps the
+// window [start, end]. A cluster is considered active if it was created on or
+// before the end of the window and was either not yet destroyed or destroyed on
+// or after the start of the window.
+//
+// Only the columns needed by the usage report are selected; the rest of the
+// Cluster struct is left zero-valued.
+func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end time.Time) ([]*types.Cluster, error) {
+	query := `
+		SELECT id, name, platform, cluster_type, profile, region,
+			owner, owner_id, team, status, created_at, destroyed_at
+		FROM clusters
+		WHERE created_at <= $2
+		  AND (destroyed_at IS NULL OR destroyed_at >= $1)
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("query clusters active in range: %w", err)
+	}
+	defer rows.Close()
+
+	clusters := []*types.Cluster{}
+	for rows.Next() {
+		var c types.Cluster
+		if err := rows.Scan(
+			&c.ID,
+			&c.Name,
+			&c.Platform,
+			&c.ClusterType,
+			&c.Profile,
+			&c.Region,
+			&c.Owner,
+			&c.OwnerID,
+			&c.Team,
+			&c.Status,
+			&c.CreatedAt,
+			&c.DestroyedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan cluster: %w", err)
+		}
+		clusters = append(clusters, &c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate clusters: %w", err)
+	}
+
+	return clusters, nil
+}
+
+// GetJobStatsInRange returns job counts grouped by job type and status for jobs
+// created within the window [start, end]. The handler folds these into the
+// report's lifecycle section (created/destroyed/hibernated counts, create
+// success rate).
+func (s *ReportStore) GetJobStatsInRange(ctx context.Context, start, end time.Time) (*types.JobStats, error) {
+	query := `
+		SELECT job_type, status, COUNT(*)
+		FROM jobs
+		WHERE created_at >= $1 AND created_at <= $2
+		GROUP BY job_type, status
+	`
+
+	rows, err := s.pool.Query(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("query job stats in range: %w", err)
+	}
+	defer rows.Close()
+
+	stats := &types.JobStats{Counts: map[string]map[string]int{}}
+	for rows.Next() {
+		var jobType, status string
+		var count int
+		if err := rows.Scan(&jobType, &status, &count); err != nil {
+			return nil, fmt.Errorf("scan job stats: %w", err)
+		}
+		if stats.Counts[jobType] == nil {
+			stats.Counts[jobType] = map[string]int{}
+		}
+		stats.Counts[jobType][status] = count
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate job stats: %w", err)
+	}
+
+	return stats, nil
+}
