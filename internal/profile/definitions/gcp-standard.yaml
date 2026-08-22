@@ -70,8 +70,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 1.2
-  maxMonthlyCost: 900
+  # List-price basis: OCP IPI: 3x n2-standard-4 @0.189 + 3x n2-standard-8 @0.378 + infra (us-central1)
+  estimatedHourlyCost: 1.9
+  maxMonthlyCost: 1390
   budgetAlertThreshold: 0.8
   warningMessage: 'OpenShift on GCP uses GCE VMs. Control plane: n2-standard-4, Workers:
     n2-standard-8'

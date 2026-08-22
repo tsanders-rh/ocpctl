@@ -69,8 +69,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 0.2
-  maxMonthlyCost: 175
+  # List-price basis: OCP SNO: 1x n2-standard-4 @0.189 + infra (us-central1)
+  estimatedHourlyCost: 0.27
+  maxMonthlyCost: 200
   budgetAlertThreshold: 0.8
   warningMessage: Single Node OpenShift on GCP. All workloads run on one n2-standard-4
     VM.

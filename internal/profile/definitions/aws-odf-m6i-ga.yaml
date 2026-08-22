@@ -79,8 +79,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 3.40
-  maxMonthlyCost: 2448
+  # List-price basis: OCP+ODF: 3x m6i.xlarge @0.192 + 3x m6i.4xlarge @0.768 + ODF storage (us-east-1)
+  estimatedHourlyCost: 3.4
+  maxMonthlyCost: 2480
   budgetAlertThreshold: 0.8
   warningMessage: 3x m6i.4xlarge + 3x m6i.xlarge cost ~$3.40/hr ($2,448/month).
 platformConfig:

@@ -55,8 +55,9 @@ tags:
 features:
   oidcProvider: true
 costControls:
-  estimatedHourlyCost: 0.56
-  maxMonthlyCost: 405
+  # List-price basis: EKS: control plane 0.10 + 4x t3.large @0.0832 (us-east-1)
+  estimatedHourlyCost: 0.48
+  maxMonthlyCost: 350
   budgetAlertThreshold: 0.8
 platformConfig:
   eks:

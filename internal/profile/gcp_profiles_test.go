@@ -40,8 +40,8 @@ func TestGCPProfiles_Load(t *testing.T) {
 
 		// Verify cost controls
 		require.NotNil(t, prof.CostControls)
-		assert.Equal(t, 0.05, prof.CostControls.EstimatedHourlyCost)
-		assert.Contains(t, prof.CostControls.WarningMessage, "no control plane cost")
+		assert.Equal(t, 0.25, prof.CostControls.EstimatedHourlyCost)
+		assert.Contains(t, prof.CostControls.WarningMessage, "management fee")
 
 		// Verify lifecycle
 		assert.Equal(t, 168, prof.Lifecycle.MaxTTLHours)
@@ -101,7 +101,7 @@ func TestGCPProfiles_Load(t *testing.T) {
 
 		// Verify cost controls
 		require.NotNil(t, prof.CostControls)
-		assert.Equal(t, 1.20, prof.CostControls.EstimatedHourlyCost)
+		assert.Equal(t, 1.90, prof.CostControls.EstimatedHourlyCost)
 		assert.Contains(t, prof.CostControls.WarningMessage, "GCE VMs")
 
 		// Verify platform config
@@ -169,26 +169,26 @@ func TestGCPProfiles_CostEstimates(t *testing.T) {
 		prof, err := loader.Load("gke-standard")
 		require.NoError(t, err)
 
-		assert.Equal(t, 0.05, prof.CostControls.EstimatedHourlyCost)
-		assert.Equal(t, float64(40), prof.CostControls.MaxMonthlyCost)
+		assert.Equal(t, 0.25, prof.CostControls.EstimatedHourlyCost)
+		assert.Equal(t, float64(180), prof.CostControls.MaxMonthlyCost)
 
 		// Verify monthly cost calculation
 		hoursPerMonth := 24 * 30 // 720 hours
 		estimatedMonthlyCost := prof.CostControls.EstimatedHourlyCost * float64(hoursPerMonth)
-		assert.InDelta(t, 36.0, estimatedMonthlyCost, 5.0)
+		assert.InDelta(t, 180.0, estimatedMonthlyCost, 10.0)
 	})
 
 	t.Run("gcp-standard cost estimates", func(t *testing.T) {
 		prof, err := loader.Load("gcp-standard")
 		require.NoError(t, err)
 
-		assert.Equal(t, 1.20, prof.CostControls.EstimatedHourlyCost)
-		assert.Equal(t, float64(900), prof.CostControls.MaxMonthlyCost)
+		assert.Equal(t, 1.90, prof.CostControls.EstimatedHourlyCost)
+		assert.Equal(t, float64(1390), prof.CostControls.MaxMonthlyCost)
 
 		// Verify monthly cost calculation
 		hoursPerMonth := 24 * 30 // 720 hours
 		estimatedMonthlyCost := prof.CostControls.EstimatedHourlyCost * float64(hoursPerMonth)
-		assert.InDelta(t, 864.0, estimatedMonthlyCost, 50.0)
+		assert.InDelta(t, 1368.0, estimatedMonthlyCost, 50.0)
 	})
 }
 

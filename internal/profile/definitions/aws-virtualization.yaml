@@ -74,8 +74,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 35.5
-  maxMonthlyCost: 25500
+  # List-price basis: OCP virt: 3x m6i.2xlarge @0.384 + 3x m6i.metal @6.144 + infra (us-east-1)
+  estimatedHourlyCost: 20.1
+  maxMonthlyCost: 14670
   budgetAlertThreshold: 0.8
 platformConfig:
   aws:

@@ -79,8 +79,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 9.08
-  maxMonthlyCost: 6538
+  # List-price basis: OCP virt: 3x m6i.xlarge @0.192 + 2x m5zn.metal @3.96 + infra (us-east-1)
+  estimatedHourlyCost: 8.8
+  maxMonthlyCost: 6420
   budgetAlertThreshold: 0.7
   warningMessage: 2x Metal instances cost $9.08/hr ($6,538/month). Enable work hours
     hibernation to reduce to ~$1,670/month.

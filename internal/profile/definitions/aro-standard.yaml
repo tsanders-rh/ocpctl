@@ -45,8 +45,9 @@ tags:
 features:
   offHoursScaling: true
 costControls:
-  estimatedHourlyCost: 3.7
-  maxMonthlyCost: 2664
+  # List-price basis: ARO: 3x D8s_v5 + 3x D4s_v6 + 3 infra + ARO service fee (East US)
+  estimatedHourlyCost: 3.0
+  maxMonthlyCost: 2190
   budgetAlertThreshold: 0.8
   warningMessage: ARO is a managed service with higher costs than self-managed.
 platformConfig:

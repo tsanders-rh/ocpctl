@@ -46,8 +46,9 @@ tags:
 features:
   offHoursScaling: true
 costControls:
-  estimatedHourlyCost: 1.01
-  maxMonthlyCost: 730
+  # List-price basis: AKS: 3x D4s_v3 @0.192 + Std SLA 0.10 + net (East US on-demand)
+  estimatedHourlyCost: 0.73
+  maxMonthlyCost: 530
   budgetAlertThreshold: 0.8
   warningMessage: AKS Free tier has no control plane cost. Only compute billed.
 platformConfig:

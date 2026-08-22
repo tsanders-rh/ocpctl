@@ -49,8 +49,9 @@ tags:
 features:
   offHoursScaling: true
 costControls:
-  estimatedHourlyCost: 0.67
-  maxMonthlyCost: 482
+  # List-price basis: OCP SNO: 1x D8s_v5 @0.384 + infra (East US)
+  estimatedHourlyCost: 0.48
+  maxMonthlyCost: 350
   budgetAlertThreshold: 0.8
   warningMessage: SNO cannot scale workers. Stop VM to reduce costs.
 platformConfig:
