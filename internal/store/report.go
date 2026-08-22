@@ -19,6 +19,11 @@ type ReportStore struct {
 // before the end of the window and was either not yet destroyed or destroyed on
 // or after the start of the window.
 //
+// A cluster whose status is DESTROYED but whose destroyed_at is NULL is excluded:
+// it is gone, we just cannot prove when, so it must not be treated as an
+// indefinitely-running cluster that overlaps every window. (See the destroy-path
+// fast paths that historically set status without stamping destroyed_at.)
+//
 // Only the columns needed by the usage report are selected; the rest of the
 // Cluster struct is left zero-valued.
 func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end time.Time) ([]*types.Cluster, error) {
@@ -27,7 +32,10 @@ func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end t
 			owner, owner_id, team, status, created_at, destroyed_at
 		FROM clusters
 		WHERE created_at <= $2
-		  AND (destroyed_at IS NULL OR destroyed_at >= $1)
+		  AND (
+			destroyed_at >= $1
+			OR (destroyed_at IS NULL AND status <> 'DESTROYED')
+		  )
 		ORDER BY created_at DESC
 	`
 

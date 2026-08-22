@@ -92,4 +92,20 @@ func TestPeriodCost(t *testing.T) {
 			t.Fatalf("cost/hours = %v/%v, want 0/0", cost, hours)
 		}
 	})
+
+	// A DESTROYED cluster with no destroyed_at must not be projected as
+	// "still running" through the window end (the legacy zombie-row bug that
+	// inflated usage reports).
+	t.Run("destroyed without timestamp returns zero", func(t *testing.T) {
+		created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) // created before window
+		cl := &types.Cluster{
+			Status:      types.ClusterStatusDestroyed,
+			CreatedAt:   created,
+			DestroyedAt: nil,
+		}
+		cost, hours := PeriodCost(cl, 1.0, winStart, winEnd)
+		if cost != 0 || hours != 0 {
+			t.Fatalf("cost/hours = %v/%v, want 0/0", cost, hours)
+		}
+	})
 }

@@ -104,7 +104,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 			// Mark as DESTROYED to allow cleanup
 			if cluster.Status == types.ClusterStatusFailed {
 				log.Printf("Cluster %s failed during creation - no resources to destroy, marking as DESTROYED", cluster.Name)
-				if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyed); err != nil {
+				if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 					return fmt.Errorf("mark failed cluster as destroyed: %w", err)
 				}
 				return nil
@@ -121,7 +121,7 @@ func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.
 			// Mark as DESTROYED to allow cleanup
 			if cluster.Status == types.ClusterStatusFailed {
 				log.Printf("Cluster %s failed during creation - no artifacts found, marking as DESTROYED", cluster.Name)
-				if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusDestroyed); err != nil {
+				if err := h.store.Clusters.MarkDestroyed(ctx, cluster.ID); err != nil {
 					return fmt.Errorf("mark failed cluster as destroyed: %w", err)
 				}
 				return nil

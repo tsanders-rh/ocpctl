@@ -49,6 +49,15 @@ func EffectiveHourlyCost(cluster *types.Cluster, prof *profile.Profile) float64 
 // (CreatedAt .. DestroyedAt/now) with the window; a cluster that was not active
 // during the window contributes zero cost and zero hours.
 func PeriodCost(cluster *types.Cluster, effectiveCost float64, periodStart, periodEnd time.Time) (float64, float64) {
+	// A destroyed cluster with no destroyed_at timestamp cannot be proven active
+	// during any window. Treat it as contributing nothing rather than assuming it
+	// is "still running" (which would project it through the window end and bill
+	// it forever). This guards against legacy rows whose destroy path failed to
+	// stamp destroyed_at.
+	if cluster.Status == types.ClusterStatusDestroyed && cluster.DestroyedAt == nil {
+		return 0.0, 0.0
+	}
+
 	// Determine cluster's active period within the date range
 	clusterStart := cluster.CreatedAt
 	clusterEnd := periodEnd // Assume still running
