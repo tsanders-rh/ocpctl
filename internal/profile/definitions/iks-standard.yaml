@@ -66,8 +66,9 @@ features:
   publicServiceEndpoint: true
   privateServiceEndpoint: true
 costControls:
-  estimatedHourlyCost: 1.12
-  maxMonthlyCost: 806
+  # List-price basis: IKS: 4x bx2.8x32 @0.388 + net (IBM list)
+  estimatedHourlyCost: 1.6
+  maxMonthlyCost: 1170
   budgetAlertThreshold: 0.8
 platformConfig:
   ibmcloud:

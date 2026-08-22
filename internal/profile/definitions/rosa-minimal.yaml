@@ -66,8 +66,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 0.42
-  maxMonthlyCost: 310
+  # List-price basis: ROSA classic: 3x m5.2xlarge @0.384 + 2x m5.xlarge @0.192 + RH svc 0.171/4vCPU (us-east-1)
+  estimatedHourlyCost: 2.03
+  maxMonthlyCost: 1480
   budgetAlertThreshold: 0.8
 platformConfig:
   aws:

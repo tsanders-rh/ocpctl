@@ -60,8 +60,9 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  estimatedHourlyCost: 8.5
-  maxMonthlyCost: 6100
+  # List-price basis: ROKS: 3x bx2-4x16 @0.194 + 3x bx2-8x32 @0.388 + infra (IBM list)
+  estimatedHourlyCost: 2.0
+  maxMonthlyCost: 1460
   budgetAlertThreshold: 0.8
 platformConfig:
   ibmcloud:

@@ -26,7 +26,7 @@ func TestEffectiveHourlyCost(t *testing.T) {
 		{"hibernated openshift 10pct", types.ClusterStatusHibernated, types.ClusterTypeOpenShift, 1.0, 0.10},
 		{"hibernated rosa fixed", types.ClusterStatusHibernated, types.ClusterTypeROSA, 1.0, 0.03},
 		{"hibernated eks fixed", types.ClusterStatusHibernated, types.ClusterTypeEKS, 1.0, 0.10},
-		{"hibernated gke 3pct", types.ClusterStatusHibernated, types.ClusterTypeGKE, 1.0, 0.03},
+		{"hibernated gke fixed mgmt fee", types.ClusterStatusHibernated, types.ClusterTypeGKE, 1.0, 0.10},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

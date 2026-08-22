@@ -53,8 +53,9 @@ tags:
 features:
   offHoursScaling: true
 costControls:
-  estimatedHourlyCost: 3.5
-  maxMonthlyCost: 2520
+  # List-price basis: OCP IPI: 3x D8s_v5 @0.384 + 3x D4s_v5 @0.192 + infra (East US)
+  estimatedHourlyCost: 1.98
+  maxMonthlyCost: 1450
   budgetAlertThreshold: 0.8
   warningMessage: Azure VMs billed per minute. Stop VMs to reduce costs.
 platformConfig:

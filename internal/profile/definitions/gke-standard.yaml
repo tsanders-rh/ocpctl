@@ -54,11 +54,12 @@ tags:
 features:
   offHoursScaling: true
 costControls:
-  estimatedHourlyCost: 0.05
-  maxMonthlyCost: 40
+  # List-price basis: GKE Standard: mgmt fee 0.10 + 3x e2-medium @0.0335 (us-central1)
+  estimatedHourlyCost: 0.25
+  maxMonthlyCost: 180
   budgetAlertThreshold: 0.8
-  warningMessage: GKE Standard tier has no control plane cost. Only compute resources
-    are billed.
+  warningMessage: GKE Standard bills a $0.10/hr cluster management fee plus compute
+    for each node; the management fee continues even when node pools scale to zero.
 platformConfig:
   gcp:
     project: migration-eng

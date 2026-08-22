@@ -32,8 +32,9 @@ func EffectiveHourlyCost(cluster *types.Cluster, prof *profile.Profile) float64 
 			// IKS: Workers scaled to 0, minimal cost (~5%)
 			return baseCost * 0.05
 		case types.ClusterTypeGKE:
-			// GKE: Node pools scaled to 0, no control plane cost, only persistent disks (~3%)
-			return baseCost * 0.03
+			// GKE Standard: node pools scaled to 0, but the $0.10/hr cluster
+			// management fee continues (plus a little for persistent disks).
+			return 0.10
 		default:
 			// Unknown cluster type, use conservative estimate
 			return baseCost * 0.10
