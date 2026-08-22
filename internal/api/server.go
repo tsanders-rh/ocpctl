@@ -299,6 +299,10 @@ func (s *Server) setupRoutes() {
 	adminGroup.POST("/windows-snapshots", windowsSnapshotHandler.CreateWindowsSnapshot)
 	adminGroup.DELETE("/windows-snapshots/:id", windowsSnapshotHandler.DeleteWindowsSnapshot)
 
+	// Usage report (admin only)
+	reportHandler := NewReportHandler(s.store, s.registry)
+	adminGroup.GET("/reports/usage", reportHandler.GetUsageReport)
+
 	// Team management routes
 	teamHandler := NewTeamHandler(s.store, s.registry)
 
