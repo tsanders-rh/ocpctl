@@ -28,8 +28,9 @@ type ReportStore struct {
 // Cluster struct is left zero-valued.
 func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end time.Time) ([]*types.Cluster, error) {
 	query := `
-		SELECT id, name, platform, cluster_type, profile, region,
-			owner, owner_id, team, status, created_at, destroyed_at
+		SELECT id, name, platform, cluster_type, version, profile, region,
+			owner, owner_id, team, status, created_at, destroyed_at,
+			selected_addon_ids
 		FROM clusters
 		WHERE created_at <= $2
 		  AND (
@@ -53,6 +54,7 @@ func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end t
 			&c.Name,
 			&c.Platform,
 			&c.ClusterType,
+			&c.Version,
 			&c.Profile,
 			&c.Region,
 			&c.Owner,
@@ -61,6 +63,7 @@ func (s *ReportStore) GetClustersActiveInRange(ctx context.Context, start, end t
 			&c.Status,
 			&c.CreatedAt,
 			&c.DestroyedAt,
+			&c.SelectedAddonIDs,
 		); err != nil {
 			return nil, fmt.Errorf("scan cluster: %w", err)
 		}

@@ -91,6 +91,8 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 	// Aggregate cost / profiles / users over the window.
 	profileAgg := map[string]*types.ProfileUsage{}
 	userAgg := map[string]*types.UserUsage{}
+	versionAgg := map[string]*types.VersionUsage{}
+	addonAgg := map[string]*types.AddonUsage{}
 	var totalCost, totalHours float64
 	var lifetimeSum float64
 	var lifetimeCount int
@@ -149,6 +151,35 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		uu.RuntimeHours += clusterHours
 		uu.EstimatedCost += clusterCost
 
+		// Version aggregation — only for OpenShift-family clusters, which report an
+		// OpenShift version (openshift/rosa/aro). Other types carry Kubernetes
+		// versions and are excluded from the "OpenShift versions" breakdown.
+		if cl.Version != "" && isOpenShiftFamily(cl.ClusterType) {
+			vu := versionAgg[cl.Version]
+			if vu == nil {
+				vu = &types.VersionUsage{Version: cl.Version}
+				versionAgg[cl.Version] = vu
+			}
+			vu.ClusterCount++
+			vu.RuntimeHours += clusterHours
+			vu.EstimatedCost += clusterCost
+		}
+
+		// Addon aggregation — a cluster contributes to every addon it selected.
+		for _, addonID := range cl.SelectedAddonIDs {
+			if addonID == "" {
+				continue
+			}
+			au := addonAgg[addonID]
+			if au == nil {
+				au = &types.AddonUsage{Addon: addonID}
+				addonAgg[addonID] = au
+			}
+			au.ClusterCount++
+			au.RuntimeHours += clusterHours
+			au.EstimatedCost += clusterCost
+		}
+
 		// Average lifetime (over clusters active in-window). Cap still-running
 		// clusters at the current time, not the window end: the window end may be
 		// in the future (end-of-day today) or, for a past-dated range, long before
@@ -199,6 +230,29 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		return users[i].ClusterCount > users[j].ClusterCount
 	})
 
+	// Sort versions and addons by cluster count desc (tie-break on est. cost).
+	versions := make([]types.VersionUsage, 0, len(versionAgg))
+	for _, vu := range versionAgg {
+		versions = append(versions, *vu)
+	}
+	sort.Slice(versions, func(i, j int) bool {
+		if versions[i].ClusterCount != versions[j].ClusterCount {
+			return versions[i].ClusterCount > versions[j].ClusterCount
+		}
+		return versions[i].EstimatedCost > versions[j].EstimatedCost
+	})
+
+	addons := make([]types.AddonUsage, 0, len(addonAgg))
+	for _, au := range addonAgg {
+		addons = append(addons, *au)
+	}
+	sort.Slice(addons, func(i, j int) bool {
+		if addons[i].ClusterCount != addons[j].ClusterCount {
+			return addons[i].ClusterCount > addons[j].ClusterCount
+		}
+		return addons[i].EstimatedCost > addons[j].EstimatedCost
+	})
+
 	// Prior-period comparison: an equally-sized window immediately preceding the
 	// current one. Queried separately so the current-window aggregations above
 	// (counts, breakdowns) only ever reflect clusters active in-window.
@@ -236,10 +290,23 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		},
 		Profiles:  profiles,
 		Users:     users,
+		Versions:  versions,
+		Addons:    addons,
 		Lifecycle: lifecycle,
 	}
 
 	return SuccessOK(c, report)
+}
+
+// isOpenShiftFamily reports whether a cluster type carries an OpenShift version
+// (as opposed to a plain Kubernetes version).
+func isOpenShiftFamily(t types.ClusterType) bool {
+	switch t {
+	case types.ClusterTypeOpenShift, types.ClusterTypeROSA, types.ClusterTypeARO:
+		return true
+	default:
+		return false
+	}
 }
 
 // sumWindowCost returns the total estimated cost for the given clusters over the

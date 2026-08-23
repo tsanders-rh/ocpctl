@@ -37,6 +37,14 @@ const usersChartConfig = {
   estimated_cost: { label: "Est. cost", color: "hsl(var(--chart-2))" },
 } satisfies ChartConfig;
 
+const versionsChartConfig = {
+  cluster_count: { label: "Clusters", color: "hsl(var(--chart-3))" },
+} satisfies ChartConfig;
+
+const addonsChartConfig = {
+  cluster_count: { label: "Clusters", color: "hsl(var(--chart-4))" },
+} satisfies ChartConfig;
+
 type Preset = { label: string; range: () => [string, string] };
 
 const PRESETS: Preset[] = [
@@ -258,6 +266,94 @@ export default function UsageReportPage() {
             </CardContent>
           </Card>
 
+          {/* Most used OpenShift versions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Most Used OpenShift Versions</CardTitle>
+              <CardDescription>
+                OpenShift, ROSA, and ARO clusters ranked by cluster count over the selected range
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {report.versions.length > 0 ? (
+                <>
+                  <ChartContainer config={versionsChartConfig} className="h-64 w-full">
+                    <BarChart
+                      accessibilityLayer
+                      data={report.versions.slice(0, 10)}
+                      layout="vertical"
+                      margin={{ left: 12, right: 16 }}
+                    >
+                      <CartesianGrid horizontal={false} />
+                      <XAxis type="number" dataKey="cluster_count" allowDecimals={false} tickLine={false} axisLine={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="version"
+                        tickLine={false}
+                        axisLine={false}
+                        width={150}
+                        tickFormatter={(v: string) => (v.length > 22 ? `${v.slice(0, 21)}…` : v)}
+                      />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                      <Bar dataKey="cluster_count" fill="var(--color-cluster_count)" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                  <UsageTable
+                    rows={report.versions}
+                    nameHeader="Version"
+                    nameKey="version"
+                    emptyText="No OpenShift clusters in range"
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No OpenShift clusters in range</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Most used add-ons */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Most Used Add-ons</CardTitle>
+              <CardDescription>Ranked by number of clusters using each add-on over the selected range</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {report.addons.length > 0 ? (
+                <>
+                  <ChartContainer config={addonsChartConfig} className="h-64 w-full">
+                    <BarChart
+                      accessibilityLayer
+                      data={report.addons.slice(0, 10)}
+                      layout="vertical"
+                      margin={{ left: 12, right: 16 }}
+                    >
+                      <CartesianGrid horizontal={false} />
+                      <XAxis type="number" dataKey="cluster_count" allowDecimals={false} tickLine={false} axisLine={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="addon"
+                        tickLine={false}
+                        axisLine={false}
+                        width={150}
+                        tickFormatter={(v: string) => (v.length > 22 ? `${v.slice(0, 21)}…` : v)}
+                      />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                      <Bar dataKey="cluster_count" fill="var(--color-cluster_count)" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                  <UsageTable
+                    rows={report.addons}
+                    nameHeader="Add-on"
+                    nameKey="addon"
+                    emptyText="No add-ons in range"
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No add-ons in range</p>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Lifecycle breakdowns */}
           <div className="grid gap-4 md:grid-cols-3">
             <BreakdownCard title="By Platform" data={report.lifecycle.by_platform} />
@@ -299,12 +395,14 @@ function UsageTable({
   rows: Array<{
     profile?: string;
     owner?: string;
+    version?: string;
+    addon?: string;
     cluster_count: number;
     runtime_hours: number;
     estimated_cost: number;
   }>;
   nameHeader: string;
-  nameKey: "profile" | "owner";
+  nameKey: "profile" | "owner" | "version" | "addon";
   emptyText: string;
 }) {
   if (rows.length === 0) {

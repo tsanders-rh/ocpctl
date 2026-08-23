@@ -13,6 +13,8 @@ type UsageReport struct {
 	Cost      UsageCostSummary `json:"cost"`
 	Profiles  []ProfileUsage   `json:"profiles"` // sorted by cluster count desc
 	Users     []UserUsage      `json:"users"`    // sorted by est. cost desc
+	Versions  []VersionUsage   `json:"versions"` // OpenShift-family versions, sorted by cluster count desc
+	Addons    []AddonUsage     `json:"addons"`   // sorted by cluster count desc
 	Lifecycle LifecycleStats   `json:"lifecycle"`
 }
 
@@ -51,6 +53,26 @@ type ClusterUsage struct {
 // UserUsage aggregates usage for a single owner within the window.
 type UserUsage struct {
 	Owner         string  `json:"owner"` // email when resolvable, else owner_id
+	ClusterCount  int     `json:"cluster_count"`
+	RuntimeHours  float64 `json:"runtime_hours"`
+	EstimatedCost float64 `json:"estimated_cost"`
+}
+
+// VersionUsage aggregates usage for a single OpenShift-family version within the
+// window. Only clusters whose type is openshift/rosa/aro (i.e. that report an
+// OpenShift version rather than a plain Kubernetes version) are counted.
+type VersionUsage struct {
+	Version       string  `json:"version"`
+	ClusterCount  int     `json:"cluster_count"`
+	RuntimeHours  float64 `json:"runtime_hours"`
+	EstimatedCost float64 `json:"estimated_cost"`
+}
+
+// AddonUsage aggregates usage for a single addon within the window. A cluster
+// contributes to every addon it selected, so ClusterCount is "clusters that use
+// this addon" and the runtime/cost figures are that set's combined footprint.
+type AddonUsage struct {
+	Addon         string  `json:"addon"`
 	ClusterCount  int     `json:"cluster_count"`
 	RuntimeHours  float64 `json:"runtime_hours"`
 	EstimatedCost float64 `json:"estimated_cost"`

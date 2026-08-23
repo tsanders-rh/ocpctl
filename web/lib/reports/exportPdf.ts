@@ -116,6 +116,36 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
+  // Most used OpenShift versions
+  autoTable(doc, {
+    startY: (doc as any).lastAutoTable.finalY + 20,
+    head: [["Most Used OpenShift Versions", "Clusters", "Runtime hrs", "Est. cost"]],
+    body: report.versions.map((v) => [
+      v.version,
+      String(v.cluster_count),
+      v.runtime_hours.toFixed(1),
+      formatCurrency(v.estimated_cost),
+    ]),
+    theme: "striped",
+    headStyles: { fillColor: [30, 41, 59] },
+    margin: { left: marginX, right: marginX },
+  });
+
+  // Most used add-ons
+  autoTable(doc, {
+    startY: (doc as any).lastAutoTable.finalY + 20,
+    head: [["Most Used Add-ons", "Clusters", "Runtime hrs", "Est. cost"]],
+    body: report.addons.map((a) => [
+      a.addon,
+      String(a.cluster_count),
+      a.runtime_hours.toFixed(1),
+      formatCurrency(a.estimated_cost),
+    ]),
+    theme: "striped",
+    headStyles: { fillColor: [30, 41, 59] },
+    margin: { left: marginX, right: marginX },
+  });
+
   // Breakdowns
   const breakdownRows = (m: Record<string, number>) =>
     Object.entries(m)
