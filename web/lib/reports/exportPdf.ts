@@ -3,9 +3,79 @@ import autoTable from "jspdf-autotable";
 import type { UsageReport } from "@/lib/api/endpoints/reports";
 import { formatCurrency } from "@/lib/utils/formatters";
 
+// drawBarChart renders a simple horizontal bar chart directly with jsPDF
+// primitives (crisp vector, no rasterization) from the report data. Draws up to
+// the top 10 items and returns the Y coordinate just below the chart so the
+// caller can position the table that follows. Adds a page break if the chart
+// would not fit in the remaining space.
+function drawBarChart(
+  doc: jsPDF,
+  startY: number,
+  opts: {
+    title: string;
+    items: { label: string; value: number }[];
+    color: [number, number, number];
+    valueFormatter: (v: number) => string;
+  }
+): number {
+  const marginX = 40;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - marginX * 2;
+  const labelW = 140;
+  const valueW = 70;
+  const gap = 8;
+  const rowH = 16;
+  const barH = 9;
+  const titleH = 18;
+
+  const items = opts.items.slice(0, 10);
+  if (items.length === 0) return startY;
+
+  const chartH = titleH + items.length * rowH + 6;
+  let y = startY;
+  if (y + chartH > pageH - 40) {
+    doc.addPage();
+    y = 48;
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(30, 41, 59);
+  doc.text(opts.title, marginX, y);
+  doc.setFont("helvetica", "normal");
+  y += titleH;
+
+  const max = Math.max(...items.map((i) => i.value), 0);
+  const barX0 = marginX + labelW;
+  const barMaxW = contentW - labelW - valueW - gap;
+  const rightX = marginX + contentW;
+
+  for (const it of items) {
+    const barLen = max > 0 ? Math.max((it.value / max) * barMaxW, it.value > 0 ? 2 : 0) : 0;
+
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    const label = it.label.length > 28 ? `${it.label.slice(0, 27)}…` : it.label;
+    doc.text(label, marginX, y + barH - 1);
+
+    doc.setFillColor(opts.color[0], opts.color[1], opts.color[2]);
+    if (barLen > 0) doc.roundedRect(barX0, y, barLen, barH, 1.5, 1.5, "F");
+
+    doc.setTextColor(30, 41, 59);
+    doc.text(opts.valueFormatter(it.value), rightX, y + barH - 1, { align: "right" });
+
+    y += rowH;
+  }
+
+  doc.setTextColor(0);
+  return y + 6;
+}
+
 // exportUsageReportPdf builds a data-driven (text-selectable) PDF from a usage
 // report. Not a screenshot — each section is rendered as a jspdf-autotable so
-// the output stays crisp and copy-pasteable.
+// the output stays crisp and copy-pasteable. Charts are drawn natively with
+// jsPDF primitives (see drawBarChart) rather than captured from the DOM.
 export function exportUsageReportPdf(report: UsageReport) {
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   const marginX = 40;
@@ -65,9 +135,15 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
-  // Most used profiles (aggregate)
+  // Most used profiles — chart then aggregate table
+  let chartY = drawBarChart(doc, (doc as any).lastAutoTable.finalY + 20, {
+    title: "Most Used Profiles",
+    items: report.profiles.slice(0, 10).map((p) => ({ label: p.profile, value: p.cluster_count })),
+    color: [36, 99, 235],
+    valueFormatter: (v) => String(v),
+  });
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 20,
+    startY: chartY,
     head: [["Most Used Profiles", "Clusters", "Runtime hrs", "Est. cost"]],
     body: report.profiles.map((p) => [
       p.profile,
@@ -101,9 +177,15 @@ export function exportUsageReportPdf(report: UsageReport) {
     });
   }
 
-  // Most active users
+  // Most active users — chart then table
+  chartY = drawBarChart(doc, (doc as any).lastAutoTable.finalY + 20, {
+    title: "Most Active Users",
+    items: report.users.slice(0, 10).map((u) => ({ label: u.owner, value: u.estimated_cost })),
+    color: [16, 183, 127],
+    valueFormatter: (v) => formatCurrency(v),
+  });
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 20,
+    startY: chartY,
     head: [["Most Active Users", "Clusters", "Runtime hrs", "Est. cost"]],
     body: report.users.map((u) => [
       u.owner,
@@ -116,9 +198,15 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
-  // Most used OpenShift versions
+  // Most used OpenShift versions — chart then table
+  chartY = drawBarChart(doc, (doc as any).lastAutoTable.finalY + 20, {
+    title: "Most Used OpenShift Versions",
+    items: report.versions.slice(0, 10).map((v) => ({ label: v.version, value: v.cluster_count })),
+    color: [251, 189, 35],
+    valueFormatter: (v) => String(v),
+  });
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 20,
+    startY: chartY,
     head: [["Most Used OpenShift Versions", "Clusters", "Runtime hrs", "Est. cost"]],
     body: report.versions.map((v) => [
       v.version,
@@ -131,9 +219,15 @@ export function exportUsageReportPdf(report: UsageReport) {
     margin: { left: marginX, right: marginX },
   });
 
-  // Most used add-ons
+  // Most used add-ons — chart then table
+  chartY = drawBarChart(doc, (doc as any).lastAutoTable.finalY + 20, {
+    title: "Most Used Add-ons",
+    items: report.addons.slice(0, 10).map((a) => ({ label: a.addon, value: a.cluster_count })),
+    color: [124, 59, 237],
+    valueFormatter: (v) => String(v),
+  });
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 20,
+    startY: chartY,
     head: [["Most Used Add-ons", "Clusters", "Runtime hrs", "Est. cost"]],
     body: report.addons.map((a) => [
       a.addon,
