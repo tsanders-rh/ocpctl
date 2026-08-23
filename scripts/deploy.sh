@@ -18,6 +18,28 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Poll a service's /version endpoint until it reports the expected version or a
+# timeout elapses. Services run DB migrations and load profiles/addons before
+# binding their port, so a single check right after restart races startup — a
+# slow migration then false-aborts the deploy and can leave a host half-updated
+# (see the 2026-08-21 prod incident). Usage: wait_for_version <host> <port> <expected>
+# Echoes the last version seen; returns 0 as soon as it matches, 1 on timeout.
+wait_for_version() {
+    local host="$1" port="$2" expected="$3"
+    local deadline=$((SECONDS + 60))
+    local got=""
+    while [ $SECONDS -lt $deadline ]; do
+        got=$(ssh -i "$SSH_KEY" $SSH_USER@$host "curl -s http://localhost:${port}/version" 2>/dev/null | jq -r '.version' 2>/dev/null)
+        if [ "$got" = "$expected" ]; then
+            echo "$got"
+            return 0
+        fi
+        sleep 3
+    done
+    echo "$got"
+    return 1
+}
+
 echo -e "${BLUE}=== OCPCTL Versioned Deployment ===${NC}"
 echo ""
 
@@ -220,12 +242,13 @@ sleep 3
 if ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'sudo systemctl is-active ocpctl-api' > /dev/null; then
     echo -e "${GREEN}✓ API server is running${NC}"
 
-    # Verify version endpoint
-    DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" $SSH_USER@$API_HOST 'curl -s http://localhost:8080/version' | jq -r '.version')
-    if [ "$DEPLOYED_VERSION" = "$VERSION" ]; then
+    # Verify version endpoint, polling for up to 60s so a slow startup (migrations
+    # + profile/addon load before the port binds) doesn't false-abort the deploy.
+    echo -e "${YELLOW}  Waiting for API to report version ${VERSION}...${NC}"
+    if DEPLOYED_VERSION=$(wait_for_version "$API_HOST" 8080 "$VERSION"); then
         echo -e "${GREEN}✓ API version verified: $DEPLOYED_VERSION${NC}"
     else
-        echo -e "${RED}✗ API version mismatch! Expected: $VERSION, Got: $DEPLOYED_VERSION${NC}"
+        echo -e "${RED}✗ API version mismatch after 60s! Expected: $VERSION, Got: ${DEPLOYED_VERSION:-<none>}${NC}"
         exit 1
     fi
 else
@@ -332,12 +355,13 @@ for host in "${WORKER_HOSTS[@]}"; do
     if ssh -i "$SSH_KEY" $SSH_USER@$host 'sudo systemctl is-active ocpctl-worker' > /dev/null; then
         echo -e "${GREEN}✓ Worker on $host is running${NC}"
 
-        # Verify version endpoint (assuming worker health check is on port 8081)
-        DEPLOYED_VERSION=$(ssh -i "$SSH_KEY" $SSH_USER@$host 'curl -s http://localhost:8081/version' | jq -r '.version')
-        if [ "$DEPLOYED_VERSION" = "$VERSION" ]; then
+        # Verify version endpoint (worker health check on port 8081), polling for
+        # up to 60s so a slow startup doesn't false-flag the worker as failed.
+        echo -e "${YELLOW}  Waiting for worker to report version ${VERSION}...${NC}"
+        if DEPLOYED_VERSION=$(wait_for_version "$host" 8081 "$VERSION"); then
             echo -e "${GREEN}✓ Worker version verified: $DEPLOYED_VERSION${NC}"
         else
-            echo -e "${RED}✗ Worker version mismatch! Expected: $VERSION, Got: $DEPLOYED_VERSION${NC}"
+            echo -e "${RED}✗ Worker version mismatch after 60s! Expected: $VERSION, Got: ${DEPLOYED_VERSION:-<none>}${NC}"
             WORKER_FAILED=true
             FAILED_WORKERS+=("$host (version mismatch)")
         fi
