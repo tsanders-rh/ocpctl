@@ -42,6 +42,20 @@ export interface UserUsage {
   estimated_cost: number;
 }
 
+export interface VersionUsage {
+  version: string;
+  cluster_count: number;
+  runtime_hours: number;
+  estimated_cost: number;
+}
+
+export interface AddonUsage {
+  addon: string;
+  cluster_count: number;
+  runtime_hours: number;
+  estimated_cost: number;
+}
+
 export interface LifecycleStats {
   created: number;
   destroyed: number;
@@ -62,6 +76,8 @@ export interface UsageReport {
   cost: UsageCostSummary;
   profiles: ProfileUsage[];
   users: UserUsage[];
+  versions: VersionUsage[];
+  addons: AddonUsage[];
   lifecycle: LifecycleStats;
 }
 
