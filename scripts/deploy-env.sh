@@ -29,33 +29,11 @@ if [[ "$ENVIRONMENT" != "dev" && "$ENVIRONMENT" != "production" ]]; then
     exit 1
 fi
 
-# Environment-specific configuration
-case $ENVIRONMENT in
-  dev)
-    API_HOST="44.214.230.178"
-    WORKER_HOSTS=("44.214.230.178")
-    SSH_USER="ubuntu"
-    SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
-    S3_BUCKET="s3://ocpctl-dev-binaries"
-    S3_ARTIFACTS_BUCKET="s3://ocpctl-dev-artifacts"
-    DOMAIN="dev.ocpctl.mg.dog8code.com"
-    AUTOSCALE_TAG="ocpctl-dev-worker"
-    CONFIG_SUFFIX="dev"
-    echo -e "${YELLOW}Environment: DEV${NC}"
-    ;;
-  production)
-    API_HOST="44.201.165.78"
-    WORKER_HOSTS=("44.201.165.78")
-    SSH_USER="ubuntu"
-    SSH_KEY="$HOME/.ssh/ocpctl-production-key"
-    S3_BUCKET="s3://ocpctl-binaries"
-    S3_ARTIFACTS_BUCKET="s3://ocpctl-artifacts"
-    DOMAIN="ocpctl.mg.dog8code.com"
-    AUTOSCALE_TAG="ocpctl-worker"
-    CONFIG_SUFFIX="production"
-    echo -e "${YELLOW}Environment: PRODUCTION${NC}"
-    ;;
-esac
+# Environment-specific configuration (single source of truth: config/environments.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment "$ENVIRONMENT"
+echo -e "${YELLOW}Environment: $(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')${NC}"
 
 REMOTE_BASE="/opt/ocpctl"
 

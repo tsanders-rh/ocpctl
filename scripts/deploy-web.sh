@@ -27,25 +27,12 @@ if [[ "$ENVIRONMENT" != "dev" && "$ENVIRONMENT" != "production" ]]; then
     exit 1
 fi
 
-# Environment-specific configuration
-case $ENVIRONMENT in
-  dev)
-    SSH_HOST="44.214.230.178"
-    SSH_USER="ubuntu"
-    SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
-    DOMAIN="dev.ocpctl.mg.dog8code.com"
-    CONFIG_SUFFIX="dev"
-    echo -e "${YELLOW}Environment: DEV${NC}"
-    ;;
-  production)
-    SSH_HOST="44.201.165.78"
-    SSH_USER="ubuntu"
-    SSH_KEY="$HOME/.ssh/ocpctl-production-key"
-    DOMAIN="ocpctl.mg.dog8code.com"
-    CONFIG_SUFFIX="production"
-    echo -e "${YELLOW}Environment: PRODUCTION${NC}"
-    ;;
-esac
+# Environment-specific configuration (single source of truth: config/environments.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment "$ENVIRONMENT"
+SSH_HOST="$API_HOST"   # web frontend is deployed to the same host as the API
+echo -e "${YELLOW}Environment: $(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')${NC}"
 
 REMOTE_BASE="/opt/ocpctl"
 WEB_DIR="web"

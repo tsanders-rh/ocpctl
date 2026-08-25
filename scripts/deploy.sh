@@ -4,11 +4,11 @@
 
 set -e
 
-# Configuration
-WORKER_HOSTS=("44.201.165.78")  # API server also runs a worker (hybrid approach)
-API_HOST="44.201.165.78"
-SSH_USER="ubuntu"  # Ubuntu on new production server
-SSH_KEY="$HOME/.ssh/ocpctl-production-key"
+# Configuration — production targets from the single source of truth
+# (config/environments.sh). The API server also runs a worker (hybrid approach).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment production
 REMOTE_BASE="/opt/ocpctl"
 
 # Colors
@@ -98,9 +98,8 @@ strings bin/ocpctl-api-${VERSION} | grep -q "${VERSION}" && echo -e "${GREEN}✓
 strings bin/ocpctl-worker-${VERSION} | grep -q "${VERSION}" && echo -e "${GREEN}✓ Worker version embedded correctly${NC}" || echo -e "${RED}✗ Worker version NOT found in binary${NC}"
 echo ""
 
-# Upload to S3 for autoscaling workers
+# Upload to S3 for autoscaling workers (S3_BUCKET from config/environments.sh)
 echo -e "${YELLOW}Uploading binaries to S3 for autoscaling workers...${NC}"
-S3_BUCKET="s3://ocpctl-binaries"
 
 # Upload versioned binary
 aws s3 cp bin/ocpctl-worker-${VERSION} ${S3_BUCKET}/releases/${VERSION}/ocpctl-worker
@@ -382,7 +381,7 @@ if [ ${#FAILED_WORKERS[@]} -eq 0 ]; then
     echo -e "${BLUE}Commit: ${COMMIT}${NC}"
     echo ""
     echo "Verify deployment:"
-    echo "  API:    curl https://ocpctl.mg.dog8code.com/version"
+    echo "  API:    curl https://${DOMAIN}/version"
     echo "  Worker: ssh -i $SSH_KEY $SSH_USER@$API_HOST 'curl -s http://localhost:8081/version'"
     echo ""
     echo "Rollback to previous version:"

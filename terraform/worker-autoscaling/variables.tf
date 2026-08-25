@@ -20,6 +20,12 @@ variable "ami_id" {
   type        = string
 }
 
+variable "ssh_key_name" {
+  description = "Name of the EC2 key pair for SSH access to worker instances"
+  type        = string
+  default     = "ocpctl-production-key"
+}
+
 variable "instance_type" {
   description = "EC2 instance type for workers"
   type        = string
