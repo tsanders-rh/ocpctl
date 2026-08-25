@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -70,6 +71,21 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		return LogAndReturnGenericError(c, err)
 	}
 
+	// Reconstruct each cluster's hibernate/resume history so cost is billed at
+	// the rate that actually applied per interval (running vs. hibernated) rather
+	// than a single flat rate keyed on the cluster's status at report time.
+	clusterIDs := make([]string, 0, len(clusters))
+	for _, cl := range clusters {
+		clusterIDs = append(clusterIDs, cl.ID)
+	}
+	transitions, err := h.store.Reports.GetHibernationTransitions(ctx, clusterIDs)
+	if err != nil {
+		// Non-fatal: fall back to flat-rate costing (empty history) rather than
+		// failing the whole report.
+		LogWarning(c, "failed to load hibernation history for usage report", "error", err.Error())
+		transitions = map[string][]cost.StateTransition{}
+	}
+
 	// Resolve owner emails in one batch to avoid N+1 lookups.
 	ownerIDs := make([]string, 0, len(clusters))
 	seen := map[string]bool{}
@@ -100,11 +116,9 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 	for _, cl := range clusters {
 		// Use GetAny so disabled/removed profiles still get costed.
 		prof, perr := h.registry.GetAny(cl.Profile)
-		var effective float64
 		var clusterCost, clusterHours float64
 		if perr == nil && prof != nil {
-			effective = cost.EffectiveHourlyCost(cl, prof)
-			clusterCost, clusterHours = cost.PeriodCost(cl, effective, start, end)
+			clusterCost, clusterHours = cost.PeriodCostWithHistory(cl, prof, transitions[cl.ID], start, end)
 		}
 
 		totalCost += clusterCost
@@ -264,7 +278,7 @@ func (h *ReportHandler) GetUsageReport(c echo.Context) error {
 		// Non-fatal: the report is still useful without the comparison.
 		LogWarning(c, "failed to compute prior-period cost for usage report", "error", perr.Error())
 	} else {
-		priorTotal := h.sumWindowCost(priorClusters, priorStart, priorEnd)
+		priorTotal := h.sumWindowCost(ctx, c, priorClusters, priorStart, priorEnd)
 		percentChange := 0.0
 		if priorTotal > 0 {
 			percentChange = ((totalCost - priorTotal) / priorTotal) * 100
@@ -310,17 +324,28 @@ func isOpenShiftFamily(t types.ClusterType) bool {
 }
 
 // sumWindowCost returns the total estimated cost for the given clusters over the
-// window [start, end], using the same cost model as the main aggregation.
-func (h *ReportHandler) sumWindowCost(clusters []*types.Cluster, start, end time.Time) float64 {
+// window [start, end], using the same hibernation-aware cost model as the main
+// aggregation.
+func (h *ReportHandler) sumWindowCost(ctx context.Context, c echo.Context, clusters []*types.Cluster, start, end time.Time) float64 {
+	clusterIDs := make([]string, 0, len(clusters))
+	for _, cl := range clusters {
+		clusterIDs = append(clusterIDs, cl.ID)
+	}
+	transitions, err := h.store.Reports.GetHibernationTransitions(ctx, clusterIDs)
+	if err != nil {
+		// Non-fatal: fall back to flat-rate costing for the comparison window.
+		LogWarning(c, "failed to load hibernation history for prior period", "error", err.Error())
+		transitions = map[string][]cost.StateTransition{}
+	}
+
 	var total float64
 	for _, cl := range clusters {
-		prof, err := h.registry.GetAny(cl.Profile)
-		if err != nil || prof == nil {
+		prof, perr := h.registry.GetAny(cl.Profile)
+		if perr != nil || prof == nil {
 			continue
 		}
-		eff := cost.EffectiveHourlyCost(cl, prof)
-		c, _ := cost.PeriodCost(cl, eff, start, end)
-		total += c
+		cc, _ := cost.PeriodCostWithHistory(cl, prof, transitions[cl.ID], start, end)
+		total += cc
 	}
 	return total
 }
