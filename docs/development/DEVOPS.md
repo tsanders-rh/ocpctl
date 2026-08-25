@@ -22,6 +22,40 @@ validation).
 **Golden rule:** changes prove out in **dev** before production. Production is a
 manual promotion of a specific, dev-validated version — never a first deploy.
 
+These per-environment targets are **not duplicated** in each script — they live in
+one tracked, non-secret file, [`config/environments.sh`](../../config/environments.sh).
+The deploy/ops scripts source it and call `load_environment dev|production` to get
+`$API_HOST`, `$WORKER_HOSTS`, `$SSH_KEY`, `$SSH_USER`, `$S3_BUCKET`,
+`$S3_ARTIFACTS_BUCKET`, `$DOMAIN`, `$AUTOSCALE_TAG`, `$CONFIG_SUFFIX`, and
+`$RDS_HOST`. Change a host/bucket/domain in that one file, not in the scripts.
+
+---
+
+## 1a. What you need to deploy
+
+`config/environments.sh` holds only the **non-secret targets** (hosts, buckets,
+domain, key *names*). To actually push to dev or prod, a maintainer additionally
+needs the following on their own machine — none of it is in git:
+
+1. **The SSH private key** at `$SSH_KEY` — `~/.ssh/ocpctl-dev-key` (dev) or
+   `~/.ssh/ocpctl-production-key` (prod). Regenerate from Terraform if missing:
+   `terraform -chdir=terraform/dev output -raw ssh_private_key > ~/.ssh/ocpctl-dev-key && chmod 600 ~/.ssh/ocpctl-dev-key`.
+   Different user/path? Override with `OCPCTL_SSH_USER` / `OCPCTL_SSH_KEY` — no
+   need to edit the config file.
+2. **The real env-config secret files** — `config/api.env.<env>` and
+   `config/worker.env.<env>` (gitignored; they carry `DATABASE_URL`, `JWT_SECRET`,
+   `OCM_TOKEN`, the OpenShift pull secret, and cloud creds). Only the
+   `*.template` versions are tracked; copy and fill them, or pull the real ones
+   from a teammate / `s3://<binaries-bucket>/config/`.
+3. **AWS credentials** (`aws configure` / SSO) with access to the S3 binaries +
+   artifacts buckets and the worker ASG, in the account that hosts the
+   deployment.
+4. **Local tooling**: Go (build + `go test` gate), `aws` CLI, `jq`, `ssh`/`scp`,
+   and Node.js 18+ for `scripts/deploy-web.sh`.
+
+With those in place, `./scripts/deploy-env.sh dev` (or `production`) is
+self-contained.
+
 ---
 
 ## 2. Versioning

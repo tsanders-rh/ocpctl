@@ -18,9 +18,11 @@ if [ -z "$1" ]; then
 fi
 
 DEV_SERVER_IP=$1
-SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
-SSH_USER="ubuntu"
-DOMAIN="dev.ocpctl.mg.dog8code.com"
+
+# Dev targeting from the single source of truth (config/environments.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment dev
 
 # Colors
 GREEN='\033[0;32m'

@@ -8,13 +8,12 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-SSH_KEY="${HOME}/.ssh/ocpctl-production-key"
-SSH_USER="ubuntu"
-API_HOST="44.201.165.78"
-WORKER_HOST="44.201.165.78"
+# Production targeting from the single source of truth (config/environments.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment production
+WORKER_HOST="${WORKER_HOSTS[0]}"
 GCP_PROJECT="migration-eng"
-S3_BUCKET="s3://ocpctl-binaries"
 LOCAL_KEY_FILE="${1:-}"
 
 echo -e "${BLUE}=== GCP Credentials Configuration (All Workers + Autoscale) ===${NC}"
@@ -191,8 +190,8 @@ if [ $? -eq 0 ]; then
     echo -e "${BLUE}GCP credentials configured successfully!${NC}"
     echo ""
     echo "Configuration applied to:"
-    echo "  ✓ API server (44.201.165.78)"
-    echo "  ✓ Main Worker server (44.201.165.78)"
+    echo "  ✓ API server ($API_HOST)"
+    echo "  ✓ Main Worker server ($WORKER_HOST)"
     echo "  ✓ S3 bucket (for autoscale workers)"
     echo "  ✓ Bootstrap script updated"
     echo ""

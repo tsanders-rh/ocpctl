@@ -13,9 +13,11 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}=== Syncing Profiles from Production Database ===${NC}"
 echo ""
 
-# Production server details
-PROD_SERVER="44.201.165.78"
-SSH_KEY="$HOME/.ssh/ocpctl-production-key"
+# Production targeting from the single source of truth (config/environments.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment production
+PROD_SERVER="$API_HOST"
 
 # Check if SSH key exists
 if [ ! -f "$SSH_KEY" ]; then
@@ -48,7 +50,7 @@ fi
 echo "Fetching profiles from production database..."
 
 # Get DATABASE_URL from production
-DATABASE_URL=$(ssh -i "$SSH_KEY" ubuntu@"$PROD_SERVER" 'sudo cat /etc/ocpctl/api.env' | grep '^DATABASE_URL=' | cut -d= -f2- | tr -d '"' | tr -d "'")
+DATABASE_URL=$(ssh -i "$SSH_KEY" "$SSH_USER@$PROD_SERVER" 'sudo cat /etc/ocpctl/api.env' | grep '^DATABASE_URL=' | cut -d= -f2- | tr -d '"' | tr -d "'")
 
 if [ -z "$DATABASE_URL" ]; then
     echo -e "${RED}ERROR: Could not fetch DATABASE_URL from production${NC}"
@@ -56,7 +58,7 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 # Export profiles from production database (run psql on production server)
-PROFILES_JSON=$(ssh -i "$SSH_KEY" ubuntu@"$PROD_SERVER" "psql '$DATABASE_URL' -t -A -F'|' -c \"SELECT name, profile_data FROM profiles ORDER BY name\"")
+PROFILES_JSON=$(ssh -i "$SSH_KEY" "$SSH_USER@$PROD_SERVER" "psql '$DATABASE_URL' -t -A -F'|' -c \"SELECT name, profile_data FROM profiles ORDER BY name\"")
 
 if [ -z "$PROFILES_JSON" ]; then
     echo -e "${RED}ERROR: No profiles found in database${NC}"

@@ -5,6 +5,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Book, Users, Shield, Sparkles, Database, PackageCheck } from "lucide-react";
 
+// Base API/UI URL shown in the in-app documentation examples. Derived from the
+// deployment's NEXT_PUBLIC_API_URL at build time so the docs reflect whatever
+// environment this frontend is serving; falls back to the production URL.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ocpctl.mg.dog8code.com";
+
 const userGuides = [
   {
     id: "getting-started",
@@ -1084,7 +1089,7 @@ Cluster Pools are collections of pre-provisioned, ready-to-use clusters that you
 
 1. **Navigate to Cluster Pools**
    - Click **Cluster Pools** in the sidebar
-   - Or visit: \`https://ocpctl.mg.dog8code.com/pools\`
+   - Or visit: \`${API_BASE}/pools\`
 
 2. **View Pool Information**
    - Each pool card shows:
@@ -1138,7 +1143,7 @@ All API requests require authentication. Use either a JWT token or API key:
 **JWT Token (Login):**
 \`\`\`bash
 # Login to get token
-curl -X POST https://ocpctl.mg.dog8code.com/api/v1/auth/login \\
+curl -X POST ${API_BASE}/api/v1/auth/login \\
   -H "Content-Type: application/json" \\
   -d '{"email": "user@example.com", "password": "your-password"}'
 
@@ -1156,7 +1161,7 @@ export TOKEN="ocpctl_ak_your_key_here"
 
 \`\`\`bash
 curl -H "Authorization: Bearer $TOKEN" \\
-  https://ocpctl.mg.dog8code.com/api/v1/pools?enabled_only=true
+  ${API_BASE}/api/v1/pools?enabled_only=true
 \`\`\`
 
 **Response:**
@@ -1182,7 +1187,7 @@ Check pool availability before leasing:
 
 \`\`\`bash
 curl -H "Authorization: Bearer $TOKEN" \\
-  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/stats
+  ${API_BASE}/api/v1/pools/dev-pool/stats
 \`\`\`
 
 **Response:**
@@ -1210,7 +1215,7 @@ curl -X POST \\
       "team": "platform-team"
     }
   }' \\
-  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/lease
+  ${API_BASE}/api/v1/pools/dev-pool/lease
 \`\`\`
 
 **Response:**
@@ -1251,7 +1256,7 @@ Always release clusters when done to free them for others:
 \`\`\`bash
 curl -X POST \\
   -H "Authorization: Bearer $TOKEN" \\
-  https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/abc-123-def-456/release
+  ${API_BASE}/api/v1/pools/clusters/abc-123-def-456/release
 \`\`\`
 
 **Response:** 204 No Content (success)
@@ -1289,7 +1294,7 @@ jobs:
                 "branch": "\${{ github.ref_name }}"
               }
             }' \\
-            https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/lease)
+            ${API_BASE}/api/v1/pools/ci-pool/lease)
 
           echo "Response: $RESPONSE"
 
@@ -1324,7 +1329,7 @@ jobs:
         run: |
           curl -X POST \\
             -H "Authorization: Bearer \${{ secrets.OCPCTL_TOKEN }}" \\
-            https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/\${{ steps.lease.outputs.cluster_id }}/release
+            ${API_BASE}/api/v1/pools/clusters/\${{ steps.lease.outputs.cluster_id }}/release
 \`\`\`
 
 **Setup Instructions:**
@@ -1341,7 +1346,7 @@ set -euo pipefail
 
 # Configuration
 POOL_NAME="dev-pool"
-OCPCTL_URL="https://ocpctl.mg.dog8code.com"
+OCPCTL_URL="${API_BASE}"
 TOKEN="\${OCPCTL_TOKEN}"  # Set via environment variable
 
 # Colors for output
@@ -1451,7 +1456,7 @@ class OcpctlPoolClient:
 if __name__ == "__main__":
     # Initialize client
     client = OcpctlPoolClient(
-        base_url="https://ocpctl.mg.dog8code.com",
+        base_url="${API_BASE}",
         token=os.environ.get("OCPCTL_TOKEN")
     )
 
@@ -1555,7 +1560,7 @@ Help with debugging, tracking, and audit trails:
 Before leasing, verify pools have capacity:
 
 \`\`\`bash
-curl https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/stats
+curl ${API_BASE}/api/v1/pools/ci-pool/stats
 
 # If ready_clusters = 0:
 # - Wait for replenishment (check provisioning_clusters)
@@ -1666,7 +1671,7 @@ done
 1. **Check cluster details:**
    \`\`\`bash
    curl -H "Authorization: Bearer $TOKEN" \\
-     https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+     ${API_BASE}/api/v1/clusters/{cluster-id}
    \`\`\`
 
 2. **Verify lease expiration:**
@@ -1712,7 +1717,7 @@ curl -k $API_URL/healthz
 **3. Verify cluster is READY:**
 \`\`\`bash
 curl -H "Authorization: Bearer $TOKEN" \\
-  https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+  ${API_BASE}/api/v1/clusters/{cluster-id}
 
 # status should be "READY", not "CREATING" or "PROVISIONING"
 \`\`\`
@@ -1816,14 +1821,14 @@ If you lose the lease response with \`cluster_id\`:
 
 1. **Check your clusters page:**
    \`\`\`
-   https://ocpctl.mg.dog8code.com/clusters
+   ${API_BASE}/clusters
    \`\`\`
    Pool-leased clusters show up with \`pool_state: LEASED\`
 
 2. **API query:**
    \`\`\`bash
    curl -H "Authorization: Bearer $TOKEN" \\
-     https://ocpctl.mg.dog8code.com/api/v1/clusters
+     ${API_BASE}/api/v1/clusters
    # Filter for clusters with your leased_by identifier
    \`\`\`
 
@@ -1835,7 +1840,7 @@ If you lose the lease response with \`cluster_id\`:
 ## Additional Resources
 
 - **Full Feature Documentation**: See \`docs/features/CLUSTER_POOLS.md\` on GitHub
-- **API Reference**: https://ocpctl.mg.dog8code.com/swagger/index.html (search for "Pools")
+- **API Reference**: ${API_BASE}/swagger/index.html (search for "Pools")
 - **Cluster Management Guide**: See "Cluster Management" section in this guide
 - **Architecture Details**: \`docs/architecture/architecture.md\`
 
@@ -3391,7 +3396,7 @@ curl -X PATCH \\
   -H "Authorization: Bearer $ADMIN_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"target_size": 5}' \\
-  https://ocpctl.mg.dog8code.com/api/v1/admin/pools/dev-pool
+  ${API_BASE}/api/v1/admin/pools/dev-pool
 \`\`\`
 
 **When to adjust:**

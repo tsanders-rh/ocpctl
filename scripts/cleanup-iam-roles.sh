@@ -7,6 +7,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Production targeting from the single source of truth (config/environments.sh)
+source "$SCRIPT_DIR/../config/environments.sh"
+load_environment production
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -77,7 +81,7 @@ echo ""
 
 # Get list of active clusters from database directly
 echo -e "${BLUE}Fetching active clusters from ocpctl database...${NC}"
-ACTIVE_CLUSTERS_DB=$(ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+ACTIVE_CLUSTERS_DB=$(ssh -i "$SSH_KEY" "$SSH_USER@$API_HOST" \
     "sudo bash -c \"source /etc/ocpctl/api.env && psql \\\$DATABASE_URL -t -c \\\"SELECT name FROM clusters WHERE status NOT IN ('destroyed', 'failed');\\\"\" 2>/dev/null" \
     | grep -v '^$' | tr -d ' ' || echo "")
 
