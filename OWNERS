@@ -1,0 +1,12 @@
+# See https://go.k8s.io/owners for the OWNERS file format used across the
+# migtools community (prow-style approvers/reviewers).
+#
+# NOTE: while this repo is single-maintainer it lists one owner. On donation to
+# migtools, replace these with the receiving team's approvers/reviewers (see the
+# migtools community OWNERS convention, e.g. migtools/crane).
+
+approvers:
+  - tsanders-rh
+
+reviewers:
+  - tsanders-rh
