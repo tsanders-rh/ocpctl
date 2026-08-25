@@ -23,19 +23,18 @@ main ← feature/<topic>      new capability
 
 ## 2. Commit conventions
 
-Use [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`.
+Use **verb-first, imperative titles** that describe what the change does — the
+convention used across this repo's history and the wider migtools community.
 
 ```
-feat(profile): add azure-sno-ga prerelease track
-fix(worker): create TMPDIR so openshift-install writes bootstrap ignition
-docs(dev): add nightly pipeline design
-chore(ci): run golangci-lint in CI
+Add azure-sno-ga prerelease track
+Fix TMPDIR creation so openshift-install writes bootstrap ignition
+Add nightly pipeline design docs
+Recalibrate profile cost estimates to on-demand list prices
 ```
-
-Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `perf`, `build`, `ci`.
 
 Guidelines:
-- Imperative mood ("add", not "added"); ≤ 72-char summary line.
+- Imperative mood ("Add", not "Added"); ≤ 72-char summary line.
 - Explain **why** in the body when it isn't obvious from the diff.
 - One logical change per commit; squash noise before pushing.
 - Reference issues/PRs (`#97`) where relevant.
@@ -67,7 +66,7 @@ Requires: Go 1.25+, `golangci-lint`, Node (for `web/`). A local Postgres is need
 4. Request review; address feedback with follow-up commits (don't force-push after review starts unless asked).
 5. Merge only when CI is green **and** you have the required approval.
 
-**Merge style:** *Squash and merge* (keeps `main` history one-commit-per-PR and clean). The squash commit message should follow the Conventional Commits format from §2.
+**Merge style:** *Squash and merge* (keeps `main` history one-commit-per-PR and clean). The squash commit message should follow the verb-first title convention from §2.
 
 ---
 
