@@ -267,8 +267,8 @@ func (i *Installer) getInfraID(workDir string) (string, error) {
 ```bash
 cd /Users/tsanders/Workspace2/ocpctl
 GOOS=linux GOARCH=amd64 go build -o bin/ocpctl-worker ./cmd/worker
-scp bin/ocpctl-worker ec2-user@54.205.91.62:/tmp/
-ssh ec2-user@54.205.91.62 'sudo mv /tmp/ocpctl-worker /opt/ocpctl/bin/ocpctl-worker && sudo systemctl restart ocpctl-worker'
+scp bin/ocpctl-worker ec2-user@<PROD_HOST>:/tmp/
+ssh ec2-user@<PROD_HOST> 'sudo mv /tmp/ocpctl-worker /opt/ocpctl/bin/ocpctl-worker && sudo systemctl restart ocpctl-worker'
 ```
 
 ### Step 4: Create Fresh Test Cluster

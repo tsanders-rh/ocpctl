@@ -61,12 +61,12 @@ IBM Cloud OpenShift clusters require IBM Cloud Internet Services (CIS) for DNS m
 ### DNS Architecture
 
 ```
-mg.dog8code.com (Route 53 - Parent Domain)
-├── cluster1.mg.dog8code.com (AWS cluster)
-├── cluster2.mg.dog8code.com (AWS cluster)
-└── ibm.mg.dog8code.com (CIS - Delegated Subdomain)
-    ├── test1.ibm.mg.dog8code.com (IBM Cloud cluster)
-    └── dev1.ibm.mg.dog8code.com (IBM Cloud cluster)
+<BASE_DOMAIN> (Route 53 - Parent Domain)
+├── cluster1.<BASE_DOMAIN> (AWS cluster)
+├── cluster2.<BASE_DOMAIN> (AWS cluster)
+└── ibm.<BASE_DOMAIN> (CIS - Delegated Subdomain)
+    ├── test1.ibm.<BASE_DOMAIN> (IBM Cloud cluster)
+    └── dev1.ibm.<BASE_DOMAIN> (IBM Cloud cluster)
 ```
 
 ### Setting Up DNS Delegation
@@ -80,8 +80,8 @@ ibmcloud resource service-instance-create ocpctl-cis \
 
 # Get CIS name servers
 ibmcloud cis instances
-ibmcloud cis domain-add ibm.mg.dog8code.com --instance ocpctl-cis
-ibmcloud cis domain ibm.mg.dog8code.com --instance ocpctl-cis
+ibmcloud cis domain-add ibm.<BASE_DOMAIN> --instance ocpctl-cis
+ibmcloud cis domain ibm.<BASE_DOMAIN> --instance ocpctl-cis
 ```
 
 The output will show CIS name servers like:
@@ -102,7 +102,7 @@ aws route53 change-resource-record-sets \
     "Changes": [{
       "Action": "CREATE",
       "ResourceRecordSet": {
-        "Name": "ibm.mg.dog8code.com",
+        "Name": "ibm.<BASE_DOMAIN>",
         "Type": "NS",
         "TTL": 300,
         "ResourceRecords": [
@@ -118,23 +118,23 @@ aws route53 change-resource-record-sets \
 
 ```bash
 # Query subdomain via public DNS
-dig @8.8.8.8 ibm.mg.dog8code.com NS
+dig @8.8.8.8 ibm.<BASE_DOMAIN> NS
 
 # Expected output shows CIS name servers
-# ibm.mg.dog8code.com.    300    IN    NS    ns1.bluemix.net.
-# ibm.mg.dog8code.com.    300    IN    NS    ns2.bluemix.net.
+# ibm.<BASE_DOMAIN>.    300    IN    NS    ns1.bluemix.net.
+# ibm.<BASE_DOMAIN>.    300    IN    NS    ns2.bluemix.net.
 ```
 
 #### Step 4: Update Profile Base Domains
 
-The IBM Cloud profiles are already configured to use `ibm.mg.dog8code.com`:
+The IBM Cloud profiles are already configured to use `ibm.<BASE_DOMAIN>`:
 
 ```yaml
 # internal/profile/definitions/ibmcloud-standard.yaml
 baseDomains:
   allowlist:
-    - ibm.mg.dog8code.com
-  default: ibm.mg.dog8code.com
+    - ibm.<BASE_DOMAIN>
+  default: ibm.<BASE_DOMAIN>
 ```
 
 ## Environment Variables
@@ -239,18 +239,18 @@ Error: validate IAM permissions: insufficient permissions for VPC infrastructure
 echo $IC_API_KEY  # Should show your API key
 
 # Verify DNS delegation
-dig @8.8.8.8 ibm.mg.dog8code.com NS
+dig @8.8.8.8 ibm.<BASE_DOMAIN> NS
 
 # Check profile availability
 curl -H "Authorization: Bearer <token>" \
-  http://ocpctl.mg.dog8code.com/api/v1/profiles | jq '.data[] | select(.platform == "ibmcloud")'
+  http://ocpctl.<BASE_DOMAIN>/api/v1/profiles | jq '.data[] | select(.platform == "ibmcloud")'
 ```
 
 ### 2. Create Cluster via API
 
 ```bash
 # Minimal test cluster (3-node, masters schedulable)
-curl -X POST http://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl -X POST http://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -259,7 +259,7 @@ curl -X POST http://ocpctl.mg.dog8code.com/api/v1/clusters \
     "version": "4.20.3",
     "profile": "ibmcloud-minimal-test",
     "region": "us-south",
-    "base_domain": "ibm.mg.dog8code.com",
+    "base_domain": "ibm.<BASE_DOMAIN>",
     "owner": "user@example.com",
     "team": "Platform Engineering",
     "cost_center": "733",
@@ -272,11 +272,11 @@ curl -X POST http://ocpctl.mg.dog8code.com/api/v1/clusters \
 ```bash
 # Get cluster status
 curl -H "Authorization: Bearer <token>" \
-  http://ocpctl.mg.dog8code.com/api/v1/clusters/<cluster-id>
+  http://ocpctl.<BASE_DOMAIN>/api/v1/clusters/<cluster-id>
 
 # Watch logs
 curl -H "Authorization: Bearer <token>" \
-  http://ocpctl.mg.dog8code.com/api/v1/clusters/<cluster-id>/logs
+  http://ocpctl.<BASE_DOMAIN>/api/v1/clusters/<cluster-id>/logs
 ```
 
 ### 4. Access Cluster
@@ -286,7 +286,7 @@ Once the cluster is in `READY` status:
 ```bash
 # Get kubeconfig
 curl -H "Authorization: Bearer <token>" \
-  http://ocpctl.mg.dog8code.com/api/v1/clusters/<cluster-id>/kubeconfig \
+  http://ocpctl.<BASE_DOMAIN>/api/v1/clusters/<cluster-id>/kubeconfig \
   > kubeconfig
 
 # Set KUBECONFIG
@@ -360,16 +360,16 @@ sudo systemctl restart ocpctl-worker
 
 ### DNS Resolution Failures
 
-**Problem:** Cluster creation fails with `DNS resolution failed for ibm.mg.dog8code.com`
+**Problem:** Cluster creation fails with `DNS resolution failed for ibm.<BASE_DOMAIN>`
 
 **Solution:**
 ```bash
 # Verify delegation is configured
-dig @8.8.8.8 ibm.mg.dog8code.com NS
+dig @8.8.8.8 ibm.<BASE_DOMAIN> NS
 
 # Check CIS instance is active
 ibmcloud cis instances
-ibmcloud cis domain ibm.mg.dog8code.com --instance ocpctl-cis
+ibmcloud cis domain ibm.<BASE_DOMAIN> --instance ocpctl-cis
 
 # Verify domain is in "Active" state (not "Pending")
 ```
@@ -441,7 +441,7 @@ ibmcloud status
 
 # View detailed installation logs
 curl -H "Authorization: Bearer <token>" \
-  http://ocpctl.mg.dog8code.com/api/v1/clusters/<cluster-id>/logs
+  http://ocpctl.<BASE_DOMAIN>/api/v1/clusters/<cluster-id>/logs
 
 # Common causes:
 # - VPC quota exceeded

@@ -1,7 +1,7 @@
 # OCPCTL Demo Script - Platform Overview
 
 **Duration**: 8-10 minutes
-**Environment**: Dev (https://dev.ocpctl.mg.dog8code.com)
+**Environment**: Dev (https://dev.ocpctl.<BASE_DOMAIN>)
 **Focus**: End-to-end cluster lifecycle management
 **Audience**: Platform teams, developers, stakeholders
 
@@ -10,7 +10,7 @@
 ## Pre-Demo Checklist
 
 ### Environment Preparation
-- [ ] Dev environment is healthy: `ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11 'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'`
+- [ ] Dev environment is healthy: `ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> 'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'`
 - [ ] No existing demo clusters (clean slate)
 - [ ] Browser cache cleared, logged out
 - [ ] Browser zoom at 100% or 110% for readability
@@ -42,7 +42,7 @@
 > "Hi everyone, I'm excited to show you ocpctl - our internal platform for managing OpenShift and Kubernetes clusters across AWS, GCP, and IBM Cloud. This demo will walk through the complete lifecycle of a cluster: from creation to management to teardown. Let's get started."
 
 **Actions**:
-1. Navigate to `https://dev.ocpctl.mg.dog8code.com`
+1. Navigate to `https://dev.ocpctl.<BASE_DOMAIN>`
 2. Login with `admin@example.com` / `changeme`
 
 ---
@@ -208,7 +208,7 @@
 ### After Demo Recording
 ```bash
 # SSH to dev
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST>
 
 # Check if demo cluster is still creating
 # If you want to keep it running for screenshots or follow-up demos, leave it

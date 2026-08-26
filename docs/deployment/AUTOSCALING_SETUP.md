@@ -126,7 +126,7 @@ Or copy the contents of `scripts/user-data-worker.sh` directly.
 
 ```bash
 # SSH to autoscaling worker
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@54.235.4.38
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<TEST_HOST>
 
 # Run bootstrap manually
 sudo /opt/ocpctl/bootstrap.sh latest
@@ -147,7 +147,7 @@ When a new instance launches, verify:
 NEW_INSTANCE_IP="x.x.x.x"
 
 # SSH and check
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@${NEW_INSTANCE_IP}
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@${NEW_INSTANCE_IP}
 
 # Check bootstrap log
 sudo tail -100 /var/log/ocpctl-bootstrap.log
@@ -198,7 +198,7 @@ echo "v0.20260313.old5678" | aws s3 cp - s3://ocpctl-binaries/LATEST
 
 ```bash
 # SSH to instance
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@${INSTANCE_IP}
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@${INSTANCE_IP}
 
 # Check bootstrap log
 sudo tail -100 /var/log/ocpctl-bootstrap.log
@@ -218,9 +218,9 @@ aws s3 ls s3://ocpctl-binaries/releases/
 
 ```bash
 # Check all workers
-for host in 52.90.135.148 54.235.4.38; do
+for host in <PROD_HOST> <TEST_HOST>; do
   echo "=== $host ==="
-  ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@$host 'curl -s http://localhost:8081/version | jq'
+  ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@$host 'curl -s http://localhost:8081/version | jq'
 done
 
 # Check S3 version

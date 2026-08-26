@@ -5,7 +5,7 @@
 This runbook provides operational procedures for the OCPCTL dev/test environment.
 
 **Environment Details:**
-- **Domain**: https://dev.ocpctl.mg.dog8code.com
+- **Domain**: https://dev.ocpctl.<BASE_DOMAIN>
 - **Purpose**: Safe testing environment for code changes before production deployment
 - **Infrastructure**: Separate EC2, RDS, and S3 resources managed by Terraform
 
@@ -15,10 +15,10 @@ This runbook provides operational procedures for the OCPCTL dev/test environment
 
 ```bash
 # SSH to dev server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-server-ip>
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-server-ip>
 
 # Or using terraform output
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@$(cd terraform/dev && terraform output -raw dev_server_public_ip)
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@$(cd terraform/dev && terraform output -raw dev_server_public_ip)
 ```
 
 ### Service Management
@@ -41,7 +41,7 @@ sudo journalctl -u ocpctl-worker -f
 
 ```bash
 # From local machine (requires SSH tunnel)
-ssh -i ~/.ssh/ocpctl-dev-key -L 5432:<rds-endpoint>:5432 ubuntu@<dev-server-ip>
+ssh -i ~/.ssh/<DEV_SSH_KEY> -L 5432:<rds-endpoint>:5432 ubuntu@<dev-server-ip>
 # Then connect to localhost:5432
 
 # From dev server
@@ -88,7 +88,7 @@ terraform output
 # Specific output
 terraform output dev_server_public_ip
 terraform output -raw database_url
-terraform output -raw ssh_private_key > ~/.ssh/ocpctl-dev-key
+terraform output -raw ssh_private_key > ~/.ssh/<DEV_SSH_KEY>
 ```
 
 ### Cost Management
@@ -155,11 +155,11 @@ git status
 ./scripts/deploy-env.sh dev
 
 # 3. Verify deployment
-curl https://dev.ocpctl.mg.dog8code.com/version
-curl https://dev.ocpctl.mg.dog8code.com/health
+curl https://dev.ocpctl.<BASE_DOMAIN>/version
+curl https://dev.ocpctl.<BASE_DOMAIN>/health
 
 # 4. Check services
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl status ocpctl-api ocpctl-worker'
 ```
 
@@ -170,14 +170,14 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
 ./scripts/deploy-env.sh dev v0.20260626.abc1234
 
 # Verify version
-curl https://dev.ocpctl.mg.dog8code.com/version
+curl https://dev.ocpctl.<BASE_DOMAIN>/version
 ```
 
 ### Rollback
 
 ```bash
 # List available versions
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo ls -d /opt/ocpctl/releases/*'
 
 # Deploy previous version
@@ -234,7 +234,7 @@ aws rds wait db-instance-available \
 # WARNING: This deletes all data
 
 # 1. Drop and recreate database
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip>
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip>
 psql "postgresql://ocpctl_dev_admin:<password>@<rds-endpoint>:5432/postgres?sslmode=require" << EOF
 DROP DATABASE IF EXISTS ocpctl_dev;
 CREATE DATABASE ocpctl_dev;
@@ -250,25 +250,25 @@ EOF
 
 ```bash
 # 1. Check service status
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl status ocpctl-api'
 
 # 2. Check logs
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo journalctl -u ocpctl-api -n 100 --no-pager'
 
 # 3. Check if process is listening
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo netstat -tlnp | grep 8080'
 
 # 4. Check nginx
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl status nginx'
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo nginx -t'
 
 # 5. Restart services
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl restart ocpctl-api nginx'
 ```
 
@@ -276,11 +276,11 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
 
 ```bash
 # 1. Check worker service
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl status ocpctl-worker'
 
 # 2. Check worker logs
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo journalctl -u ocpctl-worker -f'
 
 # 3. Check for stuck jobs
@@ -293,7 +293,7 @@ WHERE status = 'RUNNING'
 EOF
 
 # 4. Restart worker
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl restart ocpctl-worker'
 ```
 
@@ -301,7 +301,7 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
 
 ```bash
 # 1. Test from dev server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'psql "$DATABASE_URL" -c "SELECT 1;"'
 
 # 2. Check RDS status
@@ -315,7 +315,7 @@ aws ec2 describe-security-groups \
   --query 'SecurityGroups[0].IpPermissions'
 
 # 4. Check connectivity from dev server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'nc -zv <rds-endpoint> 5432'
 ```
 
@@ -323,15 +323,15 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
 
 ```bash
 # 1. Check certificate expiry
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo certbot certificates'
 
 # 2. Renew certificate manually
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo certbot renew --force-renewal'
 
 # 3. Reload nginx
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo systemctl reload nginx'
 ```
 
@@ -339,15 +339,15 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
 
 ```bash
 # 1. Check disk usage
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'df -h'
 
 # 2. Check cluster directories
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo du -sh /var/lib/ocpctl/clusters/*'
 
 # 3. Clean up old cluster directories
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
   'sudo find /var/lib/ocpctl/clusters -type d -mtime +7 -exec rm -rf {} +'
 
 # 4. Clean up old S3 artifacts
@@ -409,19 +409,19 @@ terraform apply -var="db_password=$NEW_PASS"
 
 ```bash
 # 1. Generate new key
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/ocpctl-dev-key-new
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/<DEV_SSH_KEY>-new
 
 # 2. Add new key to server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@<dev-ip> \
-  "echo '$(cat ~/.ssh/ocpctl-dev-key-new.pub)' >> ~/.ssh/authorized_keys"
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<dev-ip> \
+  "echo '$(cat ~/.ssh/<DEV_SSH_KEY>-new.pub)' >> ~/.ssh/authorized_keys"
 
 # 3. Test new key
-ssh -i ~/.ssh/ocpctl-dev-key-new ubuntu@<dev-ip> 'echo OK'
+ssh -i ~/.ssh/<DEV_SSH_KEY>-new ubuntu@<dev-ip> 'echo OK'
 
 # 4. Remove old key
-mv ~/.ssh/ocpctl-dev-key ~/.ssh/ocpctl-dev-key.old
-mv ~/.ssh/ocpctl-dev-key-new ~/.ssh/ocpctl-dev-key
-chmod 600 ~/.ssh/ocpctl-dev-key
+mv ~/.ssh/<DEV_SSH_KEY> ~/.ssh/<DEV_SSH_KEY>.old
+mv ~/.ssh/<DEV_SSH_KEY>-new ~/.ssh/<DEV_SSH_KEY>
+chmod 600 ~/.ssh/<DEV_SSH_KEY>
 ```
 
 ## Disaster Recovery
@@ -439,8 +439,8 @@ terraform destroy
 terraform apply
 
 # 3. Save new SSH key
-terraform output -raw ssh_private_key > ~/.ssh/ocpctl-dev-key
-chmod 600 ~/.ssh/ocpctl-dev-key
+terraform output -raw ssh_private_key > ~/.ssh/<DEV_SSH_KEY>
+chmod 600 ~/.ssh/<DEV_SSH_KEY>
 
 # 4. Bootstrap server
 cd ../..

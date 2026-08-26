@@ -258,14 +258,14 @@ Access at http://localhost:3000
 
 Interactive API documentation is available via Swagger UI:
 
-**Production:** https://api.ocpctl.mg.dog8code.com/swagger/index.html
+**Production:** https://api.ocpctl.<BASE_DOMAIN>/swagger/index.html
 **Local:** http://localhost:8080/swagger/index.html
 
 ### Quick API Example
 
 ```bash
 # Login and get token
-TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
+TOKEN=$(curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"yourpassword"}' \
   | jq -r '.access_token')
@@ -273,15 +273,15 @@ TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
 # --- Cluster Pools (Instant Access) ---
 
 # List available pools
-curl -X GET https://api.ocpctl.mg.dog8code.com/v1/pools \
+curl -X GET https://api.ocpctl.<BASE_DOMAIN>/v1/pools \
   -H "Authorization: Bearer $TOKEN"
 
 # Get pool statistics
-curl -X GET https://api.ocpctl.mg.dog8code.com/v1/pools/ci-pool/stats \
+curl -X GET https://api.ocpctl.<BASE_DOMAIN>/v1/pools/ci-pool/stats \
   -H "Authorization: Bearer $TOKEN"
 
 # Lease cluster from pool (< 5 seconds!)
-LEASE=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/ci-pool/lease \
+LEASE=$(curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/pools/ci-pool/lease \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -312,17 +312,17 @@ kubectl get nodes
 oc get clusterversion
 
 # Release cluster back to pool when done
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/pools/clusters/$CLUSTER_ID/release \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/pools/clusters/$CLUSTER_ID/release \
   -H "Authorization: Bearer $TOKEN"
 
 # --- Traditional Cluster Creation (30-60 minutes) ---
 
 # List clusters
-curl -X GET https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl -X GET https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Authorization: Bearer $TOKEN"
 
 # Create AWS OpenShift cluster
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -338,7 +338,7 @@ curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
   }'
 
 # Create Azure ARO cluster
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

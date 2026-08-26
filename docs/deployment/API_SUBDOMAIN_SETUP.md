@@ -1,17 +1,17 @@
 # API Subdomain Setup Guide
 
-This guide explains how to set up a dedicated subdomain for direct API access at `api.ocpctl.mg.dog8code.com`.
+This guide explains how to set up a dedicated subdomain for direct API access at `api.ocpctl.<BASE_DOMAIN>`.
 
 ## Overview
 
 Instead of accessing the API through the path-based proxy:
 ```
-https://ocpctl.mg.dog8code.com/api/v1/clusters
+https://ocpctl.<BASE_DOMAIN>/api/v1/clusters
 ```
 
 Users can access it through a dedicated subdomain:
 ```
-https://api.ocpctl.mg.dog8code.com/v1/clusters
+https://api.ocpctl.<BASE_DOMAIN>/v1/clusters
 ```
 
 ## Benefits
@@ -23,7 +23,7 @@ https://api.ocpctl.mg.dog8code.com/v1/clusters
 
 ## Prerequisites
 
-- Access to DNS management for `mg.dog8code.com`
+- Access to DNS management for `<BASE_DOMAIN>`
 - SSH access to the production EC2 instance
 - Ability to update SSL certificates
 
@@ -33,16 +33,16 @@ Create a CNAME record in your DNS provider (Route 53, Cloudflare, etc.):
 
 ```
 Type: CNAME
-Name: api.ocpctl.mg.dog8code.com
-Value: ocpctl.mg.dog8code.com
+Name: api.ocpctl.<BASE_DOMAIN>
+Value: ocpctl.<BASE_DOMAIN>
 TTL: 300 (5 minutes)
 ```
 
 Or if using an A record:
 ```
 Type: A
-Name: api.ocpctl.mg.dog8code.com
-Value: <EC2-PUBLIC-IP>  # Currently 44.201.165.78
+Name: api.ocpctl.<BASE_DOMAIN>
+Value: <EC2-PUBLIC-IP>  # Currently <PROD_HOST>
 TTL: 300
 ```
 
@@ -50,17 +50,17 @@ TTL: 300
 
 ```bash
 # Get the hosted zone ID
-ZONE_ID=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='mg.dog8code.com.'].Id" --output text | cut -d'/' -f3)
+ZONE_ID=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='<BASE_DOMAIN>.'].Id" --output text | cut -d'/' -f3)
 
 # Create the CNAME record
 aws route53 change-resource-record-sets --hosted-zone-id $ZONE_ID --change-batch '{
   "Changes": [{
     "Action": "CREATE",
     "ResourceRecordSet": {
-      "Name": "api.ocpctl.mg.dog8code.com",
+      "Name": "api.ocpctl.<BASE_DOMAIN>",
       "Type": "CNAME",
       "TTL": 300,
-      "ResourceRecords": [{"Value": "ocpctl.mg.dog8code.com"}]
+      "ResourceRecords": [{"Value": "ocpctl.<BASE_DOMAIN>"}]
     }
   }]
 }'
@@ -72,15 +72,15 @@ Wait a few minutes for propagation, then verify:
 
 ```bash
 # Should return the EC2 IP
-dig api.ocpctl.mg.dog8code.com
+dig api.ocpctl.<BASE_DOMAIN>
 
 # Or
-nslookup api.ocpctl.mg.dog8code.com
+nslookup api.ocpctl.<BASE_DOMAIN>
 ```
 
 ## Step 2: Update SSL Certificate
 
-The SSL certificate must include `api.ocpctl.mg.dog8code.com` as a Subject Alternative Name (SAN).
+The SSL certificate must include `api.ocpctl.<BASE_DOMAIN>` as a Subject Alternative Name (SAN).
 
 ### Option A: Let's Encrypt (Recommended)
 
@@ -88,7 +88,7 @@ If using Let's Encrypt, update the certificate to include both domains:
 
 ```bash
 # SSH to production server
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Install certbot if not already installed
 sudo apt-get update
@@ -99,15 +99,15 @@ sudo systemctl stop nginx
 
 # Request certificate for both domains
 sudo certbot certonly --standalone \
-  -d ocpctl.mg.dog8code.com \
-  -d api.ocpctl.mg.dog8code.com \
+  -d ocpctl.<BASE_DOMAIN> \
+  -d api.ocpctl.<BASE_DOMAIN> \
   --email your-email@example.com \
   --agree-tos \
   --non-interactive
 
 # Update nginx to use Let's Encrypt certs
-sudo sed -i 's|/etc/ssl/certs/ocpctl.crt|/etc/letsencrypt/live/ocpctl.mg.dog8code.com/fullchain.pem|g' /etc/nginx/sites-available/*.conf
-sudo sed -i 's|/etc/ssl/private/ocpctl.key|/etc/letsencrypt/live/ocpctl.mg.dog8code.com/privkey.pem|g' /etc/nginx/sites-available/*.conf
+sudo sed -i 's|/etc/ssl/certs/ocpctl.crt|/etc/letsencrypt/live/ocpctl.<BASE_DOMAIN>/fullchain.pem|g' /etc/nginx/sites-available/*.conf
+sudo sed -i 's|/etc/ssl/private/ocpctl.key|/etc/letsencrypt/live/ocpctl.<BASE_DOMAIN>/privkey.pem|g' /etc/nginx/sites-available/*.conf
 
 # Set up auto-renewal
 sudo certbot renew --dry-run
@@ -116,8 +116,8 @@ sudo certbot renew --dry-run
 ### Option B: Existing Certificate
 
 If using an existing certificate, ensure it includes both:
-- `ocpctl.mg.dog8code.com`
-- `api.ocpctl.mg.dog8code.com`
+- `ocpctl.<BASE_DOMAIN>`
+- `api.ocpctl.<BASE_DOMAIN>`
 
 Verify with:
 ```bash
@@ -128,12 +128,12 @@ openssl x509 -in /etc/ssl/certs/ocpctl.crt -text -noout | grep DNS
 
 ```bash
 # From your local machine, copy the new config
-scp -i ~/.ssh/ocpctl-production-key \
+scp -i ~/.ssh/<PROD_SSH_KEY> \
   deploy/nginx/api.ocpctl.conf \
-  ubuntu@44.201.165.78:/tmp/
+  ubuntu@<PROD_HOST>:/tmp/
 
 # SSH to production server
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Move config to nginx sites-available
 sudo mv /tmp/api.ocpctl.conf /etc/nginx/sites-available/
@@ -154,13 +154,13 @@ Test the new subdomain:
 
 ```bash
 # Health check
-curl https://api.ocpctl.mg.dog8code.com/health
+curl https://api.ocpctl.<BASE_DOMAIN>/health
 
 # API version endpoint
-curl https://api.ocpctl.mg.dog8code.com/v1/system/version
+curl https://api.ocpctl.<BASE_DOMAIN>/v1/system/version
 
 # Swagger documentation
-open https://api.ocpctl.mg.dog8code.com/swagger/index.html
+open https://api.ocpctl.<BASE_DOMAIN>/swagger/index.html
 ```
 
 ## Step 5: Update Documentation
@@ -169,13 +169,13 @@ Update any documentation that references the API URL:
 
 ### Before
 ```
-API Endpoint: https://ocpctl.mg.dog8code.com/api/v1
+API Endpoint: https://ocpctl.<BASE_DOMAIN>/api/v1
 ```
 
 ### After
 ```
-API Endpoint: https://api.ocpctl.mg.dog8code.com/v1
-Web UI: https://ocpctl.mg.dog8code.com
+API Endpoint: https://api.ocpctl.<BASE_DOMAIN>/v1
+Web UI: https://ocpctl.<BASE_DOMAIN>
 ```
 
 ## API Usage Examples
@@ -183,10 +183,10 @@ Web UI: https://ocpctl.mg.dog8code.com
 ### Using curl
 ```bash
 # Get clusters
-curl https://api.ocpctl.mg.dog8code.com/v1/clusters
+curl https://api.ocpctl.<BASE_DOMAIN>/v1/clusters
 
 # Create a cluster
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-cluster",
@@ -197,23 +197,23 @@ curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
 ### Using AWS CLI with IAM Auth
 ```bash
 # Set API base URL
-export OCPCTL_API_URL="https://api.ocpctl.mg.dog8code.com/v1"
+export OCPCTL_API_URL="https://api.ocpctl.<BASE_DOMAIN>/v1"
 
 # Sign request with AWS SigV4
 aws-sigv4-proxy \
   --name ocpctl-api \
   --region us-east-1 \
-  --host api.ocpctl.mg.dog8code.com
+  --host api.ocpctl.<BASE_DOMAIN>
 
 # Or use aws-curl wrapper
-aws-curl https://api.ocpctl.mg.dog8code.com/v1/clusters
+aws-curl https://api.ocpctl.<BASE_DOMAIN>/v1/clusters
 ```
 
 ### Python Example
 ```python
 import requests
 
-API_BASE = "https://api.ocpctl.mg.dog8code.com/v1"
+API_BASE = "https://api.ocpctl.<BASE_DOMAIN>/v1"
 
 # List clusters
 response = requests.get(f"{API_BASE}/clusters")
@@ -232,8 +232,8 @@ response = requests.post(f"{API_BASE}/clusters", json=new_cluster)
 The existing path-based API access will continue to work:
 
 ```
-✅ https://ocpctl.mg.dog8code.com/api/v1/clusters  (still works)
-✅ https://api.ocpctl.mg.dog8code.com/v1/clusters  (new preferred method)
+✅ https://ocpctl.<BASE_DOMAIN>/api/v1/clusters  (still works)
+✅ https://api.ocpctl.<BASE_DOMAIN>/v1/clusters  (new preferred method)
 ```
 
 Both point to the same backend API server.
@@ -244,7 +244,7 @@ Both point to the same backend API server.
 
 ```bash
 # Check DNS propagation
-dig api.ocpctl.mg.dog8code.com +trace
+dig api.ocpctl.<BASE_DOMAIN> +trace
 
 # Clear local DNS cache (macOS)
 sudo dscacheutil -flushcache
@@ -258,10 +258,10 @@ sudo systemd-resolve --flush-caches
 
 ```bash
 # Check certificate validity
-openssl s_client -connect api.ocpctl.mg.dog8code.com:443 -servername api.ocpctl.mg.dog8code.com < /dev/null
+openssl s_client -connect api.ocpctl.<BASE_DOMAIN>:443 -servername api.ocpctl.<BASE_DOMAIN> < /dev/null
 
 # View certificate details
-curl -vI https://api.ocpctl.mg.dog8code.com 2>&1 | grep -A 10 "SSL certificate"
+curl -vI https://api.ocpctl.<BASE_DOMAIN> 2>&1 | grep -A 10 "SSL certificate"
 ```
 
 ### nginx Errors
@@ -287,8 +287,8 @@ If you get CORS errors from browser-based clients:
 
 ```bash
 # Test CORS preflight
-curl -X OPTIONS https://api.ocpctl.mg.dog8code.com/v1/clusters \
-  -H "Origin: https://ocpctl.mg.dog8code.com" \
+curl -X OPTIONS https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
+  -H "Origin: https://ocpctl.<BASE_DOMAIN>" \
   -H "Access-Control-Request-Method: GET" \
   -v
 ```
@@ -308,12 +308,12 @@ Add monitoring for the API subdomain:
 ```bash
 # Add to your monitoring system
 - name: api_subdomain_health
-  url: https://api.ocpctl.mg.dog8code.com/health
+  url: https://api.ocpctl.<BASE_DOMAIN>/health
   interval: 60s
   expected_status: 200
 
 - name: api_subdomain_ssl
-  url: https://api.ocpctl.mg.dog8code.com
+  url: https://api.ocpctl.<BASE_DOMAIN>
   interval: 3600s
   check_ssl_expiry: true
   ssl_days_warning: 30

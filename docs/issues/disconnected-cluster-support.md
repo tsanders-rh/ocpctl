@@ -325,7 +325,7 @@ OCPCTL supports provisioning disconnected (air-gapped) OpenShift clusters that p
 ### Example API Request
 
 ```bash
-curl -X POST https://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl -X POST https://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -547,7 +547,7 @@ features:
   disconnectedInstall: true
 metadata:
   notes:
-  - "Uses mirror.mg.dog8code.com:5000 for container images"
+  - "Uses mirror.<BASE_DOMAIN>:5000 for container images"
   - "Requires MIRROR_REGISTRY_CA environment variable"
   - "Requires MIRROR_PULL_SECRET environment variable"
 ```

@@ -1,6 +1,6 @@
 # Zero-Downtime API Subdomain Deployment
 
-This guide walks through deploying the API subdomain (`api.ocpctl.mg.dog8code.com`) with **zero impact** on running workers and minimal risk to existing services.
+This guide walks through deploying the API subdomain (`api.ocpctl.<BASE_DOMAIN>`) with **zero impact** on running workers and minimal risk to existing services.
 
 ## Pre-Deployment Checklist
 
@@ -33,7 +33,7 @@ This guide walks through deploying the API subdomain (`api.ocpctl.mg.dog8code.co
 
 ```bash
 # SSH to production
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Check all services are healthy
 sudo systemctl status nginx
@@ -89,12 +89,12 @@ This step is safe because:
 #### Option A: Route 53 (AWS Console)
 
 1. Go to Route 53 → Hosted Zones
-2. Select `mg.dog8code.com`
+2. Select `<BASE_DOMAIN>`
 3. Click "Create Record"
 4. Configure:
    - Record name: `api.ocpctl`
    - Record type: `A` (or `CNAME`)
-   - Value: `44.201.165.78` (or `ocpctl.mg.dog8code.com` for CNAME)
+   - Value: `<PROD_HOST>` (or `ocpctl.<BASE_DOMAIN>` for CNAME)
    - TTL: `300` (5 minutes)
 5. Click "Create records"
 
@@ -103,7 +103,7 @@ This step is safe because:
 ```bash
 # Get hosted zone ID
 ZONE_ID=$(aws route53 list-hosted-zones \
-  --query "HostedZones[?Name=='mg.dog8code.com.'].Id" \
+  --query "HostedZones[?Name=='<BASE_DOMAIN>.'].Id" \
   --output text | cut -d'/' -f3)
 
 # Create A record pointing to EC2 IP
@@ -113,10 +113,10 @@ aws route53 change-resource-record-sets \
     "Changes": [{
       "Action": "CREATE",
       "ResourceRecordSet": {
-        "Name": "api.ocpctl.mg.dog8code.com",
+        "Name": "api.ocpctl.<BASE_DOMAIN>",
         "Type": "A",
         "TTL": 300,
-        "ResourceRecords": [{"Value": "44.201.165.78"}]
+        "ResourceRecords": [{"Value": "<PROD_HOST>"}]
       }
     }]
   }'
@@ -126,9 +126,9 @@ aws route53 change-resource-record-sets \
 
 ```bash
 # From your local machine
-dig api.ocpctl.mg.dog8code.com +short
+dig api.ocpctl.<BASE_DOMAIN> +short
 
-# Should return: 44.201.165.78
+# Should return: <PROD_HOST>
 ```
 
 **Expected**: DNS resolves to correct IP after 2-5 minutes
@@ -143,11 +143,11 @@ This step uses Let's Encrypt to add the new subdomain to the existing certificat
 
 ```bash
 # See what domains are in current cert
-sudo openssl x509 -in /etc/letsencrypt/live/ocpctl.mg.dog8code.com/fullchain.pem \
+sudo openssl x509 -in /etc/letsencrypt/live/ocpctl.<BASE_DOMAIN>/fullchain.pem \
   -text -noout | grep DNS
 ```
 
-#### Add api.ocpctl.mg.dog8code.com to Certificate
+#### Add api.ocpctl.<BASE_DOMAIN> to Certificate
 
 ```bash
 # Stop nginx briefly for certificate renewal (standalone mode)
@@ -156,8 +156,8 @@ sudo systemctl stop nginx
 # Request new certificate with both domains
 # Let's Encrypt will issue a single cert with both domains
 sudo certbot certonly --standalone \
-  -d ocpctl.mg.dog8code.com \
-  -d api.ocpctl.mg.dog8code.com \
+  -d ocpctl.<BASE_DOMAIN> \
+  -d api.ocpctl.<BASE_DOMAIN> \
   --email your-email@example.com \
   --agree-tos \
   --non-interactive \
@@ -177,8 +177,8 @@ sudo systemctl status nginx
 # Use webroot plugin (no nginx restart needed)
 sudo certbot certonly --webroot \
   -w /var/www/html \
-  -d ocpctl.mg.dog8code.com \
-  -d api.ocpctl.mg.dog8code.com \
+  -d ocpctl.<BASE_DOMAIN> \
+  -d api.ocpctl.<BASE_DOMAIN> \
   --email your-email@example.com \
   --agree-tos \
   --non-interactive
@@ -188,11 +188,11 @@ sudo certbot certonly --webroot \
 
 ```bash
 # Check cert includes both domains
-sudo openssl x509 -in /etc/letsencrypt/live/ocpctl.mg.dog8code.com/fullchain.pem \
+sudo openssl x509 -in /etc/letsencrypt/live/ocpctl.<BASE_DOMAIN>/fullchain.pem \
   -text -noout | grep DNS
 
 # Should show:
-# DNS:ocpctl.mg.dog8code.com, DNS:api.ocpctl.mg.dog8code.com
+# DNS:ocpctl.<BASE_DOMAIN>, DNS:api.ocpctl.<BASE_DOMAIN>
 ```
 
 **Expected**: Certificate includes both domains
@@ -205,16 +205,16 @@ sudo openssl x509 -in /etc/letsencrypt/live/ocpctl.mg.dog8code.com/fullchain.pem
 
 ```bash
 # From your local machine
-scp -i ~/.ssh/ocpctl-production-key \
+scp -i ~/.ssh/<PROD_SSH_KEY> \
   deploy/nginx/api.ocpctl.conf \
-  ubuntu@44.201.165.78:/tmp/
+  ubuntu@<PROD_HOST>:/tmp/
 ```
 
 #### Install and Test Configuration
 
 ```bash
 # SSH to production
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Move config to sites-available
 sudo mv /tmp/api.ocpctl.conf /etc/nginx/sites-available/
@@ -286,43 +286,43 @@ ls -l /etc/nginx/sites-enabled/
 
 ```bash
 # Health check
-curl -I https://api.ocpctl.mg.dog8code.com/health
+curl -I https://api.ocpctl.<BASE_DOMAIN>/health
 
 # Should return: 200 OK
 
 # Test API version endpoint
-curl https://api.ocpctl.mg.dog8code.com/v1/system/version
+curl https://api.ocpctl.<BASE_DOMAIN>/v1/system/version
 
 # Test Swagger docs
-curl -I https://api.ocpctl.mg.dog8code.com/swagger/index.html
+curl -I https://api.ocpctl.<BASE_DOMAIN>/swagger/index.html
 ```
 
 #### Verify Existing Access Still Works
 
 ```bash
 # Old path-based access should still work
-curl -I https://ocpctl.mg.dog8code.com/api/health
-curl https://ocpctl.mg.dog8code.com/api/v1/system/version
+curl -I https://ocpctl.<BASE_DOMAIN>/api/health
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/system/version
 
 # Web UI should still work
-curl -I https://ocpctl.mg.dog8code.com
+curl -I https://ocpctl.<BASE_DOMAIN>
 ```
 
 #### Test Full API Flow
 
 ```bash
 # Login via new subdomain
-TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
+TOKEN=$(curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"your-email@example.com","password":"your-password"}' \
   | jq -r '.access_token')
 
 # List clusters
-curl https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Authorization: Bearer $TOKEN" | jq
 
 # Get user profile
-curl https://api.ocpctl.mg.dog8code.com/v1/users/me \
+curl https://api.ocpctl.<BASE_DOMAIN>/v1/users/me \
   -H "Authorization: Bearer $TOKEN" | jq
 ```
 
@@ -360,7 +360,7 @@ If anything goes wrong, rollback is fast and safe:
 
 ```bash
 # SSH to production
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Remove the new config symlink
 sudo rm /etc/nginx/sites-enabled/api.ocpctl.conf
@@ -372,7 +372,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 # Verify main site still works
-curl -I https://ocpctl.mg.dog8code.com
+curl -I https://ocpctl.<BASE_DOMAIN>
 ```
 
 **Downtime**: 0 seconds (graceful reload)
@@ -399,7 +399,7 @@ sudo systemctl reload nginx
 
 - [ ] DNS resolves to correct IP
 - [ ] SSL certificate includes both domains
-- [ ] `https://api.ocpctl.mg.dog8code.com/health` returns 200
+- [ ] `https://api.ocpctl.<BASE_DOMAIN>/health` returns 200
 - [ ] Swagger UI accessible at new subdomain
 - [ ] Old path-based API access still works
 - [ ] Web UI still accessible
@@ -414,19 +414,19 @@ sudo systemctl reload nginx
 cat > /tmp/verify-api-subdomain.sh << 'EOF'
 #!/bin/bash
 echo "=== DNS Check ==="
-dig api.ocpctl.mg.dog8code.com +short
+dig api.ocpctl.<BASE_DOMAIN> +short
 
 echo -e "\n=== SSL Certificate Check ==="
-openssl s_client -connect api.ocpctl.mg.dog8code.com:443 -servername api.ocpctl.mg.dog8code.com < /dev/null 2>&1 | grep -A 2 "subject="
+openssl s_client -connect api.ocpctl.<BASE_DOMAIN>:443 -servername api.ocpctl.<BASE_DOMAIN> < /dev/null 2>&1 | grep -A 2 "subject="
 
 echo -e "\n=== API Health (New Subdomain) ==="
-curl -s https://api.ocpctl.mg.dog8code.com/health | jq
+curl -s https://api.ocpctl.<BASE_DOMAIN>/health | jq
 
 echo -e "\n=== API Health (Old Path) ==="
-curl -s https://ocpctl.mg.dog8code.com/api/health | jq
+curl -s https://ocpctl.<BASE_DOMAIN>/api/health | jq
 
 echo -e "\n=== Web UI Health ==="
-curl -I https://ocpctl.mg.dog8code.com 2>&1 | head -1
+curl -I https://ocpctl.<BASE_DOMAIN> 2>&1 | head -1
 
 echo -e "\n=== Worker Health ==="
 curl -s http://localhost:8081/health | jq
@@ -464,7 +464,7 @@ A: No. Workers communicate directly with the database and S3, not through nginx.
 A: No. nginx reload is graceful - it keeps existing connections alive while loading new config.
 
 **Q: What if the SSL certificate renewal fails?**
-A: The existing certificate continues to work for `ocpctl.mg.dog8code.com`. The new subdomain just won't work yet.
+A: The existing certificate continues to work for `ocpctl.<BASE_DOMAIN>`. The new subdomain just won't work yet.
 
 **Q: Can I deploy this during business hours?**
 A: Yes. The only brief disruption is during SSL renewal if using standalone mode (~30-60 seconds). Use webroot mode for zero downtime.
@@ -490,6 +490,6 @@ A: No. These operations run in the worker service, which doesn't use nginx.
 If you encounter issues:
 1. Check nginx error logs: `sudo tail -50 /var/log/nginx/error.log`
 2. Check API logs: `sudo journalctl -u ocpctl-api -n 50`
-3. Verify DNS: `dig api.ocpctl.mg.dog8code.com`
-4. Test SSL: `openssl s_client -connect api.ocpctl.mg.dog8code.com:443`
+3. Verify DNS: `dig api.ocpctl.<BASE_DOMAIN>`
+4. Test SSL: `openssl s_client -connect api.ocpctl.<BASE_DOMAIN>:443`
 5. Rollback if needed (see Rollback Plan above)

@@ -8,7 +8,7 @@ OCPCTL workers require specific AWS IAM permissions to create, manage, hibernate
 
 ### Instance Profiles and Roles
 
-1. **Main Worker/API Server** (52.90.135.148):
+1. **Main Worker/API Server** (<PROD_HOST>):
    - Instance Profile: `ocpctl-ec2-role`
    - IAM Role: `ocpctl-ec2-role`
    - Usage: Primary worker that runs both API and worker services
@@ -91,7 +91,7 @@ To verify a worker has correct permissions:
 
 ```bash
 # SSH to worker
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@<worker-ip>
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<worker-ip>
 
 # Test specific permissions
 aws iam simulate-principal-policy \

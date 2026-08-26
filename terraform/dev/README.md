@@ -10,8 +10,8 @@ This Terraform configuration provisions the complete dev/test environment for OC
 - **S3 Buckets**: ocpctl-dev-binaries, ocpctl-dev-artifacts
 - **Security Groups**: Dev server and RDS access control
 - **IAM Role**: EC2 instance profile with S3/EC2 permissions
-- **Route53 Record**: dev.ocpctl.mg.dog8code.com → dev server IP
-- **SSH Key Pair**: ocpctl-dev-key for server access
+- **Route53 Record**: dev.ocpctl.<BASE_DOMAIN> → dev server IP
+- **SSH Key Pair**: <DEV_SSH_KEY> for server access
 
 ## Prerequisites
 
@@ -62,8 +62,8 @@ After successful deployment:
 
 ```bash
 # Save SSH private key
-terraform output -raw ssh_private_key > ~/.ssh/ocpctl-dev-key
-chmod 600 ~/.ssh/ocpctl-dev-key
+terraform output -raw ssh_private_key > ~/.ssh/<DEV_SSH_KEY>
+chmod 600 ~/.ssh/<DEV_SSH_KEY>
 
 # View all outputs
 terraform output
@@ -77,7 +77,7 @@ terraform output database_url
 
 ```bash
 # SSH to dev server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@$(terraform output -raw dev_server_public_ip)
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@$(terraform output -raw dev_server_public_ip)
 
 # Test database connectivity (from dev server)
 psql "$(terraform output -raw database_url)" -c "SELECT version();"
@@ -119,7 +119,7 @@ After infrastructure is provisioned:
 
 6. **Access dev environment**
    ```
-   https://dev.ocpctl.mg.dog8code.com
+   https://dev.ocpctl.<BASE_DOMAIN>
    ```
 
 ## Cost Estimates
@@ -190,7 +190,7 @@ aws rds describe-db-instances \
   --query 'DBInstances[0].DBInstanceStatus'
 
 # Test from dev server (should work)
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@$(terraform output -raw dev_server_public_ip) \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@$(terraform output -raw dev_server_public_ip) \
   "psql '$(terraform output -raw database_url)' -c 'SELECT 1;'"
 ```
 
@@ -198,7 +198,7 @@ ssh -i ~/.ssh/ocpctl-dev-key ubuntu@$(terraform output -raw dev_server_public_ip
 
 ```bash
 # Check DNS record
-dig dev.ocpctl.mg.dog8code.com
+dig dev.ocpctl.<BASE_DOMAIN>
 
 # May take up to 5 minutes to propagate
 ```

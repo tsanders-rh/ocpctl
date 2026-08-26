@@ -39,7 +39,7 @@
 ### Rollback
 ```bash
 # List available versions
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl/releases/*'
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo ls -d /opt/ocpctl/releases/*'
 
 # Deploy previous version
 ./scripts/deploy-env.sh production v0.20260601.xyz5678
@@ -65,7 +65,7 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl
 2. DEV DEPLOYMENT (Integration Testing)
    ├── Deploy backend: ./scripts/deploy-env.sh dev
    ├── Deploy frontend: ./scripts/deploy-web.sh dev
-   ├── Test on https://dev.ocpctl.mg.dog8code.com
+   ├── Test on https://dev.ocpctl.<BASE_DOMAIN>
    └── Verify all features work end-to-end
 
 3. CODE REVIEW
@@ -167,8 +167,8 @@ Examples:
 
 | Environment | Domain | Server | Database | Purpose |
 |-------------|--------|--------|----------|---------|
-| **Dev** | dev.ocpctl.mg.dog8code.com | 54.167.79.11 (t3.medium) | ocpctl_dev (PostgreSQL 17.9) | Integration testing, QA |
-| **Production** | ocpctl.mg.dog8code.com | 44.201.165.78 (t3.large) | ocpctl (PostgreSQL 17.9) | Live service |
+| **Dev** | dev.ocpctl.<BASE_DOMAIN> | <DEV_HOST> (t3.medium) | ocpctl_dev (PostgreSQL 17.9) | Integration testing, QA |
+| **Production** | ocpctl.<BASE_DOMAIN> | <PROD_HOST> (t3.large) | ocpctl (PostgreSQL 17.9) | Live service |
 
 ### Standard Release Cycle
 
@@ -207,7 +207,7 @@ ALTER TABLE clusters DROP COLUMN new_field;
 **Backend Rollback:**
 ```bash
 # List available versions
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> \
   'sudo ls -d /opt/ocpctl/releases/*'
 
 # Deploy previous version
@@ -217,10 +217,10 @@ ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
 **Frontend Rollback:**
 ```bash
 # List backups (automatically created during deployment, last 5 kept)
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -ldt /opt/ocpctl/web.backup.*'
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo ls -ldt /opt/ocpctl/web.backup.*'
 
 # Restore backup (note: will need to run npm install after restore)
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo systemctl stop ocpctl-web && \
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo systemctl stop ocpctl-web && \
   sudo rm -rf /opt/ocpctl/web && \
   sudo mv /opt/ocpctl/web.backup.20260627-070000 /opt/ocpctl/web && \
   sudo bash -c "cd /opt/ocpctl/web && npm install --production --quiet" && \
@@ -259,8 +259,8 @@ aws rds restore-db-instance-from-db-snapshot \
 **Immediately after deployment:**
 ```bash
 # 1. Health checks
-curl https://ocpctl.mg.dog8code.com/health
-curl https://ocpctl.mg.dog8code.com/version
+curl https://ocpctl.<BASE_DOMAIN>/health
+curl https://ocpctl.<BASE_DOMAIN>/version
 
 # 2. Service status
 ssh production 'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'
@@ -308,7 +308,7 @@ go run ./cmd/worker
 ./scripts/deploy-web.sh production  # if frontend changes
 
 # 7. Monitor for 30 minutes
-watch -n 10 'curl -s https://ocpctl.mg.dog8code.com/health'
+watch -n 10 'curl -s https://ocpctl.<BASE_DOMAIN>/health'
 ssh production 'sudo journalctl -u ocpctl-api -f'
 
 # 8. Create PR for post-deployment review
@@ -333,8 +333,8 @@ gh pr create --title "[HOTFIX] Critical bug fix"
 **Version Tracking:**
 ```bash
 # Check deployed versions
-curl https://ocpctl.mg.dog8code.com/version
-curl https://dev.ocpctl.mg.dog8code.com/version
+curl https://ocpctl.<BASE_DOMAIN>/version
+curl https://dev.ocpctl.<BASE_DOMAIN>/version
 
 # Output:
 # {
@@ -382,9 +382,9 @@ See [DEV_TEST_ENVIRONMENT_PLAN.md](./DEV_TEST_ENVIRONMENT_PLAN.md) for detailed 
 - [ ] Create dev EC2 instance (t3.medium)
 - [ ] Create dev database (separate RDS or separate DB on shared RDS)
 - [ ] Create S3 buckets (ocpctl-dev-binaries, ocpctl-dev-artifacts) OR configure prefixes
-- [ ] Setup DNS record for dev.ocpctl.mg.dog8code.com
+- [ ] Setup DNS record for dev.ocpctl.<BASE_DOMAIN>
 - [ ] Configure SSL certificate
-- [ ] Create SSH key pair (ocpctl-dev-key)
+- [ ] Create SSH key pair (<DEV_SSH_KEY>)
 
 ### 2. Create Environment-Specific Config Files
 
@@ -434,7 +434,7 @@ WORKER_HOSTS=("10.0.1.100")
 
 ```bash
 # SSH to dev server
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@DEV_SERVER_IP
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@DEV_SERVER_IP
 
 # Run migrations
 cd /opt/ocpctl/current
@@ -466,11 +466,11 @@ EOF
 
 ```bash
 # Check services
-curl https://dev.ocpctl.mg.dog8code.com/health
-curl https://dev.ocpctl.mg.dog8code.com/version
+curl https://dev.ocpctl.<BASE_DOMAIN>/health
+curl https://dev.ocpctl.<BASE_DOMAIN>/version
 
 # Test API
-curl -X POST https://dev.ocpctl.mg.dog8code.com/api/v1/auth/login \
+curl -X POST https://dev.ocpctl.<BASE_DOMAIN>/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "admin@dev.local", "password": "devpassword"}'
 
@@ -497,7 +497,7 @@ curl -X POST https://dev.ocpctl.mg.dog8code.com/api/v1/auth/login \
 3. Deploy to dev
    ├── git push origin feature/my-feature
    ├── ./scripts/deploy-env.sh dev
-   └── Test on https://dev.ocpctl.mg.dog8code.com
+   └── Test on https://dev.ocpctl.<BASE_DOMAIN>
 
 4. Create PR, get review
    └── Merge to main
@@ -528,7 +528,7 @@ git push origin feature/add-azure-support
 ./scripts/deploy-env.sh dev
 
 # 5. Test on dev
-curl https://dev.ocpctl.mg.dog8code.com/api/v1/profiles | grep azure
+curl https://dev.ocpctl.<BASE_DOMAIN>/api/v1/profiles | grep azure
 
 # 6. Create PR
 gh pr create --title "Add Azure AKS support" --body "..."
@@ -605,7 +605,7 @@ ssh dev "cd /opt/ocpctl/current && ./ocpctl-api migrate up"
 ```bash
 # 1. Final validation on dev
 ./scripts/deploy-env.sh dev
-curl https://dev.ocpctl.mg.dog8code.com/health
+curl https://dev.ocpctl.<BASE_DOMAIN>/health
 
 # 2. Create RDS snapshot (production)
 aws rds create-db-snapshot \
@@ -617,7 +617,7 @@ aws rds describe-db-snapshots \
   --db-snapshot-identifier ocpctl-db-pre-maint-$(date +%Y%m%d-%H%M)
 
 # 4. Note current version
-CURRENT_VERSION=$(curl -s https://ocpctl.mg.dog8code.com/version | jq -r '.version')
+CURRENT_VERSION=$(curl -s https://ocpctl.<BASE_DOMAIN>/version | jq -r '.version')
 echo "Current production version: $CURRENT_VERSION"
 ```
 
@@ -627,25 +627,25 @@ echo "Current production version: $CURRENT_VERSION"
 ./scripts/deploy-env.sh production
 
 # 2. Monitor deployment logs
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> \
   'sudo journalctl -u ocpctl-api -f'
 
 # 3. Verify version
-curl https://ocpctl.mg.dog8code.com/version
+curl https://ocpctl.<BASE_DOMAIN>/version
 ```
 
 **Hour 3: 4:00-5:00 AM - Validation**
 ```bash
 # 1. Smoke tests
-curl https://ocpctl.mg.dog8code.com/health
-curl https://ocpctl.mg.dog8code.com/api/v1/profiles
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters
+curl https://ocpctl.<BASE_DOMAIN>/health
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/profiles
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters
 
 # 2. Create test cluster (if safe)
 # Use UI to create small SNO cluster, verify it reaches READY
 
 # 3. Check metrics
-curl https://ocpctl.mg.dog8code.com/metrics | grep -E 'api_requests|worker_jobs'
+curl https://ocpctl.<BASE_DOMAIN>/metrics | grep -E 'api_requests|worker_jobs'
 
 # 4. Monitor error logs
 ssh production 'sudo journalctl -u ocpctl-api -u ocpctl-worker --since "1 hour ago" | grep -i error'
@@ -667,7 +667,7 @@ aws rds restore-db-instance-from-db-snapshot \
   --db-snapshot-identifier ocpctl-db-pre-maint-$(date +%Y%m%d-%H%M)
 
 # 4. Verify rollback
-curl https://ocpctl.mg.dog8code.com/version
+curl https://ocpctl.<BASE_DOMAIN>/version
 ```
 
 ### Post-Maintenance Checklist
@@ -712,7 +712,7 @@ git commit -m "Hotfix: Fix cluster creation deadlock"
 ./scripts/deploy-env.sh production
 
 # 8. Monitor for 30 minutes
-watch -n 10 'curl -s https://ocpctl.mg.dog8code.com/health'
+watch -n 10 'curl -s https://ocpctl.<BASE_DOMAIN>/health'
 ssh production 'sudo journalctl -u ocpctl-api -u ocpctl-worker -f'
 
 # 9. Create PR for review (post-deployment)
@@ -820,11 +820,11 @@ PORT=3000
 
 ```bash
 # List backups
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11 \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> \
   'sudo ls -d /opt/ocpctl/web.backup.*'
 
 # Restore backup
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@54.167.79.11 \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> \
   'sudo systemctl stop ocpctl-web && \
    sudo rm -rf /opt/ocpctl/web && \
    sudo mv /opt/ocpctl/web.backup.20260627-070000 /opt/ocpctl/web && \
@@ -936,11 +936,11 @@ ssh production 'cd /opt/ocpctl/current && ./ocpctl-api migrate up'
 
 ```bash
 # API health
-curl https://ocpctl.mg.dog8code.com/health
+curl https://ocpctl.<BASE_DOMAIN>/health
 # Expected: {"status":"healthy","timestamp":"..."}
 
 # Version check
-curl https://ocpctl.mg.dog8code.com/version
+curl https://ocpctl.<BASE_DOMAIN>/version
 # Expected: {"version":"v0.20260614.xxx","commit":"...","buildTime":"..."}
 
 # Worker health
@@ -997,11 +997,11 @@ aws ec2 describe-instances \
 
 | Aspect | Dev | Production |
 |--------|-----|------------|
-| Domain | dev.ocpctl.mg.dog8code.com | ocpctl.mg.dog8code.com |
-| Server | t3.medium (NEW) | t3.large (44.201.165.78) |
+| Domain | dev.ocpctl.<BASE_DOMAIN> | ocpctl.<BASE_DOMAIN> |
+| Server | t3.medium (NEW) | t3.large (<PROD_HOST>) |
 | Database | ocpctl_dev (separate or shared RDS) | ocpctl (RDS) |
 | S3 Bucket | ocpctl-dev-binaries | ocpctl-binaries |
-| SSH Key | ~/.ssh/ocpctl-dev-key | ~/.ssh/ocpctl-production-key |
+| SSH Key | ~/.ssh/<DEV_SSH_KEY> | ~/.ssh/<PROD_SSH_KEY> |
 | Auto-deploy | Yes (on push to main) | No (manual, maintenance window) |
 | Autoscale | No | Yes (ASG) |
 

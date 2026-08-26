@@ -20,7 +20,7 @@ Cluster Pools are collections of pre-provisioned, ready-to-use clusters that you
 
 1. **Navigate to Pools**
    - Click **Cluster Pools** in the sidebar (second item)
-   - Or visit: https://ocpctl.mg.dog8code.com/pools
+   - Or visit: https://ocpctl.<BASE_DOMAIN>/pools
 
 2. **View Pool Cards**
    - See pool name, description, and profile
@@ -69,7 +69,7 @@ All API requests require authentication. Use a JWT token:
 
 ```bash
 # Get token via login
-curl -X POST https://ocpctl.mg.dog8code.com/api/v1/auth/login \
+curl -X POST https://ocpctl.<BASE_DOMAIN>/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "your-username", "password": "your-password"}'
 
@@ -81,7 +81,7 @@ export TOKEN="your-jwt-token"
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  https://ocpctl.mg.dog8code.com/api/v1/pools?enabled_only=true
+  https://ocpctl.<BASE_DOMAIN>/api/v1/pools?enabled_only=true
 ```
 
 **Response:**
@@ -104,7 +104,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/stats
+  https://ocpctl.<BASE_DOMAIN>/api/v1/pools/dev-pool/stats
 ```
 
 **Response:**
@@ -131,7 +131,7 @@ curl -X POST \
       "ticket": "JIRA-123"
     }
   }' \
-  https://ocpctl.mg.dog8code.com/api/v1/pools/dev-pool/lease
+  https://ocpctl.<BASE_DOMAIN>/api/v1/pools/dev-pool/lease
 ```
 
 **Response:**
@@ -168,7 +168,7 @@ oc get clusterversion
 ```bash
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
-  https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/abc-123-def/release
+  https://ocpctl.<BASE_DOMAIN>/api/v1/pools/clusters/abc-123-def/release
 ```
 
 **Response:** 204 No Content (success)
@@ -205,7 +205,7 @@ jobs:
                 "run_id": "${{ github.run_id }}"
               }
             }' \
-            https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/lease)
+            https://ocpctl.<BASE_DOMAIN>/api/v1/pools/ci-pool/lease)
 
           echo "Response: $RESPONSE"
 
@@ -243,7 +243,7 @@ jobs:
         run: |
           curl -X POST \
             -H "Authorization: Bearer ${{ secrets.OCPCTL_TOKEN }}" \
-            https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/${{ steps.lease.outputs.cluster_id }}/release
+            https://ocpctl.<BASE_DOMAIN>/api/v1/pools/clusters/${{ steps.lease.outputs.cluster_id }}/release
 ```
 
 **Setup:**
@@ -259,7 +259,7 @@ set -e
 
 # Configuration
 POOL_NAME="dev-pool"
-OCPCTL_URL="https://ocpctl.mg.dog8code.com"
+OCPCTL_URL="https://ocpctl.<BASE_DOMAIN>"
 TOKEN="${OCPCTL_TOKEN}"  # Set via environment
 
 # Function to lease cluster
@@ -355,7 +355,7 @@ class OcpctlPool:
 if __name__ == "__main__":
     # Initialize client
     client = OcpctlPool(
-        base_url="https://ocpctl.mg.dog8code.com",
+        base_url="https://ocpctl.<BASE_DOMAIN>",
         token=os.environ.get("OCPCTL_TOKEN")
     )
 
@@ -430,7 +430,7 @@ Help with debugging and tracking:
 Before leasing, check if pools have capacity:
 
 ```bash
-curl https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/stats
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/pools/ci-pool/stats
 # If ready_clusters = 0, wait or use different pool
 ```
 
@@ -495,7 +495,7 @@ echo "Cluster will auto-release at: $LEASE_EXPIRES"
 **Check:**
 ```bash
 # View cluster details
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/{cluster-id}
 
 # Check lease expiration
 # If expired, background job will auto-release within 60 seconds
@@ -521,7 +521,7 @@ Contact administrator to manually release or check pool manager logs.
 
 3. **Verify cluster is READY**:
    ```bash
-   curl https://ocpctl.mg.dog8code.com/api/v1/clusters/{cluster-id}
+   curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/{cluster-id}
    # status should be "READY", not "CREATING"
    ```
 
@@ -604,7 +604,7 @@ curl -X PATCH \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"target_size": 5}' \
-  https://ocpctl.mg.dog8code.com/api/v1/admin/pools/dev-pool
+  https://ocpctl.<BASE_DOMAIN>/api/v1/admin/pools/dev-pool
 ```
 
 ---
@@ -612,6 +612,6 @@ curl -X PATCH \
 ## Next Steps
 
 - **Feature Documentation**: [docs/features/CLUSTER_POOLS.md](../features/CLUSTER_POOLS.md)
-- **API Reference**: https://ocpctl.mg.dog8code.com/swagger/index.html
+- **API Reference**: https://ocpctl.<BASE_DOMAIN>/swagger/index.html
 - **Cluster Management**: [cluster-management.md](./cluster-management.md)
 - **Architecture**: [docs/architecture/architecture.md](../architecture/architecture.md)

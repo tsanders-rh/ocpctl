@@ -27,7 +27,7 @@ A **web-based platform** for self-service cluster provisioning and lifecycle man
 - No infrastructure knowledge required
 - Automatic cleanup and cost controls
 
-**Production URL:** https://ocpctl.mg.dog8code.com
+**Production URL:** https://ocpctl.<BASE_DOMAIN>
 
 ---
 
@@ -226,7 +226,7 @@ Pre-configured cluster templates that define:
 
 **Result in 45 minutes:**
 - ✅ Fully functional OpenShift cluster
-- ✅ DNS configured: `https://console-openshift-console.apps.myapp-dev.mg.dog8code.com`
+- ✅ DNS configured: `https://console-openshift-console.apps.myapp-dev.<BASE_DOMAIN>`
 - ✅ Kubeconfig downloadable
 - ✅ Kubeadmin credentials available
 - ✅ Auto-deletion scheduled in 72 hours
@@ -238,7 +238,7 @@ Pre-configured cluster templates that define:
 ### Create Cluster via API
 
 ```bash
-curl -X POST https://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl -X POST https://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -535,7 +535,7 @@ Failed cluster deletions leave behind:
 - Response time: < 1 business day
 
 ### 2. Login & Explore
-- URL: https://ocpctl.mg.dog8code.com
+- URL: https://ocpctl.<BASE_DOMAIN>
 - Browse available profiles
 - Check cluster inventory dashboard
 
@@ -561,7 +561,7 @@ Failed cluster deletions leave behind:
 ### Test API Key
 
 ```bash
-curl https://ocpctl.mg.dog8code.com/api/v1/profiles \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/profiles \
   -H "Authorization: Bearer ocpctl_YOUR_KEY"
 ```
 
@@ -597,7 +597,7 @@ curl https://ocpctl.mg.dog8code.com/api/v1/profiles \
 
 ### 📚 Documentation
 - **CLAUDE.md** - Complete architecture guide
-- **Swagger API** - https://ocpctl.mg.dog8code.com/swagger/index.html
+- **Swagger API** - https://ocpctl.<BASE_DOMAIN>/swagger/index.html
 - **Profile Reference** - `internal/profile/definitions/`
 - **Addon Catalog** - `internal/addon/definitions/`
 
@@ -792,7 +792,7 @@ A: Not yet, but API is fully documented. Use `curl` or any HTTP client. CLI plan
 
 ### Let's Create a Cluster Together! 🚀
 
-1. Navigate to https://ocpctl.mg.dog8code.com
+1. Navigate to https://ocpctl.<BASE_DOMAIN>
 2. Click "Create Cluster"
 3. Select profile: `aws-sno-ga`
 4. Configure:
@@ -899,8 +899,8 @@ A: Not yet, but API is fully documented. Use `curl` or any HTTP client. CLI plan
 
 - **Slack:** #ocpctl (internal channel)
 - **GitHub:** https://github.com/tsanders-rh/ocpctl
-- **Docs:** https://ocpctl.mg.dog8code.com/docs
-- **API:** https://ocpctl.mg.dog8code.com/swagger
+- **Docs:** https://ocpctl.<BASE_DOMAIN>/docs
+- **API:** https://ocpctl.<BASE_DOMAIN>/swagger
 
 **Questions?** Ask now or reach out anytime!
 
@@ -918,7 +918,7 @@ A: Not yet, but API is fully documented. Use `curl` or any HTTP client. CLI plan
 - Slack: #ocpctl-support
 
 **Resources:**
-- Production: https://ocpctl.mg.dog8code.com
+- Production: https://ocpctl.<BASE_DOMAIN>
 - GitHub: https://github.com/tsanders-rh/ocpctl
 - Docs: CLAUDE.md, Swagger API
 
@@ -979,21 +979,21 @@ lifecycle:
 ### List Clusters
 
 ```bash
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Authorization: Bearer $API_KEY"
 ```
 
 ### Get Cluster Status
 
 ```bash
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters/$CLUSTER_ID \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/$CLUSTER_ID \
   -H "Authorization: Bearer $API_KEY"
 ```
 
 ### Download Kubeconfig
 
 ```bash
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters/$CLUSTER_ID/kubeconfig \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/$CLUSTER_ID/kubeconfig \
   -H "Authorization: Bearer $API_KEY" \
   -o kubeconfig.yaml
 ```

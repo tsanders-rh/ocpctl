@@ -45,7 +45,7 @@ ROSA clusters require authentication with OpenShift Cluster Manager (OCM). The `
 3. **Add to worker environment:**
    ```bash
    # On production server
-   ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+   ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
    # Edit worker.env
    sudo nano /etc/ocpctl/worker.env
@@ -87,7 +87,7 @@ ROSA clusters require authentication with OpenShift Cluster Manager (OCM). The `
 **Testing the token:**
 ```bash
 # SSH to worker server
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Verify rosa CLI can authenticate
 rosa whoami

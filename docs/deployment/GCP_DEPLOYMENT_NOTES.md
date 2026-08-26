@@ -69,7 +69,7 @@ All components are now configured for GCP support:
 ## Testing
 
 To verify GCP cluster creation works:
-1. Go to https://ocpctl.mg.dog8code.com/clusters/new
+1. Go to https://ocpctl.<BASE_DOMAIN>/clusters/new
 2. Select Platform: **GCP**
 3. Select Profile: **gcp-gke-standard** or **gcp-standard**
 4. Fill in cluster details and create

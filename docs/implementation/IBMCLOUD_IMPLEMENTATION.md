@@ -110,10 +110,10 @@ Examples: bx2-4x16, bx2-8x32, cx2-8x16, mx2-16x128
 IBM Cloud requires IBM Cloud Internet Services (CIS) for DNS, not Route 53. The implementation uses subdomain delegation:
 
 ```
-mg.dog8code.com (Route 53)
-└── ibm.mg.dog8code.com (CIS - Delegated)
-    ├── cluster1.ibm.mg.dog8code.com
-    └── cluster2.ibm.mg.dog8code.com
+<BASE_DOMAIN> (Route 53)
+└── ibm.<BASE_DOMAIN> (CIS - Delegated)
+    ├── cluster1.ibm.<BASE_DOMAIN>
+    └── cluster2.ibm.<BASE_DOMAIN>
 ```
 
 ### IAM Permissions
@@ -169,7 +169,7 @@ export PROFILES_DIR="/opt/ocpctl/profiles"
 
 ### Profile Configuration
 
-Both IBM Cloud profiles are enabled and use `ibm.mg.dog8code.com` as the base domain:
+Both IBM Cloud profiles are enabled and use `ibm.<BASE_DOMAIN>` as the base domain:
 
 **ibmcloud-minimal-test**:
 - 3-node compact cluster
@@ -194,7 +194,7 @@ POST /api/v1/clusters
   "version": "4.20.3",
   "profile": "ibmcloud-minimal-test",
   "region": "us-south",
-  "base_domain": "ibm.mg.dog8code.com",
+  "base_domain": "ibm.<BASE_DOMAIN>",
   "owner": "user@example.com",
   "team": "Platform Engineering",
   "cost_center": "733",
@@ -207,7 +207,7 @@ Platform validation accepts: `aws` | `ibmcloud`
 ## Known Limitations
 
 1. **DNS Requirement**: Requires IBM Cloud Internet Services (CIS) for cluster DNS
-2. **Subdomain Delegation**: IBM clusters must use subdomain (ibm.mg.dog8code.com)
+2. **Subdomain Delegation**: IBM clusters must use subdomain (ibm.<BASE_DOMAIN>)
 3. **Manual CCO Mode**: Cannot use automatic credential mode
 4. **Region Support**: Limited to 9 IBM Cloud regions (expandable via profile config)
 5. **Instance Metadata**: Instance metadata service credential detection not yet implemented

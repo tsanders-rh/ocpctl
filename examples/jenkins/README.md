@@ -51,7 +51,7 @@ The fastest way to run tests on OpenShift clusters in Jenkins.
 pipeline {
     agent any
     environment {
-        OCPCTL_URL = 'https://ocpctl.mg.dog8code.com'
+        OCPCTL_URL = 'https://ocpctl.<BASE_DOMAIN>'
         POOL_NAME = 'ci-pool'
     }
     stages {
@@ -152,7 +152,7 @@ The traditional pipeline:
 
 ### Required Software
 - **Jenkins 2.x** or later
-- **Network access** to ocpctl API (https://ocpctl.mg.dog8code.com)
+- **Network access** to ocpctl API (https://ocpctl.<BASE_DOMAIN>)
 - **OpenShift CLI** (`oc`) installed on Jenkins agent (for running tests)
 - **One of the following** for authentication:
   - API key from ocpctl (recommended for any environment)
@@ -170,7 +170,7 @@ This method works in any Jenkins environment (on-prem, cloud, EC2, or outside AW
 
 #### Step 1: Create API Key in ocpctl
 
-1. Login to ocpctl web UI: https://ocpctl.mg.dog8code.com
+1. Login to ocpctl web UI: https://ocpctl.<BASE_DOMAIN>
 2. Navigate to: **User menu → API Keys**
 3. Click **"Create API Key"**
 4. Fill in the form:
@@ -190,7 +190,7 @@ This method works in any Jenkins environment (on-prem, cloud, EC2, or outside AW
    - **Kind**: `Secret text`
    - **Scope**: `Global`
    - **Secret**: `[paste your API key]`
-   - **ID**: `ocpctl-api-key` (exact ID required!)
+   - **ID**: `<API_SSH_KEY>` (exact ID required!)
    - **Description**: `ocpctl API Key for cluster provisioning`
 4. Click **"Create"**
 
@@ -198,7 +198,7 @@ This method works in any Jenkins environment (on-prem, cloud, EC2, or outside AW
 
 ```bash
 # Test from command line
-curl -X GET https://ocpctl.mg.dog8code.com/api/v1/profiles \
+curl -X GET https://ocpctl.<BASE_DOMAIN>/api/v1/profiles \
   -H "Authorization: Bearer ocpctl_YOUR_KEY"
 
 # Expected: 200 OK with JSON list of profiles
@@ -248,7 +248,7 @@ aws iam add-user-to-group \
 
 ```bash
 # Test from EC2 instance (no credentials needed!)
-curl -X GET https://ocpctl.mg.dog8code.com/api/v1/profiles \
+curl -X GET https://ocpctl.<BASE_DOMAIN>/api/v1/profiles \
   --aws-sigv4 "aws:amz:us-east-1:execute-api"
 
 # Expected: 200 OK with JSON list of profiles
@@ -311,7 +311,7 @@ If you prefer to paste the Jenkinsfile content directly:
 | **PROFILE** | Cluster profile | `aws-sno-ga` |
 | **OPENSHIFT_VERSION** | OpenShift version | `4.22.0` |
 | **REGION** | AWS region | `us-east-1` |
-| **BASE_DOMAIN** | DNS base domain | `mg.dog8code.com` |
+| **BASE_DOMAIN** | DNS base domain | `<BASE_DOMAIN>` |
 | **OWNER_EMAIL** | Owner email | `your-email@example.com` |
 | **TEAM** | Team name | `platform-engineering` |
 | **COST_CENTER** | Cost center code | `eng-001` |
@@ -432,7 +432,7 @@ exit 0
 **Solution**:
 1. Check which versions are allowed for your selected profile:
    ```bash
-   curl https://ocpctl.mg.dog8code.com/api/v1/profiles/aws-sno-ga | jq '.openshift_versions.allowlist'
+   curl https://ocpctl.<BASE_DOMAIN>/api/v1/profiles/aws-sno-ga | jq '.openshift_versions.allowlist'
    ```
 2. Update the Jenkins pipeline to use an allowed version
 3. Different profiles support different version ranges - always verify before building
@@ -443,7 +443,7 @@ exit 0
 
 **Solution**:
 - Verify credential exists: **Jenkins → Credentials → Global credentials**
-- Credential ID must be exactly `ocpctl-api-key`
+- Credential ID must be exactly `<API_SSH_KEY>`
 - Credential type must be "Secret text"
 - If using EC2_IAM, select that option instead of API_KEY
 
@@ -452,7 +452,7 @@ exit 0
 **Cause**: Invalid or expired API key
 
 **Solution**:
-- Test API key: `curl -H "Authorization: Bearer $KEY" https://ocpctl.mg.dog8code.com/api/v1/profiles`
+- Test API key: `curl -H "Authorization: Bearer $KEY" https://ocpctl.<BASE_DOMAIN>/api/v1/profiles`
 - If expired/invalid, create new key and update Jenkins credential
 
 ### Problem: "Cluster stuck in CREATING status"
@@ -472,7 +472,7 @@ exit 0
 **Solution**:
 - Set `PRESERVE_ON_FAILURE=true` to keep clusters on failure
 - Cluster will remain accessible for debugging
-- Delete manually when done: `curl -X DELETE https://ocpctl.mg.dog8code.com/api/v1/clusters/:id`
+- Delete manually when done: `curl -X DELETE https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/:id`
 
 ### Problem: "API returns 429 Too Many Requests"
 
@@ -490,7 +490,7 @@ exit 0
 **Solution**:
 1. Verify `sts:GetCallerIdentity` permission on instance role
 2. Check IAM group membership if group enforcement enabled
-3. Test: `curl --aws-sigv4 "aws:amz:us-east-1:execute-api" https://ocpctl.mg.dog8code.com/api/v1/profiles`
+3. Test: `curl --aws-sigv4 "aws:amz:us-east-1:execute-api" https://ocpctl.<BASE_DOMAIN>/api/v1/profiles`
 4. If 403 Forbidden, add instance role to allowed IAM group
 
 ### Problem: "oc command not found"
@@ -566,7 +566,7 @@ The pipeline supports all AWS OpenShift profiles:
 ## Additional Resources
 
 - **OCPCTL Documentation**: `/Users/tsanders/Workspace2/ocpctl/docs/`
-- **API Reference**: https://ocpctl.mg.dog8code.com/swagger/index.html
+- **API Reference**: https://ocpctl.<BASE_DOMAIN>/swagger/index.html
 - **OCPCTL Architecture**: `/Users/tsanders/Workspace2/ocpctl/CLAUDE.md`
 - **Jenkins Pipeline Syntax**: https://www.jenkins.io/doc/book/pipeline/syntax/
 

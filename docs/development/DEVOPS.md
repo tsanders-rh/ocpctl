@@ -11,13 +11,13 @@ validation).
 
 | | Dev | Production |
 |--|-----|-----------|
-| API/worker host | `44.214.230.178` (`ubuntu`) | `44.201.165.78` (`ubuntu`) |
-| URL | https://dev.ocpctl.mg.dog8code.com | https://ocpctl.mg.dog8code.com |
+| API/worker host | `<DEV_HOST>` (`ubuntu`) | `<PROD_HOST>` (`ubuntu`) |
+| URL | https://dev.ocpctl.<BASE_DOMAIN> | https://ocpctl.<BASE_DOMAIN> |
 | DB | `ocpctl-dev-db` (RDS, own) | `ocpctl-db` (RDS) |
 | Binaries bucket | `s3://ocpctl-dev-binaries` | `s3://ocpctl-binaries` |
 | Artifacts bucket | `s3://ocpctl-dev-artifacts` | `s3://ocpctl-artifacts` |
 | Autoscale workers | single node | `ocpctl-worker-asg` (ASG) |
-| SSH key | `~/.ssh/ocpctl-dev-key` | `~/.ssh/ocpctl-production-key` |
+| SSH key | `~/.ssh/<DEV_SSH_KEY>` | `~/.ssh/<PROD_SSH_KEY>` |
 
 **Golden rule:** changes prove out in **dev** before production. Production is a
 manual promotion of a specific, dev-validated version — never a first deploy.
@@ -37,9 +37,9 @@ The deploy/ops scripts source it and call `load_environment dev|production` to g
 domain, key *names*). To actually push to dev or prod, a maintainer additionally
 needs the following on their own machine — none of it is in git:
 
-1. **The SSH private key** at `$SSH_KEY` — `~/.ssh/ocpctl-dev-key` (dev) or
-   `~/.ssh/ocpctl-production-key` (prod). Regenerate from Terraform if missing:
-   `terraform -chdir=terraform/dev output -raw ssh_private_key > ~/.ssh/ocpctl-dev-key && chmod 600 ~/.ssh/ocpctl-dev-key`.
+1. **The SSH private key** at `$SSH_KEY` — `~/.ssh/<DEV_SSH_KEY>` (dev) or
+   `~/.ssh/<PROD_SSH_KEY>` (prod). Regenerate from Terraform if missing:
+   `terraform -chdir=terraform/dev output -raw ssh_private_key > ~/.ssh/<DEV_SSH_KEY> && chmod 600 ~/.ssh/<DEV_SSH_KEY>`.
    Different user/path? Override with `OCPCTL_SSH_USER` / `OCPCTL_SSH_KEY` — no
    need to edit the config file.
 2. **The real env-config secret files** — `config/api.env.<env>` and
@@ -170,7 +170,7 @@ Rules:
 
 ```bash
 # List available versions
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl/releases/*'
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo ls -d /opt/ocpctl/releases/*'
 
 # Redeploy a previous version
 ./scripts/deploy-env.sh production v0.20260413.1346b69
@@ -199,12 +199,12 @@ the rollback, in the reverse order it was applied.
 
 ```bash
 # Service status / logs (dev shown; prod is the same minus -web)
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178 \
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> \
   'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178 'sudo journalctl -u ocpctl-worker -f'
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> 'sudo journalctl -u ocpctl-worker -f'
 
 # Versions
-curl -s https://dev.ocpctl.mg.dog8code.com/version
+curl -s https://dev.ocpctl.<BASE_DOMAIN>/version
 ```
 
 See CLAUDE.md → Troubleshooting for stuck-job, profile-loading, and

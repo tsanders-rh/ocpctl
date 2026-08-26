@@ -62,7 +62,7 @@ The easiest way to use RHWA is with a cluster that has the addon pre-configured:
 ocpctl create cluster tsanders-rhwa-test --profile aws-rhwa-lab
 
 # Using API
-curl -X POST https://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl -X POST https://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Content-Type: application/json" \
   -d '{
     "name": "tsanders-rhwa-test",
