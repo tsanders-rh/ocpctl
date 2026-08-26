@@ -2,6 +2,22 @@
 
 **Purpose**: This file provides Claude with persistent context about ocpctl's architecture, production environment, and common debugging patterns across sessions.
 
+> **Environment-specific values are placeholders here and resolved from a local,
+> gitignored file.** This tracked file uses `<PLACEHOLDER>` tokens for the
+> deployment topology (hosts, SSH keys, domain, RDS endpoint) so the public repo
+> doesn't hardcode private infra. The real values live in `CLAUDE.local.md`
+> (gitignored) and are imported below, so a local Claude session sees the actual
+> hosts/keys while the committed file stays generic.
+>
+> **Placeholders:** `<PROD_HOST>`, `<DEV_HOST>` (server IPs) ·
+> `<PROD_SSH_KEY>`, `<DEV_SSH_KEY>` (SSH key names under `~/.ssh/`) ·
+> `<BASE_DOMAIN>` (Route53 base zone; URLs are `ocpctl.<BASE_DOMAIN>` /
+> `dev.ocpctl.<BASE_DOMAIN>`) · `<DEV_RDS_HOST>` (dev RDS endpoint).
+> The same values are the single source of truth for the deploy scripts in
+> [`config/environments.sh`](config/environments.sh).
+
+@CLAUDE.local.md
+
 ---
 
 ## Project Overview
@@ -22,10 +38,10 @@
 
 ### Primary Server
 - **Hostname**: ocpctl-production
-- **IP**: 44.201.165.78
+- **IP**: <PROD_HOST>
 - **Instance Type**: t3.large (2 vCPU, 8GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **SSH**: `ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78`
+- **SSH**: `ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>`
 
 ### Service Ports
 - **API Server**: 8080 (internal, proxied via nginx)
@@ -83,11 +99,11 @@ sudo systemctl restart ocpctl-worker
 
 ### Dev Server
 - **Hostname**: ocpctl-dev
-- **IP**: 44.214.230.178
-- **Domain**: dev.ocpctl.mg.dog8code.com
+- **IP**: <DEV_HOST>
+- **Domain**: dev.ocpctl.<BASE_DOMAIN>
 - **Instance Type**: t3.medium (2 vCPU, 4GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **SSH**: `ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178`
+- **SSH**: `ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST>`
 
 ### Service Ports
 - **API Server**: 8080 (internal, proxied via nginx)
@@ -135,7 +151,7 @@ sudo systemctl restart ocpctl-web
 ```
 
 ### Database
-- **RDS Endpoint**: ocpctl-dev-db.czu6z8r7it71.us-east-1.rds.amazonaws.com:5432
+- **RDS Endpoint**: <DEV_RDS_HOST>:5432
 - **Database**: ocpctl_dev
 - **User**: ocpctl_dev_admin
 - **Engine**: PostgreSQL 17.9 (same as production)
@@ -147,14 +163,14 @@ sudo systemctl restart ocpctl-web
 - **ocpctl-dev-artifacts**: Cluster state, kubeconfigs, installer directories
 
 ### Login Credentials
-- **URL**: https://dev.ocpctl.mg.dog8code.com
+- **URL**: https://dev.ocpctl.<BASE_DOMAIN>
 - **Email**: `admin@example.com` or `admin@localhost`
 - **Password**: `changeme` (should be changed after first login)
 
 ### Dev Server Access
 ```bash
 # SSH to dev
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST>
 
 # Check service status
 sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
@@ -170,7 +186,7 @@ sudo systemctl restart ocpctl-worker
 sudo systemctl restart ocpctl-web
 
 # Check database connectivity
-PGPASSWORD=<password> psql -h ocpctl-dev-db.czu6z8r7it71.us-east-1.rds.amazonaws.com -U ocpctl_dev_admin -d ocpctl_dev -c "SELECT version();"
+PGPASSWORD=<password> psql -h <DEV_RDS_HOST> -U ocpctl_dev_admin -d ocpctl_dev -c "SELECT version();"
 ```
 
 ### Deployment to Dev
@@ -381,7 +397,7 @@ Example: v0.20260505.d70856c
 ### Rollback
 ```bash
 # List available versions
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 'sudo ls -d /opt/ocpctl/releases/*'
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo ls -d /opt/ocpctl/releases/*'
 
 # Deploy specific version
 ./scripts/deploy.sh v0.20260413.1346b69
@@ -578,7 +594,7 @@ ls -la /opt/ocpctl/profiles/
 ### Production Server Access
 ```bash
 # SSH to production
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Check service status
 sudo systemctl status ocpctl-api ocpctl-worker
@@ -598,7 +614,7 @@ psql $DATABASE_URL -c "SELECT version();"
 ### Dev Server Access
 ```bash
 # SSH to dev
-ssh -i ~/.ssh/ocpctl-dev-key ubuntu@44.214.230.178
+ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST>
 
 # Check service status
 sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web
@@ -788,7 +804,7 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 - Configured nginx reverse proxy with Let's Encrypt SSL
 - Created config files: api.env.dev, worker.env.dev, web.env
 - All cloud credentials copied from production for full cluster provisioning capability
-- Dev environment accessible at https://dev.ocpctl.mg.dog8code.com
+- Dev environment accessible at https://dev.ocpctl.<BASE_DOMAIN>
 
 **2026-05-28**: Windows VM Provisioning Optimization with Regional EBS Snapshots
 - Reduced Windows VM deployment time from 30-50 minutes to 2-3 minutes (94% reduction)
@@ -850,12 +866,12 @@ ocpctl:region: us-east-1
 
 ## Resources
 
-- **Production URL**: https://ocpctl.mg.dog8code.com
-- **Dev URL**: https://dev.ocpctl.mg.dog8code.com
+- **Production URL**: https://ocpctl.<BASE_DOMAIN>
+- **Dev URL**: https://dev.ocpctl.<BASE_DOMAIN>
 - **GitHub**: https://github.com/tsanders-rh/ocpctl
 - **Docs**: `/Users/tsanders/Workspace2/ocpctl/docs/`
 - **Architecture Decisions**: `docs/features/` (ROSA_SUPPORT_PLAN.md, etc.)
-- **Swagger API**: https://ocpctl.mg.dog8code.com/swagger/index.html
+- **Swagger API**: https://ocpctl.<BASE_DOMAIN>/swagger/index.html
 
 ---
 

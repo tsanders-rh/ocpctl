@@ -114,3 +114,6 @@ pull-secret.txt
 credentials.json
 secrets.yaml
 terraform/dev/terraform.tfvars
+
+# Local Claude context: real env topology resolving CLAUDE.md placeholders
+CLAUDE.local.md
