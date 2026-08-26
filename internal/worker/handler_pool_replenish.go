@@ -99,14 +99,19 @@ func (h *PoolReplenishHandler) Handle(ctx context.Context, job *types.Job) error
 		return fmt.Errorf("pool %s disabled due to %d recent cluster failures - admin intervention required", pool.Name, recentFailureCount)
 	}
 
-	// Calculate how many clusters we need to provision
-	// Total includes READY, LEASED, PROVISIONING, CLEANING, EXPIRED
-	// We want to provision enough to reach target_size
-	clustersNeeded := pool.TargetSize - stats.TotalClusters
+	// Calculate how many clusters we need to provision.
+	// TotalClusters includes READY, LEASED, PROVISIONING, CLEANING, EXPIRED.
+	// EXPIRED clusters are on their way out (destroyed by the scheduler) and can
+	// never be leased, so they must not count toward the target — otherwise a pool
+	// full of EXPIRED clusters looks "at target" and is never replenished. Count
+	// only live clusters against target_size; keep max_size guards on the true
+	// total so we never provision past the hard cap while EXPIRED clusters drain.
+	liveClusters := stats.TotalClusters - stats.ExpiredClusters
+	clustersNeeded := pool.TargetSize - liveClusters
 
 	if clustersNeeded <= 0 {
-		log.Printf("Pool %s has sufficient clusters (%d/%d), no replenishment needed",
-			pool.Name, stats.TotalClusters, pool.TargetSize)
+		log.Printf("Pool %s has sufficient live clusters (%d/%d; total=%d, expired=%d), no replenishment needed",
+			pool.Name, liveClusters, pool.TargetSize, stats.TotalClusters, stats.ExpiredClusters)
 		return nil
 	}
 

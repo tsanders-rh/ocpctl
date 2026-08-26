@@ -106,9 +106,10 @@ func (s *Scheduler) run() {
 		}
 	}
 
-	// 3. Clean up expired failed clusters
-	if err := s.checkExpiredFailedClusters(ctx); err != nil {
-		log.Printf("Error checking expired failed clusters: %v", err)
+	// 3. Destroy EXPIRED clusters that won't be refreshed (auto-refresh off, or
+	//    failed) so they don't pile up and block replenishment.
+	if err := s.checkExpiredClustersForDestroy(ctx); err != nil {
+		log.Printf("Error checking expired clusters for destroy: %v", err)
 	}
 }
 
@@ -217,10 +218,16 @@ func (s *Scheduler) checkPoolReplenishment(ctx context.Context) error {
 			continue
 		}
 
-		// Check if pool needs replenishment (total < target_size)
-		if stats.TotalClusters < pool.TargetSize {
-			log.Printf("Pool %s needs replenishment: total=%d, min=%d, target=%d",
-				pool.Name, stats.TotalClusters, pool.MinSize, pool.TargetSize)
+		// Check if pool needs replenishment. EXPIRED clusters are counted in
+		// TotalClusters but are on their way out (destroyed by
+		// checkExpiredFailedClusters / refreshed by checkExpiredClusters) and can
+		// never be leased, so they must not count toward the target — otherwise a
+		// pool full of EXPIRED clusters looks "at target" and is never replenished,
+		// leaving 0 leasable clusters.
+		liveClusters := stats.TotalClusters - stats.ExpiredClusters
+		if liveClusters < pool.TargetSize {
+			log.Printf("Pool %s needs replenishment: live=%d (total=%d, expired=%d), min=%d, target=%d",
+				pool.Name, liveClusters, stats.TotalClusters, stats.ExpiredClusters, pool.MinSize, pool.TargetSize)
 
 			// Check if there's already a pending POOL_REPLENISH job for this pool
 			existingJob, err := s.checkExistingReplenishJob(ctx, pool.ID)
@@ -367,16 +374,35 @@ func (s *Scheduler) checkExpiredClusters(ctx context.Context) error {
 	return nil
 }
 
-// checkExpiredFailedClusters finds and destroys EXPIRED clusters that are in FAILED status
-func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
-	// Find all EXPIRED clusters that are FAILED
+// checkExpiredClustersForDestroy finds EXPIRED pool clusters that will not be
+// refreshed and destroys them, removing them from the pool first.
+//
+// An EXPIRED cluster can never be leased and counts against replenishment (see
+// checkPoolReplenishment). When auto-refresh is enabled, checkExpiredClusters
+// already creates a POOL_REFRESH job (which provisions a replacement and destroys
+// the old one), so those clusters are excluded here via the pending-job filter.
+// This handler is the safety net for the rest: clusters marked EXPIRED by the
+// clean handler (e.g. missing kubeconfig) or by age when auto-refresh is off, and
+// FAILED clusters. Without it, EXPIRED clusters accumulate and permanently block
+// replenishment, draining the pool to zero leasable clusters.
+//
+// Only unleased clusters (leased_by IS NULL) with no pending POOL_REFRESH or
+// DESTROY job are eligible, so we never destroy a cluster in active use or one
+// already being refreshed/destroyed.
+func (s *Scheduler) checkExpiredClustersForDestroy(ctx context.Context) error {
 	query := `
 		SELECT c.id, c.name, c.pool_id, p.name as pool_name
 		FROM clusters c
 		JOIN cluster_pools p ON c.pool_id = p.id
 		WHERE c.pool_state = 'EXPIRED'
-		  AND c.status = 'FAILED'
 		  AND c.pool_id IS NOT NULL
+		  AND c.leased_by IS NULL
+		  AND NOT EXISTS (
+		      SELECT 1 FROM jobs j
+		      WHERE j.cluster_id = c.id
+		        AND j.job_type IN ('DESTROY', 'POOL_REFRESH')
+		        AND j.status IN ('PENDING', 'RUNNING')
+		  )
 	`
 
 	rows, err := s.store.Pool().Query(ctx, query)
@@ -385,7 +411,7 @@ func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
 	}
 	defer rows.Close()
 
-	expiredFailedClusters := []struct {
+	expiredClusters := []struct {
 		ClusterID   string
 		ClusterName string
 		PoolID      string
@@ -400,30 +426,28 @@ func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
 			PoolName    string
 		}
 		if err := rows.Scan(&cluster.ClusterID, &cluster.ClusterName, &cluster.PoolID, &cluster.PoolName); err != nil {
-			log.Printf("Error scanning expired failed cluster: %v", err)
+			log.Printf("Error scanning expired cluster: %v", err)
 			continue
 		}
-		expiredFailedClusters = append(expiredFailedClusters, cluster)
+		expiredClusters = append(expiredClusters, cluster)
 	}
+	rows.Close()
 
-	for _, cluster := range expiredFailedClusters {
-		// Check if there's already a pending DESTROY job for this cluster
-		existingJobQuery := `
-			SELECT id FROM jobs
-			WHERE cluster_id = $1
-			  AND job_type = 'DESTROY'
-			  AND status IN ('PENDING', 'RUNNING')
-			LIMIT 1
-		`
-		var existingJobID string
-		err := s.store.Pool().QueryRow(ctx, existingJobQuery, cluster.ClusterID).Scan(&existingJobID)
-		if err == nil {
-			// Job already exists, skip
+	for _, cluster := range expiredClusters {
+		log.Printf("Destroying EXPIRED cluster %s (pool=%s): removing from pool and creating DESTROY job",
+			cluster.ClusterName, cluster.PoolName)
+
+		// Remove from the pool before destroying so it stops counting against the
+		// pool's target size and can't be leased mid-destroy.
+		updates := map[string]interface{}{
+			"pool_id":    nil,
+			"pool_state": nil,
+			"status":     types.ClusterStatusDestroying,
+		}
+		if err := s.store.Clusters.Update(ctx, cluster.ClusterID, updates); err != nil {
+			log.Printf("Error removing expired cluster %s from pool: %v", cluster.ClusterName, err)
 			continue
 		}
-
-		log.Printf("Creating DESTROY job for expired failed cluster %s (pool=%s)",
-			cluster.ClusterName, cluster.PoolName)
 
 		// Create DESTROY job
 		destroyJob := &types.Job{
@@ -437,7 +461,7 @@ func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
 				"pool_id":      cluster.PoolID,
 				"pool_name":    cluster.PoolName,
 				"triggered_by": "pool_scheduler",
-				"reason":       "expired_failed_cleanup",
+				"reason":       "expired_cleanup",
 			},
 		}
 
@@ -446,7 +470,7 @@ func (s *Scheduler) checkExpiredFailedClusters(ctx context.Context) error {
 			continue
 		}
 
-		log.Printf("Created DESTROY job %s for expired failed cluster %s", destroyJob.ID, cluster.ClusterName)
+		log.Printf("Created DESTROY job %s for expired cluster %s", destroyJob.ID, cluster.ClusterName)
 	}
 
 	return nil
