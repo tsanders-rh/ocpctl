@@ -64,23 +64,31 @@ func (h *PoolCleanHandler) Handle(ctx context.Context, job *types.Job) error {
 	// Get cluster outputs to retrieve kubeconfig
 	outputs, err := h.store.ClusterOutputs.GetByClusterID(ctx, cluster.ID)
 	if err != nil {
-		log.Printf("Warning: Could not get cluster outputs for %s: %v", cluster.Name, err)
-		// Continue without cleanup - mark as EXPIRED instead of READY
-		return h.markClusterExpired(ctx, cluster, "missing cluster outputs")
+		// A transient store error is not evidence the cluster is unhealthy. Fail
+		// the job so it retries rather than marking a healthy cluster EXPIRED.
+		return fmt.Errorf("get cluster outputs for %s: %w", cluster.Name, err)
 	}
 
-	// Get kubeconfig path
-	kubeconfigPath, err := h.getKubeconfigPath(outputs)
+	// A cluster with no kubeconfig reference at all cannot be sanitized and must
+	// not be returned to the pool. Mark it EXPIRED; the scheduler will destroy and
+	// replace it (see checkExpiredClustersForDestroy).
+	if outputs.KubeconfigS3URI == nil || *outputs.KubeconfigS3URI == "" {
+		return h.markClusterExpired(ctx, cluster, "missing kubeconfig URI")
+	}
+
+	// Resolve the kubeconfig to a local file, downloading from S3 when needed.
+	kubeconfigPath, cleanupKubeconfig, err := h.resolveKubeconfig(ctx, *outputs.KubeconfigS3URI)
 	if err != nil {
-		log.Printf("Warning: Could not get kubeconfig path for %s: %v", cluster.Name, err)
-		return h.markClusterExpired(ctx, cluster, "missing kubeconfig")
+		// Fetching the kubeconfig failed (transient S3 error, or the artifact is
+		// only on another worker's local disk). This is an infra/placement issue,
+		// not evidence the cluster is unhealthy — fail the job so it retries
+		// instead of destroying a healthy cluster. Previously this path marked the
+		// cluster EXPIRED, which silently drained pools on autoscale workers where
+		// cleanup runs on a host that lacks the local file:// kubeconfig and the
+		// s3:// case was rejected outright.
+		return fmt.Errorf("resolve kubeconfig for cluster %s: %w", cluster.Name, err)
 	}
-
-	// Verify kubeconfig exists
-	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
-		log.Printf("Warning: Kubeconfig not found at %s for cluster %s", kubeconfigPath, cluster.Name)
-		return h.markClusterExpired(ctx, cluster, "kubeconfig not found")
-	}
+	defer cleanupKubeconfig()
 
 	log.Printf("Using kubeconfig: %s", kubeconfigPath)
 
@@ -129,26 +137,56 @@ func (h *PoolCleanHandler) Handle(ctx context.Context, job *types.Job) error {
 	return nil
 }
 
-// getKubeconfigPath extracts the kubeconfig file path from cluster outputs
-func (h *PoolCleanHandler) getKubeconfigPath(outputs *types.ClusterOutputs) (string, error) {
-	if outputs.KubeconfigS3URI == nil || *outputs.KubeconfigS3URI == "" {
-		return "", fmt.Errorf("kubeconfig URI not set")
+// resolveKubeconfig resolves a kubeconfig URI to a readable local file path.
+//
+// s3:// URIs are downloaded to a temporary file (the common case for pool
+// clusters, whose kubeconfig is uploaded to S3 so it can be served from any
+// host — see storeArtifacts in handler_create.go). file:// URIs and bare paths
+// are used in place. The returned cleanup func removes any temp file and is
+// always safe to call (no-op when nothing was downloaded).
+func (h *PoolCleanHandler) resolveKubeconfig(ctx context.Context, kubeconfigURI string) (string, func(), error) {
+	noop := func() {}
+
+	switch {
+	case strings.HasPrefix(kubeconfigURI, "s3://"):
+		bucket, key, err := s3.ParseS3URI(kubeconfigURI)
+		if err != nil {
+			return "", noop, fmt.Errorf("invalid kubeconfig S3 URI %q: %w", kubeconfigURI, err)
+		}
+		data, err := s3.DownloadFile(ctx, bucket, key)
+		if err != nil {
+			return "", noop, fmt.Errorf("download kubeconfig from %s: %w", kubeconfigURI, err)
+		}
+		tmp, err := os.CreateTemp("", "pool-clean-kubeconfig-*.yaml")
+		if err != nil {
+			return "", noop, fmt.Errorf("create temp kubeconfig: %w", err)
+		}
+		cleanup := func() { _ = os.Remove(tmp.Name()) }
+		if _, err := tmp.Write(data); err != nil {
+			_ = tmp.Close()
+			cleanup()
+			return "", noop, fmt.Errorf("write temp kubeconfig: %w", err)
+		}
+		if err := tmp.Close(); err != nil {
+			cleanup()
+			return "", noop, fmt.Errorf("close temp kubeconfig: %w", err)
+		}
+		return tmp.Name(), cleanup, nil
+
+	case strings.HasPrefix(kubeconfigURI, "file://"):
+		path := strings.TrimPrefix(kubeconfigURI, "file://")
+		if _, err := os.Stat(path); err != nil {
+			return "", noop, fmt.Errorf("local kubeconfig %s not accessible: %w", path, err)
+		}
+		return path, noop, nil
+
+	default:
+		// Assume it's a direct file path.
+		if _, err := os.Stat(kubeconfigURI); err != nil {
+			return "", noop, fmt.Errorf("kubeconfig %s not accessible: %w", kubeconfigURI, err)
+		}
+		return kubeconfigURI, noop, nil
 	}
-
-	kubeconfigURI := *outputs.KubeconfigS3URI
-
-	// Handle file:// URIs (local filesystem)
-	if strings.HasPrefix(kubeconfigURI, "file://") {
-		return kubeconfigURI[7:], nil // Remove "file://" prefix
-	}
-
-	// Handle s3:// URIs (future enhancement - download from S3)
-	if strings.HasPrefix(kubeconfigURI, "s3://") {
-		return "", fmt.Errorf("s3:// URIs not yet supported for cleanup")
-	}
-
-	// Assume it's a direct file path
-	return kubeconfigURI, nil
 }
 
 // cleanupCluster performs the actual cluster cleanup operations
