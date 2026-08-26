@@ -137,7 +137,7 @@ Edit the "Success Metrics" slide with your real data:
 
 ### Before Presentation:
 
-1. **Test access:** Verify you can login to https://ocpctl.mg.dog8code.com
+1. **Test access:** Verify you can login to https://ocpctl.<BASE_DOMAIN>
 2. **Pre-create cluster:** Start a cluster 30-40 min before presentation (so it's READY during demo)
 3. **Prepare screenshots:** In case of network issues
 4. **Test API:** Verify curl commands work with your API key
@@ -147,7 +147,7 @@ Edit the "Success Metrics" slide with your real data:
 
 ```bash
 # 1. Show web UI
-open https://ocpctl.mg.dog8code.com
+open https://ocpctl.<BASE_DOMAIN>
 
 # 2. Navigate to cluster inventory
 # - Show different statuses
@@ -170,11 +170,11 @@ open https://ocpctl.mg.dog8code.com
 export API_KEY="ocpctl_YOUR_KEY"
 
 # List clusters
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters \
   -H "Authorization: Bearer $API_KEY" | jq
 
 # Get specific cluster
-curl https://ocpctl.mg.dog8code.com/api/v1/clusters/$CLUSTER_ID \
+curl https://ocpctl.<BASE_DOMAIN>/api/v1/clusters/$CLUSTER_ID \
   -H "Authorization: Bearer $API_KEY" | jq
 
 # 6. Show kubeconfig usage

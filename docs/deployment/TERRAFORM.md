@@ -304,7 +304,7 @@ data "aws_ami" "amazon_linux_2023" {
 ```hcl
 aws_region   = "us-east-1"
 project_name = "ocpctl"
-ssh_key_name = "ocpctl-production-key"
+ssh_key_name = "<PROD_SSH_KEY>"
 
 tags = {
   ManagedBy   = "Terraform"

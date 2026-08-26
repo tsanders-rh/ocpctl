@@ -85,13 +85,13 @@ Complete guide to working with Red Hat OpenShift Service on AWS (ROSA) clusters 
 
 ```bash
 # Login and get token
-TOKEN=$(curl -X POST https://api.ocpctl.mg.dog8code.com/v1/auth/login \
+TOKEN=$(curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"yourpassword"}' \
   | jq -r '.access_token')
 
 # Create ROSA cluster
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/clusters \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -161,7 +161,7 @@ oc get nodes
 ### Hibernate via API
 
 ```bash
-curl -X POST https://api.ocpctl.mg.dog8code.com/v1/clusters/{cluster-id}/hibernate \
+curl -X POST https://api.ocpctl.<BASE_DOMAIN>/v1/clusters/{cluster-id}/hibernate \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -191,7 +191,7 @@ To keep a ROSA cluster running 24/7:
 
 Or via API:
 ```bash
-curl -X PATCH https://api.ocpctl.mg.dog8code.com/v1/clusters/{cluster-id} \
+curl -X PATCH https://api.ocpctl.<BASE_DOMAIN>/v1/clusters/{cluster-id} \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"ignore_work_hours": true}'
@@ -209,7 +209,7 @@ curl -X PATCH https://api.ocpctl.mg.dog8code.com/v1/clusters/{cluster-id} \
 ### Via API
 
 ```bash
-curl -X DELETE https://api.ocpctl.mg.dog8code.com/v1/clusters/{cluster-id} \
+curl -X DELETE https://api.ocpctl.<BASE_DOMAIN>/v1/clusters/{cluster-id} \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -309,7 +309,7 @@ If costs are higher, check:
 **Check worker logs**:
 ```bash
 # SSH to production
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST>
 
 # Check logs
 sudo journalctl -u ocpctl-worker -f | grep <cluster-name>

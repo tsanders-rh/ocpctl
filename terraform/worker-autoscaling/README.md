@@ -251,7 +251,7 @@ aws_region         = "us-east-1"
 project_name       = "ocpctl"
 vpc_name           = "default-vpc"  # or your VPC name
 ami_id             = "ami-0c421724a94bba6d6"  # Amazon Linux 2023
-database_url       = "postgres://ocpctl:PASSWORD@172.31.93.45:5432/ocpctl?sslmode=disable"
+database_url       = "postgres://ocpctl:PASSWORD@<DB_HOST>:5432/ocpctl?sslmode=disable"
 worker_binary_url  = "s3://ocpctl-binaries-123456789012/binaries/ocpctl-worker"
 openshift_pull_secret = "{\"auths\":{\"cloud.openshift.com\":{...}}}"
 

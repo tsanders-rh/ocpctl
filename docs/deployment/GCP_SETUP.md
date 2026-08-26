@@ -163,14 +163,14 @@ gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
 
 ```bash
 # Create JSON key file
-gcloud iam service-accounts keys create ~/ocpctl-gcp-key.json \
+gcloud iam service-accounts keys create ~/<GCP_SSH_KEY>.json \
   --iam-account=${SA_EMAIL}
 
 # Verify key was created
-ls -lh ~/ocpctl-gcp-key.json
+ls -lh ~/<GCP_SSH_KEY>.json
 
 # Set restrictive permissions
-chmod 600 ~/ocpctl-gcp-key.json
+chmod 600 ~/<GCP_SSH_KEY>.json
 ```
 
 **⚠️ Security Warning:**
@@ -185,7 +185,7 @@ Copy the service account JSON key to your ocpctl server:
 
 ```bash
 # Copy to ocpctl server (adjust path and server as needed)
-scp ~/ocpctl-gcp-key.json ocpctl-server:/opt/ocpctl/gcp-credentials.json
+scp ~/<GCP_SSH_KEY>.json ocpctl-server:/opt/ocpctl/gcp-credentials.json
 
 # SSH into ocpctl server
 ssh ocpctl-server

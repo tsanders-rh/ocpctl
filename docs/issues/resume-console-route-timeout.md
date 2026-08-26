@@ -440,7 +440,7 @@ Console operator status: Available=True, Progressing=False
 Console deployment: 2/2 pods ready
 Console pods: console-xyz (Running), console-abc (Running)
 Possible causes: Route reconciliation delay, DNS issues, router configuration
-See: https://docs.ocpctl.mg.dog8code.com/troubleshooting/resume-console-timeout
+See: https://docs.ocpctl.<BASE_DOMAIN>/troubleshooting/resume-console-timeout
 ```
 
 ---
@@ -576,7 +576,7 @@ If Phase 1 changes cause issues:
 
 ## References
 
-- Production Logs: `/var/log/journal` on ocpctl-production (44.201.165.78)
+- Production Logs: `/var/log/journal` on ocpctl-production (<PROD_HOST>)
 - Database: Production PostgreSQL (`jobs` and `clusters` tables)
 - Code: `internal/worker/handler_resume.go:572-651`
 - Recent Failures: July 6, June 17, June 14 (2026)

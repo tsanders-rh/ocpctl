@@ -62,7 +62,7 @@ Fill in the required fields:
 - **Cost Center** - Cost center code for billing
 
 **Configuration:**
-- **Base Domain** - DNS domain for the cluster (e.g., mg.dog8code.com)
+- **Base Domain** - DNS domain for the cluster (e.g., <BASE_DOMAIN>)
 - **TTL (Hours)** - How long the cluster should live before auto-destruction
   - Must be within the profile's allowed range
   - Default value is used if not specified

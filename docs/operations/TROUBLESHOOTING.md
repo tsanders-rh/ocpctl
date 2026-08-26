@@ -44,7 +44,7 @@ Issue Type?
 
 **Symptoms:**
 ```
-ssh: connect to host 44.201.165.78 port 22: Connection timed out
+ssh: connect to host <PROD_HOST> port 22: Connection timed out
 ```
 
 **Common Causes:**
@@ -861,7 +861,7 @@ sudo systemctl restart ocpctl-api
 sudo grep CORS_ALLOWED_ORIGINS /etc/ocpctl/api.env
 
 # Should match your frontend URL
-# If accessing via IP: http://44.201.165.78
+# If accessing via IP: http://<PROD_HOST>
 # If via domain: https://ocpctl.your-domain.com
 
 # Update if wrong

@@ -85,7 +85,7 @@ echo "New database endpoint: $NEW_ENDPOINT"
 # (deployment-specific commands)
 
 # 7. Verify application is working
-curl http://ocpctl.mg.dog8code.com/health
+curl http://ocpctl.<BASE_DOMAIN>/health
 
 # 8. Once verified, optionally rename instances:
 # - Rename old: ocpctl-production → ocpctl-production-old
@@ -236,8 +236,8 @@ aws s3 sync \
 ./scripts/deploy.sh
 
 # 6. Verify all services
-curl http://ocpctl.mg.dog8code.com/health
-curl http://ocpctl.mg.dog8code.com/version
+curl http://ocpctl.<BASE_DOMAIN>/health
+curl http://ocpctl.<BASE_DOMAIN>/version
 
 # 7. Run verification
 ./scripts/verify-backups.sh

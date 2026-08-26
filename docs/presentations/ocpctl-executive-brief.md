@@ -316,11 +316,11 @@ Fully Configured Cluster
 **Contact:**
 - Platform Engineering Team
 - ocpctl-team@example.com
-- https://ocpctl.mg.dog8code.com
+- https://ocpctl.<BASE_DOMAIN>
 
 **Documentation:**
 - Technical Guide: CLAUDE.md
-- API Reference: https://ocpctl.mg.dog8code.com/swagger
+- API Reference: https://ocpctl.<BASE_DOMAIN>/swagger
 - User Guide: docs/
 
 ---

@@ -287,7 +287,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.OCPCTL_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"leased_by": "github-${{ github.run_id }}", "metadata": {"repo": "${{ github.repository }}", "run_id": "${{ github.run_id }}"}}' \
-            https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/lease)
+            https://ocpctl.<BASE_DOMAIN>/api/v1/pools/ci-pool/lease)
 
           CLUSTER_ID=$(echo $RESPONSE | jq -r '.cluster_id')
           KUBECONFIG_PATH=$(echo $RESPONSE | jq -r '.kubeconfig_path')
@@ -310,7 +310,7 @@ jobs:
         run: |
           curl -X POST \
             -H "Authorization: Bearer ${{ secrets.OCPCTL_TOKEN }}" \
-            https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/${{ steps.lease.outputs.cluster_id }}/release
+            https://ocpctl.<BASE_DOMAIN>/api/v1/pools/clusters/${{ steps.lease.outputs.cluster_id }}/release
 ```
 
 ### Jenkins Pipeline
@@ -330,7 +330,7 @@ pipeline {
                             curl -X POST -H "Authorization: Bearer ${OCPCTL_TOKEN}" \
                             -H "Content-Type: application/json" \
                             -d '{"leased_by": "jenkins-${BUILD_ID}"}' \
-                            https://ocpctl.mg.dog8code.com/api/v1/pools/ci-pool/lease
+                            https://ocpctl.<BASE_DOMAIN>/api/v1/pools/ci-pool/lease
                         """,
                         returnStdout: true
                     ).trim()
@@ -357,7 +357,7 @@ pipeline {
         always {
             sh """
                 curl -X POST -H "Authorization: Bearer ${OCPCTL_TOKEN}" \
-                https://ocpctl.mg.dog8code.com/api/v1/pools/clusters/${CLUSTER_ID}/release
+                https://ocpctl.<BASE_DOMAIN>/api/v1/pools/clusters/${CLUSTER_ID}/release
             """
         }
     }
@@ -388,7 +388,7 @@ spec:
           -H "Authorization: Bearer $(cat /secrets/token)" \
           -H "Content-Type: application/json" \
           -d "{\"leased_by\": \"tekton-$(context.pipelineRun.name)\"}" \
-          https://ocpctl.mg.dog8code.com/api/v1/pools/$(params.pool-name)/lease)
+          https://ocpctl.<BASE_DOMAIN>/api/v1/pools/$(params.pool-name)/lease)
 
         echo $RESPONSE | jq -r '.cluster_id' > $(results.cluster-id.path)
         echo $RESPONSE | jq -r '.kubeconfig_path' > $(results.kubeconfig-path.path)
@@ -480,6 +480,6 @@ spec:
 ## References
 
 - **User Guide**: [docs/user-guide/cluster-pools.md](../user-guide/cluster-pools.md)
-- **API Documentation**: https://ocpctl.mg.dog8code.com/swagger/index.html
+- **API Documentation**: https://ocpctl.<BASE_DOMAIN>/swagger/index.html
 - **Cluster Management**: [docs/user-guide/cluster-management.md](../user-guide/cluster-management.md)
 - **Architecture**: [docs/architecture/architecture.md](../architecture/architecture.md)

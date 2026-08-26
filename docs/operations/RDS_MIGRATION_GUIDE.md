@@ -6,7 +6,7 @@ This guide explains how to run database migrations against the RDS PostgreSQL in
 
 ## Prerequisites
 
-1. **Network Access**: Ensure you can reach the RDS instance at `44.201.165.78:5432`
+1. **Network Access**: Ensure you can reach the RDS instance at `<PROD_HOST>:5432`
 2. **RDS Password**: Obtain the database password from AWS Secrets Manager or your team
 3. **goose CLI**: Install if not already present: `go install github.com/pressly/goose/v3/cmd/goose@latest`
 
@@ -30,7 +30,7 @@ If you need to go through a bastion host:
 
 ```bash
 # Step 1: Open SSH tunnel (in a separate terminal)
-ssh -L 5432:44.201.165.78:5432 ec2-user@your-bastion-host
+ssh -L 5432:<PROD_HOST>:5432 ec2-user@your-bastion-host
 
 # Step 2: Run migration through tunnel (in another terminal)
 export RDS_PASSWORD='your-rds-password-here'
@@ -45,7 +45,7 @@ export RDS_HOST='localhost'  # Use localhost since we're tunneling
 aws ssm start-session \
     --target i-xxxxxxxxxxxxx \
     --document-name AWS-StartPortForwardingSessionToRemoteHost \
-    --parameters '{"portNumber":["5432"],"localPortNumber":["5432"],"host":["44.201.165.78"]}'
+    --parameters '{"portNumber":["5432"],"localPortNumber":["5432"],"host":["<PROD_HOST>"]}'
 
 # In another terminal:
 export RDS_PASSWORD='your-rds-password-here'
@@ -98,7 +98,7 @@ ERROR: new row for relation "orphaned_resources" violates check constraint
 
 ### Connection Timeout
 ```
-dial tcp 44.201.165.78:5432: connect: operation timed out
+dial tcp <PROD_HOST>:5432: connect: operation timed out
 ```
 
 **Solution:** Your IP is not whitelisted in the RDS security group. Either:

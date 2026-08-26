@@ -814,9 +814,9 @@ EC2_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
 echo "EC2 Public IP: $EC2_IP"
 
 # Create Route53 A record (replace with your hosted zone ID)
-# Example: opsctl.dog8code.com -> EC2 IP
-HOSTED_ZONE_ID="Z0123456789ABCDEFGHIJ"  # Your dog8code.com hosted zone ID
-DOMAIN_NAME="opsctl.dog8code.com"
+# Example: opsctl.<BASE_DOMAIN> -> EC2 IP
+HOSTED_ZONE_ID="Z0123456789ABCDEFGHIJ"  # Your <BASE_DOMAIN> hosted zone ID
+DOMAIN_NAME="opsctl.<BASE_DOMAIN>"
 
 # Create change batch file
 cat > /tmp/route53-change.json <<EOF
@@ -843,7 +843,7 @@ dig +short $DOMAIN_NAME
 # Should return your EC2 IP
 
 # Update nginx to use the domain name
-sudo sed -i 's/server_name _;/server_name opsctl.dog8code.com;/' /etc/nginx/conf.d/ocpctl.conf
+sudo sed -i 's/server_name _;/server_name opsctl.<BASE_DOMAIN>;/' /etc/nginx/conf.d/ocpctl.conf
 
 # Test nginx config
 sudo nginx -t
@@ -860,8 +860,8 @@ rm /tmp/route53-change.json
 # List all hosted zones
 aws route53 list-hosted-zones --query 'HostedZones[*].[Name,Id]' --output table
 
-# Find dog8code.com zone
-aws route53 list-hosted-zones --query 'HostedZones[?Name==`dog8code.com.`].Id' --output text
+# Find <BASE_DOMAIN> zone
+aws route53 list-hosted-zones --query 'HostedZones[?Name==`<BASE_DOMAIN>.`].Id' --output text
 ```
 
 ### Enable HTTPS (Recommended)
@@ -873,7 +873,7 @@ Once you have a custom domain configured, enable HTTPS with Let's Encrypt:
 sudo dnf install -y certbot python3-certbot-nginx
 
 # Get certificate (requires domain name to be already configured in nginx)
-sudo certbot --nginx -d opsctl.dog8code.com
+sudo certbot --nginx -d opsctl.<BASE_DOMAIN>
 
 # Follow prompts to:
 # - Enter email for renewal notifications
@@ -888,8 +888,8 @@ sudo certbot renew --dry-run
 ```
 
 After enabling HTTPS, your ocpctl instance will be accessible at:
-- **HTTP:** http://opsctl.dog8code.com (redirects to HTTPS)
-- **HTTPS:** https://opsctl.dog8code.com
+- **HTTP:** http://opsctl.<BASE_DOMAIN> (redirects to HTTPS)
+- **HTTPS:** https://opsctl.<BASE_DOMAIN>
 
 ### Restrict IAM Authentication by Group (Optional)
 
@@ -1456,7 +1456,7 @@ Now that the worker has AWS permissions, you can test cluster creation:
 4. **Configure cluster:**
    - Name: `test-cluster-001`
    - Region: `us-east-1`
-   - Base domain: `mg.dog8code.com` (should be pre-selected)
+   - Base domain: `<BASE_DOMAIN>` (should be pre-selected)
    - OpenShift version: `4.20.3` (or latest from profile)
 5. **Click Create**
 6. **Monitor progress:** Watch the cluster status change from "Pending" → "Creating" → "Ready"
@@ -1473,7 +1473,7 @@ sudo journalctl -u ocpctl-worker -f
 2. Generate install-config.yaml
 3. Run `openshift-install create cluster`
 4. Create AWS resources (VPC, subnets, security groups, EC2 instances, load balancers)
-5. Create Route53 DNS records in your `mg.dog8code.com` hosted zone
+5. Create Route53 DNS records in your `<BASE_DOMAIN>` hosted zone
 6. Wait for cluster bootstrap to complete
 7. Store kubeconfig and cluster details in database
 
@@ -1911,7 +1911,7 @@ Use the provided script to create a properly configured VPC:
 
 ```bash
 # SSH to your ocpctl server (or run locally with AWS credentials)
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@<your-ec2-ip>
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<your-ec2-ip>
 cd /opt/ocpctl
 
 # Run the VPC creation script
@@ -2006,8 +2006,8 @@ regions:
 
 baseDomains:
   allowlist:
-    - mg.dog8code.com
-  default: mg.dog8code.com
+    - <BASE_DOMAIN>
+  default: <BASE_DOMAIN>
 
 compute:
   controlPlane:
@@ -2089,7 +2089,7 @@ curl -X POST http://localhost:8080/api/clusters \
     "version": "4.20.3",
     "profile": "aws-sno-my-vpc",
     "region": "us-east-1",
-    "base_domain": "mg.dog8code.com",
+    "base_domain": "<BASE_DOMAIN>",
     "owner": "your-name",
     "team": "platform-team",
     "cost_center": "733",
@@ -2113,7 +2113,7 @@ curl -X POST http://localhost:8080/api/clusters \
     "version": "4.20.3",
     "profile": "aws-sno-my-vpc",
     "region": "us-east-1",
-    "base_domain": "mg.dog8code.com",
+    "base_domain": "<BASE_DOMAIN>",
     "owner": "your-name",
     "team": "platform-team",
     "cost_center": "733",

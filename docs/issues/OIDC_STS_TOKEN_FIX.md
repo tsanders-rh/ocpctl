@@ -199,13 +199,13 @@ import (
    ```
 3. **Deploy to EC2:**
    ```bash
-   scp bin/ocpctl-worker ec2-user@54.205.91.62:/tmp/
-   ssh ec2-user@54.205.91.62 "sudo mv /tmp/ocpctl-worker /opt/ocpctl/bin/ocpctl-worker && sudo systemctl restart ocpctl-worker"
+   scp bin/ocpctl-worker ec2-user@<PROD_HOST>:/tmp/
+   ssh ec2-user@<PROD_HOST> "sudo mv /tmp/ocpctl-worker /opt/ocpctl/bin/ocpctl-worker && sudo systemctl restart ocpctl-worker"
    ```
 4. **Create test cluster (sanders14):**
    ```bash
    # Via API or CLI
-   curl -X POST http://54.205.91.62:8080/api/clusters \
+   curl -X POST http://<PROD_HOST>:8080/api/clusters \
      -H "Content-Type: application/json" \
      -d '{"name":"sanders14","platform":"aws","version":"4.20.3","profile":"aws-sno-test"}'
    ```

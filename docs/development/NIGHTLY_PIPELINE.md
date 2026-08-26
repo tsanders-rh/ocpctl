@@ -63,7 +63,7 @@ regressions in the real provisioning path before they reach production.
 
 Prefer a **long-lived API key** (`/api/v1/api-keys`, `RequireAuthDual`) for the
 nightly over a username/password login, and store it as a secret. All calls hit
-the dev public URL `https://dev.ocpctl.mg.dog8code.com`.
+the dev public URL `https://dev.ocpctl.<BASE_DOMAIN>`.
 
 ---
 
@@ -72,7 +72,7 @@ the dev public URL `https://dev.ocpctl.mg.dog8code.com`.
 | Secret | Used for |
 |--------|----------|
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `deploy-env.sh dev` (S3 upload) + worker AWS access |
-| `DEV_SSH_KEY` | private key matching `~/.ssh/ocpctl-dev-key` (restart dev services) |
+| `DEV_SSH_KEY` | private key matching `~/.ssh/<DEV_SSH_KEY>` (restart dev services) |
 | `DEV_API_TOKEN` | dev API key for the smoke test's cluster calls |
 | `NIGHTLY_PULL_SECRET` *(if not already on dev)* | OpenShift pull secret |
 | `SLACK_WEBHOOK_URL` *(optional)* | failure notification |
@@ -118,7 +118,7 @@ jobs:
           --health-timeout 5s --health-retries 5
     env:
       TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/ocpctl_test
-      API: https://dev.ocpctl.mg.dog8code.com
+      API: https://dev.ocpctl.<BASE_DOMAIN>
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1
@@ -134,9 +134,9 @@ jobs:
       # 2. Deploy to dev (build is unit-test-gated inside the script too)
       - name: Install dev SSH key
         run: |
-          mkdir -p ~/.ssh && echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/ocpctl-dev-key
-          chmod 600 ~/.ssh/ocpctl-dev-key
-          ssh-keyscan 44.214.230.178 >> ~/.ssh/known_hosts 2>/dev/null || true
+          mkdir -p ~/.ssh && echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/<DEV_SSH_KEY>
+          chmod 600 ~/.ssh/<DEV_SSH_KEY>
+          ssh-keyscan <DEV_HOST> >> ~/.ssh/known_hosts 2>/dev/null || true
       - name: Deploy to dev
         run: ./scripts/deploy-env.sh dev
 

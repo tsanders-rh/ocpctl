@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deployment
 - Version: `v0.20260405.2d69e13`
-- Deployed to production API (52.90.135.148)
+- Deployed to production API (<PROD_HOST>)
 - Deployed to autoscale workers (via S3 and ASG refresh)
 - All bootstrap artifacts synced to S3
 
@@ -130,7 +130,7 @@ kubernetes.io/cluster/<infraID>: owned
 
 ### Deployment
 - Version: `v0.20260317.bca1feb`
-- Deployed to production API (52.90.135.148) and Worker (98.92.107.90)
+- Deployed to production API (<PROD_HOST>) and Worker (<WORKER_HOST>)
 - IAM permissions applied to both instance roles
 - Services restarted to pick up new credentials
 

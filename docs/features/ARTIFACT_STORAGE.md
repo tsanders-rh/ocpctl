@@ -156,7 +156,7 @@ aws iam put-role-policy \
 ./scripts/deploy.sh
 
 # Restart workers (autoscale instances will get new version automatically)
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 'sudo systemctl restart ocpctl-worker'
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> 'sudo systemctl restart ocpctl-worker'
 ```
 
 ### 3. Verify
@@ -186,18 +186,18 @@ aws s3 ls s3://ocpctl-binaries/clusters/<cluster-id>/artifacts/ --recursive
 1. Find which worker has the cluster's artifacts:
    ```bash
    # Check main worker
-   ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
+   ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> \
      "ls /var/lib/ocpctl/clusters/<cluster-id>/metadata.json"
 
    # Check autoscale worker
-   ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@54.235.4.38 \
+   ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<TEST_HOST> \
      "ls /var/lib/ocpctl/clusters/<cluster-id>/metadata.json"
    ```
 
 2. Upload artifacts to S3 manually:
    ```bash
    # SSH to worker with artifacts
-   ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@<worker-ip>
+   ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<worker-ip>
 
    # Upload to S3
    aws s3 sync /var/lib/ocpctl/clusters/<cluster-id>/ \
@@ -239,7 +239,7 @@ aws iam get-role-policy --role-name ocpctl-worker-role --policy-name ocpctl-work
 **Debug:**
 ```bash
 # Check what was downloaded
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@<worker-ip> \
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<worker-ip> \
   "ls -la /var/lib/ocpctl/clusters/<cluster-id>/"
 
 # Check S3 structure

@@ -19,8 +19,8 @@ This script will:
 
 ### Prerequisites
 
-- SSH key at `~/.ssh/ocpctl-test-key.pem`
-- Access to production server (52.90.135.148)
+- SSH key at `~/.ssh/<TEST_SSH_KEY>.pem`
+- Access to production server (<PROD_HOST>)
 - Node.js and npm installed locally
 
 ### Production Configuration
@@ -47,10 +47,10 @@ cd web && npm run build
 tar -czf /tmp/web-deploy.tar.gz .next package.json package-lock.json next.config.mjs
 
 # 3. Upload
-scp -i ~/.ssh/ocpctl-test-key.pem /tmp/web-deploy.tar.gz ec2-user@52.90.135.148:/tmp/
+scp -i ~/.ssh/<TEST_SSH_KEY>.pem /tmp/web-deploy.tar.gz ec2-user@<PROD_HOST>:/tmp/
 
 # 4. Deploy (SSH to server)
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST>
 sudo tar -xzf /tmp/web-deploy.tar.gz -C /opt/ocpctl/web
 sudo chown -R ocpctl:ocpctl /opt/ocpctl/web
 sudo systemctl restart ocpctl-web
@@ -60,25 +60,25 @@ sudo systemctl restart ocpctl-web
 
 **Check service status:**
 ```bash
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> \
   'sudo systemctl status ocpctl-web'
 ```
 
 **Check logs:**
 ```bash
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> \
   'sudo journalctl -u ocpctl-web -f'
 ```
 
 **Verify deployment location:**
 ```bash
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> \
   'cat /etc/systemd/system/ocpctl-web.service | grep WorkingDirectory'
 ```
 
 **Check what's actually deployed:**
 ```bash
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148 \
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST> \
   'ls -lh /opt/ocpctl/web/.next/BUILD_ID'
 ```
 
@@ -93,7 +93,7 @@ The deployment script automatically backs up the previous `.next` directory:
 To restore a previous version:
 
 ```bash
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@52.90.135.148
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@<PROD_HOST>
 sudo rm -rf /opt/ocpctl/web/.next
 sudo mv /opt/ocpctl/web/.next.backup-YYYYMMDD-HHMMSS /opt/ocpctl/web/.next
 sudo systemctl restart ocpctl-web

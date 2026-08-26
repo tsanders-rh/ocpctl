@@ -15,12 +15,12 @@ This document outlines the strategy for creating a dev/test environment for ocpc
 ## Architecture Comparison
 
 ### Production Environment (Current)
-- **Server**: t3.large (2 vCPU, 8GB RAM) @ 44.201.165.78
+- **Server**: t3.large (2 vCPU, 8GB RAM) @ <PROD_HOST>
 - **Database**: RDS PostgreSQL (db.t3.medium)
 - **S3 Buckets**:
   - `ocpctl-binaries` (worker binaries, profiles, addons)
   - `ocpctl-artifacts` (cluster kubeconfigs, installer dirs)
-- **Domain**: https://ocpctl.mg.dog8code.com
+- **Domain**: https://ocpctl.<BASE_DOMAIN>
 - **Services**: API (port 8080), Worker (port 8081)
 - **Autoscale Workers**: ASG with t3.xlarge instances
 
@@ -30,7 +30,7 @@ This document outlines the strategy for creating a dev/test environment for ocpc
 - **S3 Buckets**:
   - Option 1: Separate buckets (`ocpctl-dev-binaries`, `ocpctl-dev-artifacts`)
   - Option 2: Same buckets with `dev/` prefix
-- **Domain**: https://dev.ocpctl.mg.dog8code.com
+- **Domain**: https://dev.ocpctl.<BASE_DOMAIN>
 - **Services**: API (port 8080), Worker (port 8081)
 - **Autoscale Workers**: None (single worker node to reduce costs)
 
@@ -55,7 +55,7 @@ This document outlines the strategy for creating a dev/test environment for ocpc
 aws ec2 run-instances \
   --image-id ami-0c55b159cbfafe1f0 \  # Ubuntu 22.04 LTS
   --instance-type t3.medium \
-  --key-name ocpctl-dev-key \
+  --key-name <DEV_SSH_KEY> \
   --security-group-ids sg-xxx \
   --subnet-id subnet-xxx \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ocpctl-dev},{Key=Environment,Value=dev}]'
@@ -104,10 +104,10 @@ aws s3 mb s3://ocpctl-dev-artifacts
 #### 1.4 DNS Configuration
 ```bash
 # Add DNS record for dev environment
-# dev.ocpctl.mg.dog8code.com -> [dev-server-ip]
+# dev.ocpctl.<BASE_DOMAIN> -> [dev-server-ip]
 
 # Update nginx on dev server for SSL
-# Use Let's Encrypt for dev.ocpctl.mg.dog8code.com
+# Use Let's Encrypt for dev.ocpctl.<BASE_DOMAIN>
 ```
 
 ### Phase 2: Configuration Management
@@ -141,7 +141,7 @@ JWT_AUTH_ENABLED=true
 IAM_AUTH_ENABLED=false
 
 # CORS
-CORS_ORIGINS=http://localhost:3000,https://dev.ocpctl.mg.dog8code.com
+CORS_ORIGINS=http://localhost:3000,https://dev.ocpctl.<BASE_DOMAIN>
 
 # Environment marker
 ENVIRONMENT=dev
@@ -190,16 +190,16 @@ case $ENVIRONMENT in
   dev)
     API_HOST="[dev-server-ip]"
     WORKER_HOSTS=("[dev-server-ip]")
-    SSH_KEY="$HOME/.ssh/ocpctl-dev-key"
+    SSH_KEY="$HOME/.ssh/<DEV_SSH_KEY>"
     S3_BUCKET="s3://ocpctl-dev-binaries"
-    DOMAIN="dev.ocpctl.mg.dog8code.com"
+    DOMAIN="dev.ocpctl.<BASE_DOMAIN>"
     ;;
   production)
-    API_HOST="44.201.165.78"
-    WORKER_HOSTS=("44.201.165.78")
-    SSH_KEY="$HOME/.ssh/ocpctl-production-key"
+    API_HOST="<PROD_HOST>"
+    WORKER_HOSTS=("<PROD_HOST>")
+    SSH_KEY="$HOME/.ssh/<PROD_SSH_KEY>"
     S3_BUCKET="s3://ocpctl-binaries"
-    DOMAIN="ocpctl.mg.dog8code.com"
+    DOMAIN="ocpctl.<BASE_DOMAIN>"
     ;;
   *)
     echo "Unknown environment: $ENVIRONMENT"
@@ -226,7 +226,7 @@ ssh ocpctl-dev "cd /opt/ocpctl/current && ./ocpctl-api migrate up"
 ssh ocpctl-dev "psql \$DATABASE_URL -c '\dt'"
 
 # 3. Test application with new schema
-curl https://dev.ocpctl.mg.dog8code.com/health
+curl https://dev.ocpctl.<BASE_DOMAIN>/health
 
 # 4. During maintenance window, apply to production
 ssh ocpctl-production "cd /opt/ocpctl/current && ./ocpctl-api migrate up"
@@ -350,7 +350,7 @@ git merge feature/my-new-feature
 git push  # Triggers GitHub Action -> deploys to dev
 
 # 6. Test on dev environment
-curl https://dev.ocpctl.mg.dog8code.com/api/v1/clusters
+curl https://dev.ocpctl.<BASE_DOMAIN>/api/v1/clusters
 
 # 7. During maintenance window, deploy to production
 git checkout -b release/v1.2.3
@@ -371,7 +371,7 @@ make test
 ./scripts/deploy-env.sh dev
 
 # 4. Test on dev
-curl https://dev.ocpctl.mg.dog8code.com/health
+curl https://dev.ocpctl.<BASE_DOMAIN>/health
 
 # 5. Fast-track to production during emergency
 ./scripts/deploy-env.sh production
@@ -434,7 +434,7 @@ DELETE FROM jobs WHERE environment = 'dev' AND created_at < NOW() - INTERVAL '7 
 - [ ] Provision dev EC2 instance (t3.medium)
 - [ ] Create dev RDS instance (db.t3.micro) OR dev database on shared RDS
 - [ ] Create S3 buckets or configure prefixes
-- [ ] Setup DNS for dev.ocpctl.mg.dog8code.com
+- [ ] Setup DNS for dev.ocpctl.<BASE_DOMAIN>
 - [ ] Configure SSL certificates (Let's Encrypt)
 
 ### Week 2: Configuration & Deployment
@@ -508,7 +508,7 @@ ssh ocpctl-production "sudo ls -d /opt/ocpctl/releases/*"
 ./scripts/deploy-env.sh production v0.20260601.abc1234
 
 # Emergency rollback
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@44.201.165.78 \
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> \
   "sudo systemctl stop ocpctl-api ocpctl-worker && \
    sudo ln -snf /opt/ocpctl/releases/v0.20260601.abc1234 /opt/ocpctl/current && \
    sudo systemctl start ocpctl-api ocpctl-worker"

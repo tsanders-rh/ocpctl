@@ -53,7 +53,7 @@ The janitor automatically cleans up DESTROYED clusters after 30 days and FAILED 
 aws ec2 run-instances \
   --image-id ami-05e86b3611c60b0b4 \
   --instance-type t3.large \
-  --key-name ocpctl-production-key \
+  --key-name <PROD_SSH_KEY> \
   --security-group-ids sg-0b95b88e8835675a6 \
   --iam-instance-profile Name=ocpctl-ec2-role \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ocpctl-production},{Key=Environment,Value=production},{Key=Purpose,Value=ocpctl-api-server}]' \
@@ -146,7 +146,7 @@ aws rds describe-db-instances \
 
 ```bash
 # SSH to EC2
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@<ip>
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<ip>
 
 # Install PostgreSQL
 sudo apt-get update && sudo apt-get install -y postgresql
@@ -175,7 +175,7 @@ psql "postgresql://ocpctl_user:$DB_PASSWORD@localhost:5432/ocpctl" -c '\dt'
 
 ```bash
 # SSH to EC2
-ssh -i ~/.ssh/ocpctl-production-key ubuntu@<ip>
+ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<ip>
 
 # Clone and setup
 git clone https://github.com/tsanders-rh/ocpctl.git
@@ -274,7 +274,7 @@ sudo apt-get install -y nginx certbot python3-certbot-nginx
 
 ```bash
 # From your local machine
-scp -i ~/.ssh/ocpctl-production-key deploy/nginx/ocpctl.conf ubuntu@<ec2-ip>:~/
+scp -i ~/.ssh/<PROD_SSH_KEY> deploy/nginx/ocpctl.conf ubuntu@<ec2-ip>:~/
 
 # On EC2 instance
 sudo mv ~/ocpctl.conf /etc/nginx/sites-available/ocpctl
@@ -286,7 +286,7 @@ sudo rm /etc/nginx/sites-enabled/default  # Remove default site
 
 ```bash
 # Request SSL certificate (requires DNS pointing to this server)
-sudo certbot --nginx -d ocpctl.mg.dog8code.com
+sudo certbot --nginx -d ocpctl.<BASE_DOMAIN>
 
 # Certbot will automatically:
 # 1. Request certificate from Let's Encrypt
@@ -304,7 +304,7 @@ sudo certbot renew --dry-run
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/ssl/private/ocpctl.key \
   -out /etc/ssl/certs/ocpctl.crt \
-  -subj "/CN=ocpctl.mg.dog8code.com"
+  -subj "/CN=ocpctl.<BASE_DOMAIN>"
 
 # Nginx is already configured to use these paths
 ```
@@ -320,13 +320,13 @@ sudo systemctl enable nginx
 sudo systemctl start nginx
 
 # Verify HTTPS works
-curl https://ocpctl.mg.dog8code.com/health
+curl https://ocpctl.<BASE_DOMAIN>/health
 ```
 
 **Update DNS:**
 
-Ensure `ocpctl.mg.dog8code.com` points to your EC2 instance public IP:
-- Route53 A record: `ocpctl.mg.dog8code.com` → `<ec2-public-ip>`
+Ensure `ocpctl.<BASE_DOMAIN>` points to your EC2 instance public IP:
+- Route53 A record: `ocpctl.<BASE_DOMAIN>` → `<ec2-public-ip>`
 
 ## 8. Start Services
 
@@ -415,7 +415,7 @@ WORKER_IP=$(aws ec2 describe-instances \
     --query 'AutoScalingGroups[0].Instances[0].InstanceId' --output text) \
   --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 
-ssh -i ~/.ssh/ocpctl-test-key.pem ec2-user@$WORKER_IP
+ssh -i ~/.ssh/<TEST_SSH_KEY>.pem ec2-user@$WORKER_IP
 
 # On worker, check service
 sudo systemctl status ocpctl-worker
@@ -437,7 +437,7 @@ sudo journalctl -u ocpctl-worker -f
 curl http://localhost:8080/health
 
 # Health check (HTTPS - production)
-curl https://ocpctl.mg.dog8code.com/health
+curl https://ocpctl.<BASE_DOMAIN>/health
 
 # Create test cluster
 curl -X POST http://localhost:8080/api/v1/clusters \

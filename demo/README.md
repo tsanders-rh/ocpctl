@@ -77,7 +77,7 @@ Edit `record-demo.js` and modify the `CONFIG` object:
 
 ```javascript
 const CONFIG = {
-  url: 'https://dev.ocpctl.mg.dog8code.com',  // Change environment
+  url: 'https://dev.ocpctl.<BASE_DOMAIN>',  // Change environment
   email: 'admin@example.com',                  // Change credentials
   password: 'changeme',
   clusterName: 'demo-platform-overview',        // Change cluster name

@@ -88,10 +88,10 @@ Complete these steps **before** starting deployment:
 - [ ] **SSH Key Pair Created**
   ```bash
   # Check if key exists
-  ls -l ~/.ssh/ocpctl-production-key.pem
+  ls -l ~/.ssh/<PROD_SSH_KEY>.pem
 
   # Verify key is in AWS
-  aws ec2 describe-key-pairs --key-names ocpctl-production-key
+  aws ec2 describe-key-pairs --key-names <PROD_SSH_KEY>
   ```
 
 - [ ] **Git Installed**
@@ -184,7 +184,7 @@ Complete these checks after creating AWS infrastructure:
 
 - [ ] **SSH Access Works**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem -o ConnectTimeout=5 ubuntu@$EC2_IP echo "SSH OK"
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem -o ConnectTimeout=5 ubuntu@$EC2_IP echo "SSH OK"
 
   # Should return: "SSH OK"
   ```
@@ -246,7 +246,7 @@ Complete these checks after creating AWS infrastructure:
 - [ ] **Role Can Be Assumed by EC2**
   ```bash
   # SSH to instance and test
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "aws sts get-caller-identity --query 'Arn' --output text"
 
   # Should return:
@@ -255,7 +255,7 @@ Complete these checks after creating AWS infrastructure:
 
 - [ ] **Parameter Store Access Works**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "aws ssm get-parameter --name '/ocpctl/database/password' --query 'Parameter.Name' --output text"
 
   # Should return: "/ocpctl/database/password"
@@ -267,7 +267,7 @@ Complete these checks after creating AWS infrastructure:
 
 - [ ] **PostgreSQL Running**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo systemctl is-active postgresql"
 
   # Should return: "active"
@@ -275,7 +275,7 @@ Complete these checks after creating AWS infrastructure:
 
 - [ ] **Database Exists**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo -u postgres psql -l | grep ocpctl"
 
   # Should show ocpctl database
@@ -283,7 +283,7 @@ Complete these checks after creating AWS infrastructure:
 
 - [ ] **Database Connection Works**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     'DB_PASSWORD=$(aws ssm get-parameter --name /ocpctl/database/password --with-decryption --query Parameter.Value --output text); psql "postgres://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl" -c "\dt"'
 
   # Should connect and list tables (may be empty before migrations)
@@ -307,7 +307,7 @@ Complete these checks after creating AWS infrastructure:
     --query 'DBInstances[0].Endpoint.Address' \
     --output text)
 
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "DB_PASSWORD=\$(aws ssm get-parameter --name /ocpctl/database/password --with-decryption --query Parameter.Value --output text); psql \"postgres://ocpctl_user:\${DB_PASSWORD}@${DB_ENDPOINT}:5432/ocpctl\" -c 'SELECT version();'"
 
   # Should return PostgreSQL version
@@ -323,7 +323,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Binaries Exist with Correct Permissions**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "ls -lh /opt/ocpctl/bin/"
 
   # Should show:
@@ -333,12 +333,12 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Binaries Are Executable**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "/opt/ocpctl/bin/ocpctl-api --version"
 
   # Should return version like: v0.20260508.abc1234
 
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "/opt/ocpctl/bin/ocpctl-worker --version"
 
   # Should return version
@@ -346,7 +346,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Profiles Deployed**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "ls -1 /opt/ocpctl/profiles/ | wc -l"
 
   # Should return: 30+ (number of profile files)
@@ -354,7 +354,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Addons Deployed**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "ls -1 /opt/ocpctl/addons/ 2>/dev/null | wc -l"
 
   # Should return: 4+ (cnv, mta, mtc, oadp)
@@ -364,7 +364,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **API Environment File Exists**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo test -f /etc/ocpctl/api.env && echo 'Found' || echo 'Missing'"
 
   # Should return: "Found"
@@ -372,7 +372,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **API Environment File Permissions**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo stat -c '%a %U:%G' /etc/ocpctl/api.env"
 
   # Should return: "600 root:root" or "600 ocpctl:ocpctl"
@@ -380,7 +380,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Worker Environment File Exists**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo test -f /etc/ocpctl/worker.env && echo 'Found' || echo 'Missing'"
 
   # Should return: "Found"
@@ -388,7 +388,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Worker Has Pull Secret**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo grep 'OPENSHIFT_PULL_SECRET' /etc/ocpctl/worker.env | grep -q 'CHANGEME' && echo 'NOT SET' || echo 'SET'"
 
   # Should return: "SET"
@@ -396,7 +396,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Database URL Configured**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo grep 'DATABASE_URL' /etc/ocpctl/api.env | grep -v 'CHANGEME' | wc -l"
 
   # Should return: 1
@@ -406,7 +406,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **openshift-install Available**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "openshift-install version"
 
   # Should return version like: 4.20.3
@@ -414,7 +414,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **oc CLI Available**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "oc version --client"
 
   # Should return client version
@@ -422,7 +422,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **ccoctl Available**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "ccoctl version"
 
   # Should return version or help text
@@ -430,7 +430,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **AWS CLI Available**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "aws --version"
 
   # Should return: aws-cli/2.x.x
@@ -440,7 +440,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Service Files Installed**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "ls -1 /etc/systemd/system/ocpctl-*.service"
 
   # Should show:
@@ -450,7 +450,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Services Enabled**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "systemctl is-enabled ocpctl-api ocpctl-worker"
 
   # Should return: "enabled" for both
@@ -458,7 +458,7 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **Services Running**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "systemctl is-active ocpctl-api ocpctl-worker"
 
   # Should return: "active" for both
@@ -466,12 +466,12 @@ Complete these checks after deploying binaries and configuring services:
 
 - [ ] **No Service Failures in Logs**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-api --since '5 minutes ago' | grep -i error | wc -l"
 
   # Should return: 0 (no errors)
 
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-worker --since '5 minutes ago' | grep -i error | wc -l"
 
   # Should return: 0 (no errors)
@@ -487,7 +487,7 @@ Complete these checks after all services are running:
 
 - [ ] **API Health Check (Internal)**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "curl -s http://localhost:8080/health | jq '.status'"
 
   # Should return: "ok"
@@ -495,7 +495,7 @@ Complete these checks after all services are running:
 
 - [ ] **Worker Health Check (Internal)**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "curl -s http://localhost:8081/health | jq '.status'"
 
   # Should return: "ok"
@@ -503,7 +503,7 @@ Complete these checks after all services are running:
 
 - [ ] **Worker Ready Check**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "curl -s http://localhost:8081/ready | jq '.status'"
 
   # Should return: "ready"
@@ -513,7 +513,7 @@ Complete these checks after all services are running:
 
 - [ ] **Migrations Completed**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-api --since '10 minutes ago' | grep -i migration | tail -5"
 
   # Should show migration completion messages
@@ -521,7 +521,7 @@ Complete these checks after all services are running:
 
 - [ ] **Tables Created**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     'DB_PASSWORD=$(aws ssm get-parameter --name /ocpctl/database/password --with-decryption --query Parameter.Value --output text); psql "postgres://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl" -c "\dt" | grep -E "clusters|jobs|users" | wc -l'
 
   # Should return: 3 or more (core tables exist)
@@ -529,7 +529,7 @@ Complete these checks after all services are running:
 
 - [ ] **Schema Version Recorded**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     'DB_PASSWORD=$(aws ssm get-parameter --name /ocpctl/database/password --with-decryption --query Parameter.Value --output text); psql "postgres://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl" -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;"'
 
   # Should return latest migration version (e.g., 00041)
@@ -539,7 +539,7 @@ Complete these checks after all services are running:
 
 - [ ] **Nginx Running**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "systemctl is-active nginx"
 
   # Should return: "active"
@@ -547,7 +547,7 @@ Complete these checks after all services are running:
 
 - [ ] **Nginx Configuration Valid**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo nginx -t"
 
   # Should return: "syntax is ok" and "test is successful"
@@ -594,7 +594,7 @@ Complete these checks after all services are running:
 
 - [ ] **Web Service Running**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "systemctl is-active ocpctl-web"
 
   # Should return: "active"
@@ -622,7 +622,7 @@ Complete these checks after all services are running:
 
 - [ ] **Environment Files Secured**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo find /etc/ocpctl -name '*.env' -exec stat -c '%a %n' {} \;"
 
   # All should return: "600 /etc/ocpctl/*.env"
@@ -630,7 +630,7 @@ Complete these checks after all services are running:
 
 - [ ] **No Secrets in Logs**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-api -u ocpctl-worker | grep -i 'password\|secret\|token' | grep -v 'REDACTED' | wc -l"
 
   # Should return: 0 (secrets should be redacted)
@@ -638,7 +638,7 @@ Complete these checks after all services are running:
 
 - [ ] **Database Password Not Default**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo grep 'CHANGEME' /etc/ocpctl/api.env | wc -l"
 
   # Should return: 0
@@ -646,7 +646,7 @@ Complete these checks after all services are running:
 
 - [ ] **JWT Secret Not Default**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo grep 'CHANGEME-generate' /etc/ocpctl/api.env | wc -l"
 
   # Should return: 0
@@ -654,7 +654,7 @@ Complete these checks after all services are running:
 
 - [ ] **Pull Secret File Removed from Home**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "test -f ~/pull-secret.json && echo 'SECURITY RISK' || echo 'OK'"
 
   # Should return: "OK"
@@ -699,7 +699,7 @@ Complete these checks after all services are running:
 
 - [ ] **Worker Picks Up Job**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-worker --since '1 minute ago' | grep -i 'processing job' | tail -1"
 
   # Should show job processing log
@@ -707,7 +707,7 @@ Complete these checks after all services are running:
 
 - [ ] **Work Directory Created**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo ls -d /var/lib/ocpctl/clusters/$CLUSTER_ID"
 
   # Should show directory path
@@ -716,7 +716,7 @@ Complete these checks after all services are running:
 - [ ] **Cluster Installation Progressing**
   ```bash
   # Wait 5-10 minutes, then check
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo tail -20 /var/lib/ocpctl/clusters/$CLUSTER_ID/.openshift_install.log"
 
   # Should show openshift-install progress
@@ -742,7 +742,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **Database Query Performance**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     'DB_PASSWORD=$(aws ssm get-parameter --name /ocpctl/database/password --with-decryption --query Parameter.Value --output text); time psql "postgres://ocpctl_user:${DB_PASSWORD}@localhost:5432/ocpctl" -c "SELECT COUNT(*) FROM clusters;"'
 
   # Should complete in < 50ms
@@ -750,7 +750,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **Memory Usage Reasonable**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "free -h"
 
   # Available memory should be > 2GB on t3.large
@@ -758,7 +758,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **Disk Space Sufficient**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "df -h / | tail -1 | awk '{print \$5}'"
 
   # Usage should be < 50%
@@ -772,7 +772,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **API Logs Accessible**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-api -n 10"
 
   # Should show recent log entries
@@ -780,7 +780,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **Worker Logs Accessible**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl -u ocpctl-worker -n 10"
 
   # Should show recent log entries (job polling)
@@ -788,7 +788,7 @@ curl -X DELETE http://$EC2_IP/api/v1/clusters/$CLUSTER_ID
 
 - [ ] **Log Rotation Configured**
   ```bash
-  ssh -i ~/.ssh/ocpctl-production-key.pem ubuntu@$EC2_IP \
+  ssh -i ~/.ssh/<PROD_SSH_KEY>.pem ubuntu@$EC2_IP \
     "sudo journalctl --disk-usage"
 
   # Should show reasonable disk usage (< 500MB)
