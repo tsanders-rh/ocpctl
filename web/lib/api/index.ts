@@ -9,3 +9,4 @@ export { postConfigApi } from "./endpoints/postconfig";
 export { clusterTemplatesApi } from "./endpoints/clusterTemplates";
 export { poolsApi } from "./endpoints/pools";
 export { adminApi } from "./endpoints/admin";
+export { alertsApi } from "./endpoints/alerts";
