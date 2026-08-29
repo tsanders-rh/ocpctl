@@ -22,6 +22,53 @@ log() {
     echo "[ensure-installers] $1"
 }
 
+# version_marker returns the path of the sidecar file that records which concrete
+# patch a major.minor slot was installed from. Used to detect drift for binaries
+# (like ccoctl) that have no reliable `version` subcommand.
+version_marker() {
+    local binary=$1
+    local version=$2
+    echo "${INSTALL_DIR}/.${binary}-${version}.version"
+}
+
+# record_installed_version stamps the slot with the concrete patch just installed.
+record_installed_version() {
+    local binary=$1
+    local version=$2
+    local full_version=$3
+    echo "${full_version}" > "$(version_marker "${binary}" "${version}")" 2>/dev/null || true
+}
+
+# installed_version reports the concrete patch of an already-installed slot binary.
+# It prefers the binary's own `version` output (authoritative) and falls back to
+# the sidecar marker for binaries that can't self-report (e.g. ccoctl). Prints an
+# empty string when the version can't be determined.
+installed_version() {
+    local path=$1
+    local binary=$2
+    local version=$3
+    local v=""
+
+    case "$binary" in
+        openshift-install)
+            # `openshift-install version` prints "<progname> <version>" where
+            # <progname> is however the binary was invoked (often the full path,
+            # e.g. "/usr/local/bin/openshift-install-4.22 4.22.1"), so don't anchor
+            # on the name — grab the first semver-looking token on the first line.
+            v=$("$path" version 2>/dev/null | awk 'NR==1{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\./){print $i; exit}}')
+            ;;
+        oc)
+            v=$("$path" version --client 2>/dev/null | awk -F': ' '/Client Version/{print $2; exit}')
+            ;;
+    esac
+
+    if [ -z "$v" ]; then
+        v=$(cat "$(version_marker "${binary}" "${version}")" 2>/dev/null || true)
+    fi
+
+    echo "$v"
+}
+
 # is_dev_preview_version detects if a version string is a dev-preview/candidate release
 is_dev_preview_version() {
     local version=$1
@@ -43,15 +90,19 @@ get_mirror_base_path() {
 }
 
 download_from_s3() {
-    local version=$1
-    local binary=$2
-    local s3_path="${S3_BUCKET}/installers/${version}/${binary}"
+    local full_version=$1
+    local version=$2
+    local binary=$3
+    # Key the S3 cache by the CONCRETE patch, not major.minor. A major.minor key
+    # would happily serve a stale patch (e.g. an old 4.22.0-ec.5 cached under
+    # "4.22/") forever — the exact drift that made GA 4.22 resolve to ec.5.
+    local s3_path="${S3_BUCKET}/installers/${full_version}/${binary}"
     local local_path="${INSTALL_DIR}/${binary}-${version}"
 
-    log "Attempting to download ${binary} ${version} from S3..."
+    log "Attempting to download ${binary} ${full_version} from S3..."
     if aws s3 cp "${s3_path}" "${local_path}" 2>/dev/null; then
         chmod +x "${local_path}"
-        log "✓ Downloaded ${binary} ${version} from S3"
+        log "✓ Downloaded ${binary} ${full_version} from S3"
         return 0
     fi
     return 1
@@ -122,7 +173,7 @@ download_from_mirror() {
             rm -rf "${tmp_dir}"
 
             # Upload to S3 for future use
-            upload_to_s3 "${version}" "${binary}" "${local_path}"
+            upload_to_s3 "${full_version}" "${binary}" "${local_path}"
 
             log "✓ Downloaded ${binary} ${full_version} from mirror"
             return 0
@@ -199,7 +250,7 @@ download_from_ci_release() {
             rm -rf "${tmp_dir}"
 
             # Upload to S3 for future use
-            upload_to_s3 "${version}" "${binary}" "${local_path}"
+            upload_to_s3 "${full_version}" "${binary}" "${local_path}"
 
             log "✓ Downloaded ${binary} ${full_version} from CI release stream"
             return 0
@@ -216,16 +267,17 @@ download_from_ci_release() {
 }
 
 upload_to_s3() {
-    local version=$1
+    local full_version=$1
     local binary=$2
     local local_path=$3
-    local s3_path="${S3_BUCKET}/installers/${version}/${binary}"
+    # Cache under the concrete patch so the key can never serve a stale build.
+    local s3_path="${S3_BUCKET}/installers/${full_version}/${binary}"
 
-    log "Uploading ${binary} ${version} to S3 for future use..."
+    log "Uploading ${binary} ${full_version} to S3 for future use..."
     if aws s3 cp "${local_path}" "${s3_path}" 2>/dev/null; then
-        log "✓ Uploaded ${binary} ${version} to S3"
+        log "✓ Uploaded ${binary} ${full_version} to S3"
     else
-        log "Warning: Failed to upload ${binary} ${version} to S3 (non-fatal)"
+        log "Warning: Failed to upload ${binary} ${full_version} to S3 (non-fatal)"
     fi
 }
 
@@ -233,35 +285,40 @@ ensure_binary() {
     local version=$1
     local binary=$2
     local local_path="${INSTALL_DIR}/${binary}-${version}"
-
-    # Check if binary already exists
-    if [ -f "${local_path}" ]; then
-        log "✓ ${binary} ${version} already installed"
-        return 0
-    fi
-
-    log "${binary} ${version} not found, attempting download..."
-
-    # Try S3 first (cached binaries)
-    if download_from_s3 "${version}" "${binary}"; then
-        return 0
-    fi
-
-    # Fall back to mirror.openshift.com with default patch version
     local full_version="${DEFAULT_PATCHES[${version}]}"
+
     if [ -z "${full_version}" ]; then
+        # No pinned patch for this slot — fall back to a plain presence check.
+        if [ -e "${local_path}" ]; then
+            log "✓ ${binary} ${version} already installed"
+            return 0
+        fi
         log "✗ No default patch version configured for ${version}"
         return 1
     fi
 
-    # Try public mirror (priority source)
-    if download_from_mirror "${full_version}" "${binary}"; then
-        return 0
+    # Version-aware skip: only treat the slot as satisfied when the installed
+    # binary actually IS the pinned patch. A plain "-f exists" check let a stale
+    # binary (e.g. a leftover 4.22.0-ec.5) sit in the 4.22 slot forever and made
+    # GA 4.22 creates resolve to ec.5. Re-download whenever the version drifts.
+    if [ -e "${local_path}" ]; then
+        local have
+        have=$(installed_version "${local_path}" "${binary}" "${version}")
+        if [ "${have}" = "${full_version}" ]; then
+            log "✓ ${binary} ${version} already installed (${have})"
+            return 0
+        fi
+        log "↻ ${binary} ${version}: installed '${have:-unknown}', want '${full_version}' — refreshing"
+        rm -f "${local_path}"
     fi
 
-    # Final fallback: CI release stream (for RC/FC/EC versions not on public mirror)
-    log "Mirror download failed, trying CI release stream..."
-    if download_from_ci_release "${full_version}" "${binary}"; then
+    log "${binary} ${version} (${full_version}) not present or stale, attempting download..."
+
+    # S3 cache first, then public mirror, then CI release stream (RC/FC/EC/nightly).
+    if download_from_s3 "${full_version}" "${version}" "${binary}" \
+        || download_from_mirror "${full_version}" "${binary}" \
+        || { log "Mirror download failed, trying CI release stream..."; download_from_ci_release "${full_version}" "${binary}"; }; then
+        record_installed_version "${binary}" "${version}" "${full_version}"
         return 0
     fi
 
