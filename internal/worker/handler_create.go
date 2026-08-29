@@ -165,6 +165,42 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		log.Printf("Successfully merged custom pull secret")
 	}
 
+	// Nightly (registry.ci) resolution.
+	//
+	// A prerelease profile can list a nightly *stream alias* like
+	// "4.23.0-0.nightly" — an aspirational entry, not a concrete build. Nightly
+	// payloads live only in registry.ci.openshift.org (never the customer mirror
+	// or quay ocp-release), so we must:
+	//   1. require registry.ci auth in the pull secret (loud, actionable error);
+	//   2. resolve the alias to a concrete dated build via the release-controller
+	//      and persist it, so a retry can't drift to a newer nightly and DESTROY
+	//      targets the exact build;
+	//   3. pin openshift-install to that build's registry.ci pull spec via a
+	//      release-image override (set on the installer below).
+	var nightlyReleaseImage string
+	if installer.IsNightly(cluster.Version) {
+		if !pullSecretHasRegistryCI(pullSecret) {
+			return fmt.Errorf("cannot install nightly %s: pull secret is missing registry.ci.openshift.org auth — the registry.ci token expires ~monthly; refresh it with scripts/refresh-ci-pull-secret.sh and redeploy", cluster.Version)
+		}
+
+		log.Printf("Resolving nightly %s via release-controller...", cluster.Version)
+		rel, err := installer.ResolveNightly(ctx, cluster.Version)
+		if err != nil {
+			return fmt.Errorf("resolve nightly %s: %w", cluster.Version, err)
+		}
+		log.Printf("Resolved nightly %s -> %s (%s)", cluster.Version, rel.Name, rel.PullSpec)
+
+		// Persist the concrete build so retries are stable and destroy targets
+		// the exact build. Keep the in-memory copy in sync for the rest of this run.
+		if rel.Name != cluster.Version {
+			if err := h.store.Clusters.Update(ctx, cluster.ID, map[string]interface{}{"version": rel.Name}); err != nil {
+				return fmt.Errorf("persist resolved nightly version %s: %w", rel.Name, err)
+			}
+			cluster.Version = rel.Name
+		}
+		nightlyReleaseImage = rel.PullSpec
+	}
+
 	// Build create cluster request for renderer
 	// Convert BaseDomain pointer to string
 	baseDomain := ""
@@ -219,6 +255,14 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 	inst, err := installer.NewInstallerForVersion(cluster.Version)
 	if err != nil {
 		return fmt.Errorf("create installer for version %s: %w", cluster.Version, err)
+	}
+
+	// Pin openshift-install to the resolved nightly payload in registry.ci
+	// (the binary's built-in default points at quay ocp-release, which has no
+	// nightly builds).
+	if nightlyReleaseImage != "" {
+		inst.SetReleaseImageOverride(nightlyReleaseImage)
+		log.Printf("Pinned installer to nightly release image: %s", nightlyReleaseImage)
 	}
 
 	// Set credentials mode if specified (e.g., "Static" for permanent credentials)
@@ -1818,4 +1862,18 @@ func mergePullSecrets(standardSecret, customSecret string) (string, error) {
 	}
 
 	return string(merged), nil
+}
+
+// pullSecretHasRegistryCI reports whether the Docker-config pull secret contains
+// an auth entry for registry.ci.openshift.org, which is required to pull nightly
+// release payloads (and to extract the matching openshift-install binary).
+func pullSecretHasRegistryCI(pullSecret string) bool {
+	var ps struct {
+		Auths map[string]json.RawMessage `json:"auths"`
+	}
+	if err := json.Unmarshal([]byte(pullSecret), &ps); err != nil {
+		return false
+	}
+	_, ok := ps.Auths["registry.ci.openshift.org"]
+	return ok
 }

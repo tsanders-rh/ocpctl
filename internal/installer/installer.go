@@ -45,11 +45,31 @@ var ocpctlVersion = "dev"
 
 // Installer wraps the openshift-install CLI
 type Installer struct {
-	binaryPath      string
-	ccoCtlPath      string
-	timeout         time.Duration
-	useSTSCreds     bool   // true if using temporary STS/IMDS credentials
-	credentialsMode string // credentials mode from cluster request (e.g., "Static", "Manual")
+	binaryPath           string
+	ccoCtlPath           string
+	timeout              time.Duration
+	useSTSCreds          bool   // true if using temporary STS/IMDS credentials
+	credentialsMode      string // credentials mode from cluster request (e.g., "Static", "Manual")
+	releaseImageOverride string // pins openshift-install to a specific release payload (nightly registry.ci builds)
+}
+
+// SetReleaseImageOverride pins openshift-install to a specific release payload
+// by exporting OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE for the install/manifest
+// commands. This is required for nightly builds, whose payloads live only in
+// registry.ci.openshift.org and are not discoverable from the default
+// quay ocp-release stream. Pass the registry.ci pull spec, e.g.
+// "registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-08-25-215343".
+func (i *Installer) SetReleaseImageOverride(pullSpec string) {
+	i.releaseImageOverride = pullSpec
+}
+
+// releaseImageOverrideEnv returns the OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE
+// entries to append to a command environment, or nil when no override is set.
+func (i *Installer) releaseImageOverrideEnv() []string {
+	if i.releaseImageOverride == "" {
+		return nil
+	}
+	return []string{fmt.Sprintf("OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=%s", i.releaseImageOverride)}
 }
 
 // CredentialType represents the type of AWS credentials in use
@@ -105,7 +125,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}
 
 	// Validate supported version
-	supportedVersions := []string{"4.14", "4.16", "4.18", "4.19", "4.20", "4.21", "4.22", "5.0", "5.1"}
+	supportedVersions := []string{"4.14", "4.16", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "5.0", "5.1"}
 	isSupported := false
 	for _, v := range supportedVersions {
 		if majorMinor == v {
@@ -114,7 +134,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		}
 	}
 	if !isSupported {
-		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.14, 4.16, 4.18-4.22, 5.0-5.1)", version)
+		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.14, 4.16, 4.18-4.23, 5.0-5.1)", version)
 	}
 
 	// Check for version-specific binaries in environment (exact version first, then major.minor)
@@ -134,6 +154,23 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		exactVersionPath := fmt.Sprintf("/usr/local/bin/openshift-install-%s", version)
 		if _, err := os.Stat(exactVersionPath); err == nil {
 			binaryPath = exactVersionPath
+		}
+	}
+
+	// Fall back to a previously downloaded on-demand binary in the writable
+	// install dir. On-demand versions (notably registry.ci nightlies) land here
+	// because the worker runs as non-root and cannot write /usr/local/bin; a
+	// later retry/destroy must be able to find them without re-downloading.
+	if binaryPath == "" {
+		dlDir := installerDownloadDir()
+		for _, cand := range []string{
+			filepath.Join(dlDir, fmt.Sprintf("openshift-install-%s", version)),
+			filepath.Join(dlDir, fmt.Sprintf("openshift-install-%s", majorMinor)),
+		} {
+			if _, err := os.Stat(cand); err == nil {
+				binaryPath = cand
+				break
+			}
 		}
 	}
 
@@ -167,24 +204,43 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 
 	// Verify binaries exist - if not, try downloading on-demand
 	if _, err := os.Stat(binaryPath); err != nil {
-		log.Printf("openshift-install binary not found for version %s at %s, attempting to download...", version, binaryPath)
+		dlDir := installerDownloadDir()
+		log.Printf("openshift-install binary not found for version %s at %s, downloading into %s...", version, binaryPath, dlDir)
 
-		// Try downloading the specific version on-demand
-		if downloadErr := downloadInstallerOnDemand(version); downloadErr != nil {
+		// Try downloading the specific version on-demand (no sudo: dlDir is
+		// writable by the worker user and the pull secret is passed through).
+		if downloadErr := downloadInstallerOnDemand(version, dlDir); downloadErr != nil {
 			return nil, fmt.Errorf("openshift-install binary not found for version %s at %s: %w (download attempt failed: %v)", version, binaryPath, err, downloadErr)
 		}
 
-		// Verify download succeeded
-		if _, err := os.Stat(binaryPath); err != nil {
-			return nil, fmt.Errorf("openshift-install binary not found for version %s at %s after download attempt: %w", version, binaryPath, err)
+		// Prefer the exact-version binary the download just produced.
+		exactPath := filepath.Join(dlDir, fmt.Sprintf("openshift-install-%s", version))
+		if _, statErr := os.Stat(exactPath); statErr == nil {
+			binaryPath = exactPath
+		} else if _, statErr := os.Stat(binaryPath); statErr != nil {
+			return nil, fmt.Errorf("openshift-install binary not found for version %s after download attempt (looked at %s and %s)", version, exactPath, binaryPath)
 		}
 
-		log.Printf("Successfully downloaded openshift-install for version %s", version)
+		log.Printf("Successfully downloaded openshift-install for version %s to %s", version, binaryPath)
 	}
 
 	if _, err := os.Stat(ccoCtlPath); err != nil {
-		log.Printf("Warning: ccoctl binary not found for version %s at %s (Manual mode may not work): %v", version, ccoCtlPath, err)
-		// Don't fail - ccoctl is only needed for Manual/STS mode
+		// The on-demand download (above) also fetches ccoctl best-effort into the
+		// writable dir; prefer it if the standard location has none.
+		dlDir := installerDownloadDir()
+		for _, cand := range []string{
+			filepath.Join(dlDir, fmt.Sprintf("ccoctl-%s", version)),
+			filepath.Join(dlDir, fmt.Sprintf("ccoctl-%s", majorMinor)),
+		} {
+			if _, statErr := os.Stat(cand); statErr == nil {
+				ccoCtlPath = cand
+				break
+			}
+		}
+		if _, err := os.Stat(ccoCtlPath); err != nil {
+			log.Printf("Warning: ccoctl binary not found for version %s at %s (Manual mode may not work): %v", version, ccoCtlPath, err)
+			// Don't fail - ccoctl is only needed for Manual/STS mode
+		}
 	}
 
 	// Detect if we're using STS/IMDS credentials
@@ -203,14 +259,18 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 			log.Printf("Warning: failed to remove binary %s: %v", binaryPath, removeErr)
 		}
 
-		// Download the correct version
-		if downloadErr := downloadInstallerOnDemand(version); downloadErr != nil {
+		// Download the correct version into a writable dir.
+		dlDir := installerDownloadDir()
+		if downloadErr := downloadInstallerOnDemand(version, dlDir); downloadErr != nil {
 			return nil, fmt.Errorf("failed to download correct installer version %s: %w", version, downloadErr)
 		}
 
-		// Verify the new binary exists
-		if _, err := os.Stat(binaryPath); err != nil {
-			return nil, fmt.Errorf("installer binary not found after download: %w", err)
+		// Prefer the exact-version binary the download just produced.
+		exactPath := filepath.Join(dlDir, fmt.Sprintf("openshift-install-%s", version))
+		if _, statErr := os.Stat(exactPath); statErr == nil {
+			binaryPath = exactPath
+		} else if _, statErr := os.Stat(binaryPath); statErr != nil {
+			return nil, fmt.Errorf("installer binary not found after download: %w", statErr)
 		}
 
 		log.Printf("✓ Downloaded correct installer version: %s", version)
@@ -321,7 +381,75 @@ func parseMajorMinor(majorMinor string) (major, minor int, ok bool) {
 
 // downloadInstallerOnDemand attempts to download the OpenShift installer for a specific version
 // Uses download-specific-version.sh script which tries S3 → Public Mirror → CI Release Stream
-func downloadInstallerOnDemand(version string) error {
+// installerDownloadDir returns a directory the current process can write
+// on-demand installer binaries into.
+//
+// The worker runs as the unprivileged "ocpctl" user, which cannot write
+// /usr/local/bin (root:root) and has no passwordless sudo. Pre-staged
+// EC/GA binaries land in /usr/local/bin at boot via ensure-installers.sh
+// (which runs as root), but the first on-demand download of an
+// otherwise-uninstalled version (notably registry.ci nightlies) must go
+// somewhere the worker can actually write. Resolution order:
+//
+//   - OCPCTL_INSTALLER_DIR (explicit override)
+//   - /usr/local/bin, only if writable (root/dev contexts)
+//   - the first writable/creatable of the ocpctl-owned dirs below
+func installerDownloadDir() string {
+	if d := os.Getenv("OCPCTL_INSTALLER_DIR"); d != "" {
+		return d
+	}
+	if isDirWritable("/usr/local/bin") {
+		return "/usr/local/bin"
+	}
+	candidates := []string{}
+	if home := os.Getenv("HOME"); home != "" {
+		candidates = append(candidates, filepath.Join(home, "bin"))
+	}
+	candidates = append(candidates,
+		"/opt/ocpctl/bin",
+		"/var/lib/ocpctl/bin",
+		"/tmp/ocpctl-bin",
+	)
+	for _, dir := range candidates {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			continue
+		}
+		if isDirWritable(dir) {
+			return dir
+		}
+	}
+	// Last resort: return the first candidate even if we could not verify it;
+	// the download will surface a concrete error.
+	return candidates[len(candidates)-1]
+}
+
+// isDirWritable reports whether dir exists and the current process can create
+// files in it, by attempting (and removing) a probe file.
+func isDirWritable(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	probe := filepath.Join(dir, ".ocpctl-write-probe")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	os.Remove(probe)
+	return true
+}
+
+// downloadInstallerOnDemand fetches the openshift-install (and, best-effort,
+// ccoctl/oc) binaries for a specific version into installDir by invoking
+// download-specific-version.sh.
+//
+// It deliberately does NOT use sudo: installDir is chosen to be writable by the
+// current (worker) user, and the pull secret is passed straight through from our
+// process environment. Shelling out via sudo would both require a passwordless
+// sudoers grant the worker does not have and strip OPENSHIFT_PULL_SECRET under
+// the default env_reset.
+func downloadInstallerOnDemand(version, installDir string) error {
 	// Path to download script
 	scriptPath := "/opt/ocpctl/scripts/download-specific-version.sh"
 
@@ -334,15 +462,14 @@ func downloadInstallerOnDemand(version string) error {
 		}
 	}
 
-	log.Printf("Running download script for version %s...", version)
+	log.Printf("Running download script for version %s into %s...", version, installDir)
 
-	// Execute download script with full version - use sudo since /usr/local/bin requires root
-	cmd := exec.Command("sudo", "/bin/bash", scriptPath, version, "/usr/local/bin")
+	cmd := exec.Command("/bin/bash", scriptPath, version, installDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Pass OPENSHIFT_PULL_SECRET environment variable (required for CI releases)
-	// sudo preserves environment with -E, but we'll explicitly set it
+	// Pass OPENSHIFT_PULL_SECRET explicitly (required to extract CI/registry.ci
+	// release payloads). No sudo means the environment is not reset.
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("OPENSHIFT_PULL_SECRET=%s", os.Getenv("OPENSHIFT_PULL_SECRET")),
 	)
@@ -580,6 +707,7 @@ func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (st
 	cmd.Env = append(envVars,
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
 	)
+	cmd.Env = append(cmd.Env, i.releaseImageOverrideEnv()...)
 
 	err := cmd.Run()
 	if err != nil {
@@ -696,6 +824,7 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 	cmd.Env = append(envVars,
 		fmt.Sprintf("OPENSHIFT_INSTALL_INVOKER=ocpctl"),
 	)
+	cmd.Env = append(cmd.Env, i.releaseImageOverrideEnv()...)
 
 	err := cmd.Run()
 	if err != nil {
@@ -991,6 +1120,14 @@ func (i *Installer) extractCredentialRequests(ctx context.Context, workDir, outp
 
 // getReleaseImage gets the OpenShift release image version
 func (i *Installer) getReleaseImage(ctx context.Context) (string, error) {
+	// If we've pinned a release image (nightly registry.ci payload), that is the
+	// authoritative image — `openshift-install version` reports the binary's
+	// built-in default, not the override, so CredentialsRequest extraction must
+	// use the override to match what the install will actually deploy.
+	if i.releaseImageOverride != "" {
+		return i.releaseImageOverride, nil
+	}
+
 	// Run openshift-install version to get release image
 	cmd := exec.CommandContext(ctx, i.binaryPath, "version")
 
