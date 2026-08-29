@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useCurrentUser } from "@/lib/hooks/useAuth";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { GlobalAlertBanner } from "@/components/layout/GlobalAlertBanner";
 
 export default function DashboardLayout({
   children,
@@ -32,7 +33,10 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Header />
-        <main className="flex-1 overflow-auto bg-gray-50 p-6">{children}</main>
+        <main className="flex-1 overflow-auto bg-gray-50 p-6">
+          <GlobalAlertBanner />
+          {children}
+        </main>
       </div>
     </div>
   );

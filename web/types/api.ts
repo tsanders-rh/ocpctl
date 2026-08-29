@@ -37,6 +37,29 @@ export enum UserRole {
   VIEWER = "VIEWER",
 }
 
+export enum BroadcastAlertSeverity {
+  INFO = "info",
+  WARNING = "warning",
+  CRITICAL = "critical",
+}
+
+export interface BroadcastAlert {
+  id: string;
+  title: string;
+  body: string;
+  severity: BroadcastAlertSeverity;
+  createdBy?: string;
+  active: boolean;
+  expiresAt?: string;
+  createdAt: string;
+  ackCount: number;
+  totalUsers: number;
+}
+
+export interface BroadcastAlertsResponse {
+  alerts: BroadcastAlert[];
+}
+
 export enum JobType {
   CREATE = "CREATE",
   DESTROY = "DESTROY",

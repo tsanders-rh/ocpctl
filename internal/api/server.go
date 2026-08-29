@@ -435,6 +435,17 @@ func (s *Server) setupRoutes() {
 	// System/Infrastructure routes (admin only)
 	systemHandler := NewSystemHandler(s.store, s.config.Version)
 	adminGroup.GET("/system/infrastructure", systemHandler.GetInfrastructure)
+
+	// Broadcast alert routes
+	broadcastAlertHandler := NewBroadcastAlertHandler(s.store)
+	// Admin authoring/management (admin only)
+	adminGroup.POST("/broadcast-alerts", broadcastAlertHandler.Create)
+	adminGroup.GET("/broadcast-alerts", broadcastAlertHandler.ListAll)
+	adminGroup.DELETE("/broadcast-alerts/:id", broadcastAlertHandler.Deactivate)
+	// User-facing active/acknowledge (any authenticated user, including viewers)
+	broadcastAlertsGroup := v1.Group("/broadcast-alerts", auth.RequireAuthDual(s.auth, s.iamAuth))
+	broadcastAlertsGroup.GET("/active", broadcastAlertHandler.ListActive)
+	broadcastAlertsGroup.POST("/:id/ack", broadcastAlertHandler.Acknowledge)
 }
 
 // healthCheck returns basic health status
