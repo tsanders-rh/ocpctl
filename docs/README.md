@@ -108,6 +108,7 @@ User documentation and guides:
 
 Operations and maintenance guides:
 
+- **[CI_PULL_SECRET_REFRESH.md](operations/CI_PULL_SECRET_REFRESH.md)** - **NEW!** Runbook for rotating the registry.ci pull secret (required for nightly builds; expires ~monthly)
 - **[resource-tagging-operations.md](operations/resource-tagging-operations.md)** - Operational procedures for AWS resource tagging and monitoring
 - **[AWS_IAM_PERMISSIONS.md](operations/AWS_IAM_PERMISSIONS.md)** - IAM permissions required for OCPCTL operations
   - OpenShift cluster creation/destruction

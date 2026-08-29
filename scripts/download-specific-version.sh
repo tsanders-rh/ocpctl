@@ -14,6 +14,11 @@ if [ -z "$FULL_VERSION" ]; then
     exit 1
 fi
 
+# Ensure the install dir exists. On-demand downloads may target an
+# ocpctl-writable dir (e.g. /opt/ocpctl/bin) that isn't pre-created; without
+# this, the mv of the extracted binary fails.
+mkdir -p "$INSTALL_DIR"
+
 # Extract major.minor
 MAJOR_MINOR=$(echo "$FULL_VERSION" | cut -d- -f1 | cut -d. -f1,2)
 
@@ -41,6 +46,13 @@ is_dev_preview_version() {
     [[ "$version" == *"-ec."* ]] || \
     [[ "$version" == *"-0.nightly"* ]] || \
     [[ "$version" == *"-fc."* ]]
+}
+
+# Nightly builds (e.g. 4.23.0-0.nightly-2026-08-25-215343) exist ONLY in
+# registry.ci.openshift.org — they are never published to the public mirror or
+# quay ocp-release — so they need a dedicated extraction path.
+is_nightly_version() {
+    [[ "$1" == *"-0.nightly-"* ]]
 }
 
 get_mirror_base_path() {
@@ -137,10 +149,17 @@ download_from_ci_release() {
     log "Extracting from CI release image: ${release_image}"
     log "This may take 1-2 minutes..."
 
-    if ! oc adm release extract --tools "${release_image}" --to="${tmp_dir}" --registry-config="${pull_secret_file}" 2>&1 | grep -v "warning:"; then
+    # Capture output and check oc's own exit status; piping through
+    # `grep -v warning:` under `set -o pipefail` can turn a clean (output-less)
+    # success into a false failure (grep exits 1 on empty input).
+    local extract_log="${tmp_dir}/extract.log"
+    if ! oc adm release extract --tools "${release_image}" --to="${tmp_dir}" --registry-config="${pull_secret_file}" >"${extract_log}" 2>&1; then
+        grep -v "warning:" "${extract_log}" >&2 || true
         rm -rf "${tmp_dir}"
         return 1
     fi
+    grep -v "warning:" "${extract_log}" >&2 || true
+    rm -f "${extract_log}"
 
     # Find tarball
     local tarball=""
@@ -183,24 +202,100 @@ download_from_ci_release() {
     return 1
 }
 
+# Extract a single binary from a nightly payload in registry.ci.openshift.org.
+# Unlike download_from_ci_release (which pulls the multi-tool tarball from quay
+# ocp-release), nightly payloads only live in registry.ci, and `oc adm release
+# extract --command=<name>` pulls the one binary directly (no tarball).
+download_from_registry_ci() {
+    local binary=$1
+
+    if ! command -v oc &> /dev/null; then
+        error "oc CLI not found - cannot extract from registry.ci"
+        return 1
+    fi
+
+    if [ -z "${OPENSHIFT_PULL_SECRET:-}" ]; then
+        error "OPENSHIFT_PULL_SECRET not set - cannot extract from registry.ci"
+        return 1
+    fi
+
+    local release_image="registry.ci.openshift.org/ocp/release:${FULL_VERSION}"
+    local tmp_dir=$(mktemp -d)
+    local local_path="${INSTALL_DIR}/${binary}-${FULL_VERSION}"
+    local pull_secret_file="${tmp_dir}/pull-secret.json"
+
+    echo "$OPENSHIFT_PULL_SECRET" > "$pull_secret_file"
+
+    log "Extracting ${binary} from registry.ci payload: ${release_image}"
+    log "This may take 1-2 minutes..."
+
+    # --command extracts the named binary directly into the target dir.
+    # NOTE: capture output to a file and check oc's own exit status. Do NOT pipe
+    # oc through `grep -v warning:` — on a clean success oc prints nothing, grep
+    # then exits 1 on empty input, and `set -o pipefail` would turn that into a
+    # false "extract failed" even though the binary extracted fine.
+    local extract_log="${tmp_dir}/extract.log"
+    if ! oc adm release extract --command="${binary}" --to="${tmp_dir}" "${release_image}" --registry-config="${pull_secret_file}" >"${extract_log}" 2>&1; then
+        grep -v "warning:" "${extract_log}" >&2 || true
+        error "oc adm release extract failed for ${binary} from ${release_image} (registry.ci token may be expired)"
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+    grep -v "warning:" "${extract_log}" >&2 || true
+    rm -f "${extract_log}"
+
+    if [ -f "${tmp_dir}/${binary}" ]; then
+        mv "${tmp_dir}/${binary}" "${local_path}"
+        chmod +x "${local_path}"
+        rm -rf "${tmp_dir}"
+
+        # Cache in S3 for future workers.
+        aws s3 cp "${local_path}" "s3://${S3_BUCKET}/installers/${FULL_VERSION}/${binary}" 2>/dev/null || true
+
+        success "Extracted ${binary} from registry.ci payload"
+        return 0
+    fi
+
+    error "${binary} not found in registry.ci payload after extract"
+    rm -rf "${tmp_dir}"
+    return 1
+}
+
+# Download one binary trying sources in the right order for this version.
+# For nightlies, S3 cache -> registry.ci (mirror/quay have no nightlies).
+# Otherwise, S3 cache -> public mirror -> quay ocp-release.
+download_binary() {
+    local binary=$1
+
+    if download_from_s3 "$binary"; then
+        return 0
+    fi
+
+    if is_nightly_version "$FULL_VERSION"; then
+        download_from_registry_ci "$binary"
+        return $?
+    fi
+
+    if download_from_mirror "$binary"; then
+        return 0
+    fi
+    download_from_ci_release "$binary"
+}
+
 # Main download logic
 main() {
     log "Downloading OpenShift ${FULL_VERSION} installer binaries..."
 
     local failed=0
 
-    # Download openshift-install
+    # Download openshift-install (fatal)
     if [ -f "${INSTALL_DIR}/openshift-install-${FULL_VERSION}" ]; then
         log "✓ openshift-install-${FULL_VERSION} already exists"
     else
         log "Downloading openshift-install..."
-        if ! download_from_s3 "openshift-install"; then
-            if ! download_from_mirror "openshift-install"; then
-                if ! download_from_ci_release "openshift-install"; then
-                    error "Failed to download openshift-install from all sources"
-                    failed=1
-                fi
-            fi
+        if ! download_binary "openshift-install"; then
+            error "Failed to download openshift-install from all sources"
+            failed=1
         fi
     fi
 
@@ -209,12 +304,8 @@ main() {
         log "✓ ccoctl-${FULL_VERSION} already exists"
     else
         log "Downloading ccoctl..."
-        if ! download_from_s3 "ccoctl"; then
-            if ! download_from_mirror "ccoctl"; then
-                if ! download_from_ci_release "ccoctl"; then
-                    log "Warning: Failed to download ccoctl (non-fatal)"
-                fi
-            fi
+        if ! download_binary "ccoctl"; then
+            log "Warning: Failed to download ccoctl (non-fatal)"
         fi
     fi
 
@@ -223,12 +314,8 @@ main() {
         log "✓ oc-${FULL_VERSION} already exists"
     else
         log "Downloading oc..."
-        if ! download_from_s3 "oc"; then
-            if ! download_from_mirror "oc"; then
-                if ! download_from_ci_release "oc"; then
-                    log "Warning: Failed to download oc (non-fatal)"
-                fi
-            fi
+        if ! download_binary "oc"; then
+            log "Warning: Failed to download oc (non-fatal)"
         fi
     fi
 
