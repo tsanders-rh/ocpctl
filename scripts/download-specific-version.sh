@@ -21,6 +21,17 @@ mkdir -p "$INSTALL_DIR"
 
 # Extract major.minor
 MAJOR_MINOR=$(echo "$FULL_VERSION" | cut -d- -f1 | cut -d. -f1,2)
+MAJOR=$(echo "$FULL_VERSION" | cut -d. -f1)
+
+# registry.ci release repo for nightly payloads. 4.x nightlies live under
+# "ocp/release"; 5.x (and later) live under a per-major stream
+# "ocp/release-<major>" (e.g. "ocp/release-5"). Using the wrong repo yields a
+# "manifest unknown" pull error. Keep in sync with registryCIReleaseRepo() in
+# internal/installer/nightly.go.
+REGISTRY_CI_RELEASE_REPO="registry.ci.openshift.org/ocp/release"
+if [[ "$MAJOR" =~ ^[0-9]+$ ]] && [ "$MAJOR" -ge 5 ]; then
+    REGISTRY_CI_RELEASE_REPO="registry.ci.openshift.org/ocp/release-${MAJOR}"
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -219,7 +230,7 @@ download_from_registry_ci() {
         return 1
     fi
 
-    local release_image="registry.ci.openshift.org/ocp/release:${FULL_VERSION}"
+    local release_image="${REGISTRY_CI_RELEASE_REPO}:${FULL_VERSION}"
     local tmp_dir=$(mktemp -d)
     local local_path="${INSTALL_DIR}/${binary}-${FULL_VERSION}"
     local pull_secret_file="${tmp_dir}/pull-secret.json"

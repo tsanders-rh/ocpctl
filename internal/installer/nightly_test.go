@@ -59,10 +59,35 @@ func TestNightlyStream(t *testing.T) {
 }
 
 func TestRegistryCIPullSpec(t *testing.T) {
-	got := RegistryCIPullSpec("4.23.0-0.nightly-2026-08-25-215343")
-	want := "registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-08-25-215343"
-	if got != want {
-		t.Errorf("RegistryCIPullSpec = %q, want %q", got, want)
+	tests := []struct {
+		name  string
+		build string
+		want  string
+	}{
+		{
+			name:  "4.x uses ocp/release",
+			build: "4.23.0-0.nightly-2026-08-25-215343",
+			want:  "registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-08-25-215343",
+		},
+		{
+			// 5.x nightlies live under a per-major stream (ocp/release-5);
+			// using ocp/release yields "manifest unknown" at extract time.
+			name:  "5.x uses ocp/release-5",
+			build: "5.0.0-0.nightly-2026-08-30-014421",
+			want:  "registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-08-30-014421",
+		},
+		{
+			name:  "6.x uses ocp/release-6",
+			build: "6.0.0-0.nightly-2027-01-01-000000",
+			want:  "registry.ci.openshift.org/ocp/release-6:6.0.0-0.nightly-2027-01-01-000000",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RegistryCIPullSpec(tt.build); got != tt.want {
+				t.Errorf("RegistryCIPullSpec(%q) = %q, want %q", tt.build, got, tt.want)
+			}
+		})
 	}
 }
 
