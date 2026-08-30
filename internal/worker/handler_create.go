@@ -265,6 +265,24 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		log.Printf("Pinned installer to nightly release image: %s", nightlyReleaseImage)
 	}
 
+	// Prerelease/nightly installs: relax container image signature verification.
+	//
+	// Nightly OpenShift payload images (quay.io/openshift-release-dev/ocp-v4.0-art-dev,
+	// pulled by digest during node firstboot) are UNSIGNED, but a default cluster's
+	// /etc/containers/policy.json enforces sigstoreSigned on the release repos. The
+	// machine-config-daemon firstboot pull is therefore rejected ("A signature was
+	// required, but no signature exists"), the node never joins, and bootstrapping
+	// times out at cb-bootstrap. GA payloads are signed, so this only affects
+	// prerelease. Inject MachineConfigs that overwrite policy.json with a permissive
+	// policy on all node roles, strictly gated on prerelease/nightly so GA installs
+	// keep full signature enforcement.
+	if prof.Track == "prerelease" || installer.IsNightly(cluster.Version) {
+		for name, content := range installer.PermissiveImagePolicyManifests() {
+			inst.AddOpenShiftManifest(name, content)
+		}
+		log.Printf("Prerelease/nightly install: injected permissive image-signature policy MachineConfigs (unsigned payload images)")
+	}
+
 	// Set credentials mode if specified (e.g., "Static" for permanent credentials)
 	if cluster.CredentialsMode != nil && *cluster.CredentialsMode != "" {
 		inst.SetCredentialsMode(*cluster.CredentialsMode)
