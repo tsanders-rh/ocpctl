@@ -11,9 +11,10 @@ credentialsMode: Auto
 openshiftVersions:
   allowlist:
   - 4.22.0-ec.5
+  - 4.23.0-0.nightly
   - 5.0.0-ec.5
   - 5.0.0-0.nightly
-  default: 4.22.0-ec.5
+  default: 5.0.0-ec.5
 regions:
   allowlist:
   - us-east-1
@@ -85,7 +86,7 @@ metadata:
   - Control plane schedulable (3 nodes suitable for compact testing)
   - Use with rhwa addon for complete operator installation
   - 'Estimated cost: $0.77/hr ($18/day with hibernation)'
-  - 'Supports OpenShift 4.22 EC builds, 5.0 EC builds, and 5.0 nightly builds'
+  - 'Supports OpenShift 4.22 EC builds, 4.23 nightly builds, 5.0 EC builds, and 5.0 nightly builds'
   warnings:
   - Auto credentials mode may have limited IAM permissions for some failure injection scenarios
   - For full AWS access use the GA aws-rhwa-lab profile with Manual credentials
