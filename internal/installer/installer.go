@@ -51,6 +51,24 @@ type Installer struct {
 	useSTSCreds          bool   // true if using temporary STS/IMDS credentials
 	credentialsMode      string // credentials mode from cluster request (e.g., "Static", "Manual")
 	releaseImageOverride string // pins openshift-install to a specific release payload (nightly registry.ci builds)
+
+	// extraManifests are user manifests (filename -> YAML content) written into the
+	// asset dir's openshift/ subdir before "create cluster" runs, so
+	// openshift-install merges them into the generated Ignition/MachineConfig set.
+	// Used for prerelease/nightly installs to relax release-image signature
+	// verification (nightly payload images are unsigned). See AddOpenShiftManifest.
+	extraManifests map[string]string
+}
+
+// AddOpenShiftManifest registers an extra manifest to be written into the install
+// asset dir's openshift/ subdirectory before "create cluster" runs. When any extra
+// manifest is registered, CreateClusterDirect runs "create manifests" first (unless
+// manifests were already generated) so the file participates in manifest rendering.
+func (i *Installer) AddOpenShiftManifest(filename, content string) {
+	if i.extraManifests == nil {
+		i.extraManifests = make(map[string]string)
+	}
+	i.extraManifests[filename] = content
 }
 
 // SetReleaseImageOverride pins openshift-install to a specific release payload
@@ -643,6 +661,24 @@ func (i *Installer) CreateCluster(ctx context.Context, workDir string, metadata 
 // Used for IBM Cloud (CCO already done) or static credentials
 func (i *Installer) CreateClusterDirect(ctx context.Context, workDir string) (string, error) {
 	ensureTempDir()
+
+	// Inject any registered extra manifests into <workDir>/openshift/ so
+	// openshift-install merges them into the rendered Ignition/MachineConfig set.
+	// This requires manifests to have been generated first; generate them here if
+	// they weren't already (e.g. the Manual/CCO path runs "create manifests" itself
+	// before reaching this function, so we must not run it twice).
+	if len(i.extraManifests) > 0 {
+		if !manifestsGenerated(workDir) {
+			log.Printf("Extra manifests registered (%d) - running create manifests before create cluster", len(i.extraManifests))
+			if err := i.CreateManifests(ctx, workDir); err != nil {
+				return "", fmt.Errorf("create manifests (for extra manifest injection): %w", err)
+			}
+		}
+		if err := i.writeExtraManifests(workDir); err != nil {
+			return "", fmt.Errorf("write extra manifests: %w", err)
+		}
+	}
+
 	cmd := exec.CommandContext(ctx, i.binaryPath, "create", "cluster", "--dir", workDir, "--log-level=debug")
 
 	var stdout, stderr bytes.Buffer
@@ -831,6 +867,30 @@ func (i *Installer) CreateManifests(ctx context.Context, workDir string) error {
 		return fmt.Errorf("create manifests failed: %w\nStderr: %s", err, stderr.String())
 	}
 
+	return nil
+}
+
+// manifestsGenerated reports whether "openshift-install create manifests" has
+// already populated the asset dir (its openshift/ subdir exists).
+func manifestsGenerated(workDir string) bool {
+	info, err := os.Stat(filepath.Join(workDir, "openshift"))
+	return err == nil && info.IsDir()
+}
+
+// writeExtraManifests writes registered extra manifests into <workDir>/openshift/.
+// Called after manifests are generated and before "create cluster".
+func (i *Installer) writeExtraManifests(workDir string) error {
+	dir := filepath.Join(workDir, "openshift")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create openshift manifests dir: %w", err)
+	}
+	for name, content := range i.extraManifests {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return fmt.Errorf("write manifest %s: %w", name, err)
+		}
+		log.Printf("Wrote extra install manifest: %s (%d bytes)", path, len(content))
+	}
 	return nil
 }
 
