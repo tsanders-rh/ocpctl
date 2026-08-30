@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,10 +20,26 @@ import (
 // tests can point it at a stub server.
 var releaseControllerBaseURL = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream"
 
-// registryCIReleaseRepo is the registry.ci image repository that hosts nightly
-// release payloads. A concrete build's pull spec is this repo tagged with the
-// build name.
-const registryCIReleaseRepo = "registry.ci.openshift.org/ocp/release"
+// registryCIReleaseRepo returns the registry.ci image repository that hosts
+// nightly release payloads for the given build's major version. A concrete
+// build's pull spec is this repo tagged with the build name.
+//
+// The release-controller publishes 4.x nightlies under "ocp/release" but 5.x
+// (and later) nightlies under a per-major stream "ocp/release-<major>"
+// (e.g. "ocp/release-5"). Getting this wrong yields a "manifest unknown" pull
+// error at install/extract time. The per-build release-controller endpoint
+// returns no pullSpec, so this deterministic mapping is the fallback used for
+// concrete builds — it MUST match where the payload actually lives.
+func registryCIReleaseRepo(buildName string) string {
+	const base = "registry.ci.openshift.org/ocp/release"
+	// buildName looks like "5.0.0-0.nightly-2026-08-30-014421"; the leading
+	// token before the first "." is the major version.
+	major := strings.SplitN(buildName, ".", 2)[0]
+	if n, err := strconv.Atoi(major); err == nil && n >= 5 {
+		return fmt.Sprintf("%s-%d", base, n)
+	}
+	return base
+}
 
 // nightlyAliasRE matches a nightly *stream alias* with no build timestamp,
 // e.g. "4.23.0-0.nightly" or "5.0.0-0.nightly". An alias is not a concrete
@@ -73,9 +91,9 @@ func nightlyStream(version string) (string, bool) {
 }
 
 // RegistryCIPullSpec returns the deterministic registry.ci pull spec for a
-// concrete nightly build name.
+// concrete nightly build name, selecting the correct per-major release repo.
 func RegistryCIPullSpec(buildName string) string {
-	return registryCIReleaseRepo + ":" + buildName
+	return registryCIReleaseRepo(buildName) + ":" + buildName
 }
 
 // releaseControllerResp is the subset of the release-controller JSON we read.
