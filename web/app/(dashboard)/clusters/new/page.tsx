@@ -103,6 +103,11 @@ export default function NewClusterPage() {
   // Holds a template awaiting re-application so it wins over profile-derived defaults.
   const pendingTemplate = useRef<Record<string, unknown> | null>(null);
 
+  // Tracks the last profile/cluster-type combination we applied defaults for, so
+  // the defaults effect below only runs on a genuine profile/cluster-type change
+  // and not on every refetch-driven identity change of `selectedProfile`.
+  const lastAppliedProfileKey = useRef<string | null>(null);
+
   const applyTemplateToForm = (config: Record<string, unknown>) => {
     for (const field of TEMPLATE_FIELDS) {
       const value = config[field];
@@ -243,6 +248,18 @@ export default function NewClusterPage() {
   // Update form defaults when profile changes
   useEffect(() => {
     if (selectedProfile) {
+      // Only apply profile defaults when the profile or cluster type actually
+      // changes. The /profiles response embeds live deployment metrics, so
+      // react-query returns new object references on every refetch (10s interval
+      // + window focus). Keying this effect on selectedProfile's identity alone
+      // would re-run it on those refetches and clobber user edits (e.g. add-on
+      // selections) with profile defaults. Gate on a stable string key instead.
+      const profileKey = `${selectedProfile.name}:${watchedValues.cluster_type}`;
+      if (lastAppliedProfileKey.current === profileKey) {
+        return;
+      }
+      lastAppliedProfileKey.current = profileKey;
+
       // Use setTimeout to ensure Select components are rendered with options before setting values
       setTimeout(() => {
         // Set version based on cluster type
