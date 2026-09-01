@@ -12,7 +12,8 @@ openshiftVersions:
   - '4.19'
   - '4.20'
   - '4.21'
-  default: '4.21'
+  - '4.22'
+  default: '4.22'
 regions:
   allowlist:
   - us-south
@@ -56,7 +57,12 @@ tags:
     ManagedBy: cluster-control-plane
   allowUserTags: true
 features:
-  offHoursScaling: true
+  # Off-hours scaling is disabled for IBM Cloud OpenShift: hibernate is not
+  # implemented for this platform and falls back to DESTROY (see
+  # handler_hibernate.go, hibernateOpenShift -> fallbackToDestroy for
+  # PlatformIBMCloud). Leaving off-hours scaling on would silently destroy idle
+  # clusters. Re-enable only once real IBM hibernate/resume is implemented.
+  offHoursScaling: false
   fipsMode: false
   privateCluster: false
 costControls:
@@ -67,3 +73,8 @@ costControls:
 platformConfig:
   ibmcloud:
     resourceGroup: Default
+metadata:
+  notes:
+    - "OCP 4.22 GA is supported (default). Provisioning uses manual CCO mode: openshift-install create manifests -> ccoctl ibmcloud (service IDs) -> openshift-install create cluster."
+    - "Hibernate is NOT implemented for IBM Cloud OpenShift and falls back to destroy; off-hours scaling is disabled to avoid destroying idle clusters."
+    - "Requires IBMCLOUD_API_KEY on workers (via worker.env / ibmcloud-login.sh) and versioned ccoctl-4.x + openshift-install-4.x (installed by ensure-installers.sh)."

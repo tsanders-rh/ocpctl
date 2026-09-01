@@ -40,6 +40,22 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.Equal(t, 168, prof.Lifecycle.MaxTTLHours)
 	})
 
+	t.Run("ibmcloud-standard supports OCP 4.22 GA and defaults to it", func(t *testing.T) {
+		prof, err := loader.Load("ibmcloud-standard")
+		require.NoError(t, err)
+		require.NotNil(t, prof)
+
+		assert.Equal(t, "ibmcloud", string(prof.Platform))
+		assert.Equal(t, "openshift", string(prof.ClusterType))
+		require.NotNil(t, prof.OpenshiftVersions)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22", "4.22 must be in the allowlist for OADP 1.6")
+		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
+
+		// Hibernate falls back to destroy on IBM Cloud, so off-hours scaling
+		// must stay disabled to avoid destroying idle clusters.
+		assert.False(t, prof.Features.OffHoursScaling)
+	})
+
 	t.Run("returns error for non-existent profile", func(t *testing.T) {
 		_, err := loader.Load("non-existent")
 		assert.Error(t, err)
