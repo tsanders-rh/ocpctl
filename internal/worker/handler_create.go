@@ -104,6 +104,11 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		return fmt.Errorf("get profile for pre-flight check: %w", err)
 	}
 
+	// azureSelection is populated by the Azure capacity pre-flight below and used
+	// when building the render request so the create is pinned to a region/zone/SKU
+	// combination with real allocation capacity.
+	var azureSelection *AzureCapacitySelection
+
 	if cluster.Platform == types.PlatformAWS {
 		// AWS-specific pre-flight checks (instance type availability)
 		log.Printf("Running AWS pre-flight capacity checks for region %s", cluster.Region)
@@ -136,6 +141,31 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 				// Pre-flight check failed - fail immediately before starting installation
 				return types.NewPreflightCheckError("GCP capacity pre-flight check failed: %v", err)
 			}
+		}
+	} else if cluster.Platform == types.PlatformAzure {
+		// Azure capacity pre-flight (real allocation probe). Azure zones have
+		// independent, fluctuating capacity that no API reliably predicts, so we
+		// probe candidates from the profile's capacityFallback matrix with real
+		// throwaway VMs and pin the create to the first one that allocates.
+		log.Printf("Running Azure capacity pre-flight (allocation probe) for cluster %s", cluster.Name)
+		sel, err := SelectAzureCapacity(ctx, prof, cluster.Region, cluster.ID)
+		if err != nil {
+			// No capacity anywhere in the matrix - fail fast, no retries.
+			return types.NewPreflightCheckError("%v", err)
+		}
+		azureSelection = sel
+		log.Printf("Azure capacity pre-flight selected region=%s zones=%v controlPlane=%s worker=%s",
+			sel.Region, sel.Zones, sel.ControlPlaneSku, sel.ComputeSku)
+
+		// Persist the selected region if the probe steered us away from the
+		// requested one, so status/destroy target the region we actually built in.
+		if sel.Region != cluster.Region {
+			if err := h.store.Clusters.Update(ctx, cluster.ID, map[string]interface{}{"region": sel.Region}); err != nil {
+				return fmt.Errorf("persist selected Azure region %s: %w", sel.Region, err)
+			}
+			log.Printf("Azure capacity pre-flight: region %s had no capacity; switched cluster %s to %s",
+				cluster.Region, cluster.Name, sel.Region)
+			cluster.Region = sel.Region
 		}
 	}
 
@@ -223,6 +253,16 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		ExtraTags:       cluster.RequestTags,
 		OffhoursOptIn:   cluster.OffhoursOptIn,
 		CredentialsMode: cluster.CredentialsMode,
+	}
+
+	// Pin Azure creates to the capacity pre-flight's selection (region already
+	// applied to cluster.Region above; zones + SKUs override the profile defaults
+	// in the rendered install-config).
+	if azureSelection != nil {
+		createReq.Region = azureSelection.Region
+		createReq.AzureZones = azureSelection.Zones
+		createReq.AzureControlPlaneType = azureSelection.ControlPlaneSku
+		createReq.AzureWorkerType = azureSelection.ComputeSku
 	}
 
 	installConfig, err := renderer.RenderInstallConfig(createReq, pullSecret, cluster.EffectiveTags)
@@ -365,6 +405,29 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 			// This ensures orphaned resources can be detected even from failed installations
 			log.Printf("Cluster creation failed, attempting to tag partial resources...")
 			inst.TagPartialResources(ctx, workDir, *metadata)
+
+			// Azure runtime capacity failure (#148): openshift-install reports a
+			// generic "failed to provision control-plane machines within 20m0s",
+			// but the underlying SkuNotAvailable / Capacity Restrictions lives in
+			// the installer log, not the returned error. Without this, the generic
+			// retry path burns all 3 attempts (each ~20m) and leaks partial infra
+			// on a failure that a plain retry can't fix. The pre-flight probe makes
+			// this rare (capacity vanished between probe and provision); fail fast
+			// with a clear, actionable message instead of retrying.
+			if cluster.Platform == types.PlatformAzure {
+				logTail := ""
+				if logData, readErr := os.ReadFile(logPath); readErr == nil {
+					logTail = string(logData)
+				}
+				if isAzureCapacityFailure(output + "\n" + logTail) {
+					return types.NewPreflightCheckError(
+						"Azure ran out of capacity for the selected VM size while provisioning cluster %s "+
+							"(region %s, zones %v) — this passed the pre-flight allocation probe but capacity "+
+							"was exhausted before the machines finished provisioning. Recreate the cluster to "+
+							"re-probe and pick a different zone/region.\n\nInstaller error: %v",
+						cluster.Name, cluster.Region, azureSelectionZones(azureSelection), err)
+				}
+			}
 
 			return fmt.Errorf("openshift-install create cluster: %w\nOutput: %s", err, output)
 		}

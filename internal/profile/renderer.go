@@ -68,6 +68,7 @@ type InstallConfigData struct {
 
 	// Azure-specific
 	AzureBaseDomainResourceGroup string
+	AzureZones                   []string // Availability zones to pin control-plane/worker machines to
 }
 
 // RenderInstallConfig generates an install-config.yaml file
@@ -162,6 +163,21 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		// Azure tag keys forbid ':' and the installer caps userTags at 10, so
 		// sanitize keys and trim to an Azure-compliant subset (provenance kept).
 		data.UserTags = azureUserTags(mergedTags)
+
+		// Capacity pre-flight overrides (set by the worker after probing a
+		// candidate from AzureConfig.CapacityFallback). These pin the create to a
+		// region/zone/SKU combination whose zones actually have allocation
+		// capacity. When unset (e.g. API-side validation render), the profile
+		// defaults above stand.
+		if len(req.AzureZones) > 0 {
+			data.AzureZones = req.AzureZones
+		}
+		if req.AzureControlPlaneType != "" {
+			data.ControlPlaneType = req.AzureControlPlaneType
+		}
+		if req.AzureWorkerType != "" {
+			data.WorkerType = req.AzureWorkerType
+		}
 	}
 
 	// Select appropriate template
@@ -592,12 +608,24 @@ controlPlane:
   platform:
     azure:
       type: {{.ControlPlaneType}}
+{{- if .AzureZones}}
+      zones:
+{{- range .AzureZones}}
+      - "{{.}}"
+{{- end}}
+{{- end}}
 compute:
 - name: worker
   replicas: {{.WorkerReplicas}}
   platform:
     azure:
       type: {{.WorkerType}}
+{{- if .AzureZones}}
+      zones:
+{{- range .AzureZones}}
+      - "{{.}}"
+{{- end}}
+{{- end}}
 networking:
   networkType: {{.NetworkType}}
   clusterNetwork:

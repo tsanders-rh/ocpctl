@@ -14,13 +14,15 @@ openshiftVersions:
   - '4.22'
   default: '4.22'
 regions:
-  # Only regions where Standard_D8s_v5 is available in ALL zones for this
-  # subscription are allowed. The Azure IPI template spreads control-plane
-  # machines across every zone, so a single zone-restricted region (e.g.
-  # eastus2 zone 2, westus2 zones 1&3) fails the create with SkuNotAvailable.
-  # Verified 2026-09-01 via `az vm list-skus --size Standard_D8s_v5`.
+  # User-selectable regions. Zone/SKU capacity within a region is NOT decided
+  # here: Azure availability zones have independent, fluctuating capacity that
+  # `az vm list-skus` does not reliably predict, so the worker runs a real
+  # allocation probe (throwaway `az vm create`) at create time and pins the
+  # cluster to the first capacityFallback candidate whose zones actually allocate.
+  # See platformConfig.azure.capacityFallback below.
   allowlist:
   - eastus
+  - eastus2
   - centralus
   default: eastus
 baseDomains:
@@ -74,6 +76,26 @@ platformConfig:
       vmSize: Standard_D4s_v5
       osDiskSizeGB: 128
       osDiskType: Premium_LRS
+    # Ordered capacity-fallback matrix probed at create time. The worker tries
+    # each candidate in order (the cluster's requested region is moved to the
+    # front) and pins the create to the first whose zones all pass a real
+    # `az vm create` allocation probe. Empirical capacity map (subscription
+    # 72701f06…, 2026-09-01): eastus D8s_v5 unavailable in all zones but D8s_v4
+    # allocates in zones 1&2; eastus2 D8s_v5 allocates in zones 1&3 (zone 2
+    # restricted); centralus unprobed (last-resort). Update as capacity shifts.
+    capacityFallback:
+    - region: eastus
+      zones: ["1", "2"]
+      controlPlaneSku: Standard_D8s_v4
+      computeSku: Standard_D4s_v4
+    - region: eastus2
+      zones: ["1", "3"]
+      controlPlaneSku: Standard_D8s_v5
+      computeSku: Standard_D4s_v5
+    - region: centralus
+      zones: ["1", "2", "3"]
+      controlPlaneSku: Standard_D8s_v5
+      computeSku: Standard_D4s_v5
 metadata:
   capabilities:
   - OpenShift IPI on Azure VMs
