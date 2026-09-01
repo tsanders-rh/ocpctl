@@ -91,12 +91,13 @@ export default function NewClusterPage() {
 
   const watchedValues = watch();
 
-  // Template fields that can be captured/restored (cluster name is intentionally excluded).
+  // Template fields that can be captured/restored. The cluster name is intentionally
+  // excluded, and sensitive data (custom_pull_secret) is never captured or restored.
   const TEMPLATE_FIELDS: (keyof CreateClusterFormData)[] = [
     "platform", "cluster_type", "version", "profile", "region", "base_domain",
     "owner", "team", "cost_center", "ttl_hours", "ssh_public_key", "extra_tags",
     "offhours_opt_in", "skip_post_deployment", "postConfigAddOns", "customPostConfig",
-    "enable_efs_storage", "preserve_on_failure", "credentials_mode", "custom_pull_secret",
+    "enable_efs_storage", "preserve_on_failure", "credentials_mode",
     "override_work_hours", "work_hours_enabled", "work_hours_start", "work_hours_end", "work_days",
   ];
 
