@@ -66,6 +66,7 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.True(t, prof.Enabled, "azure-standard should be enabled")
 		require.NotNil(t, prof.OpenshiftVersions)
 		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22")
+		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
 
 		// Hibernate/resume is not implemented for Azure OpenShift IPI, so
 		// off-hours scaling must stay disabled to avoid a rejected hibernate.

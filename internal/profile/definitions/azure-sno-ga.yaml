@@ -12,7 +12,7 @@ openshiftVersions:
   - '4.20'
   - '4.21'
   - '4.22'
-  default: '4.19'
+  default: '4.22'
 regions:
   allowlist:
   - eastus
