@@ -250,6 +250,28 @@ type AzureConfig struct {
 	Subnetwork              string              `yaml:"subnetwork,omitempty" json:"subnetwork,omitempty"`
 	ControlPlane            *AzureMachineConfig `yaml:"controlPlane,omitempty" json:"control_plane,omitempty"`
 	Compute                 *AzureMachineConfig `yaml:"compute,omitempty" json:"compute,omitempty"`
+
+	// CapacityFallback is an ordered list of (region, zones, SKU) candidates the
+	// worker's Azure capacity pre-flight probes at create time. Azure availability
+	// zones are physically separate datacenters with independent capacity, so a
+	// SKU can be allocatable in one zone of a region and "SkuNotAvailable" in
+	// another — and `az vm list-skus` does NOT predict transient runtime capacity.
+	// The pre-flight tries each candidate in order via a real allocation probe and
+	// pins the create (region + zones + SKUs) to the first candidate whose required
+	// zones all allocate. Empty means "no fallback" (single implicit candidate
+	// built from the request region + profile SKUs).
+	CapacityFallback []AzureCandidate `yaml:"capacityFallback,omitempty" json:"capacity_fallback,omitempty"`
+}
+
+// AzureCandidate is one (region, zones, SKU) combination the Azure capacity
+// pre-flight probe will try, in order, until one has real allocation capacity.
+// Zones are pinned into install-config so the installer only places control-plane
+// and worker machines in the probed-good zones.
+type AzureCandidate struct {
+	Region          string   `yaml:"region" json:"region"`
+	Zones           []string `yaml:"zones" json:"zones"`
+	ControlPlaneSku string   `yaml:"controlPlaneSku,omitempty" json:"control_plane_sku,omitempty"`
+	ComputeSku      string   `yaml:"computeSku,omitempty" json:"compute_sku,omitempty"`
 }
 
 // AzureMachineConfig defines Azure VM configuration

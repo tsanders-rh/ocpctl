@@ -14,13 +14,14 @@ openshiftVersions:
   - '4.22'
   default: '4.22'
 regions:
-  # Only regions where Standard_D8s_v5 is available in ALL zones for this
-  # subscription are allowed. SNO pins a single control-plane node to a zone,
-  # but a zone-restricted region can still land it on an unavailable zone and
-  # fail with SkuNotAvailable. Verified 2026-09-01 via
-  # `az vm list-skus --size Standard_D8s_v5`.
+  # User-selectable regions. Zone/SKU capacity within a region is NOT decided
+  # here: the worker runs a real allocation probe at create time and pins the
+  # single SNO node to the first capacityFallback candidate zone that actually
+  # allocates (Azure zone capacity fluctuates and isn't predicted by list-skus).
+  # See platformConfig.azure.capacityFallback below.
   allowlist:
   - eastus
+  - eastus2
   - centralus
   default: eastus
 baseDomains:
@@ -66,6 +67,22 @@ platformConfig:
       vmSize: Standard_D8s_v5
       osDiskSizeGB: 128
       osDiskType: Premium_LRS
+    # Ordered capacity-fallback matrix probed at create time. SNO pins a single
+    # node to one zone, so each candidate lists one known-good zone; the worker
+    # probes it with a real `az vm create` and falls through to the next candidate
+    # if it lacks capacity. Empirical map (subscription 72701f06…, 2026-09-01):
+    # eastus D8s_v5 unavailable (use D8s_v4 zone 1); eastus2 D8s_v5 allocates in
+    # zone 1; centralus unprobed (last-resort). Update as capacity shifts.
+    capacityFallback:
+    - region: eastus
+      zones: ["1"]
+      controlPlaneSku: Standard_D8s_v4
+    - region: eastus2
+      zones: ["1"]
+      controlPlaneSku: Standard_D8s_v5
+    - region: centralus
+      zones: ["1"]
+      controlPlaneSku: Standard_D8s_v5
 metadata:
   capabilities:
   - Single Node OpenShift on Azure
