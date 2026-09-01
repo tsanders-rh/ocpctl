@@ -80,21 +80,17 @@ func (h *HibernateHandler) Handle(ctx context.Context, job *types.Job) error {
 	}
 }
 
-// hibernateOpenShift hibernates an OpenShift cluster (AWS, IBMCloud, or GCP)
+// hibernateOpenShift hibernates an OpenShift cluster (AWS, IBMCloud, GCP, or Azure)
 func (h *HibernateHandler) hibernateOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	switch cluster.Platform {
 	case types.PlatformAWS:
 		return h.hibernateAWS(ctx, cluster, job)
 	case types.PlatformIBMCloud:
-		return h.fallbackToDestroy(ctx, cluster, job)
+		return h.hibernateIBMCloudOpenShift(ctx, cluster, job)
 	case types.PlatformGCP:
 		return h.hibernateGCPOpenShift(ctx, cluster, job)
 	case types.PlatformAzure:
-		// Azure OpenShift IPI hibernation (az vm deallocate/start) is not yet
-		// implemented. Off-hours scaling is disabled on the Azure OpenShift
-		// profiles so this path is never triggered automatically; a manual
-		// hibernate is blocked here rather than silently destroying the cluster.
-		return fmt.Errorf("hibernation is not yet implemented for Azure OpenShift IPI clusters; off-hours scaling is disabled for Azure profiles")
+		return h.hibernateAzureOpenShift(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift hibernation: %s", cluster.Platform)
 	}
@@ -216,19 +212,6 @@ func (h *HibernateHandler) hibernateAWS(ctx context.Context, cluster *types.Clus
 	log.Printf("Cluster %s is now HIBERNATED", cluster.Name)
 
 	return nil
-}
-
-// fallbackToDestroy logs a warning for unsupported platforms
-func (h *HibernateHandler) fallbackToDestroy(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
-	log.Printf("WARNING: Hibernation not supported for platform %s (cluster %s)", cluster.Platform, cluster.Name)
-	log.Printf("Cluster will remain in HIBERNATING state - manual intervention required")
-
-	// Mark cluster status back to READY since we can't hibernate
-	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
-		return fmt.Errorf("update cluster status: %w", err)
-	}
-
-	return fmt.Errorf("hibernation not supported for platform %s", cluster.Platform)
 }
 
 // getInfraID extracts the infrastructure ID from metadata.json

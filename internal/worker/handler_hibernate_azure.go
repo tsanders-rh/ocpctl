@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -228,5 +229,127 @@ func (h *HibernateHandler) hibernateAKS(ctx context.Context, cluster *types.Clus
 	log.Printf("AKS cluster %s hibernated successfully (scaled %d nodes to 0 across %d node pools)",
 		cluster.Name, totalOriginalCount, len(nodeCounts))
 
+	return nil
+}
+
+// hibernateAzureOpenShift hibernates an Azure OpenShift IPI cluster by
+// deallocating all VMs in the cluster's dedicated resource group. Deallocated
+// VMs incur no compute charges (only disk/storage), and can be started again on
+// resume. openshift-install places every cluster VM (masters + workers +
+// bootstrap remnants) in the resource group recorded in metadata.json under
+// azure.resourceGroupName, so a single resource-group-scoped deallocate covers
+// the whole cluster.
+func (h *HibernateHandler) hibernateAzureOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Hibernating Azure OpenShift cluster %s by deallocating all VMs", cluster.Name)
+
+	// Update cluster status to HIBERNATING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernating); err != nil {
+		return fmt.Errorf("update cluster status to HIBERNATING: %w", err)
+	}
+
+	// Ensure artifacts are available locally (metadata.json + kubeconfig needed)
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
+	}
+
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	resourceGroup, err := azureResourceGroupFromMetadata(workDir)
+	if err != nil {
+		return fmt.Errorf("determine Azure resource group: %w", err)
+	}
+	log.Printf("Azure OpenShift cluster %s uses resource group %s", cluster.Name, resourceGroup)
+
+	// Best-effort cleanup of ephemeral addon namespaces before shutting VMs down.
+	h.cleanupEphemeralAddonNamespaces(ctx, cluster)
+
+	vmIDs, err := listAzureVMIDs(ctx, resourceGroup)
+	if err != nil {
+		return fmt.Errorf("list Azure VMs in resource group %s: %w", resourceGroup, err)
+	}
+
+	if len(vmIDs) == 0 {
+		log.Printf("Warning: no VMs found in resource group %s, cluster may already be hibernated", resourceGroup)
+	} else {
+		log.Printf("Deallocating %d VM(s) in resource group %s", len(vmIDs), resourceGroup)
+		if err := azureVMAction(ctx, "deallocate", vmIDs); err != nil {
+			return fmt.Errorf("deallocate Azure VMs: %w", err)
+		}
+		log.Printf("Successfully deallocated %d VM(s) for cluster %s", len(vmIDs), cluster.Name)
+	}
+
+	// Record hibernation metadata for resume/visibility.
+	if job.Metadata == nil {
+		job.Metadata = make(types.JobMetadata)
+	}
+	job.Metadata["azure_resource_group"] = resourceGroup
+	job.Metadata["azure_vm_count"] = fmt.Sprintf("%d", len(vmIDs))
+
+	// Update cluster status to HIBERNATED
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernated); err != nil {
+		return fmt.Errorf("update cluster status to HIBERNATED: %w", err)
+	}
+
+	log.Printf("Azure OpenShift cluster %s hibernated successfully (deallocated %d VMs in %s)",
+		cluster.Name, len(vmIDs), resourceGroup)
+
+	return nil
+}
+
+// azureResourceGroupFromMetadata reads the cluster's metadata.json and returns
+// the Azure resource group that openshift-install created for the cluster.
+func azureResourceGroupFromMetadata(workDir string) (string, error) {
+	metadataPath := filepath.Join(workDir, "metadata.json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return "", fmt.Errorf("read metadata.json: %w", err)
+	}
+
+	var metadata struct {
+		Azure struct {
+			ResourceGroupName string `json:"resourceGroupName"`
+		} `json:"azure"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return "", fmt.Errorf("parse metadata.json: %w", err)
+	}
+
+	rg := strings.TrimSpace(metadata.Azure.ResourceGroupName)
+	if rg == "" {
+		return "", fmt.Errorf("metadata.json has no azure.resourceGroupName")
+	}
+	return rg, nil
+}
+
+// listAzureVMIDs returns the fully-qualified resource IDs of every VM in the
+// given resource group.
+func listAzureVMIDs(ctx context.Context, resourceGroup string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "az", "vm", "list",
+		"--resource-group", resourceGroup,
+		"--query", "[].id",
+		"-o", "tsv",
+		"--only-show-errors")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("az vm list: %w", err)
+	}
+
+	return strings.Fields(strings.TrimSpace(string(output))), nil
+}
+
+// azureVMAction runs a power-state action ("deallocate" or "start") against the
+// given VM IDs. It is a no-op when no VM IDs are supplied. The az CLI blocks
+// until each VM reaches the requested state.
+func azureVMAction(ctx context.Context, action string, vmIDs []string) error {
+	if len(vmIDs) == 0 {
+		return nil
+	}
+
+	args := append([]string{"vm", action, "--only-show-errors", "--ids"}, vmIDs...)
+	cmd := exec.CommandContext(ctx, "az", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("az vm %s: %w: %s", action, err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }
