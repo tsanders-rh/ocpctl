@@ -85,19 +85,17 @@ func (h *ResumeHandler) Handle(ctx context.Context, job *types.Job) error {
 	}
 }
 
-// resumeOpenShift resumes an OpenShift cluster (AWS, IBMCloud, or GCP)
+// resumeOpenShift resumes an OpenShift cluster (AWS, IBMCloud, GCP, or Azure)
 func (h *ResumeHandler) resumeOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
 	switch cluster.Platform {
 	case types.PlatformAWS:
 		return h.resumeAWS(ctx, cluster, job)
 	case types.PlatformIBMCloud:
-		return fmt.Errorf("resume not supported for platform %s - cluster was destroyed", cluster.Platform)
+		return h.resumeIBMCloudOpenShift(ctx, cluster, job)
 	case types.PlatformGCP:
 		return h.resumeGCPOpenShift(ctx, cluster, job)
 	case types.PlatformAzure:
-		// Counterpart to the hibernate block above: Azure OpenShift IPI
-		// resume is not yet implemented.
-		return fmt.Errorf("resume is not yet implemented for Azure OpenShift IPI clusters; off-hours scaling is disabled for Azure profiles")
+		return h.resumeAzureOpenShift(ctx, cluster, job)
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift resume: %s", cluster.Platform)
 	}

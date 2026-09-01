@@ -53,11 +53,10 @@ tags:
     ClusterType: openshift
   allowUserTags: true
 features:
-  # Off-hours scaling is disabled for Azure OpenShift IPI: hibernate/resume
-  # (az vm deallocate/start) is not yet implemented for PlatformAzure (see
-  # handler_hibernate.go / handler_resume.go). Leaving this on would trigger a
-  # hibernate the worker rejects. Re-enable once Azure hibernate is implemented.
-  offHoursScaling: false
+  # Off-hours scaling hibernates via `az vm deallocate` (all VMs in the
+  # cluster's resource group) and resumes via `az vm start` (see
+  # handler_hibernate_azure.go / handler_resume_azure.go).
+  offHoursScaling: true
 costControls:
   # List-price basis: OCP IPI: 3x D8s_v5 @0.384 + 3x D4s_v5 @0.192 + infra (East US)
   estimatedHourlyCost: 1.98

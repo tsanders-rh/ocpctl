@@ -391,6 +391,21 @@ ensure_ibmcloud() {
         fi
     fi
 
+    # Always ensure vpc-infrastructure plugin is installed (needed for
+    # IBM Cloud OpenShift IPI hibernate/resume, which stops/starts VPC VSIs
+    # via `ibmcloud is`).
+    log "Checking IBM Cloud vpc-infrastructure plugin..."
+    if ibmcloud plugin list | grep -q vpc-infrastructure; then
+        log "✓ vpc-infrastructure plugin already installed"
+    else
+        log "Installing vpc-infrastructure plugin..."
+        if ibmcloud plugin install vpc-infrastructure -f; then
+            log "✓ Installed vpc-infrastructure plugin"
+        else
+            log "WARNING: Failed to install vpc-infrastructure plugin (non-fatal)"
+        fi
+    fi
+
     return 0
 }
 

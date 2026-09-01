@@ -51,12 +51,12 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22", "4.22 must be in the allowlist for OADP 1.6")
 		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
 
-		// Hibernate falls back to destroy on IBM Cloud, so off-hours scaling
-		// must stay disabled to avoid destroying idle clusters.
-		assert.False(t, prof.Features.OffHoursScaling)
+		// Hibernate/resume is implemented for IBM Cloud OpenShift (VSI
+		// stop/start), so off-hours scaling is enabled.
+		assert.True(t, prof.Features.OffHoursScaling)
 	})
 
-	t.Run("azure-standard is enabled with off-hours scaling disabled", func(t *testing.T) {
+	t.Run("azure-standard is enabled with off-hours scaling enabled", func(t *testing.T) {
 		prof, err := loader.Load("azure-standard")
 		require.NoError(t, err)
 		require.NotNil(t, prof)
@@ -68,18 +68,18 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22")
 		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
 
-		// Hibernate/resume is not implemented for Azure OpenShift IPI, so
-		// off-hours scaling must stay disabled to avoid a rejected hibernate.
-		assert.False(t, prof.Features.OffHoursScaling)
+		// Hibernate/resume is implemented for Azure OpenShift IPI (VM
+		// deallocate/start), so off-hours scaling is enabled.
+		assert.True(t, prof.Features.OffHoursScaling)
 	})
 
-	t.Run("azure-sno-ga has off-hours scaling disabled", func(t *testing.T) {
+	t.Run("azure-sno-ga has off-hours scaling enabled", func(t *testing.T) {
 		prof, err := loader.Load("azure-sno-ga")
 		require.NoError(t, err)
 		require.NotNil(t, prof)
 
-		assert.False(t, prof.Features.OffHoursScaling,
-			"azure-sno-ga off-hours scaling must stay disabled until Azure hibernate is implemented")
+		assert.True(t, prof.Features.OffHoursScaling,
+			"azure-sno-ga off-hours scaling is enabled now that Azure hibernate is implemented")
 	})
 
 	t.Run("returns error for non-existent profile", func(t *testing.T) {

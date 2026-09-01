@@ -57,12 +57,10 @@ tags:
     ManagedBy: cluster-control-plane
   allowUserTags: true
 features:
-  # Off-hours scaling is disabled for IBM Cloud OpenShift: hibernate is not
-  # implemented for this platform and falls back to DESTROY (see
-  # handler_hibernate.go, hibernateOpenShift -> fallbackToDestroy for
-  # PlatformIBMCloud). Leaving off-hours scaling on would silently destroy idle
-  # clusters. Re-enable only once real IBM hibernate/resume is implemented.
-  offHoursScaling: false
+  # Off-hours scaling hibernates by stopping the cluster's VPC VSIs
+  # (`ibmcloud is instance-stop`) and resumes with `instance-start` (see
+  # handler_hibernate_ibmcloud.go / handler_resume_ibmcloud.go).
+  offHoursScaling: true
   fipsMode: false
   privateCluster: false
 costControls:

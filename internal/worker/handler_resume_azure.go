@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -214,5 +215,108 @@ func (h *ResumeHandler) resumeAKS(ctx context.Context, cluster *types.Cluster, j
 	log.Printf("AKS cluster %s resumed successfully (%d nodes restored across %d node pools)",
 		cluster.Name, totalRestoredNodes, restoredPools)
 
+	return nil
+}
+
+// resumeAzureOpenShift resumes an Azure OpenShift IPI cluster by starting all
+// VMs that were deallocated during hibernation, then waiting for the cluster to
+// return to a healthy state.
+func (h *ResumeHandler) resumeAzureOpenShift(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
+	log.Printf("Resuming Azure OpenShift cluster %s by starting all VMs", cluster.Name)
+
+	// Update cluster status to RESUMING
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusResuming); err != nil {
+		return fmt.Errorf("update cluster status to RESUMING: %w", err)
+	}
+
+	// Ensure artifacts are available locally (metadata.json + kubeconfig needed)
+	if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+		return fmt.Errorf("ensure artifacts available: %w", err)
+	}
+
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+
+	resourceGroup, err := azureResourceGroupFromMetadata(workDir)
+	if err != nil {
+		return fmt.Errorf("determine Azure resource group: %w", err)
+	}
+	log.Printf("Azure OpenShift cluster %s uses resource group %s", cluster.Name, resourceGroup)
+
+	vmIDs, err := listAzureVMIDs(ctx, resourceGroup)
+	if err != nil {
+		return fmt.Errorf("list Azure VMs in resource group %s: %w", resourceGroup, err)
+	}
+
+	if len(vmIDs) == 0 {
+		return fmt.Errorf("no VMs found in resource group %s - cannot resume", resourceGroup)
+	}
+
+	log.Printf("Starting %d VM(s) in resource group %s", len(vmIDs), resourceGroup)
+	if err := azureVMAction(ctx, "start", vmIDs); err != nil {
+		return fmt.Errorf("start Azure VMs: %w", err)
+	}
+	log.Printf("Successfully started %d VM(s) for cluster %s", len(vmIDs), cluster.Name)
+
+	// Wait for the cluster to come back to a healthy state.
+	if err := h.waitForOpenShiftClusterHealth(ctx, cluster); err != nil {
+		return fmt.Errorf("wait for cluster health: %w", err)
+	}
+
+	// Update cluster status to READY
+	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusReady); err != nil {
+		return fmt.Errorf("update cluster status to READY: %w", err)
+	}
+
+	log.Printf("Azure OpenShift cluster %s resumed successfully (started %d VMs in %s)",
+		cluster.Name, len(vmIDs), resourceGroup)
+
+	return nil
+}
+
+// waitForOpenShiftClusterHealth waits for a resumed OpenShift cluster to become
+// healthy. Unlike waitForClusterHealth (AWS), this performs only the
+// cloud-agnostic checks — API server, cluster operators, router pods, console
+// accessibility, and CNI pods — so it is reusable for Azure and IBM Cloud
+// OpenShift IPI clusters, which do not use AWS ELB health checks.
+func (h *ResumeHandler) waitForOpenShiftClusterHealth(ctx context.Context, cluster *types.Cluster) error {
+	log.Printf("Waiting for OpenShift cluster %s to become healthy...", cluster.Name)
+
+	workDir := filepath.Join(h.config.WorkDir, cluster.ID)
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
+
+	// Ensure kubeconfig is available locally.
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+		log.Printf("Kubeconfig not found locally, downloading from S3...")
+		if err := h.ensureArtifactsAvailable(ctx, cluster.ID); err != nil {
+			return fmt.Errorf("ensure artifacts available: %w", err)
+		}
+	}
+
+	log.Printf("Waiting for API server to be accessible...")
+	if err := h.waitForAPIServer(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for API server: %w", err)
+	}
+
+	log.Printf("Waiting for cluster operators to be ready...")
+	if err := h.waitForClusterOperators(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for cluster operators: %w", err)
+	}
+
+	log.Printf("Waiting for router pods to be running...")
+	if err := h.waitForRouterPods(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for router pods: %w", err)
+	}
+
+	log.Printf("Verifying console route is accessible...")
+	if err := h.waitForConsoleAccessibility(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for console accessibility: %w", err)
+	}
+
+	log.Printf("Waiting for CNI networking pods to be healthy...")
+	if err := h.waitForCNIPods(ctx, kubeconfigPath); err != nil {
+		return fmt.Errorf("wait for CNI pods: %w", err)
+	}
+
+	log.Printf("OpenShift cluster %s is now healthy and ready", cluster.Name)
 	return nil
 }
