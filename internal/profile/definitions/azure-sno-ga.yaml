@@ -12,7 +12,7 @@ openshiftVersions:
   - '4.20'
   - '4.21'
   - '4.22'
-  default: '4.19'
+  default: '4.22'
 regions:
   # Only regions where Standard_D8s_v5 is available in ALL zones for this
   # subscription are allowed. SNO pins a single control-plane node to a zone,
