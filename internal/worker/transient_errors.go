@@ -91,18 +91,37 @@ This job will automatically retry with exponential backoff.`,
 	},
 }
 
-// knownPermanentPatterns lists error substrings that indicate a permanent
+// permanentErrorPattern describes a failure that a retry cannot fix.
+type permanentErrorPattern struct {
+	Pattern     string // lowercased error substring to match
+	Description string // short, human-readable root cause for the DB/UI
+}
+
+// knownPermanentErrorPatterns lists error substrings that indicate a permanent
 // failure. These are checked BEFORE the transient patterns because a permanent
 // error can surface a transient-looking symptom downstream (e.g. an Azure
 // SkuNotAvailable on one master stalls provisioning, which then bubbles up as
-// "cluster is not reachable" / "failed to provision control-plane machines").
-// Retrying such an error just burns time and leaks partial infrastructure, so
-// any match here means "not transient" (fail fast).
-var knownPermanentPatterns = []string{
-	"skunotavailable",             // Azure: VM size unavailable in region/zone
-	"not available in location",   // Azure: SKU capacity restriction (SkuNotAvailable body)
-	"notavailableforsubscription", // Azure: SKU/zone not enabled for this subscription
-	"capacity restrictions",       // Azure: "failed for Capacity Restrictions"
+// "cluster is not reachable" / "failed to provision control-plane machines", or a
+// misconfigured DNS zone yields "ResourceGroupNotFound" that co-occurs with
+// "cluster is not reachable"). Retrying such an error just burns time and leaks
+// partial infrastructure, so any match here means "fail fast, do not retry".
+var knownPermanentErrorPatterns = []permanentErrorPattern{
+	// Azure capacity / SKU availability (also short-circuits transient matching).
+	{"skunotavailable", "Azure VM size unavailable in the selected region/zone"},
+	{"not available in location", "Azure VM size not available in this location"},
+	{"notavailableforsubscription", "Azure VM size/zone not enabled for this subscription"},
+	{"capacity restrictions", "Azure capacity restrictions for the requested VM size"},
+	{"overconstrainedallocationrequest", "Azure could not satisfy the requested zone/SKU allocation constraints"},
+	// Azure configuration / DNS zone (the originally-reported #148 case).
+	{"resourcegroupnotfound", "Azure resource group not found (check the profile's base-domain / DNS zone resource group)"},
+	{"parentresourcenotfound", "Azure parent resource not found (check base-domain / DNS zone configuration)"},
+	// Azure credentials / authorization.
+	{"authorizationfailed", "Azure authorization failed — the service principal lacks a required permission"},
+	{"invalidclientsecret", "Azure service-principal credential is invalid or expired"},
+	{"invalidauthenticationtokentenant", "Azure credentials are scoped to the wrong tenant"},
+	{"subscriptionnotfound", "Azure subscription not found or inaccessible"},
+	// Azure quota.
+	{"quotaexceeded", "Azure quota exceeded for the requested resources"},
 }
 
 // DetectTransientError analyzes an error to determine if it's transient
@@ -122,8 +141,8 @@ func DetectTransientError(err error) *types.TransientError {
 
 	// Permanent errors take precedence: never retry a known-permanent failure
 	// even if it also contains a transient-looking substring.
-	for _, p := range knownPermanentPatterns {
-		if strings.Contains(errMsg, p) {
+	for _, p := range knownPermanentErrorPatterns {
+		if strings.Contains(errMsg, p.Pattern) {
 			return nil
 		}
 	}
@@ -140,4 +159,52 @@ func DetectTransientError(err error) *types.TransientError {
 	}
 
 	return nil
+}
+
+// DetectPermanentError reports whether err represents a permanent failure that a
+// retry cannot fix (bad credentials, missing resource group / DNS zone, quota
+// exhaustion, Azure capacity restrictions). It returns a short human-readable
+// cause and the most relevant line from the error — preferring the installer's
+// final `level=error` fatal message over any incidental controller log line that
+// merely mentions the marker. When err is not recognized as permanent it returns
+// ("", "").
+//
+// This matters because a permanent failure often co-occurs with a
+// transient-looking symptom (e.g. "ResourceGroupNotFound" alongside "cluster is
+// not reachable"). The caller must classify such an error as permanent and fail
+// fast rather than retrying it up to MaxAttempts.
+func DetectPermanentError(err error) (cause string, detail string) {
+	if err == nil {
+		return "", ""
+	}
+	raw := err.Error()
+	lower := strings.ToLower(raw)
+	for _, p := range knownPermanentErrorPatterns {
+		if strings.Contains(lower, p.Pattern) {
+			return p.Description, extractRelevantLine(raw, p.Pattern)
+		}
+	}
+	return "", ""
+}
+
+// extractRelevantLine returns the line of raw most useful for diagnosing a
+// permanent failure: among the lines that contain pattern, it prefers the last
+// one tagged `level=error` (the installer's final fatal message), falling back to
+// the last line that merely mentions the pattern. Returns "" if no line matches.
+func extractRelevantLine(raw, pattern string) string {
+	var match, errLevelMatch string
+	for _, ln := range strings.Split(raw, "\n") {
+		l := strings.ToLower(ln)
+		if !strings.Contains(l, pattern) {
+			continue
+		}
+		match = strings.TrimSpace(ln)
+		if strings.Contains(l, "level=error") {
+			errLevelMatch = strings.TrimSpace(ln)
+		}
+	}
+	if errLevelMatch != "" {
+		return errLevelMatch
+	}
+	return match
 }
