@@ -867,6 +867,48 @@ func (w *Worker) handleJobFailure(ctx context.Context, job *types.Job, cluster *
 		return
 	}
 
+	// Check if this is a permanent error - fail immediately without retries.
+	// A permanent failure (bad credentials, missing resource group / DNS zone,
+	// quota exhaustion, exhausted capacity) cannot be fixed by retrying; retrying
+	// only burns time and leaks partial infrastructure. Crucially, such an error
+	// often co-occurs with a transient-looking symptom (e.g. "ResourceGroupNotFound"
+	// alongside "cluster is not reachable"), so without this branch it would fall
+	// through to the generic retry path below and be retried up to MaxAttempts. We
+	// record the real cause, not the transient symptom.
+	if cause, detail := DetectPermanentError(jobErr); cause != "" {
+		log.Printf("Job %s failed with permanent error (will not retry): %s", job.ID, cause)
+
+		failCtx, failCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer failCancel()
+
+		errorCode := "PERMANENT_FAILURE"
+		errorMessage := fmt.Sprintf("Permanent failure (no retry): %s", cause)
+		if detail != "" {
+			errorMessage = fmt.Sprintf("%s\n\nDetail: %s", errorMessage, detail)
+		} else {
+			errorMessage = fmt.Sprintf("%s\n\n%v", errorMessage, jobErr)
+		}
+		if err := w.store.Jobs.MarkFailed(failCtx, job.ID, errorCode, errorMessage); err != nil {
+			log.Printf("Failed to mark job %s as failed: %v", job.ID, err)
+		}
+
+		// Clean up any partial infrastructure from this attempt (CREATE only;
+		// honors preserve_on_failure inside cleanupPartialDeployment).
+		if job.JobType == types.JobTypeCreate {
+			w.cleanupPartialDeployment(ctx, job)
+		}
+
+		// Update cluster status to FAILED (skip for pool-level jobs without cluster)
+		if cluster != nil {
+			if err := w.store.Clusters.UpdateStatus(failCtx, nil, job.ClusterID, types.ClusterStatusFailed); err != nil {
+				log.Printf("Failed to update cluster %s status to FAILED: %v", job.ClusterID, err)
+			}
+		}
+
+		w.publishJobFailureMetrics(ctx, job, cluster, duration, "PERMANENT_FAILURE")
+		return
+	}
+
 	// Check if this is a preflight check error - fail immediately without retries
 	if types.IsPreflightCheckError(jobErr) {
 		log.Printf("Job %s failed preflight check (will not retry): %v", job.ID, jobErr)
