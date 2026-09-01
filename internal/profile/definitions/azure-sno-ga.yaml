@@ -47,7 +47,11 @@ tags:
     ClusterType: sno
   allowUserTags: true
 features:
-  offHoursScaling: true
+  # Off-hours scaling is disabled for Azure OpenShift IPI: hibernate/resume
+  # (az vm deallocate/start) is not yet implemented for PlatformAzure (see
+  # handler_hibernate.go / handler_resume.go). Leaving this on would trigger a
+  # hibernate the worker rejects. Re-enable once Azure hibernate is implemented.
+  offHoursScaling: false
 costControls:
   # List-price basis: OCP SNO: 1x D8s_v5 @0.384 + infra (East US)
   estimatedHourlyCost: 0.48
@@ -66,8 +70,6 @@ metadata:
   capabilities:
   - Single Node OpenShift on Azure
   - Full OpenShift features on 1 node
-  - Hibernation via VM stop/start
-  - Cost savings up to 95% when hibernated
   capacity:
     nodes: 1 node (combined control plane + worker)
     vcpu: 8 vCPU
@@ -75,6 +77,7 @@ metadata:
   notes:
   - 'Single node: 1x Standard_D8s_v5 @ $0.672/hr'
   - 'Total: ~$0.67/hr or $482/month always-on'
-  - 'Hibernated cost: ~$0.03/hr (storage only) = 95% savings'
+  - Hibernate/resume is NOT yet implemented for Azure OpenShift IPI; off-hours
+    scaling is disabled. Control cost via TTL or manual destroy.
   - SNO is NOT recommended for production workloads
   - No high availability - single point of failure

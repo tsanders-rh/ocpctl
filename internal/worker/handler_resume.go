@@ -94,6 +94,10 @@ func (h *ResumeHandler) resumeOpenShift(ctx context.Context, cluster *types.Clus
 		return fmt.Errorf("resume not supported for platform %s - cluster was destroyed", cluster.Platform)
 	case types.PlatformGCP:
 		return h.resumeGCPOpenShift(ctx, cluster, job)
+	case types.PlatformAzure:
+		// Counterpart to the hibernate block above: Azure OpenShift IPI
+		// resume is not yet implemented.
+		return fmt.Errorf("resume is not yet implemented for Azure OpenShift IPI clusters; off-hours scaling is disabled for Azure profiles")
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift resume: %s", cluster.Platform)
 	}

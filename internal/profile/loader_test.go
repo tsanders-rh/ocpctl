@@ -56,6 +56,31 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.False(t, prof.Features.OffHoursScaling)
 	})
 
+	t.Run("azure-standard is enabled with off-hours scaling disabled", func(t *testing.T) {
+		prof, err := loader.Load("azure-standard")
+		require.NoError(t, err)
+		require.NotNil(t, prof)
+
+		assert.Equal(t, "azure", string(prof.Platform))
+		assert.Equal(t, "openshift", string(prof.ClusterType))
+		assert.True(t, prof.Enabled, "azure-standard should be enabled")
+		require.NotNil(t, prof.OpenshiftVersions)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22")
+
+		// Hibernate/resume is not implemented for Azure OpenShift IPI, so
+		// off-hours scaling must stay disabled to avoid a rejected hibernate.
+		assert.False(t, prof.Features.OffHoursScaling)
+	})
+
+	t.Run("azure-sno-ga has off-hours scaling disabled", func(t *testing.T) {
+		prof, err := loader.Load("azure-sno-ga")
+		require.NoError(t, err)
+		require.NotNil(t, prof)
+
+		assert.False(t, prof.Features.OffHoursScaling,
+			"azure-sno-ga off-hours scaling must stay disabled until Azure hibernate is implemented")
+	})
+
 	t.Run("returns error for non-existent profile", func(t *testing.T) {
 		_, err := loader.Load("non-existent")
 		assert.Error(t, err)
