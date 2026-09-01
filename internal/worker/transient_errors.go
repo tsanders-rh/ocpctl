@@ -91,6 +91,20 @@ This job will automatically retry with exponential backoff.`,
 	},
 }
 
+// knownPermanentPatterns lists error substrings that indicate a permanent
+// failure. These are checked BEFORE the transient patterns because a permanent
+// error can surface a transient-looking symptom downstream (e.g. an Azure
+// SkuNotAvailable on one master stalls provisioning, which then bubbles up as
+// "cluster is not reachable" / "failed to provision control-plane machines").
+// Retrying such an error just burns time and leaks partial infrastructure, so
+// any match here means "not transient" (fail fast).
+var knownPermanentPatterns = []string{
+	"skunotavailable",             // Azure: VM size unavailable in region/zone
+	"not available in location",   // Azure: SKU capacity restriction (SkuNotAvailable body)
+	"notavailableforsubscription", // Azure: SKU/zone not enabled for this subscription
+	"capacity restrictions",       // Azure: "failed for Capacity Restrictions"
+}
+
 // DetectTransientError analyzes an error to determine if it's transient
 // Returns a TransientError if the error matches known transient patterns, nil otherwise
 func DetectTransientError(err error) *types.TransientError {
@@ -105,6 +119,14 @@ func DetectTransientError(err error) *types.TransientError {
 
 	// Check error message against known patterns
 	errMsg := strings.ToLower(err.Error())
+
+	// Permanent errors take precedence: never retry a known-permanent failure
+	// even if it also contains a transient-looking substring.
+	for _, p := range knownPermanentPatterns {
+		if strings.Contains(errMsg, p) {
+			return nil
+		}
+	}
 
 	for _, pattern := range knownTransientPatterns {
 		if strings.Contains(errMsg, strings.ToLower(pattern.Pattern)) {

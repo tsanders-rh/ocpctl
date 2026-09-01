@@ -14,15 +14,15 @@ openshiftVersions:
   - '4.22'
   default: '4.19'
 regions:
+  # Only regions where Standard_D8s_v5 is available in ALL zones for this
+  # subscription are allowed. SNO pins a single control-plane node to a zone,
+  # but a zone-restricted region can still land it on an unavailable zone and
+  # fail with SkuNotAvailable. Verified 2026-09-01 via
+  # `az vm list-skus --size Standard_D8s_v5`.
   allowlist:
   - eastus
-  - eastus2
-  - westus
-  - westus2
   - centralus
-  - northeurope
-  - westeurope
-  default: eastus2
+  default: eastus
 baseDomains:
   allowlist:
   - azure.mg.dog8code.com
