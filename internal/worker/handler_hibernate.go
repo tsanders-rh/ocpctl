@@ -89,6 +89,12 @@ func (h *HibernateHandler) hibernateOpenShift(ctx context.Context, cluster *type
 		return h.fallbackToDestroy(ctx, cluster, job)
 	case types.PlatformGCP:
 		return h.hibernateGCPOpenShift(ctx, cluster, job)
+	case types.PlatformAzure:
+		// Azure OpenShift IPI hibernation (az vm deallocate/start) is not yet
+		// implemented. Off-hours scaling is disabled on the Azure OpenShift
+		// profiles so this path is never triggered automatically; a manual
+		// hibernate is blocked here rather than silently destroying the cluster.
+		return fmt.Errorf("hibernation is not yet implemented for Azure OpenShift IPI clusters; off-hours scaling is disabled for Azure profiles")
 	default:
 		return fmt.Errorf("unsupported platform for OpenShift hibernation: %s", cluster.Platform)
 	}

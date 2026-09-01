@@ -1,10 +1,10 @@
 name: azure-standard
-displayName: Azure OpenShift Standard Cluster
+displayName: Azure OpenShift Standard (IPI multi-node)
 description: Standard 3-master, 3-worker OpenShift cluster on Azure VMs
 platform: azure
 clusterType: openshift
 track: ga
-enabled: false
+enabled: true
 openshiftVersions:
   allowlist:
   - '4.18'
@@ -51,7 +51,11 @@ tags:
     ClusterType: openshift
   allowUserTags: true
 features:
-  offHoursScaling: true
+  # Off-hours scaling is disabled for Azure OpenShift IPI: hibernate/resume
+  # (az vm deallocate/start) is not yet implemented for PlatformAzure (see
+  # handler_hibernate.go / handler_resume.go). Leaving this on would trigger a
+  # hibernate the worker rejects. Re-enable once Azure hibernate is implemented.
+  offHoursScaling: false
 costControls:
   # List-price basis: OCP IPI: 3x D8s_v5 @0.384 + 3x D4s_v5 @0.192 + infra (East US)
   estimatedHourlyCost: 1.98
@@ -74,8 +78,6 @@ metadata:
   capabilities:
   - OpenShift IPI on Azure VMs
   - Full control plane access
-  - Hibernation via VM stop/start
-  - Cost savings up to 91% when hibernated
   capacity:
     nodes: 6 nodes (3 masters + 3 workers)
     vcpu: 40 vCPU total (24 master + 16 worker)
@@ -84,4 +86,5 @@ metadata:
   - 'Masters: 3x Standard_D8s_v5 @ $0.672/hr = $2.02/hr'
   - 'Workers: 3x Standard_D4s_v5 @ $0.336/hr = $1.01/hr'
   - 'Total: ~$3.50/hr or $2,520/month always-on'
-  - 'Hibernated cost: ~$0.30/hr (storage only) = 91% savings'
+  - Hibernate/resume is NOT yet implemented for Azure OpenShift IPI; off-hours
+    scaling is disabled. Control cost via TTL or manual destroy.
