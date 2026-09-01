@@ -14,15 +14,15 @@ openshiftVersions:
   - '4.22'
   default: '4.19'
 regions:
+  # Only regions where Standard_D8s_v5 is available in ALL zones for this
+  # subscription are allowed. The Azure IPI template spreads control-plane
+  # machines across every zone, so a single zone-restricted region (e.g.
+  # eastus2 zone 2, westus2 zones 1&3) fails the create with SkuNotAvailable.
+  # Verified 2026-09-01 via `az vm list-skus --size Standard_D8s_v5`.
   allowlist:
   - eastus
-  - eastus2
-  - westus
-  - westus2
   - centralus
-  - northeurope
-  - westeurope
-  default: eastus2
+  default: eastus
 baseDomains:
   allowlist:
   - azure.mg.dog8code.com
