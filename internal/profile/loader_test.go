@@ -73,6 +73,33 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.True(t, prof.Features.OffHoursScaling)
 	})
 
+	t.Run("gcp-standard supports OCP 4.22 GA and defaults to it", func(t *testing.T) {
+		prof, err := loader.Load("gcp-standard")
+		require.NoError(t, err)
+		require.NotNil(t, prof)
+
+		assert.Equal(t, "gcp", string(prof.Platform))
+		assert.Equal(t, "openshift", string(prof.ClusterType))
+		require.NotNil(t, prof.OpenshiftVersions)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22", "4.22 must be in the allowlist for OADP 1.6")
+		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
+
+		// GCP OpenShift hibernate/resume is implemented (VM stop/start).
+		assert.True(t, prof.Features.OffHoursScaling)
+	})
+
+	t.Run("gcp-sno-ga supports OCP 4.22 GA and defaults to it", func(t *testing.T) {
+		prof, err := loader.Load("gcp-sno-ga")
+		require.NoError(t, err)
+		require.NotNil(t, prof)
+
+		assert.Equal(t, "gcp", string(prof.Platform))
+		assert.Equal(t, "openshift", string(prof.ClusterType))
+		require.NotNil(t, prof.OpenshiftVersions)
+		assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.22")
+		assert.Equal(t, "4.22", prof.OpenshiftVersions.Default)
+	})
+
 	t.Run("azure-sno-ga has off-hours scaling enabled", func(t *testing.T) {
 		prof, err := loader.Load("azure-sno-ga")
 		require.NoError(t, err)
