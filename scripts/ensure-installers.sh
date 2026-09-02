@@ -406,6 +406,26 @@ ensure_ibmcloud() {
         fi
     fi
 
+    # The ibmcloud CLI keeps its config + plugins under $HOME/.bluemix. The worker
+    # unit runs this script via a "+" ExecStartPre, i.e. as root but with HOME
+    # pinned to the service home (/opt/ocpctl), so everything above just wrote
+    # root-owned, mode-700 files there. The very next ExecStartPre
+    # (ibmcloud-login.sh) runs as the unprivileged ocpctl service user and then
+    # cannot even read .bluemix/plugins/config.json ("permission denied"), which
+    # breaks `ibmcloud login` and therefore IBM Cloud OpenShift hibernate/resume.
+    # Re-own .bluemix to whoever owns HOME so the service user can use the CLI.
+    # Same class of fix as azure-login.sh writing osServicePrincipal.json and the
+    # TMPDIR chown -R ocpctl:ocpctl on autoscale workers.
+    if [ "$(id -u)" -eq 0 ] && [ -d "${HOME}/.bluemix" ]; then
+        local home_owner
+        home_owner="$(stat -c '%U:%G' "${HOME}" 2>/dev/null)"
+        if [ -n "${home_owner}" ] && [ "${home_owner}" != "root:root" ]; then
+            log "Re-owning ${HOME}/.bluemix to ${home_owner} for the service user..."
+            chown -R "${home_owner}" "${HOME}/.bluemix" || \
+                log "WARNING: Failed to chown ${HOME}/.bluemix (non-fatal)"
+        fi
+    fi
+
     return 0
 }
 
