@@ -1153,10 +1153,10 @@ export default function ClusterDetailPage() {
                   })()}
 
                   {/* Platform Support Notice */}
-                  {!["aws", "gcp"].includes(cluster.platform) && (
+                  {!["aws", "gcp", "azure", "ibmcloud"].includes(cluster.platform) && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                       <p className="text-sm text-yellow-800">
-                        <strong>Note:</strong> Automatic hibernation is only supported for AWS and GCP clusters.
+                        <strong>Note:</strong> Automatic hibernation is only supported for AWS, GCP, Azure, and IBM Cloud clusters.
                         This cluster will not be automatically hibernated.
                       </p>
                     </div>
@@ -1165,7 +1165,7 @@ export default function ClusterDetailPage() {
               ) : null}
 
               {/* Manual Controls */}
-              {["aws", "gcp"].includes(cluster.platform) && ["READY", "HIBERNATED"].includes(cluster.status) && (
+              {["aws", "gcp", "azure", "ibmcloud"].includes(cluster.platform) && ["READY", "HIBERNATED"].includes(cluster.status) && (
                 <div className="pt-4 border-t">
                   <div className="text-sm font-medium text-muted-foreground mb-3">Manual Controls</div>
                   <div className="flex gap-2">
@@ -1173,9 +1173,12 @@ export default function ClusterDetailPage() {
                       <Button
                         variant="outline"
                         onClick={async () => {
-                          const message = cluster.platform === "gcp"
-                            ? `Are you sure you want to hibernate cluster "${cluster.name}"? This will stop all VM instances.`
-                            : `Are you sure you want to hibernate cluster "${cluster.name}"? This will stop all EC2 instances.`;
+                          const instanceLabel = cluster.platform === "aws"
+                            ? "EC2 instances"
+                            : cluster.platform === "ibmcloud"
+                              ? "VPC virtual server instances"
+                              : "VM instances";
+                          const message = `Are you sure you want to hibernate cluster "${cluster.name}"? This will stop all ${instanceLabel}.`;
                           if (confirm(message)) {
                             try {
                               await hibernateCluster.mutateAsync(id);
@@ -1212,13 +1215,16 @@ export default function ClusterDetailPage() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    {cluster.status === "READY"
-                      ? cluster.platform === "gcp"
-                        ? "Hibernate cluster to stop VM instances and save costs. Cluster can be resumed later."
-                        : "Hibernate cluster to stop EC2 instances and save costs. Cluster can be resumed later."
-                      : cluster.platform === "gcp"
-                        ? "Resume cluster to restart VM instances and restore access."
-                        : "Resume cluster to restart EC2 instances and restore access."}
+                    {(() => {
+                      const instanceLabel = cluster.platform === "aws"
+                        ? "EC2 instances"
+                        : cluster.platform === "ibmcloud"
+                          ? "VPC virtual server instances"
+                          : "VM instances";
+                      return cluster.status === "READY"
+                        ? `Hibernate cluster to stop ${instanceLabel} and save costs. Cluster can be resumed later.`
+                        : `Resume cluster to restart ${instanceLabel} and restore access.`;
+                    })()}
                   </p>
                 </div>
               )}
