@@ -297,7 +297,11 @@ func (h *HibernateHandler) hibernateAzureOpenShift(ctx context.Context, cluster 
 }
 
 // azureResourceGroupFromMetadata reads the cluster's metadata.json and returns
-// the Azure resource group that openshift-install created for the cluster.
+// the Azure resource group that holds the cluster's VMs. When the installer
+// creates its own resource group (the common case), metadata.json records an
+// empty azure.resourceGroupName and the group is named "<infraID>-rg". If a
+// pre-existing resource group was supplied, azure.resourceGroupName is set and
+// is used verbatim.
 func azureResourceGroupFromMetadata(workDir string) (string, error) {
 	metadataPath := filepath.Join(workDir, "metadata.json")
 	data, err := os.ReadFile(metadataPath)
@@ -306,7 +310,8 @@ func azureResourceGroupFromMetadata(workDir string) (string, error) {
 	}
 
 	var metadata struct {
-		Azure struct {
+		InfraID string `json:"infraID"`
+		Azure   struct {
 			ResourceGroupName string `json:"resourceGroupName"`
 		} `json:"azure"`
 	}
@@ -314,11 +319,16 @@ func azureResourceGroupFromMetadata(workDir string) (string, error) {
 		return "", fmt.Errorf("parse metadata.json: %w", err)
 	}
 
-	rg := strings.TrimSpace(metadata.Azure.ResourceGroupName)
-	if rg == "" {
-		return "", fmt.Errorf("metadata.json has no azure.resourceGroupName")
+	if rg := strings.TrimSpace(metadata.Azure.ResourceGroupName); rg != "" {
+		return rg, nil
 	}
-	return rg, nil
+
+	// Installer-managed resource group: named "<infraID>-rg".
+	if infraID := strings.TrimSpace(metadata.InfraID); infraID != "" {
+		return infraID + "-rg", nil
+	}
+
+	return "", fmt.Errorf("metadata.json has neither azure.resourceGroupName nor infraID")
 }
 
 // listAzureVMIDs returns the fully-qualified resource IDs of every VM in the
