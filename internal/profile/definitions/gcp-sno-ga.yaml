@@ -11,7 +11,8 @@ openshiftVersions:
   - '4.19'
   - '4.20'
   - '4.21'
-  default: '4.20'
+  - '4.22'
+  default: '4.22'
 regions:
   allowlist:
   - us-central1
@@ -102,6 +103,8 @@ metadata:
     workers: 0 nodes (SNO configuration)
     total: 1 node, 4 vCPU, 16 GB RAM
   notes:
+  - 'OCP 4.22 GA is supported (default). Provisioning uses openshift-install on GCP.'
+  - 'Requires GCP credentials on workers and openshift-install-4.22 (ensure-installers.sh).'
   - 'Single node: 1x n2-standard-4 (~$0.19/hr)'
   - 'Total running cost: ~$0.19/hour or ~$140/month'
   - 'Hibernated cost: ~$0.02/hour (storage only, ~90% savings)'

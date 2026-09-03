@@ -12,7 +12,8 @@ openshiftVersions:
   - '4.19'
   - '4.20'
   - '4.21'
-  default: '4.20'
+  - '4.22'
+  default: '4.22'
 regions:
   allowlist:
   - us-central1
@@ -104,6 +105,8 @@ metadata:
     workers: 3 nodes, n2-standard-8 (8 vCPU, 32 GB RAM each)
     total: 6 nodes, 36 vCPU, 144 GB RAM
   notes:
+  - 'OCP 4.22 GA is supported (default). Provisioning uses openshift-install on GCP (see HandleGCPOpenShiftCreate).'
+  - 'Requires GCP credentials on workers (GOOGLE_APPLICATION_CREDENTIALS / gcloud auth) and openshift-install-4.22 (installed by ensure-installers.sh).'
   - 'Control plane: 3x n2-standard-4 (~$0.19/hr each, ~$0.57/hr total)'
   - 'Workers: 3x n2-standard-8 (~$0.39/hr each, ~$1.17/hr total)'
   - 'Total running cost: ~$1.20/hour or ~$870/month'
