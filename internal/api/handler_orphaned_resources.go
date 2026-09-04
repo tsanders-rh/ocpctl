@@ -19,8 +19,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/tsanders-rh/ocpctl/internal/aws/cleanup"
+	"github.com/tsanders-rh/ocpctl/internal/orphan"
 	"github.com/tsanders-rh/ocpctl/internal/policy"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -28,16 +30,73 @@ import (
 
 // OrphanedResourceHandler handles orphaned resource API endpoints
 type OrphanedResourceHandler struct {
-	store  *store.Store
-	policy *policy.Engine
+	store         *store.Store
+	policy        *policy.Engine
+	safetyCfg     orphan.Config
+	clusterLookup orphan.ClusterLookup
+	vpcInspector  orphan.VPCInspector
 }
 
 // NewOrphanedResourceHandler creates a new orphaned resource handler
 func NewOrphanedResourceHandler(s *store.Store, p *policy.Engine) *OrphanedResourceHandler {
 	return &OrphanedResourceHandler{
-		store:  s,
-		policy: p,
+		store:         s,
+		policy:        p,
+		safetyCfg:     orphan.ConfigFromEnv(),
+		clusterLookup: orphan.NewStoreClusterLookup(s.Clusters),
+		vpcInspector:  orphan.NewAWSVPCInspector(),
 	}
+}
+
+// evaluateSafety runs the orphaned-resource deletion safety gate for one
+// resource. It never deletes anything. VPC probes get a bounded timeout so a
+// slow AWS call can't hang the request.
+func (h *OrphanedResourceHandler) evaluateSafety(ctx context.Context, resource *types.OrphanedResource) orphan.Verdict {
+	evalCtx := ctx
+	if resource.ResourceType == types.OrphanedResourceTypeVPC {
+		var cancel context.CancelFunc
+		evalCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+	return orphan.Evaluate(evalCtx, resource, h.safetyCfg, time.Now(), h.clusterLookup, h.vpcInspector)
+}
+
+// auditDelete records an audit event for a delete attempt (blocked, forced, or
+// clean). Fire-and-forget: audit failures never fail the request.
+func (h *OrphanedResourceHandler) auditDelete(c echo.Context, resource *types.OrphanedResource, actor string, status types.AuditEventStatus, action string, verdict orphan.Verdict, forced bool) {
+	ip := c.RealIP()
+	userAgent := c.Request().UserAgent()
+
+	metadata := types.JobMetadata{
+		"resource_id":   resource.ID,
+		"resource_type": string(resource.ResourceType),
+		"aws_resource":  resource.ResourceID,
+		"region":        resource.Region,
+		"cluster_name":  resource.ClusterName,
+		"safe":          verdict.Safe,
+		"forced":        forced,
+	}
+	if len(verdict.BlockReasons) > 0 {
+		metadata["block_reasons"] = verdict.BlockReasons
+	}
+	if verdict.SourceClusterStatus != nil {
+		metadata["source_cluster_status"] = *verdict.SourceClusterStatus
+	}
+
+	event := &types.AuditEvent{
+		ID:              uuid.New().String(),
+		Actor:           actor,
+		Action:          action,
+		TargetClusterID: resource.ClusterID,
+		TargetJobID:     resource.JobID,
+		Status:          status,
+		Metadata:        metadata,
+		IPAddress:       &ip,
+		UserAgent:       &userAgent,
+		CreatedAt:       time.Now(),
+	}
+
+	_ = h.store.Audit.Log(c.Request().Context(), event)
 }
 
 // MarkResolvedRequest represents the request to mark a resource as resolved
@@ -262,6 +321,21 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 		}
 	}
 
+	// Safety gate: refuse to delete a resource that fails a safety check unless
+	// the caller explicitly overrides with ?force=true. The gate is the primary
+	// guard against deleting a live cluster's infrastructure.
+	force := strings.EqualFold(c.QueryParam("force"), "true") || c.QueryParam("force") == "1"
+	verdict := h.evaluateSafety(c.Request().Context(), resource)
+	if !verdict.Safe && !force {
+		h.auditDelete(c, resource, userEmail, types.AuditEventStatusDenied,
+			"orphaned_resource.delete_blocked", verdict, false)
+		return c.JSON(409, map[string]interface{}{
+			"error":   "safety_check_failed",
+			"message": "Deletion blocked by safety checks. Review block_reasons and retry with ?force=true to override.",
+			"verdict": verdict,
+		})
+	}
+
 	// Delete the resource based on type
 	// For VPC deletions, use a longer timeout (5 minutes) due to the complex cleanup process
 	ctx := c.Request().Context()
@@ -325,11 +399,23 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	defer dbCancel()
 
 	// Mark as resolved
+	forcedUnsafe := force && !verdict.Safe
 	notes := fmt.Sprintf("Automatically deleted via API by %s", userEmail)
+	if forcedUnsafe {
+		notes = fmt.Sprintf("Force-deleted via API by %s despite safety checks (%s)",
+			userEmail, strings.Join(verdict.BlockReasons, "; "))
+	}
 	err = h.store.OrphanedResources.MarkResolved(dbCtx, id, userEmail, notes)
 	if err != nil {
 		return LogAndReturnGenericError(c, fmt.Errorf("resource deleted but failed to update database for %s: %w", id, err))
 	}
+
+	// Audit the successful deletion (distinguish a clean delete from a forced override).
+	deleteAction := "orphaned_resource.deleted"
+	if forcedUnsafe {
+		deleteAction = "orphaned_resource.delete_forced"
+	}
+	h.auditDelete(c, resource, userEmail, types.AuditEventStatusSuccess, deleteAction, verdict, forcedUnsafe)
 
 	// Get updated resource
 	resource, err = h.store.OrphanedResources.GetByID(dbCtx, id)
@@ -338,6 +424,33 @@ func (h *OrphanedResourceHandler) Delete(c echo.Context) error {
 	}
 
 	return c.JSON(200, resource)
+}
+
+// Safety previews the deletion safety gate for an orphaned resource without
+// deleting anything.
+//
+//	@Summary		Preview deletion safety checks
+//	@Description	Runs the deletion safety gate (live-cluster guard, grace period, status, VPC-alive probe) for an orphaned resource and returns the verdict. Deletes nothing. Admin only.
+//	@Tags			Orphaned Resources
+//	@Produce		json
+//	@Param			id	path		string	true	"Resource ID"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		404	{object}	map[string]string	"Resource not found"
+//	@Security		BearerAuth
+//	@Router			/admin/orphaned-resources/{id}/safety [get]
+func (h *OrphanedResourceHandler) Safety(c echo.Context) error {
+	id := c.Param("id")
+
+	resource, err := h.store.OrphanedResources.GetByID(c.Request().Context(), id)
+	if err != nil {
+		return ErrorNotFound(c, "Resource not found")
+	}
+
+	verdict := h.evaluateSafety(c.Request().Context(), resource)
+	return c.JSON(200, map[string]interface{}{
+		"resource": resource,
+		"verdict":  verdict,
+	})
 }
 
 // deleteHostedZone deletes a Route53 hosted zone and all its records
