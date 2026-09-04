@@ -268,6 +268,7 @@ func (s *Server) setupRoutes() {
 	adminGroup := v1.Group("/admin", auth.RequireAuthDual(s.auth, s.iamAuth), auth.RequireAdmin())
 	adminGroup.GET("/orphaned-resources", orphanedHandler.List)
 	adminGroup.GET("/orphaned-resources/stats", orphanedHandler.GetStats)
+	adminGroup.GET("/orphaned-resources/:id/safety", orphanedHandler.Safety)
 	adminGroup.PATCH("/orphaned-resources/:id/resolve", orphanedHandler.MarkResolved)
 	adminGroup.PATCH("/orphaned-resources/:id/ignore", orphanedHandler.MarkIgnored)
 	adminGroup.DELETE("/orphaned-resources/:id", orphanedHandler.Delete)
