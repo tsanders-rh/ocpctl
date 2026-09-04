@@ -945,6 +945,33 @@ func (s *ClusterStore) CheckNameExists(ctx context.Context, name string, platfor
 	return exists, nil
 }
 
+// GetMostRecentIDByName returns the ID of the most recently created cluster with
+// the given name, across ALL statuses (including DESTROYED and FAILED). It is
+// used for orphaned-resource leak-source tracing: cluster names can be reused
+// over time, and the cluster that leaked an orphaned resource is almost always
+// already DESTROYED, so this intentionally does NOT filter by status and picks
+// the newest match. Returns ("", nil) when no cluster matches the name.
+func (s *ClusterStore) GetMostRecentIDByName(ctx context.Context, name string) (string, error) {
+	query := `
+		SELECT id
+		FROM clusters
+		WHERE name = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var id string
+	err := s.pool.QueryRow(ctx, query, name).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get most recent cluster id by name: %w", err)
+	}
+
+	return id, nil
+}
+
 // DeleteDestroyedClusters deletes DESTROYED clusters older than the specified time
 // This is used by the janitor to cleanup old cluster records from the database
 // Returns the number of clusters deleted

@@ -25,6 +25,7 @@ type clusterStore interface {
 	UpdateLastWorkHoursCheck(ctx context.Context, clusterID string) error
 	DeleteDestroyedClusters(ctx context.Context, olderThan time.Time) (int, error)
 	GetClustersForWorkHoursEnforcement(ctx context.Context) ([]*types.Cluster, error)
+	GetMostRecentIDByName(ctx context.Context, name string) (string, error)
 }
 
 type jobStore interface {

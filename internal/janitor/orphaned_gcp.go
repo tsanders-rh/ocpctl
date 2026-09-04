@@ -99,11 +99,14 @@ func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
 	// Report findings
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned GCP resources:", len(orphans))
+		leakCache := newLeakSourceCache()
 		for _, orphan := range orphans {
 			log.Printf("  - %s: %s (%s) in %s", orphan.Type, orphan.ResourceName, orphan.ResourceID, orphan.Region)
 
 			// Persist to database
 			clusterName := extractGCPClusterName(orphan.ResourceName, orphan.Tags)
+
+			refs := j.resolveLeakSource(ctx, clusterName, leakCache)
 
 			dbOrphan := &types.OrphanedResource{
 				ResourceType: types.OrphanedResourceType(orphan.Type),
@@ -111,6 +114,8 @@ func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
 				ResourceName: orphan.ResourceName,
 				Region:       orphan.Region,
 				ClusterName:  clusterName,
+				ClusterID:    refs.clusterID,
+				JobID:        refs.jobID,
 				Tags:         types.OrphanedResourceTags(orphan.Tags),
 			}
 

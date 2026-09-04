@@ -80,12 +80,18 @@ func (t *OrphanedResourceTags) Scan(value interface{}) error {
 
 // OrphanedResource represents a cloud resource that exists but has no matching cluster
 type OrphanedResource struct {
-	ID              string                 `db:"id" json:"id"`
-	ResourceType    OrphanedResourceType   `db:"resource_type" json:"resource_type"`
-	ResourceID      string                 `db:"resource_id" json:"resource_id"`
-	ResourceName    string                 `db:"resource_name" json:"resource_name"`
-	Region          string                 `db:"region" json:"region"`
-	ClusterName     string                 `db:"cluster_name" json:"cluster_name"`
+	ID           string               `db:"id" json:"id"`
+	ResourceType OrphanedResourceType `db:"resource_type" json:"resource_type"`
+	ResourceID   string               `db:"resource_id" json:"resource_id"`
+	ResourceName string               `db:"resource_name" json:"resource_name"`
+	Region       string               `db:"region" json:"region"`
+	ClusterName  string               `db:"cluster_name" json:"cluster_name"`
+	// ClusterID/JobID are best-effort leak-source back-references, populated at
+	// detection time by matching the extracted cluster name (see janitor
+	// resolveLeakSource). Either may be nil when the source can't be resolved or
+	// the referenced record was later purged (FK is ON DELETE SET NULL).
+	ClusterID       *string                `db:"cluster_id" json:"cluster_id,omitempty"`
+	JobID           *string                `db:"job_id" json:"job_id,omitempty"`
 	Tags            OrphanedResourceTags   `db:"tags" json:"tags"`
 	FirstDetectedAt time.Time              `db:"first_detected_at" json:"first_detected_at"`
 	LastDetectedAt  time.Time              `db:"last_detected_at" json:"last_detected_at"`

@@ -34,6 +34,8 @@ type mockClusterStore struct {
 	deleteN         int
 	deleteErr       error
 	updateStatusErr error
+	idByName        map[string]string
+	idByNameErr     error
 
 	// recorded writes
 	statusUpdates []statusUpdate
@@ -91,6 +93,16 @@ func (m *mockClusterStore) DeleteDestroyedClusters(ctx context.Context, olderTha
 
 func (m *mockClusterStore) GetClustersForWorkHoursEnforcement(ctx context.Context) ([]*types.Cluster, error) {
 	return m.forWorkHours, m.forWorkHoursErr
+}
+
+func (m *mockClusterStore) GetMostRecentIDByName(ctx context.Context, name string) (string, error) {
+	if m.idByNameErr != nil {
+		return "", m.idByNameErr
+	}
+	if m.idByName != nil {
+		return m.idByName[name], nil
+	}
+	return "", nil
 }
 
 type mockJobStore struct {
