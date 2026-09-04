@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tsanders-rh/ocpctl/internal/metrics"
+	"github.com/tsanders-rh/ocpctl/internal/orphan"
 	"github.com/tsanders-rh/ocpctl/internal/store"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
@@ -27,6 +28,13 @@ type Config struct {
 	DestroyedClusterRetentionDays int  // Days to keep DESTROYED cluster records before deleting
 	FailedClusterDirRetentionDays int  // Days to keep work directories for FAILED clusters
 	OrphanedDirCleanup            bool // Enable cleanup of orphaned work directories
+
+	// Orphaned-resource auto-remediation (issue #101 phase 3). Off by default;
+	// enabled via the ORPHAN_AUTO_DELETE env var. Deletion only proceeds for
+	// resources that pass the shared safety gate (internal/orphan.Evaluate).
+	OrphanAutoDelete            orphan.AutoDeleteMode
+	OrphanAutoDeleteMaxPerCycle int
+	OrphanSafetyConfig          orphan.Config
 }
 
 // DefaultConfig returns default janitor configuration
@@ -41,6 +49,11 @@ func DefaultConfig() *Config {
 		DestroyedClusterRetentionDays: 30,               // Keep DESTROYED records for 30 days
 		FailedClusterDirRetentionDays: 7,                // Keep FAILED directories for 7 days
 		OrphanedDirCleanup:            true,             // Enable orphaned directory cleanup
+
+		// Auto-remediation config is env-driven; unset env => off (safe default).
+		OrphanAutoDelete:            orphan.AutoDeleteModeFromEnv(),
+		OrphanAutoDeleteMaxPerCycle: orphan.AutoDeleteMaxPerCycleFromEnv(),
+		OrphanSafetyConfig:          orphan.ConfigFromEnv(),
 	}
 }
 
@@ -57,6 +70,13 @@ type Janitor struct {
 	cancel           context.CancelFunc
 	lastOrphanCheck  time.Time
 	metricsPublisher *metrics.Publisher
+
+	// Orphaned-resource auto-remediation collaborators. clusterLookup/vpcInspector
+	// feed the shared safety gate; orphanDeleter performs the teardown (defaults
+	// to orphan.DeleteResource, overridable in tests).
+	clusterLookup orphan.ClusterLookup
+	vpcInspector  orphan.VPCInspector
+	orphanDeleter func(ctx context.Context, res *types.OrphanedResource, opts orphan.DeleteOptions) error
 }
 
 // NewJanitor creates a new janitor instance
@@ -71,13 +91,19 @@ func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 		log.Printf("Warning: failed to create metrics publisher for janitor: %v", err)
 	}
 
-	return &Janitor{
+	j := &Janitor{
 		config:           config,
 		stores:           storesFromStore(st),
 		workDir:          workDir,
 		running:          false,
 		metricsPublisher: metricsPublisher,
+		vpcInspector:     orphan.NewAWSVPCInspector(),
+		orphanDeleter:    orphan.DeleteResource,
 	}
+	if st != nil {
+		j.clusterLookup = orphan.NewStoreClusterLookup(st.Clusters)
+	}
+	return j
 }
 
 // Start starts the janitor loop
@@ -196,6 +222,15 @@ func (j *Janitor) run() {
 			// Detect GCP orphaned resources
 			if err := j.detectOrphanedGCPResources(ctx); err != nil {
 				log.Printf("Error detecting orphaned GCP resources: %v", err)
+			}
+
+			// Auto-remediate (delete) orphaned resources that pass the safety
+			// gate, if enabled. Runs right after detection so it acts on the
+			// freshly-updated detection counts/timestamps.
+			if j.config.OrphanAutoDelete != orphan.AutoDeleteOff {
+				if err := j.autoRemediateOrphans(ctx); err != nil {
+					log.Printf("Error auto-remediating orphaned resources: %v", err)
+				}
 			}
 
 			j.lastOrphanCheck = time.Now()

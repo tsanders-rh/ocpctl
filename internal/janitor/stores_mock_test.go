@@ -216,14 +216,49 @@ func (m *mockUserStore) GetByID(ctx context.Context, id string) (*types.User, er
 	return nil, fmt.Errorf("user %s not found", id)
 }
 
+type resolvedCall struct {
+	id         string
+	resolvedBy string
+	notes      string
+}
+
 type mockOrphanedResourceStore struct {
 	upserts []*types.OrphanedResource
 	err     error
+
+	// reads
+	listResult []*types.OrphanedResource
+	listErr    error
+
+	// recorded writes
+	resolved     []resolvedCall
+	markResolved error
 }
 
 func (m *mockOrphanedResourceStore) Upsert(ctx context.Context, resource *types.OrphanedResource) error {
 	m.upserts = append(m.upserts, resource)
 	return m.err
+}
+
+func (m *mockOrphanedResourceStore) List(ctx context.Context, filters store.OrphanedResourceFilters) ([]*types.OrphanedResource, int, error) {
+	if m.listErr != nil {
+		return nil, 0, m.listErr
+	}
+	return m.listResult, len(m.listResult), nil
+}
+
+func (m *mockOrphanedResourceStore) MarkResolved(ctx context.Context, id, resolvedBy, notes string) error {
+	m.resolved = append(m.resolved, resolvedCall{id: id, resolvedBy: resolvedBy, notes: notes})
+	return m.markResolved
+}
+
+type mockAuditStore struct {
+	events []*types.AuditEvent
+}
+
+func (m *mockAuditStore) Log(ctx context.Context, event *types.AuditEvent) error {
+	m.events = append(m.events, event)
+	return nil
 }
 
 type mockDeploymentMetricsStore struct {

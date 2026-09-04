@@ -1,0 +1,693 @@
+package orphan
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os/exec"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/tsanders-rh/ocpctl/internal/aws/cleanup"
+	"github.com/tsanders-rh/ocpctl/pkg/types"
+)
+
+// Sentinel errors returned by DeleteResource for cases callers may want to
+// handle specially (e.g. map to an HTTP 400 rather than a 500).
+var (
+	// ErrUnsupportedResourceType means the resource type has no automated
+	// deletion path (e.g. EC2 instances must be handled via the AWS Console).
+	ErrUnsupportedResourceType = errors.New("resource type not supported for automated deletion")
+	// ErrGCPProjectRequired means a GCP resource was requested for deletion but
+	// no GCP project was supplied.
+	ErrGCPProjectRequired = errors.New("GCP project is required for GCP resource deletion")
+)
+
+// DeleteOptions carries cross-cutting inputs the type-specific deleters need.
+type DeleteOptions struct {
+	// GCPProject is the GCP project ID, required for GCP resource types.
+	GCPProject string
+}
+
+// DeleteResource performs the real cloud teardown for a single orphaned
+// resource, dispatching by type. It is shared by the admin API delete path and
+// the janitor's auto-remediation so both use identical teardown logic. It does
+// NOT evaluate the safety gate -- callers must run Evaluate first.
+func DeleteResource(ctx context.Context, res *types.OrphanedResource, opts DeleteOptions) error {
+	switch res.ResourceType {
+	case types.OrphanedResourceTypeHostedZone:
+		return deleteHostedZone(ctx, res.ResourceID, res.ResourceName)
+	case types.OrphanedResourceTypeDNSRecord:
+		return deleteDNSRecord(ctx, res.ResourceName)
+	case types.OrphanedResourceTypeEBSVolume:
+		return deleteEBSVolume(ctx, res.ResourceID, res.Region)
+	case types.OrphanedResourceTypeElasticIP:
+		return deleteElasticIP(ctx, res.ResourceID, res.Region)
+	case types.OrphanedResourceTypeIAMRole:
+		return deleteIAMRole(ctx, res.ResourceName)
+	case types.OrphanedResourceTypeOIDCProvider:
+		return deleteOIDCProvider(ctx, res.ResourceID)
+	case types.OrphanedResourceTypeCloudWatchLogGroup:
+		return deleteCloudWatchLogGroup(ctx, res.ResourceID, res.Region)
+	case types.OrphanedResourceTypeLoadBalancer:
+		return deleteLoadBalancer(ctx, res.ResourceID, res.Region)
+	case types.OrphanedResourceTypeVPC:
+		return deleteVPCAndDependencies(ctx, res.ResourceID, res.Region)
+	case types.OrphanedResourceTypeGCPServiceAccount:
+		if opts.GCPProject == "" {
+			return ErrGCPProjectRequired
+		}
+		return deleteGCPServiceAccount(ctx, res.ResourceID, opts.GCPProject)
+	case types.OrphanedResourceTypeEC2Instance:
+		return fmt.Errorf("%w: EC2Instance must be deleted via the AWS Console", ErrUnsupportedResourceType)
+	default:
+		return fmt.Errorf("%w: %s", ErrUnsupportedResourceType, res.ResourceType)
+	}
+}
+
+// deleteHostedZone deletes a Route53 hosted zone and all its records
+func deleteHostedZone(ctx context.Context, hostedZoneID, hostedZoneName string) error {
+	// Load AWS config with region (Route53 is global but SDK requires a region)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	route53Client := route53.NewFromConfig(cfg)
+
+	// List all record sets
+	listResult, err := route53Client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+		HostedZoneId: aws.String(hostedZoneID),
+	})
+	if err != nil {
+		// Check if the hosted zone doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "NoSuchHostedZone") {
+			log.Printf("Hosted zone %s (%s) not found - assuming already deleted", hostedZoneName, hostedZoneID)
+			return nil // Treat as success since the end result (zone deleted) is achieved
+		}
+		return fmt.Errorf("list record sets: %w", err)
+	}
+
+	// Delete all records except NS and SOA (which are required and will be deleted with the zone)
+	var changes []route53types.Change
+	for _, record := range listResult.ResourceRecordSets {
+		recordType := record.Type
+		recordName := aws.ToString(record.Name)
+
+		// Skip NS and SOA records at the zone apex - these will be deleted automatically
+		if (recordType == route53types.RRTypeNs || recordType == route53types.RRTypeSoa) &&
+			strings.TrimSuffix(recordName, ".") == strings.TrimSuffix(hostedZoneName, ".") {
+			continue
+		}
+
+		// Add delete change for this record
+		changes = append(changes, route53types.Change{
+			Action:            route53types.ChangeActionDelete,
+			ResourceRecordSet: &record,
+		})
+	}
+
+	// Execute the changes if there are any records to delete
+	if len(changes) > 0 {
+		_, err = route53Client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: aws.String(hostedZoneID),
+			ChangeBatch: &route53types.ChangeBatch{
+				Changes: changes,
+				Comment: aws.String("Deleting all records before zone deletion via ocpctl"),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("delete record sets: %w", err)
+		}
+		log.Printf("Deleted %d record sets from hosted zone %s", len(changes), hostedZoneName)
+	}
+
+	// Now delete the hosted zone itself
+	_, err = route53Client.DeleteHostedZone(ctx, &route53.DeleteHostedZoneInput{
+		Id: aws.String(hostedZoneID),
+	})
+	if err != nil {
+		// Check if the hosted zone doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "NoSuchHostedZone") {
+			log.Printf("Hosted zone %s (%s) not found during deletion - assuming already deleted", hostedZoneName, hostedZoneID)
+			return nil // Treat as success since the end result (zone deleted) is achieved
+		}
+		return fmt.Errorf("delete hosted zone: %w", err)
+	}
+
+	log.Printf("Successfully deleted hosted zone %s (%s)", hostedZoneName, hostedZoneID)
+	return nil
+}
+
+// deleteDNSRecord deletes a specific DNS record from Route53
+func deleteDNSRecord(ctx context.Context, recordName string) error {
+	// Load AWS config with region (Route53 is global but SDK requires a region)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	route53Client := route53.NewFromConfig(cfg)
+
+	// Normalize record name (ensure it ends with a dot)
+	if !strings.HasSuffix(recordName, ".") {
+		recordName = recordName + "."
+	}
+
+	// Find which hosted zone contains this record
+	// List all hosted zones
+	zonesResult, err := route53Client.ListHostedZones(ctx, &route53.ListHostedZonesInput{})
+	if err != nil {
+		return fmt.Errorf("list hosted zones: %w", err)
+	}
+
+	var targetZoneID string
+	var targetZoneName string
+
+	// Find the zone that this record belongs to
+	// Check if the record name ends with the zone name
+	for _, zone := range zonesResult.HostedZones {
+		zoneName := aws.ToString(zone.Name)
+		if strings.HasSuffix(recordName, zoneName) {
+			// Found a potential match - use the most specific (longest) zone name
+			if targetZoneName == "" || len(zoneName) > len(targetZoneName) {
+				targetZoneID = aws.ToString(zone.Id)
+				targetZoneName = zoneName
+			}
+		}
+	}
+
+	if targetZoneID == "" {
+		return fmt.Errorf("could not find hosted zone for record %s", recordName)
+	}
+
+	log.Printf("Found record %s in hosted zone %s (%s)", recordName, targetZoneName, targetZoneID)
+
+	// List records in the zone to find the exact match
+	listResult, err := route53Client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+		HostedZoneId: aws.String(targetZoneID),
+	})
+	if err != nil {
+		return fmt.Errorf("list record sets: %w", err)
+	}
+
+	// Find the exact record to delete
+	var recordToDelete *route53types.ResourceRecordSet
+	for _, record := range listResult.ResourceRecordSets {
+		if aws.ToString(record.Name) == recordName {
+			recordToDelete = &record
+			break
+		}
+	}
+
+	if recordToDelete == nil {
+		// Record doesn't exist - it was probably already deleted manually
+		log.Printf("DNS record %s not found in zone %s - assuming already deleted", recordName, targetZoneName)
+		return nil // Treat as success since the end result (record deleted) is achieved
+	}
+
+	// Delete the record
+	_, err = route53Client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: aws.String(targetZoneID),
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
+				{
+					Action:            route53types.ChangeActionDelete,
+					ResourceRecordSet: recordToDelete,
+				},
+			},
+			Comment: aws.String(fmt.Sprintf("Deleting orphaned DNS record via ocpctl: %s", recordName)),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("delete DNS record: %w", err)
+	}
+
+	log.Printf("Successfully deleted DNS record %s from zone %s", recordName, targetZoneName)
+	return nil
+}
+
+// deleteEBSVolume deletes an EBS volume
+func deleteEBSVolume(ctx context.Context, volumeID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// First, check if volume is attached
+	describeResult, err := ec2Client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{
+		VolumeIds: []string{volumeID},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "InvalidVolume.NotFound") {
+			log.Printf("EBS volume %s not found - assuming already deleted", volumeID)
+			return nil
+		}
+		return fmt.Errorf("describe volume: %w", err)
+	}
+
+	if len(describeResult.Volumes) == 0 {
+		log.Printf("EBS volume %s not found - assuming already deleted", volumeID)
+		return nil
+	}
+
+	volume := describeResult.Volumes[0]
+
+	// If volume is attached to an instance, terminate the instance instead
+	if len(volume.Attachments) > 0 {
+		attachment := volume.Attachments[0]
+		instanceID := aws.ToString(attachment.InstanceId)
+		device := aws.ToString(attachment.Device)
+		deleteOnTermination := attachment.DeleteOnTermination != nil && *attachment.DeleteOnTermination
+
+		log.Printf("Volume %s is attached to instance %s (device: %s, deleteOnTermination: %v)", volumeID, instanceID, device, deleteOnTermination)
+
+		if deleteOnTermination {
+			// Terminate the instance - volume will be automatically deleted
+			log.Printf("Terminating instance %s (volume %s will be automatically deleted)", instanceID, volumeID)
+			_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: []string{instanceID},
+			})
+			if err != nil {
+				if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+					log.Printf("Instance %s not found - assuming already terminated", instanceID)
+					// Instance already gone, try to delete volume directly
+				} else {
+					return fmt.Errorf("terminate instance %s: %w", instanceID, err)
+				}
+			} else {
+				log.Printf("Successfully initiated termination of instance %s (volume %s will be deleted automatically)", instanceID, volumeID)
+				return nil
+			}
+		} else {
+			// DeleteOnTermination is false - detach and delete volume separately
+			log.Printf("Detaching volume %s from instance %s (deleteOnTermination is false)", volumeID, instanceID)
+			_, err = ec2Client.DetachVolume(ctx, &ec2.DetachVolumeInput{
+				VolumeId:   aws.String(volumeID),
+				InstanceId: aws.String(instanceID),
+				Device:     aws.String(device),
+				Force:      aws.Bool(true),
+			})
+			if err != nil {
+				return fmt.Errorf("detach volume from instance %s: %w", instanceID, err)
+			}
+
+			// Wait for detachment
+			log.Printf("Waiting for volume %s detachment to complete...", volumeID)
+			waiter := ec2.NewVolumeAvailableWaiter(ec2Client)
+			err = waiter.Wait(ctx, &ec2.DescribeVolumesInput{
+				VolumeIds: []string{volumeID},
+			}, 60)
+			if err != nil {
+				log.Printf("Warning: volume detachment wait failed: %v (proceeding with delete anyway)", err)
+			}
+		}
+	}
+
+	// Delete the volume
+	_, err = ec2Client.DeleteVolume(ctx, &ec2.DeleteVolumeInput{
+		VolumeId: aws.String(volumeID),
+	})
+	if err != nil {
+		// Check if volume doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidVolume.NotFound") {
+			log.Printf("EBS volume %s not found - assuming already deleted", volumeID)
+			return nil
+		}
+		return fmt.Errorf("delete EBS volume: %w", err)
+	}
+
+	log.Printf("Successfully deleted EBS volume %s", volumeID)
+	return nil
+}
+
+// deleteElasticIP releases an Elastic IP
+func deleteElasticIP(ctx context.Context, allocationID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Track if we deleted a NAT Gateway (so we can skip disassociation step)
+	deletedNatGateway := false
+
+	// First, check if the EIP is associated with anything
+	describeResult, err := ec2Client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
+		AllocationIds: []string{allocationID},
+	})
+	if err != nil {
+		// Check if EIP doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidAllocationID.NotFound") {
+			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+			return nil
+		}
+		return fmt.Errorf("describe Elastic IP: %w", err)
+	}
+
+	if len(describeResult.Addresses) == 0 {
+		log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+		return nil
+	}
+
+	address := describeResult.Addresses[0]
+
+	// If the EIP is associated, check what it's attached to and handle accordingly
+	if address.AssociationId != nil {
+		// First check if it's associated with an EC2 instance directly
+		if address.InstanceId != nil && *address.InstanceId != "" {
+			instanceID := *address.InstanceId
+			log.Printf("EIP %s is attached to EC2 instance %s - terminating instance (EIP will be auto-released)", allocationID, instanceID)
+
+			// Terminate the EC2 instance
+			_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: []string{instanceID},
+			})
+			if err != nil {
+				if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+					log.Printf("EC2 instance %s not found - assuming already terminated", instanceID)
+					// Instance already gone, continue to release EIP manually below
+				} else {
+					return fmt.Errorf("terminate EC2 instance %s: %w", instanceID, err)
+				}
+			} else {
+				log.Printf("EC2 instance %s termination initiated - EIP %s will be automatically released when instance terminates", instanceID, allocationID)
+				// Mark that we terminated instance so we skip manual release
+				deletedNatGateway = true // Reuse this flag (could rename to deletedAssociatedResource)
+			}
+		} else if address.NetworkInterfaceId != nil {
+			// Check if the network interface is a NAT Gateway or other resource
+			log.Printf("Checking network interface %s for EIP %s", *address.NetworkInterfaceId, allocationID)
+			niResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+				NetworkInterfaceIds: []string{*address.NetworkInterfaceId},
+			})
+			if err != nil {
+				log.Printf("Warning: failed to describe network interface %s: %v", *address.NetworkInterfaceId, err)
+				// Continue anyway - if we can't check, we'll try to disassociate and let AWS return the proper error
+			} else if len(niResult.NetworkInterfaces) > 0 {
+				ni := niResult.NetworkInterfaces[0]
+
+				// Check if interface type is nat_gateway
+				interfaceTypeStr := string(ni.InterfaceType)
+				if interfaceTypeStr == "nat_gateway" || ni.InterfaceType == ec2types.NetworkInterfaceTypeNatGateway {
+					// Extract NAT Gateway ID from description
+					natGatewayID := ""
+					if ni.Description != nil && strings.Contains(*ni.Description, "nat-") {
+						parts := strings.Split(*ni.Description, " ")
+						if len(parts) > 3 {
+							natGatewayID = parts[len(parts)-1]
+						}
+					}
+
+					// Delete the NAT Gateway - AWS will automatically release the EIP when deletion completes
+					log.Printf("EIP %s is attached to NAT Gateway %s - deleting NAT Gateway (EIP will be auto-released)", allocationID, natGatewayID)
+					_, err = ec2Client.DeleteNatGateway(ctx, &ec2.DeleteNatGatewayInput{
+						NatGatewayId: aws.String(natGatewayID),
+					})
+					if err != nil {
+						if strings.Contains(err.Error(), "NatGatewayNotFound") {
+							log.Printf("NAT Gateway %s not found - assuming already deleted", natGatewayID)
+							// NAT Gateway already deleted, EIP should be released - continue to skip manual release below
+						} else {
+							return fmt.Errorf("delete NAT Gateway %s: %w", natGatewayID, err)
+						}
+					} else {
+						log.Printf("NAT Gateway %s deletion initiated - EIP %s will be automatically released in 1-2 minutes", natGatewayID, allocationID)
+					}
+					// Mark that we deleted/found deleted NAT Gateway
+					// Skip manual EIP release below since AWS handles it automatically
+					deletedNatGateway = true
+				} else if ni.Attachment != nil && ni.Attachment.InstanceId != nil && *ni.Attachment.InstanceId != "" {
+					// Network interface is attached to an EC2 instance
+					instanceID := *ni.Attachment.InstanceId
+					log.Printf("EIP %s is attached via network interface to EC2 instance %s - terminating instance (EIP will be auto-released)", allocationID, instanceID)
+
+					// Terminate the EC2 instance
+					_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+						InstanceIds: []string{instanceID},
+					})
+					if err != nil {
+						if strings.Contains(err.Error(), "InvalidInstanceID.NotFound") {
+							log.Printf("EC2 instance %s not found - assuming already terminated", instanceID)
+							// Instance already gone, continue to disassociate/release below
+						} else {
+							return fmt.Errorf("terminate EC2 instance %s: %w", instanceID, err)
+						}
+					} else {
+						log.Printf("EC2 instance %s termination initiated - EIP %s will be automatically released when instance terminates", instanceID, allocationID)
+						// Mark that we terminated instance so we skip manual release
+						deletedNatGateway = true
+					}
+				}
+			}
+		}
+
+		// Only disassociate if we didn't delete a NAT Gateway or terminate an EC2 instance
+		// (Resource deletion automatically disassociates and releases the EIP)
+		if !deletedNatGateway {
+			log.Printf("Disassociating Elastic IP %s (association: %s)", allocationID, *address.AssociationId)
+			_, err = ec2Client.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
+				AssociationId: address.AssociationId,
+			})
+			if err != nil {
+				// Handle AuthFailure which can occur if NAT Gateway was recently deleted
+				if strings.Contains(err.Error(), "AuthFailure") {
+					log.Printf("AuthFailure when disassociating EIP %s - NAT Gateway may have been recently deleted, proceeding to release", allocationID)
+					// Continue to try releasing the EIP
+				} else {
+					return fmt.Errorf("disassociate Elastic IP: %w", err)
+				}
+			}
+		} else {
+			log.Printf("Skipping disassociation for EIP %s (associated resource deletion handles it)", allocationID)
+		}
+	}
+
+	// If we deleted a NAT Gateway or terminated an EC2 instance, skip manual EIP release
+	// AWS will automatically release the EIP when the resource deletion completes
+	if deletedNatGateway {
+		log.Printf("Skipping manual EIP release - AWS will automatically release %s when associated resource deletion completes", allocationID)
+		return nil // Return success immediately - EIP will be released automatically
+	}
+
+	// Otherwise, release the Elastic IP manually
+	_, err = ec2Client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+		AllocationId: aws.String(allocationID),
+	})
+	if err != nil {
+		// Check if EIP doesn't exist (already deleted)
+		if strings.Contains(err.Error(), "InvalidAllocationID.NotFound") {
+			log.Printf("Elastic IP %s not found - assuming already deleted", allocationID)
+			return nil
+		}
+		return fmt.Errorf("release Elastic IP: %w", err)
+	}
+
+	log.Printf("Successfully released Elastic IP %s", allocationID)
+	return nil
+}
+
+// deleteIAMRole deletes an IAM role and its attached policies
+func deleteIAMRole(ctx context.Context, roleName string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// List and detach all attached policies
+	listPoliciesResult, err := iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		// Check if role doesn't exist
+		if strings.Contains(err.Error(), "NoSuchEntity") {
+			log.Printf("IAM role %s not found - assuming already deleted", roleName)
+			return nil
+		}
+		return fmt.Errorf("list attached policies: %w", err)
+	}
+
+	for _, policy := range listPoliciesResult.AttachedPolicies {
+		_, err = iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: policy.PolicyArn,
+		})
+		if err != nil {
+			return fmt.Errorf("detach policy %s: %w", aws.ToString(policy.PolicyArn), err)
+		}
+	}
+
+	// List and delete all inline policies
+	listInlinePoliciesResult, err := iamClient.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list inline policies: %w", err)
+	}
+
+	for _, policyName := range listInlinePoliciesResult.PolicyNames {
+		_, err = iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if err != nil {
+			return fmt.Errorf("delete inline policy %s: %w", policyName, err)
+		}
+	}
+
+	// List and remove role from instance profiles
+	listInstanceProfilesResult, err := iamClient.ListInstanceProfilesForRole(ctx, &iam.ListInstanceProfilesForRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("list instance profiles for role: %w", err)
+	}
+
+	for _, instanceProfile := range listInstanceProfilesResult.InstanceProfiles {
+		log.Printf("Removing role %s from instance profile %s", roleName, aws.ToString(instanceProfile.InstanceProfileName))
+		_, err = iamClient.RemoveRoleFromInstanceProfile(ctx, &iam.RemoveRoleFromInstanceProfileInput{
+			RoleName:            aws.String(roleName),
+			InstanceProfileName: instanceProfile.InstanceProfileName,
+		})
+		if err != nil {
+			return fmt.Errorf("remove role from instance profile %s: %w", aws.ToString(instanceProfile.InstanceProfileName), err)
+		}
+	}
+
+	// Delete the role
+	_, err = iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("delete role: %w", err)
+	}
+
+	log.Printf("Successfully deleted IAM role %s", roleName)
+	return nil
+}
+
+// deleteOIDCProvider deletes an OIDC provider
+func deleteOIDCProvider(ctx context.Context, providerArn string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Delete the OIDC provider
+	_, err = iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(providerArn),
+	})
+	if err != nil {
+		// Check if provider doesn't exist
+		if strings.Contains(err.Error(), "NoSuchEntity") {
+			log.Printf("OIDC provider %s not found - assuming already deleted", providerArn)
+			return nil
+		}
+		return fmt.Errorf("delete OIDC provider: %w", err)
+	}
+
+	log.Printf("Successfully deleted OIDC provider %s", providerArn)
+	return nil
+}
+
+// deleteCloudWatchLogGroup deletes a CloudWatch log group
+func deleteCloudWatchLogGroup(ctx context.Context, logGroupName, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	cwlClient := cloudwatchlogs.NewFromConfig(cfg)
+
+	// Delete the log group
+	_, err = cwlClient.DeleteLogGroup(ctx, &cloudwatchlogs.DeleteLogGroupInput{
+		LogGroupName: aws.String(logGroupName),
+	})
+	if err != nil {
+		// Check if log group doesn't exist
+		if strings.Contains(err.Error(), "ResourceNotFoundException") {
+			log.Printf("CloudWatch log group %s not found - assuming already deleted", logGroupName)
+			return nil
+		}
+		return fmt.Errorf("delete log group: %w", err)
+	}
+
+	log.Printf("Successfully deleted CloudWatch log group %s", logGroupName)
+	return nil
+}
+
+// deleteLoadBalancer deletes an Application/Network Load Balancer
+func deleteLoadBalancer(ctx context.Context, loadBalancerArn, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+
+	// Delete the load balancer
+	_, err = elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+		LoadBalancerArn: aws.String(loadBalancerArn),
+	})
+	if err != nil {
+		// Check if load balancer doesn't exist
+		if strings.Contains(err.Error(), "LoadBalancerNotFound") {
+			log.Printf("Load balancer %s not found - assuming already deleted", loadBalancerArn)
+			return nil
+		}
+		return fmt.Errorf("delete load balancer: %w", err)
+	}
+
+	log.Printf("Successfully deleted load balancer %s", loadBalancerArn)
+	return nil
+}
+
+// deleteVPCAndDependencies deletes a VPC and all its dependent resources
+func deleteVPCAndDependencies(ctx context.Context, vpcID, region string) error {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+	return cleanup.DeleteVPCAndDependencies(ctx, ec2Client, vpcID)
+}
+
+// deleteGCPServiceAccount deletes a GCP service account
+func deleteGCPServiceAccount(ctx context.Context, serviceAccountEmail, project string) error {
+	log.Printf("Deleting GCP service account %s in project %s", serviceAccountEmail, project)
+
+	// Delete the service account using gcloud command
+	cmd := exec.CommandContext(ctx, "gcloud", "iam", "service-accounts", "delete", serviceAccountEmail,
+		"--project", project,
+		"--quiet") // --quiet skips confirmation prompts
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Check if service account doesn't exist
+		if strings.Contains(string(output), "NOT_FOUND") || strings.Contains(string(output), "does not exist") {
+			log.Printf("GCP service account %s not found - assuming already deleted", serviceAccountEmail)
+			return nil
+		}
+		return fmt.Errorf("delete GCP service account: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Successfully deleted GCP service account %s", serviceAccountEmail)
+	return nil
+}
