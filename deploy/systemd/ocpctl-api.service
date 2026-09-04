@@ -23,7 +23,12 @@ NoNewPrivileges=true
 PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/ocpctl /var/log/ocpctl
+# /opt/ocpctl must be writable: the GCP instances endpoint shells out to `gcloud`,
+# which writes its config/cache (credentials.db, logs) under $HOME/.config/gcloud
+# (HOME=/opt/ocpctl). Without this, ProtectSystem=strict makes /opt/ocpctl
+# read-only and gcloud fails with "Read-only file system", surfacing in the UI as
+# "Failed to load instances".
+ReadWritePaths=/opt/ocpctl /var/lib/ocpctl /var/log/ocpctl
 
 # Resource limits
 LimitNOFILE=65536
