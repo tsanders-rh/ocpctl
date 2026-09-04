@@ -3,10 +3,31 @@ package store
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
+
+// normalizeIP validates a captured client IP before it is written to the
+// audit_events.ip_address inet column. The IP comes from c.RealIP(), which
+// trusts client-controlled proxy headers (X-Forwarded-For / X-Real-IP), so a
+// malformed or crafted header (e.g. "\104.190.230.9") would otherwise fail the
+// inet cast and drop the entire audit row. Returns a canonical IP string, or
+// nil (SQL NULL) when the value is absent or not a valid IP — audit logging must
+// never fail because of untrusted input.
+func normalizeIP(raw *string) *string {
+	if raw == nil {
+		return nil
+	}
+	ip := net.ParseIP(strings.TrimSpace(*raw))
+	if ip == nil {
+		return nil
+	}
+	s := ip.String()
+	return &s
+}
 
 // AuditStore handles audit event operations
 type AuditStore struct {
@@ -33,7 +54,7 @@ func (s *AuditStore) Log(ctx context.Context, event *types.AuditEvent) error {
 		event.TargetUserID,
 		event.Status,
 		event.Metadata,
-		event.IPAddress,
+		normalizeIP(event.IPAddress),
 		event.UserAgent,
 	)
 
