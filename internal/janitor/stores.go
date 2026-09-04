@@ -55,6 +55,12 @@ type userStore interface {
 
 type orphanedResourceStore interface {
 	Upsert(ctx context.Context, resource *types.OrphanedResource) error
+	List(ctx context.Context, filters store.OrphanedResourceFilters) ([]*types.OrphanedResource, int, error)
+	MarkResolved(ctx context.Context, id string, resolvedBy string, notes string) error
+}
+
+type auditStore interface {
+	Log(ctx context.Context, event *types.AuditEvent) error
 }
 
 type deploymentMetricsStore interface {
@@ -69,6 +75,7 @@ type janitorStores struct {
 	idempotency   idempotencyStore
 	users         userStore
 	orphaned      orphanedResourceStore
+	audit         auditStore
 	deployMetrics deploymentMetricsStore
 }
 
@@ -85,6 +92,7 @@ func storesFromStore(st *store.Store) janitorStores {
 		idempotency:   st.Idempotency,
 		users:         st.Users,
 		orphaned:      st.OrphanedResources,
+		audit:         st.Audit,
 		deployMetrics: st.ProfileDeploymentMetrics,
 	}
 }
