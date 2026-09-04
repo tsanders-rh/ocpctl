@@ -61,6 +61,21 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 			break
 		}
 
+		// Ownership guard: auto-remediation deletes ONLY resources that carry a
+		// verified ocpctl ownership tag. Detection is not uniformly tag-gated --
+		// several paths flag resources by heuristic (CloudWatch log groups by
+		// /aws/eks/ prefix, DNS records/zones by generic ClusterName/Profile tags,
+		// GCP service accounts by email, by-infraID IAM roles by name prefix, EC2
+		// nodes by the kubernetes.io/cluster tag). Those matches lack the ocpctl
+		// ownership tag, so they are recorded for visibility/manual cleanup but are
+		// never auto-deleted here, even if they pass the safety gate. Manual admin
+		// force-delete via the API is unaffected.
+		if !hasOcpctlOwnershipTag(res.Tags) {
+			log.Printf("[orphan-auto-delete] SKIP %s %s (%s): no verified ocpctl ownership tag (heuristic match); manual delete only",
+				res.ResourceType, res.ResourceID, res.Region)
+			continue
+		}
+
 		verdict := orphan.Evaluate(ctx, res, j.config.OrphanSafetyConfig, time.Now(), j.clusterLookup, j.vpcInspector)
 		if !verdict.Safe {
 			log.Printf("[orphan-auto-delete] SKIP %s %s (%s): %s",
@@ -110,6 +125,23 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 		log.Printf("[orphan-auto-delete] cycle complete: deleted %d orphaned resource(s)", realDeleted)
 	}
 	return nil
+}
+
+// hasOcpctlOwnershipTag reports whether the recorded resource tags carry a
+// verified ocpctl ownership signal. AWS detectors tag managed resources with
+// ManagedBy=ocpctl (or cluster-control-plane); GCP detectors label them
+// managed-by=ocpctl. Resources matched by weaker heuristics do not carry these,
+// so this is the gate that keeps auto-remediation from ever deleting a resource
+// ocpctl did not create.
+func hasOcpctlOwnershipTag(tags types.OrphanedResourceTags) bool {
+	switch {
+	case tags["ManagedBy"] == "ocpctl", tags["ManagedBy"] == "cluster-control-plane":
+		return true
+	case tags["managed-by"] == "ocpctl", tags["managed_by"] == "ocpctl":
+		return true
+	default:
+		return false
+	}
 }
 
 // auditAutoDelete records an audit event for an auto-remediation action.
