@@ -150,6 +150,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 	// Report findings
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned AWS resources:", len(orphans))
+		leakCache := newLeakSourceCache()
 		for _, orphan := range orphans {
 			log.Printf("  - %s: %s (%s) in %s", orphan.Type, orphan.ResourceName, orphan.ResourceID, orphan.Region)
 
@@ -166,12 +167,16 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 				}
 			}
 
+			refs := j.resolveLeakSource(ctx, clusterName, leakCache)
+
 			dbOrphan := &types.OrphanedResource{
 				ResourceType: types.OrphanedResourceType(orphan.Type),
 				ResourceID:   orphan.ResourceID,
 				ResourceName: orphan.ResourceName,
 				Region:       orphan.Region,
 				ClusterName:  clusterName,
+				ClusterID:    refs.clusterID,
+				JobID:        refs.jobID,
 				Tags:         types.OrphanedResourceTags(orphan.Tags),
 			}
 

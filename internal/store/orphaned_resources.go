@@ -32,9 +32,10 @@ func (s *OrphanedResourceStore) Upsert(ctx context.Context, resource *types.Orph
 	query := `
 		INSERT INTO orphaned_resources (
 			id, resource_type, resource_id, resource_name, region, cluster_name, tags,
+			cluster_id, job_id,
 			first_detected_at, last_detected_at, detection_count, status
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), 1, 'ACTIVE'
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), 1, 'ACTIVE'
 		)
 		ON CONFLICT (resource_type, resource_id, region) DO UPDATE SET
 			last_detected_at = NOW(),
@@ -42,7 +43,10 @@ func (s *OrphanedResourceStore) Upsert(ctx context.Context, resource *types.Orph
 			updated_at = NOW(),
 			-- Update name and tags if provided
 			resource_name = COALESCE(EXCLUDED.resource_name, orphaned_resources.resource_name),
-			tags = COALESCE(EXCLUDED.tags, orphaned_resources.tags)
+			tags = COALESCE(EXCLUDED.tags, orphaned_resources.tags),
+			-- Fill in leak-source refs once resolved; never clobber a known ref with NULL
+			cluster_id = COALESCE(EXCLUDED.cluster_id, orphaned_resources.cluster_id),
+			job_id = COALESCE(EXCLUDED.job_id, orphaned_resources.job_id)
 		RETURNING id
 	`
 
@@ -54,6 +58,8 @@ func (s *OrphanedResourceStore) Upsert(ctx context.Context, resource *types.Orph
 		resource.Region,
 		resource.ClusterName,
 		resource.Tags,
+		resource.ClusterID,
+		resource.JobID,
 	).Scan(&resource.ID)
 
 	if err != nil {
@@ -77,6 +83,7 @@ func (s *OrphanedResourceStore) List(ctx context.Context, filters OrphanedResour
 	// Build query with filters
 	query := `
 		SELECT id, resource_type, resource_id, resource_name, region, cluster_name, tags,
+			cluster_id, job_id,
 			first_detected_at, last_detected_at, detection_count, status,
 			resolved_at, resolved_by, notes, created_at, updated_at
 		FROM orphaned_resources
@@ -149,6 +156,8 @@ func (s *OrphanedResourceStore) List(ctx context.Context, filters OrphanedResour
 			&r.Region,
 			&r.ClusterName,
 			&r.Tags,
+			&r.ClusterID,
+			&r.JobID,
 			&r.FirstDetectedAt,
 			&r.LastDetectedAt,
 			&r.DetectionCount,
@@ -176,6 +185,7 @@ func (s *OrphanedResourceStore) List(ctx context.Context, filters OrphanedResour
 func (s *OrphanedResourceStore) GetByID(ctx context.Context, id string) (*types.OrphanedResource, error) {
 	query := `
 		SELECT id, resource_type, resource_id, resource_name, region, cluster_name, tags,
+			cluster_id, job_id,
 			first_detected_at, last_detected_at, detection_count, status,
 			resolved_at, resolved_by, notes, created_at, updated_at
 		FROM orphaned_resources
@@ -191,6 +201,8 @@ func (s *OrphanedResourceStore) GetByID(ctx context.Context, id string) (*types.
 		&r.Region,
 		&r.ClusterName,
 		&r.Tags,
+		&r.ClusterID,
+		&r.JobID,
 		&r.FirstDetectedAt,
 		&r.LastDetectedAt,
 		&r.DetectionCount,
