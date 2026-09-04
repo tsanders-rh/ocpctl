@@ -9,17 +9,19 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
-// safeResource returns an orphaned DNSRecord that passes the safety gate with a
-// nil cluster lookup: old enough, detected enough, ACTIVE, non-VPC.
+// safeResource returns an orphaned EBSVolume that passes both the ownership gate
+// and the safety gate with a nil cluster lookup: carries ManagedBy=ocpctl, old
+// enough, detected enough, ACTIVE, non-VPC.
 func safeResource(id string) *types.OrphanedResource {
 	return &types.OrphanedResource{
 		ID:              id,
-		ResourceType:    types.OrphanedResourceTypeDNSRecord,
-		ResourceID:      "rec-" + id,
+		ResourceType:    types.OrphanedResourceTypeEBSVolume,
+		ResourceID:      "vol-" + id,
 		ResourceName:    "orphan-" + id,
 		Region:          "us-east-1",
 		ClusterName:     "cluster-" + id,
 		Status:          types.OrphanedResourceStatusActive,
+		Tags:            types.OrphanedResourceTags{"ManagedBy": "ocpctl"},
 		FirstDetectedAt: time.Now().Add(-48 * time.Hour),
 		DetectionCount:  5,
 	}
@@ -118,6 +120,50 @@ func TestAutoRemediateOnDeletesSafeSkipsUnsafe(t *testing.T) {
 	}
 	if audit.events[0].Status != types.AuditEventStatusSuccess {
 		t.Errorf("audit status = %q, want SUCCESS", audit.events[0].Status)
+	}
+}
+
+func TestAutoRemediateOnSkipsResourcesWithoutOwnershipTag(t *testing.T) {
+	owned := safeResource("owned")
+	heuristic := safeResource("heuristic")
+	heuristic.Tags = types.OrphanedResourceTags{"kubernetes.io/cluster/foo": "owned"} // no ManagedBy=ocpctl
+
+	orphaned := &mockOrphanedResourceStore{listResult: []*types.OrphanedResource{owned, heuristic}}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteOn, 20, orphaned, audit, &deleted)
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0] != "owned" {
+		t.Errorf("deleted = %v, want [owned] (heuristic match without ownership tag must be skipped)", deleted)
+	}
+	if len(orphaned.resolved) != 1 || orphaned.resolved[0].id != "owned" {
+		t.Errorf("resolved = %v, want one call for owned", orphaned.resolved)
+	}
+}
+
+func TestHasOcpctlOwnershipTag(t *testing.T) {
+	cases := []struct {
+		name string
+		tags types.OrphanedResourceTags
+		want bool
+	}{
+		{"aws managed", types.OrphanedResourceTags{"ManagedBy": "ocpctl"}, true},
+		{"aws control plane", types.OrphanedResourceTags{"ManagedBy": "cluster-control-plane"}, true},
+		{"gcp dash", types.OrphanedResourceTags{"managed-by": "ocpctl"}, true},
+		{"gcp underscore", types.OrphanedResourceTags{"managed_by": "ocpctl"}, true},
+		{"nil", nil, false},
+		{"empty", types.OrphanedResourceTags{}, false},
+		{"k8s only", types.OrphanedResourceTags{"kubernetes.io/cluster/foo": "owned"}, false},
+		{"generic clustername", types.OrphanedResourceTags{"ClusterName": "foo", "Profile": "bar"}, false},
+		{"wrong value", types.OrphanedResourceTags{"ManagedBy": "someone-else"}, false},
+	}
+	for _, tc := range cases {
+		if got := hasOcpctlOwnershipTag(tc.tags); got != tc.want {
+			t.Errorf("%s: hasOcpctlOwnershipTag(%v) = %v, want %v", tc.name, tc.tags, got, tc.want)
+		}
 	}
 }
 
