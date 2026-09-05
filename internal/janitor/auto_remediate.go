@@ -16,6 +16,13 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
+// autoRemediateListLimit bounds how many ACTIVE orphaned resources a single
+// auto-remediation cycle evaluates. The safety gate runs a live VPC-alive probe
+// per VPC-type resource, so this caps per-cycle AWS API cost. When the true
+// ACTIVE backlog exceeds this, the status row reports TotalActive + Truncated so
+// operators aren't misled into thinking Evaluated/WouldDelete cover everything.
+const autoRemediateListLimit = 1000
+
 // autoRemediateOrphans deletes ACTIVE orphaned resources that pass the shared
 // safety gate (internal/orphan.Evaluate). It is a no-op unless auto-remediation
 // is enabled. The effective mode/cap come from the DB (admin console) when set,
@@ -31,9 +38,9 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 	dryRun := mode == orphan.AutoDeleteDryRun
 
 	active := types.OrphanedResourceStatusActive
-	resources, _, err := j.stores.orphaned.List(ctx, store.OrphanedResourceFilters{
+	resources, totalActive, err := j.stores.orphaned.List(ctx, store.OrphanedResourceFilters{
 		Status: &active,
-		Limit:  1000,
+		Limit:  autoRemediateListLimit,
 	})
 	if err != nil {
 		return fmt.Errorf("list active orphaned resources: %w", err)
@@ -49,13 +56,21 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 		deleter = orphan.DeleteResource
 	}
 
-	log.Printf("[orphan-auto-delete] mode=%s evaluating %d active orphaned resource(s) (max deletions/cycle=%d)",
-		mode, len(resources), maxPerCycle)
+	log.Printf("[orphan-auto-delete] mode=%s evaluating %d of %d active orphaned resource(s) (max deletions/cycle=%d)",
+		mode, len(resources), totalActive, maxPerCycle)
+	if totalActive > len(resources) {
+		log.Printf("[orphan-auto-delete] backlog %d exceeds per-cycle listing limit %d; evaluating most-recently-detected slice only",
+			totalActive, autoRemediateListLimit)
+	}
 
 	// Per-cycle telemetry, persisted at the end for the admin console.
 	status := types.OrphanAutoRemediationStatus{
-		LastRunAt: time.Now(),
-		Mode:      string(mode),
+		LastRunAt:   time.Now(),
+		Mode:        string(mode),
+		TotalActive: totalActive,
+		// True when the backlog exceeds what this cycle could list, so the console
+		// shows "evaluated N of M" instead of implying full coverage.
+		Truncated: totalActive > len(resources),
 	}
 
 	for _, res := range resources {

@@ -203,13 +203,27 @@ export function AutoRemediationCard() {
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <StatCell label="Evaluated" value={status.evaluated} />
+              <StatCell
+                label="Evaluated"
+                value={status.evaluated}
+                note={
+                  status.truncated ? `of ${status.totalActive} active` : undefined
+                }
+              />
               <StatCell label="Would delete" value={status.wouldDelete} />
               <StatCell label="Deleted" value={status.deleted} highlight={status.deleted > 0} />
               <StatCell label="Failed" value={status.failed} danger={status.failed > 0} />
               <StatCell label="Skipped (unsafe)" value={status.skippedUnsafe} />
               <StatCell label="Skipped (unowned)" value={status.skippedUnowned} />
             </div>
+          )}
+          {status?.truncated && (
+            <p className="mt-3 text-xs text-amber-700">
+              Only the {status.evaluated.toLocaleString()} most-recently-detected of{" "}
+              {status.totalActive.toLocaleString()} active orphans were evaluated
+              this cycle. The listing is capped for cost; the remainder rotate into
+              later cycles as detection re-times them.
+            </p>
           )}
           {status?.capped && (
             <p className="mt-3 text-xs text-amber-700">
@@ -262,11 +276,13 @@ export function AutoRemediationCard() {
 function StatCell({
   label,
   value,
+  note,
   highlight,
   danger,
 }: {
   label: string;
   value: number;
+  note?: string;
   highlight?: boolean;
   danger?: boolean;
 }) {
@@ -277,9 +293,12 @@ function StatCell({
           danger ? "text-red-600" : highlight ? "text-green-600" : ""
         }`}
       >
-        {value}
+        {value.toLocaleString()}
       </div>
       <div className="text-xs text-muted-foreground">{label}</div>
+      {note ? (
+        <div className="text-[10px] text-amber-700">{note}</div>
+      ) : null}
     </div>
   );
 }

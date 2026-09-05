@@ -27,13 +27,20 @@ type OrphanAutoRemediationSettings struct {
 // including which effective mode was in force, so the console reflects reality
 // even when config still comes from the worker's env bootstrap default.
 type OrphanAutoRemediationStatus struct {
-	LastRunAt      time.Time `json:"lastRunAt"`
-	Mode           string    `json:"mode"`
-	Evaluated      int       `json:"evaluated"`
-	WouldDelete    int       `json:"wouldDelete"`
-	Deleted        int       `json:"deleted"`
-	Failed         int       `json:"failed"`
-	SkippedUnsafe  int       `json:"skippedUnsafe"`
-	SkippedUnowned int       `json:"skippedUnowned"`
-	Capped         bool      `json:"capped"`
+	LastRunAt time.Time `json:"lastRunAt"`
+	Mode      string    `json:"mode"`
+	// TotalActive is the full count of ACTIVE orphaned resources at cycle start.
+	// Each cycle evaluates only the most-recently-detected slice (see Truncated),
+	// so this exposes the real backlog rather than just what was evaluated.
+	TotalActive int `json:"totalActive"`
+	// Truncated is true when TotalActive exceeded the per-cycle listing limit, so
+	// Evaluated/WouldDelete reflect only the evaluated slice, not the full backlog.
+	Truncated      bool `json:"truncated"`
+	Evaluated      int  `json:"evaluated"`
+	WouldDelete    int  `json:"wouldDelete"`
+	Deleted        int  `json:"deleted"`
+	Failed         int  `json:"failed"`
+	SkippedUnsafe  int  `json:"skippedUnsafe"`
+	SkippedUnowned int  `json:"skippedUnowned"`
+	Capped         bool `json:"capped"`
 }
