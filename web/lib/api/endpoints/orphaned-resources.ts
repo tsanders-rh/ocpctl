@@ -76,6 +76,9 @@ export interface AutoRemediationSettings {
 export interface AutoRemediationStatus {
   lastRunAt: string;
   mode: string;
+  // Full ACTIVE backlog at cycle start; evaluated may be a subset when truncated.
+  totalActive: number;
+  truncated: boolean;
   evaluated: number;
   wouldDelete: number;
   deleted: number;

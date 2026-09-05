@@ -228,6 +228,7 @@ type mockOrphanedResourceStore struct {
 
 	// reads
 	listResult []*types.OrphanedResource
+	listTotal  int // overrides the reported total when > 0 (to simulate truncation)
 	listErr    error
 
 	// recorded writes
@@ -244,7 +245,11 @@ func (m *mockOrphanedResourceStore) List(ctx context.Context, filters store.Orph
 	if m.listErr != nil {
 		return nil, 0, m.listErr
 	}
-	return m.listResult, len(m.listResult), nil
+	total := len(m.listResult)
+	if m.listTotal > 0 {
+		total = m.listTotal
+	}
+	return m.listResult, total, nil
 }
 
 func (m *mockOrphanedResourceStore) MarkResolved(ctx context.Context, id, resolvedBy, notes string) error {

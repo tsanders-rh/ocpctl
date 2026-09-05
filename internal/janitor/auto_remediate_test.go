@@ -252,6 +252,69 @@ func TestAutoRemediateStatusCountsOnMode(t *testing.T) {
 	}
 }
 
+func TestAutoRemediateStatusReportsBacklogTruncation(t *testing.T) {
+	// The listing is capped per cycle, so when the true ACTIVE backlog exceeds the
+	// evaluated slice the status must expose TotalActive + Truncated so the console
+	// doesn't imply full coverage.
+	orphaned := &mockOrphanedResourceStore{
+		listResult: []*types.OrphanedResource{safeResource("a"), safeResource("b")},
+		listTotal:  5447, // backlog far larger than the evaluated slice
+	}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteDryRun, 20, orphaned, audit, &deleted)
+	settings := &mockSystemSettingsStore{}
+	j.stores.settings = settings
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	raw := settings.upserted[types.SettingOrphanAutoRemediationStatus]
+	if raw == nil {
+		t.Fatalf("expected a status row to be written")
+	}
+	var status types.OrphanAutoRemediationStatus
+	if err := json.Unmarshal(raw, &status); err != nil {
+		t.Fatalf("status unmarshal: %v", err)
+	}
+	if status.TotalActive != 5447 {
+		t.Errorf("TotalActive = %d, want 5447", status.TotalActive)
+	}
+	if !status.Truncated {
+		t.Errorf("Truncated = false, want true (evaluated %d of %d)", status.Evaluated, status.TotalActive)
+	}
+	if status.Evaluated != 2 {
+		t.Errorf("Evaluated = %d, want 2 (only the listed slice)", status.Evaluated)
+	}
+}
+
+func TestAutoRemediateStatusNotTruncatedWhenBacklogFits(t *testing.T) {
+	orphaned := &mockOrphanedResourceStore{
+		listResult: []*types.OrphanedResource{safeResource("a"), safeResource("b")},
+		// listTotal 0 -> total == len(listResult), nothing truncated
+	}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteDryRun, 20, orphaned, audit, &deleted)
+	settings := &mockSystemSettingsStore{}
+	j.stores.settings = settings
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var status types.OrphanAutoRemediationStatus
+	if err := json.Unmarshal(settings.upserted[types.SettingOrphanAutoRemediationStatus], &status); err != nil {
+		t.Fatalf("status unmarshal: %v", err)
+	}
+	if status.Truncated {
+		t.Errorf("Truncated = true, want false when backlog fits in one cycle")
+	}
+	if status.TotalActive != 2 {
+		t.Errorf("TotalActive = %d, want 2", status.TotalActive)
+	}
+}
+
 func TestAutoRemediateOnRespectsCap(t *testing.T) {
 	resources := []*types.OrphanedResource{
 		safeResource("a"), safeResource("b"), safeResource("c"),
