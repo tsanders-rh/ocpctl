@@ -67,6 +67,13 @@ type deploymentMetricsStore interface {
 	UpdateAllMetrics(ctx context.Context) (int, error)
 }
 
+// systemSettingsStore is the seam for the generic key/value settings the janitor
+// reads (effective auto-remediation config) and writes (per-cycle telemetry).
+type systemSettingsStore interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Upsert(ctx context.Context, key string, value []byte, updatedBy string) error
+}
+
 // janitorStores groups the store seams the janitor depends on.
 type janitorStores struct {
 	clusters      clusterStore
@@ -77,6 +84,7 @@ type janitorStores struct {
 	orphaned      orphanedResourceStore
 	audit         auditStore
 	deployMetrics deploymentMetricsStore
+	settings      systemSettingsStore
 }
 
 // storesFromStore adapts a concrete *store.Store into the interface seams. A nil
@@ -94,5 +102,6 @@ func storesFromStore(st *store.Store) janitorStores {
 		orphaned:      st.OrphanedResources,
 		audit:         st.Audit,
 		deployMetrics: st.ProfileDeploymentMetrics,
+		settings:      st.SystemSettings,
 	}
 }

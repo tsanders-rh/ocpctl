@@ -63,6 +63,7 @@ type Store struct {
 	Pools                    *PoolStore
 	Reports                  *ReportStore
 	BroadcastAlerts          *BroadcastAlertStore
+	SystemSettings           *SystemSettingsStore
 }
 
 // New creates a new Store with all sub-stores initialized using the provided database connection pool.
@@ -105,6 +106,7 @@ func New(pool *pgxpool.Pool) *Store {
 	s.Pools = &PoolStore{pool: pool}
 	s.Reports = &ReportStore{pool: pool}
 	s.BroadcastAlerts = &BroadcastAlertStore{pool: pool}
+	s.SystemSettings = &SystemSettingsStore{pool: pool}
 
 	return s
 }

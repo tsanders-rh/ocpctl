@@ -225,12 +225,12 @@ func (j *Janitor) run() {
 			}
 
 			// Auto-remediate (delete) orphaned resources that pass the safety
-			// gate, if enabled. Runs right after detection so it acts on the
-			// freshly-updated detection counts/timestamps.
-			if j.config.OrphanAutoDelete != orphan.AutoDeleteOff {
-				if err := j.autoRemediateOrphans(ctx); err != nil {
-					log.Printf("Error auto-remediating orphaned resources: %v", err)
-				}
+			// gate. Runs right after detection so it acts on the freshly-updated
+			// detection counts/timestamps. Self-gates on the effective mode
+			// (DB-configured admin setting, else env default), so it is a cheap
+			// no-op when auto-remediation is off.
+			if err := j.autoRemediateOrphans(ctx); err != nil {
+				log.Printf("Error auto-remediating orphaned resources: %v", err)
 			}
 
 			j.lastOrphanCheck = time.Now()

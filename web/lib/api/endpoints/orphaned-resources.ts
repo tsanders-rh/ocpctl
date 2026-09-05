@@ -66,6 +66,32 @@ export interface OrphanedResourceFilters {
   offset?: number;
 }
 
+export type AutoRemediationMode = "off" | "dryrun" | "on";
+
+export interface AutoRemediationSettings {
+  mode: AutoRemediationMode;
+  maxPerCycle: number;
+}
+
+export interface AutoRemediationStatus {
+  lastRunAt: string;
+  mode: string;
+  evaluated: number;
+  wouldDelete: number;
+  deleted: number;
+  failed: number;
+  skippedUnsafe: number;
+  skippedUnowned: number;
+  capped: boolean;
+}
+
+export interface AutoRemediationResponse {
+  // null when the console has never configured it (worker env default applies)
+  settings: AutoRemediationSettings | null;
+  configured: boolean;
+  status: AutoRemediationStatus | null;
+}
+
 export interface MarkResolvedRequest {
   notes: string;
 }
@@ -135,6 +161,27 @@ export const orphanedResourcesApi = {
   deleteResource: async (id: string): Promise<OrphanedResource> => {
     return apiClient.delete<OrphanedResource>(
       `/admin/orphaned-resources/${id}`
+    );
+  },
+
+  /**
+   * Get the janitor's auto-remediation config and last-cycle status
+   */
+  getAutoRemediation: async (): Promise<AutoRemediationResponse> => {
+    return apiClient.get<AutoRemediationResponse>(
+      "/admin/orphaned-resources/auto-remediation"
+    );
+  },
+
+  /**
+   * Update the janitor's auto-remediation config (mode + per-cycle cap)
+   */
+  updateAutoRemediation: async (
+    settings: AutoRemediationSettings
+  ): Promise<AutoRemediationResponse> => {
+    return apiClient.put<AutoRemediationResponse>(
+      "/admin/orphaned-resources/auto-remediation",
+      settings
     );
   },
 };

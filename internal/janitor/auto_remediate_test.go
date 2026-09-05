@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -164,6 +165,90 @@ func TestHasOcpctlOwnershipTag(t *testing.T) {
 		if got := hasOcpctlOwnershipTag(tc.tags); got != tc.want {
 			t.Errorf("%s: hasOcpctlOwnershipTag(%v) = %v, want %v", tc.name, tc.tags, got, tc.want)
 		}
+	}
+}
+
+func TestAutoRemediateDBSettingOverridesEnvDefault(t *testing.T) {
+	// Env/config default is off, but the DB setting says dryrun -> the DB wins and
+	// the pass runs in dry-run (audits, deletes nothing).
+	orphaned := &mockOrphanedResourceStore{listResult: []*types.OrphanedResource{safeResource("a")}}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteOff, 20, orphaned, audit, &deleted)
+
+	cfg, _ := json.Marshal(types.OrphanAutoRemediationSettings{Mode: "dryrun", MaxPerCycle: 5})
+	settings := &mockSystemSettingsStore{values: map[string][]byte{
+		types.SettingOrphanAutoRemediation: cfg,
+	}}
+	j.stores.settings = settings
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Errorf("DB dryrun deleted %v, want none", deleted)
+	}
+	if len(audit.events) != 1 || audit.events[0].Action != "orphaned_resource.auto_delete_dryrun" {
+		t.Errorf("audit events = %+v, want one dryrun event (DB setting should have enabled the pass)", audit.events)
+	}
+
+	// The janitor must persist a status telemetry row for the console.
+	raw, ok := settings.upserted[types.SettingOrphanAutoRemediationStatus]
+	if !ok {
+		t.Fatalf("expected a status row to be written")
+	}
+	var status types.OrphanAutoRemediationStatus
+	if err := json.Unmarshal(raw, &status); err != nil {
+		t.Fatalf("status unmarshal: %v", err)
+	}
+	if status.Mode != "dryrun" {
+		t.Errorf("status.Mode = %q, want dryrun", status.Mode)
+	}
+	if status.WouldDelete != 1 || status.Evaluated != 1 {
+		t.Errorf("status = %+v, want Evaluated=1 WouldDelete=1", status)
+	}
+}
+
+func TestAutoRemediateStatusCountsOnMode(t *testing.T) {
+	owned := safeResource("owned")
+	unsafe := safeResource("unsafe")
+	unsafe.DetectionCount = 0 // blocked by safety gate
+	unowned := safeResource("unowned")
+	unowned.Tags = types.OrphanedResourceTags{"kubernetes.io/cluster/foo": "owned"} // no ownership tag
+
+	orphaned := &mockOrphanedResourceStore{listResult: []*types.OrphanedResource{owned, unsafe, unowned}}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteOn, 20, orphaned, audit, &deleted)
+	settings := &mockSystemSettingsStore{}
+	j.stores.settings = settings
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	raw := settings.upserted[types.SettingOrphanAutoRemediationStatus]
+	if raw == nil {
+		t.Fatalf("expected a status row to be written")
+	}
+	var status types.OrphanAutoRemediationStatus
+	if err := json.Unmarshal(raw, &status); err != nil {
+		t.Fatalf("status unmarshal: %v", err)
+	}
+	if status.Evaluated != 3 {
+		t.Errorf("Evaluated = %d, want 3", status.Evaluated)
+	}
+	if status.Deleted != 1 {
+		t.Errorf("Deleted = %d, want 1", status.Deleted)
+	}
+	if status.SkippedUnsafe != 1 {
+		t.Errorf("SkippedUnsafe = %d, want 1", status.SkippedUnsafe)
+	}
+	if status.SkippedUnowned != 1 {
+		t.Errorf("SkippedUnowned = %d, want 1", status.SkippedUnowned)
+	}
+	if status.Capped {
+		t.Errorf("Capped = true, want false")
 	}
 }
 
