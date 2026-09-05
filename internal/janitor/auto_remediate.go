@@ -158,11 +158,26 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 	return nil
 }
 
-// effectiveAutoRemediation resolves the mode and per-cycle cap that this pass
-// should use. The DB setting (written by the admin console) wins when present
-// and valid; otherwise it falls back to the janitor's env-derived config, so the
-// console overrides the worker's ORPHAN_AUTO_DELETE* bootstrap without a restart.
+// effectiveAutoRemediation resolves the mode and per-cycle cap for this pass and
+// applies the environment interlock. The DB setting (admin console) wins when
+// present and valid; otherwise it falls back to the janitor's env-derived config.
+// Finally, real deletion ("on") is clamped to "dryrun" unless this environment
+// has explicitly opted in via ORPHAN_AUTO_DELETE_ALLOW_ON -- defense-in-depth so
+// an env sharing a cloud account with another ocpctl deployment (e.g. dev sharing
+// prod's AWS account) can never delete, regardless of DB or env config.
 func (j *Janitor) effectiveAutoRemediation(ctx context.Context) (orphan.AutoDeleteMode, int) {
+	mode, maxPerCycle := j.resolveAutoRemediation(ctx)
+	if mode == orphan.AutoDeleteOn && !orphan.AutoDeleteOnAllowed() {
+		log.Printf("[orphan-auto-delete] mode 'on' requested but ORPHAN_AUTO_DELETE_ALLOW_ON is not set in this environment; clamping to dryrun (no deletions)")
+		mode = orphan.AutoDeleteDryRun
+	}
+	return mode, maxPerCycle
+}
+
+// resolveAutoRemediation reads the raw mode and per-cycle cap (DB override, else
+// env bootstrap) WITHOUT applying the on-allowed interlock -- callers use
+// effectiveAutoRemediation, which layers that clamp on top.
+func (j *Janitor) resolveAutoRemediation(ctx context.Context) (orphan.AutoDeleteMode, int) {
 	mode := j.config.OrphanAutoDelete
 	maxPerCycle := j.config.OrphanAutoDeleteMaxPerCycle
 

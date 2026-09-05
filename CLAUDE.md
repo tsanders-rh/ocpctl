@@ -756,6 +756,31 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-09-05**: Dev and Prod Share One AWS Account — Orphan-Count Divergence + `on`-Mode Interlock
+- **Dev and prod both scan the SAME AWS account (`346869059911`)** — dev was
+  provisioned with prod's cloud creds. This is why the two environments report
+  very different orphaned-resource counts (dev ~5,447 ACTIVE vs prod ~309 on
+  2026-09-05), NOT because they see different clouds.
+- Root cause: orphan detection is judged against **each environment's own
+  `clusters` table** (`internal/janitor/orphan_detector.go` — "resources that
+  don't match any cluster in the database"). Prod knows all 384 clusters it has
+  managed (12 live), so it protects its own live infra; dev has only 34 clusters,
+  **all DESTROYED (0 live)**, so dev's janitor treats ~everything in the shared
+  account — including prod's live infrastructure — as orphaned (4,423 of dev's
+  active orphans have no resolvable cluster name). Prod also actively triages
+  (1,858 RESOLVED); dev does not (26).
+- **Danger:** if dev auto-remediation were ever set to `on`, it could delete
+  prod's live resources. Dev must stay on `dryrun` while it shares prod's account.
+- **Interlock added:** env gate `ORPHAN_AUTO_DELETE_ALLOW_ON` (default OFF).
+  `internal/orphan/autodelete.go:AutoDeleteOnAllowed()`. The API refuses to save
+  mode `on` (**403**) and the janitor **clamps `on`→`dryrun`** when it is unset —
+  defense-in-depth that holds even if `ORPHAN_AUTO_DELETE=on` in worker.env or the
+  DB setting says on. **To enable real deletion in an environment, set
+  `ORPHAN_AUTO_DELETE_ALLOW_ON=true` on BOTH the API host (to save `on`) AND the
+  worker/janitor hosts (to act).** Leave UNSET on dev.
+- Deferred (discussed, not done): scoping dev detection via a per-environment tag
+  so dev ignores prod's resources; giving dev its own AWS account.
+
 **2026-08-19**: TMPDIR Permission Fix on Autoscale Workers
 - Fixed Azure (and any) IPI creates failing on autoscale workers — after the
   Azure credential fix, creates advanced to "Generating Cluster Infrastructure
@@ -875,4 +900,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-08-19 (Added TMPDIR permission fix on autoscale workers; autoscale worker self-heal + Azure credential fix documentation)
+**Last Updated**: 2026-09-05 (Documented dev/prod shared AWS account + orphan-count divergence; added ORPHAN_AUTO_DELETE_ALLOW_ON `on`-mode interlock)

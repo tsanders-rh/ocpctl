@@ -112,6 +112,15 @@ func (h *OrphanedResourceHandler) UpdateAutoRemediation(c echo.Context) error {
 		return ErrorBadRequest(c, fmt.Sprintf("maxPerCycle must be between 1 and %d", maxAutoRemediationPerCycle))
 	}
 
+	// Environment interlock: real deletion must be explicitly enabled for this
+	// environment. Blocks arming "on" where ORPHAN_AUTO_DELETE_ALLOW_ON is unset
+	// -- e.g. a dev environment sharing prod's AWS account, where the janitor
+	// would otherwise treat prod's live infrastructure as orphaned. off/dryrun
+	// remain allowed. The janitor also clamps on->dryrun as defense-in-depth.
+	if mode == orphan.AutoDeleteOn && !orphan.AutoDeleteOnAllowed() {
+		return ErrorForbidden(c, "auto-remediation 'on' mode is disabled in this environment (ORPHAN_AUTO_DELETE_ALLOW_ON is not set); use 'off' or 'dryrun'")
+	}
+
 	userEmail := "unknown"
 	if user := c.Get("user"); user != nil {
 		if u, ok := user.(*types.User); ok {
