@@ -41,6 +41,22 @@ func AutoDeleteModeFromEnv() AutoDeleteMode {
 	}
 }
 
+// ParseAutoDeleteMode parses a mode string (canonical or alias) into an
+// AutoDeleteMode. ok is false for empty or unrecognized input, so callers can
+// distinguish "explicitly off" from "invalid, fall back to the default".
+func ParseAutoDeleteMode(s string) (mode AutoDeleteMode, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "off", "false", "0":
+		return AutoDeleteOff, true
+	case "dryrun", "dry-run", "dry":
+		return AutoDeleteDryRun, true
+	case "on", "true", "1":
+		return AutoDeleteOn, true
+	default:
+		return AutoDeleteOff, false
+	}
+}
+
 // AutoDeleteMaxPerCycleFromEnv reads ORPHAN_AUTO_DELETE_MAX_PER_CYCLE, falling
 // back to DefaultAutoDeleteMaxPerCycle when unset or unparseable. A value <= 0
 // also falls back to the default.

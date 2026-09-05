@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -17,10 +18,13 @@ import (
 
 // autoRemediateOrphans deletes ACTIVE orphaned resources that pass the shared
 // safety gate (internal/orphan.Evaluate). It is a no-op unless auto-remediation
-// is enabled (ORPHAN_AUTO_DELETE). In dry-run mode it logs/audits exactly what
-// it would delete without deleting. Callers gate on config.OrphanAutoDelete.
+// is enabled. The effective mode/cap come from the DB (admin console) when set,
+// otherwise the ORPHAN_AUTO_DELETE* env bootstrap defaults -- see
+// effectiveAutoRemediation. In dry-run mode it logs/audits exactly what it would
+// delete without deleting. At the end of every enabled pass it writes a per-cycle
+// telemetry row so the console can show what actually happened.
 func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
-	mode := j.config.OrphanAutoDelete
+	mode, maxPerCycle := j.effectiveAutoRemediation(ctx)
 	if mode == orphan.AutoDeleteOff {
 		return nil
 	}
@@ -34,12 +38,8 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list active orphaned resources: %w", err)
 	}
-	if len(resources) == 0 {
-		return nil
-	}
 
 	gcpProject := os.Getenv("GCP_PROJECT")
-	maxPerCycle := j.config.OrphanAutoDeleteMaxPerCycle
 	if maxPerCycle <= 0 {
 		maxPerCycle = orphan.DefaultAutoDeleteMaxPerCycle
 	}
@@ -52,14 +52,21 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 	log.Printf("[orphan-auto-delete] mode=%s evaluating %d active orphaned resource(s) (max deletions/cycle=%d)",
 		mode, len(resources), maxPerCycle)
 
-	realDeleted := 0
+	// Per-cycle telemetry, persisted at the end for the admin console.
+	status := types.OrphanAutoRemediationStatus{
+		LastRunAt: time.Now(),
+		Mode:      string(mode),
+	}
+
 	for _, res := range resources {
 		// Cap only real deletions; dry-run keeps evaluating so operators see the
 		// full would-delete set.
-		if !dryRun && realDeleted >= maxPerCycle {
+		if !dryRun && status.Deleted >= maxPerCycle {
+			status.Capped = true
 			log.Printf("[orphan-auto-delete] reached per-cycle cap of %d; remaining resources deferred to next cycle", maxPerCycle)
 			break
 		}
+		status.Evaluated++
 
 		// Ownership guard: auto-remediation deletes ONLY resources that carry a
 		// verified ocpctl ownership tag. Detection is not uniformly tag-gated --
@@ -71,6 +78,7 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 		// never auto-deleted here, even if they pass the safety gate. Manual admin
 		// force-delete via the API is unaffected.
 		if !hasOcpctlOwnershipTag(res.Tags) {
+			status.SkippedUnowned++
 			log.Printf("[orphan-auto-delete] SKIP %s %s (%s): no verified ocpctl ownership tag (heuristic match); manual delete only",
 				res.ResourceType, res.ResourceID, res.Region)
 			continue
@@ -78,10 +86,13 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 
 		verdict := orphan.Evaluate(ctx, res, j.config.OrphanSafetyConfig, time.Now(), j.clusterLookup, j.vpcInspector)
 		if !verdict.Safe {
+			status.SkippedUnsafe++
 			log.Printf("[orphan-auto-delete] SKIP %s %s (%s): %s",
 				res.ResourceType, res.ResourceID, res.Region, strings.Join(verdict.BlockReasons, "; "))
 			continue
 		}
+		// Passed every gate: this is a would-delete (dry-run) or a deletion target.
+		status.WouldDelete++
 
 		if dryRun {
 			log.Printf("[orphan-auto-delete][DRYRUN] would delete %s %s (%s) name=%q cluster=%q",
@@ -102,29 +113,87 @@ func (j *Janitor) autoRemediateOrphans(ctx context.Context) error {
 				log.Printf("[orphan-auto-delete] SKIP %s %s: %v", res.ResourceType, res.ResourceID, delErr)
 				continue
 			}
+			status.Failed++
 			log.Printf("[orphan-auto-delete] FAILED to delete %s %s (%s): %v",
 				res.ResourceType, res.ResourceID, res.Region, delErr)
 			j.auditAutoDelete(ctx, res, verdict, false, delErr)
 			continue
 		}
 
-		notes := "Auto-deleted by janitor orphan auto-remediation (issue #101 phase 3)"
+		notes := "Auto-deleted by janitor orphan auto-remediation (issue #101)"
 		if err := j.stores.orphaned.MarkResolved(ctx, res.ID, "janitor", notes); err != nil {
 			log.Printf("[orphan-auto-delete] deleted %s %s but failed to mark resolved: %v",
 				res.ResourceType, res.ResourceID, err)
 		}
 		j.auditAutoDelete(ctx, res, verdict, false, nil)
-		realDeleted++
+		status.Deleted++
 		log.Printf("[orphan-auto-delete] deleted %s %s (%s) name=%q cluster=%q",
 			res.ResourceType, res.ResourceID, res.Region, res.ResourceName, res.ClusterName)
 	}
 
 	if dryRun {
-		log.Printf("[orphan-auto-delete] dry-run cycle complete")
-	} else if realDeleted > 0 {
-		log.Printf("[orphan-auto-delete] cycle complete: deleted %d orphaned resource(s)", realDeleted)
+		log.Printf("[orphan-auto-delete] dry-run cycle complete: %d would-delete, %d skipped-unsafe, %d skipped-unowned",
+			status.WouldDelete, status.SkippedUnsafe, status.SkippedUnowned)
+	} else {
+		log.Printf("[orphan-auto-delete] cycle complete: deleted %d, failed %d, skipped-unsafe %d, skipped-unowned %d",
+			status.Deleted, status.Failed, status.SkippedUnsafe, status.SkippedUnowned)
 	}
+
+	j.writeRemediationStatus(ctx, status)
 	return nil
+}
+
+// effectiveAutoRemediation resolves the mode and per-cycle cap that this pass
+// should use. The DB setting (written by the admin console) wins when present
+// and valid; otherwise it falls back to the janitor's env-derived config, so the
+// console overrides the worker's ORPHAN_AUTO_DELETE* bootstrap without a restart.
+func (j *Janitor) effectiveAutoRemediation(ctx context.Context) (orphan.AutoDeleteMode, int) {
+	mode := j.config.OrphanAutoDelete
+	maxPerCycle := j.config.OrphanAutoDeleteMaxPerCycle
+
+	if j.stores.settings == nil {
+		return mode, maxPerCycle
+	}
+
+	raw, err := j.stores.settings.Get(ctx, types.SettingOrphanAutoRemediation)
+	if err != nil {
+		log.Printf("[orphan-auto-delete] could not read auto-remediation setting from DB, using env default (%s): %v", mode, err)
+		return mode, maxPerCycle
+	}
+	if raw == nil {
+		return mode, maxPerCycle // not configured in console -> env bootstrap default
+	}
+
+	var s types.OrphanAutoRemediationSettings
+	if err := json.Unmarshal(raw, &s); err != nil {
+		log.Printf("[orphan-auto-delete] invalid auto-remediation setting JSON in DB, using env default (%s): %v", mode, err)
+		return mode, maxPerCycle
+	}
+	if m, ok := orphan.ParseAutoDeleteMode(s.Mode); ok {
+		mode = m
+	} else {
+		log.Printf("[orphan-auto-delete] unrecognized mode %q in DB setting, using env default (%s)", s.Mode, mode)
+	}
+	if s.MaxPerCycle > 0 {
+		maxPerCycle = s.MaxPerCycle
+	}
+	return mode, maxPerCycle
+}
+
+// writeRemediationStatus persists per-cycle telemetry for the admin console.
+// Best-effort: a status-write failure never affects remediation.
+func (j *Janitor) writeRemediationStatus(ctx context.Context, status types.OrphanAutoRemediationStatus) {
+	if j.stores.settings == nil {
+		return
+	}
+	raw, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("[orphan-auto-delete] failed to marshal remediation status: %v", err)
+		return
+	}
+	if err := j.stores.settings.Upsert(ctx, types.SettingOrphanAutoRemediationStatus, raw, "janitor"); err != nil {
+		log.Printf("[orphan-auto-delete] failed to persist remediation status: %v", err)
+	}
 }
 
 // hasOcpctlOwnershipTag reports whether the recorded resource tags carry a

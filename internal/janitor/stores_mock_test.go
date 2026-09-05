@@ -261,6 +261,30 @@ func (m *mockAuditStore) Log(ctx context.Context, event *types.AuditEvent) error
 	return nil
 }
 
+type mockSystemSettingsStore struct {
+	values   map[string][]byte
+	getErr   error
+	upserted map[string][]byte // key -> last value written
+}
+
+func (m *mockSystemSettingsStore) Get(ctx context.Context, key string) ([]byte, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	if m.values == nil {
+		return nil, nil
+	}
+	return m.values[key], nil
+}
+
+func (m *mockSystemSettingsStore) Upsert(ctx context.Context, key string, value []byte, updatedBy string) error {
+	if m.upserted == nil {
+		m.upserted = make(map[string][]byte)
+	}
+	m.upserted[key] = value
+	return nil
+}
+
 type mockDeploymentMetricsStore struct {
 	updatedN int
 	err      error

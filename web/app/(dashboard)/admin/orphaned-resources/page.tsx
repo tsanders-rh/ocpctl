@@ -42,6 +42,7 @@ import {
   FileText,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { AutoRemediationCard } from "./AutoRemediationCard";
 
 export default function OrphanedResourcesPage() {
   const [statusFilter, setStatusFilter] = useState<OrphanedResourceStatus | "ALL">("ACTIVE");
@@ -317,6 +318,9 @@ export default function OrphanedResourcesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Automated remediation controls */}
+      <AutoRemediationCard />
 
       {/* Filters */}
       <Card>

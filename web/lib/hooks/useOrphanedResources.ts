@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   orphanedResourcesApi,
   OrphanedResourceFilters,
+  AutoRemediationSettings,
 } from "../api/endpoints/orphaned-resources";
 
 /**
@@ -56,6 +57,34 @@ export function useMarkResourceIgnored() {
       // Invalidate both list and stats queries
       queryClient.invalidateQueries({
         queryKey: ["orphaned-resources"],
+      });
+    },
+  });
+}
+
+/**
+ * Hook to fetch the janitor's auto-remediation config and last-cycle status
+ */
+export function useAutoRemediation() {
+  return useQuery({
+    queryKey: ["orphaned-resources", "auto-remediation"],
+    queryFn: () => orphanedResourcesApi.getAutoRemediation(),
+    refetchInterval: 30000, // keep last-cycle status reasonably fresh
+  });
+}
+
+/**
+ * Hook to update the janitor's auto-remediation config
+ */
+export function useUpdateAutoRemediation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (settings: AutoRemediationSettings) =>
+      orphanedResourcesApi.updateAutoRemediation(settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["orphaned-resources", "auto-remediation"],
       });
     },
   });
