@@ -95,6 +95,7 @@ func TestAutoRemediateDryRun(t *testing.T) {
 }
 
 func TestAutoRemediateOnDeletesSafeSkipsUnsafe(t *testing.T) {
+	t.Setenv("ORPHAN_AUTO_DELETE_ALLOW_ON", "true")
 	safe := safeResource("safe")
 	unsafe := safeResource("unsafe")
 	unsafe.DetectionCount = 0 // fails MinDetections -> blocked
@@ -125,6 +126,7 @@ func TestAutoRemediateOnDeletesSafeSkipsUnsafe(t *testing.T) {
 }
 
 func TestAutoRemediateOnSkipsResourcesWithoutOwnershipTag(t *testing.T) {
+	t.Setenv("ORPHAN_AUTO_DELETE_ALLOW_ON", "true")
 	owned := safeResource("owned")
 	heuristic := safeResource("heuristic")
 	heuristic.Tags = types.OrphanedResourceTags{"kubernetes.io/cluster/foo": "owned"} // no ManagedBy=ocpctl
@@ -210,6 +212,7 @@ func TestAutoRemediateDBSettingOverridesEnvDefault(t *testing.T) {
 }
 
 func TestAutoRemediateStatusCountsOnMode(t *testing.T) {
+	t.Setenv("ORPHAN_AUTO_DELETE_ALLOW_ON", "true")
 	owned := safeResource("owned")
 	unsafe := safeResource("unsafe")
 	unsafe.DetectionCount = 0 // blocked by safety gate
@@ -315,7 +318,41 @@ func TestAutoRemediateStatusNotTruncatedWhenBacklogFits(t *testing.T) {
 	}
 }
 
+func TestAutoRemediateOnClampedToDryRunWhenNotAllowed(t *testing.T) {
+	// Environment interlock: mode is "on" but ORPHAN_AUTO_DELETE_ALLOW_ON is not
+	// set, so the janitor must clamp to dry-run -- evaluate and audit, delete
+	// nothing. This is the guard that keeps a shared-account env (e.g. dev on
+	// prod's AWS account) from ever deleting.
+	t.Setenv("ORPHAN_AUTO_DELETE_ALLOW_ON", "")
+	safe := safeResource("safe")
+	orphaned := &mockOrphanedResourceStore{listResult: []*types.OrphanedResource{safe}}
+	audit := &mockAuditStore{}
+	var deleted []string
+	j := newRemediateJanitor(orphan.AutoDeleteOn, 20, orphaned, audit, &deleted)
+	settings := &mockSystemSettingsStore{}
+	j.stores.settings = settings
+
+	if err := j.autoRemediateOrphans(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Errorf("clamped 'on' deleted %v, want none", deleted)
+	}
+	if len(orphaned.resolved) != 0 {
+		t.Errorf("clamped 'on' marked resolved %v, want none", orphaned.resolved)
+	}
+	// The status row must reflect the clamped (dry-run) effective mode, not "on".
+	var status types.OrphanAutoRemediationStatus
+	if err := json.Unmarshal(settings.upserted[types.SettingOrphanAutoRemediationStatus], &status); err != nil {
+		t.Fatalf("status unmarshal: %v", err)
+	}
+	if status.Mode != string(orphan.AutoDeleteDryRun) {
+		t.Errorf("status.Mode = %q, want dryrun (clamped)", status.Mode)
+	}
+}
+
 func TestAutoRemediateOnRespectsCap(t *testing.T) {
+	t.Setenv("ORPHAN_AUTO_DELETE_ALLOW_ON", "true")
 	resources := []*types.OrphanedResource{
 		safeResource("a"), safeResource("b"), safeResource("c"),
 	}
