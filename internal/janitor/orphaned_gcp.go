@@ -19,7 +19,7 @@ import (
 // "GCP detection was healthy" signal that gates stale-record reconciliation.
 func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) (int, error) {
 	// Build lookup maps using streaming to prevent memory exhaustion
-	_, clustersByName, err := j.buildClusterLookupMaps(ctx)
+	_, clustersByName, _, err := j.buildClusterLookupMaps(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("build cluster lookup maps: %w", err)
 	}

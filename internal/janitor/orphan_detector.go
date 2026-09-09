@@ -36,7 +36,7 @@ type OrphanedResource struct {
 func (j *Janitor) detectOrphanedResources(ctx context.Context) (int, error) {
 	// Build lookup maps using streaming to prevent memory exhaustion
 	// Process clusters in batches instead of loading all at once
-	_, clustersByName, err := j.buildClusterLookupMaps(ctx)
+	_, clustersByName, clustersByInfraBase, err := j.buildClusterLookupMaps(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("build cluster lookup maps: %w", err)
 	}
@@ -68,7 +68,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) (int, error) {
 	}
 
 	// Check Load Balancers
-	lbOrphans, err := j.detectOrphanedLoadBalancers(ctx, cfg, clustersByName)
+	lbOrphans, err := j.detectOrphanedLoadBalancers(ctx, cfg, clustersByName, clustersByInfraBase)
 	if err != nil {
 		log.Printf("Error detecting orphaned load balancers: %v", err)
 	} else {
@@ -127,7 +127,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) (int, error) {
 	}
 
 	// Check EBS Volumes
-	ebsOrphans, err := j.detectOrphanedEBSVolumes(ctx, cfg, clustersByName)
+	ebsOrphans, err := j.detectOrphanedEBSVolumes(ctx, cfg, clustersByName, clustersByInfraBase)
 	if err != nil {
 		log.Printf("Error detecting orphaned EBS volumes: %v", err)
 	} else {
@@ -135,7 +135,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) (int, error) {
 	}
 
 	// Check Elastic IPs
-	eipOrphans, err := j.detectOrphanedElasticIPs(ctx, cfg, clustersByName)
+	eipOrphans, err := j.detectOrphanedElasticIPs(ctx, cfg, clustersByName, clustersByInfraBase)
 	if err != nil {
 		log.Printf("Error detecting orphaned Elastic IPs: %v", err)
 	} else {
@@ -279,7 +279,7 @@ func (j *Janitor) detectOrphanedVPCs(ctx context.Context, cfg aws.Config, cluste
 
 // detectOrphanedLoadBalancers finds load balancers with cluster names but no matching cluster
 // detectOrphanedLoadBalancers finds load balancers with cluster tags but no matching cluster
-func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Config, clustersByName, clustersByInfraBase map[string]*types.Cluster) ([]OrphanedResource, error) {
 	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
 
 	result, err := elbClient.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
@@ -319,7 +319,6 @@ func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Confi
 		// Extract cluster name from ocpctl tags
 		// For OpenShift on AWS, LoadBalancer services create kubernetes.io/cluster/{infraID} tags
 		// We need to handle both direct ClusterName tags and infraID tags
-		var clusterName string
 		var kubernetesClusterName string
 
 		// Check for kubernetes.io/cluster/{infraID} tag
@@ -330,39 +329,15 @@ func (j *Janitor) detectOrphanedLoadBalancers(ctx context.Context, cfg aws.Confi
 			}
 		}
 
-		// Prefer kubernetes tag (infraID) over ClusterName tag
-		if kubernetesClusterName != "" {
-			// Try the full name first (in case user named cluster with infraID pattern)
-			clusterName = kubernetesClusterName
-		} else {
-			clusterName = tags["ClusterName"]
-		}
-
-		if clusterName == "" {
+		if kubernetesClusterName == "" && tags["ClusterName"] == "" {
 			log.Printf("[detectOrphanedLoadBalancers] LB %s has ManagedBy=ocpctl but no ClusterName tag", lbArn)
 			continue
 		}
 
-		// Check if cluster exists in database (try full name first)
-		cluster, exists := clustersByName[clusterName]
-
-		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
-		// OpenShift infraID pattern: {clustername}-{5chars}
-		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
-			parts := strings.Split(kubernetesClusterName, "-")
-			if len(parts) >= 2 {
-				// Check if last part looks like a 5-char infraID suffix
-				lastPart := parts[len(parts)-1]
-				if len(lastPart) == 5 {
-					// Try removing the 5-char suffix
-					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
-					cluster, exists = clustersByName[clusterNameWithoutSuffix]
-					if exists {
-						clusterName = clusterNameWithoutSuffix
-					}
-				}
-			}
-		}
+		// Resolve the owning cluster from the infraID and/or ClusterName tags,
+		// accounting for openshift-install's name truncation (see
+		// resolveClusterFromInfraTags).
+		cluster, _, exists := resolveClusterFromInfraTags(clustersByName, clustersByInfraBase, kubernetesClusterName, tags["ClusterName"])
 
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
 			orphans = append(orphans, OrphanedResource{
@@ -968,7 +943,7 @@ func extractClusterNameFromIAMRole(roleName string) string {
 }
 
 // detectOrphanedEBSVolumes finds EBS volumes tagged with cluster info but no matching cluster
-func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, clustersByName, clustersByInfraBase map[string]*types.Cluster) ([]OrphanedResource, error) {
 	ec2Client := ec2.NewFromConfig(cfg)
 
 	// List all EBS volumes in the region
@@ -1007,39 +982,15 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 			}
 		}
 
-		// Prefer kubernetes tag (infraID) over ClusterName tag
-		var clusterName string
-		if kubernetesClusterName != "" {
-			// Try the full name first (in case user named cluster with infraID pattern)
-			clusterName = kubernetesClusterName
-		} else {
-			clusterName = clusterNameFromTag
-		}
-
-		if clusterName == "" {
+		if kubernetesClusterName == "" && clusterNameFromTag == "" {
 			continue
 		}
 
-		// Check if cluster exists in database (try full name first)
-		cluster, exists := clustersByName[clusterName]
+		// Resolve the owning cluster from the infraID and/or ClusterName tags,
+		// accounting for openshift-install's name truncation (see
+		// resolveClusterFromInfraTags).
+		cluster, _, exists := resolveClusterFromInfraTags(clustersByName, clustersByInfraBase, kubernetesClusterName, clusterNameFromTag)
 
-		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
-		// OpenShift infraID pattern: {clustername}-{5chars}
-		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
-			parts := strings.Split(kubernetesClusterName, "-")
-			if len(parts) >= 2 {
-				// Check if last part looks like a 5-char infraID suffix
-				lastPart := parts[len(parts)-1]
-				if len(lastPart) == 5 {
-					// Try removing the 5-char suffix
-					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
-					cluster, exists = clustersByName[clusterNameWithoutSuffix]
-					if exists {
-						clusterName = clusterNameWithoutSuffix
-					}
-				}
-			}
-		}
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
 			volumeName := getTagValue(volume.Tags, "Name")
 			if volumeName == "" {
@@ -1060,7 +1011,7 @@ func (j *Janitor) detectOrphanedEBSVolumes(ctx context.Context, cfg aws.Config, 
 }
 
 // detectOrphanedElasticIPs finds Elastic IPs tagged with cluster info but no matching cluster
-func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, clustersByName map[string]*types.Cluster) ([]OrphanedResource, error) {
+func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, clustersByName, clustersByInfraBase map[string]*types.Cluster) ([]OrphanedResource, error) {
 	ec2Client := ec2.NewFromConfig(cfg)
 
 	// List all Elastic IPs in the region
@@ -1103,39 +1054,15 @@ func (j *Janitor) detectOrphanedElasticIPs(ctx context.Context, cfg aws.Config, 
 			}
 		}
 
-		// Prefer kubernetes tag (infraID) over ClusterName tag
-		var clusterName string
-		if kubernetesClusterName != "" {
-			// Try the full name first (in case user named cluster with infraID pattern)
-			clusterName = kubernetesClusterName
-		} else {
-			clusterName = clusterNameFromTag
-		}
-
-		if clusterName == "" {
+		if kubernetesClusterName == "" && clusterNameFromTag == "" {
 			continue
 		}
 
-		// Check if cluster exists in database (try full name first)
-		cluster, exists := clustersByName[clusterName]
+		// Resolve the owning cluster from the infraID and/or ClusterName tags,
+		// accounting for openshift-install's name truncation (see
+		// resolveClusterFromInfraTags).
+		cluster, clusterName, exists := resolveClusterFromInfraTags(clustersByName, clustersByInfraBase, kubernetesClusterName, clusterNameFromTag)
 
-		// If not found with full name and it looks like an OpenShift infraID, try extracting cluster name
-		// OpenShift infraID pattern: {clustername}-{5chars}
-		if !exists && kubernetesClusterName != "" && strings.Contains(kubernetesClusterName, "-") {
-			parts := strings.Split(kubernetesClusterName, "-")
-			if len(parts) >= 2 {
-				// Check if last part looks like a 5-char infraID suffix
-				lastPart := parts[len(parts)-1]
-				if len(lastPart) == 5 {
-					// Try removing the 5-char suffix
-					clusterNameWithoutSuffix := strings.Join(parts[0:len(parts)-1], "-")
-					cluster, exists = clustersByName[clusterNameWithoutSuffix]
-					if exists {
-						clusterName = clusterNameWithoutSuffix
-					}
-				}
-			}
-		}
 		// Mark as orphaned if cluster doesn't exist or is destroyed
 		// Note: Hibernated/hibernating clusters are not flagged as orphaned (resources are intentionally stopped)
 		if !exists || cluster.Status == types.ClusterStatusDestroyed {
@@ -1217,12 +1144,23 @@ func (j *Janitor) detectOrphanedCloudWatchLogGroups(ctx context.Context, cfg aws
 }
 
 // buildClusterLookupMaps builds lookup maps for clusters using streaming to prevent memory exhaustion
-// Processes clusters in batches of 1000 instead of loading all clusters at once
-func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types.Cluster, map[string]*types.Cluster, error) {
+// Processes clusters in batches of 1000 instead of loading all clusters at once.
+//
+// Returns three maps, all keyed to non-DESTROYED clusters:
+//   - clustersByID:        cluster.ID -> cluster
+//   - clustersByName:      cluster.Name -> cluster
+//   - clustersByInfraBase: clusterInfraBase(cluster.Name) -> cluster. This is the
+//     name TRUNCATED the same way openshift-install truncates it when building an
+//     infraID (see clusterInfraBase). It lets the detectors associate a live
+//     cluster with its own infraID-tagged resources (LBs, EBS volumes, EIPs) even
+//     when the cluster name is longer than the infraID base limit -- without it,
+//     a live cluster's infrastructure is falsely flagged as orphaned.
+func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types.Cluster, map[string]*types.Cluster, map[string]*types.Cluster, error) {
 	const batchSize = 1000
 
 	clustersByID := make(map[string]*types.Cluster)
 	clustersByName := make(map[string]*types.Cluster)
+	clustersByInfraBase := make(map[string]*types.Cluster)
 
 	offset := 0
 	for {
@@ -1232,7 +1170,7 @@ func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types
 			Offset: offset,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("list clusters batch (offset=%d): %w", offset, err)
+			return nil, nil, nil, fmt.Errorf("list clusters batch (offset=%d): %w", offset, err)
 		}
 
 		// Add to lookup maps
@@ -1244,6 +1182,14 @@ func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types
 
 			clustersByID[cluster.ID] = cluster
 			clustersByName[cluster.Name] = cluster
+			// Two live clusters can share an infra base (e.g. long names that only
+			// differ past the 21-char cut). Existence is all we need to protect a
+			// resource from being flagged, so first-writer-wins is fine here.
+			if base := clusterInfraBase(cluster.Name); base != "" {
+				if _, ok := clustersByInfraBase[base]; !ok {
+					clustersByInfraBase[base] = cluster
+				}
+			}
 		}
 
 		// Check if we've processed all clusters
@@ -1253,8 +1199,78 @@ func (j *Janitor) buildClusterLookupMaps(ctx context.Context) (map[string]*types
 		}
 	}
 
-	log.Printf("Built cluster lookup maps with %d clusters (by ID) and %d clusters (by name)",
-		len(clustersByID), len(clustersByName))
+	log.Printf("Built cluster lookup maps with %d clusters (by ID), %d (by name), %d (by infra base)",
+		len(clustersByID), len(clustersByName), len(clustersByInfraBase))
 
-	return clustersByID, clustersByName, nil
+	return clustersByID, clustersByName, clustersByInfraBase, nil
+}
+
+// infraIDMaxBaseLen is the maximum length of the cluster-name portion of an
+// OpenShift infraID. openshift-install builds an infraID as "<base>-<5 random>"
+// capped at 27 chars, reserving 6 chars ("-" + 5 random) for the suffix -- so the
+// base is truncated to at most 21 chars (with trailing hyphens trimmed).
+const infraIDMaxBaseLen = 21
+
+// clusterInfraBase returns the cluster name truncated exactly as openshift-install
+// truncates it when generating an infraID. For names <= 21 chars this is a no-op;
+// for longer names it is the first 21 chars with any trailing hyphens removed.
+// Example: "jsussman-2026-09-09-rhwa" -> "jsussman-2026-09-09-r".
+func clusterInfraBase(name string) string {
+	if len(name) > infraIDMaxBaseLen {
+		name = name[:infraIDMaxBaseLen]
+	}
+	return strings.TrimRight(name, "-")
+}
+
+// stripInfraIDSuffix removes a trailing "-<5 alphanumeric>" infraID suffix,
+// returning the (possibly truncated) infra base and true. It returns ("", false)
+// when the input does not end in a 5-char suffix.
+func stripInfraIDSuffix(infraID string) (string, bool) {
+	idx := strings.LastIndex(infraID, "-")
+	if idx <= 0 || idx == len(infraID)-1 {
+		return "", false
+	}
+	if suffix := infraID[idx+1:]; len(suffix) != 5 {
+		return "", false
+	}
+	return infraID[:idx], true
+}
+
+// resolveClusterFromInfraTags associates an ocpctl-managed AWS resource with a
+// non-DESTROYED cluster using its kubernetes.io/cluster/<infraID> tag (preferred)
+// and its ClusterName tag (fallback). It handles openshift-install's cluster-name
+// truncation (see clusterInfraBase) so a live cluster whose name exceeds 21 chars
+// still matches its own infraID-tagged resources instead of having them flagged
+// as orphans.
+//
+// Returns the matched cluster, the name it matched on, and whether a match was
+// found. The caller treats found==false (or a DESTROYED match) as orphaned.
+func resolveClusterFromInfraTags(
+	clustersByName, clustersByInfraBase map[string]*types.Cluster,
+	kubernetesClusterName, clusterNameTag string,
+) (*types.Cluster, string, bool) {
+	if kubernetesClusterName != "" {
+		// 1. Exact match (covers clusters whose name already looks like an infraID).
+		if c, ok := clustersByName[kubernetesClusterName]; ok {
+			return c, kubernetesClusterName, true
+		}
+		// 2. Strip the random suffix to get the infra base.
+		if base, ok := stripInfraIDSuffix(kubernetesClusterName); ok {
+			// 2a. Base matches a short (untruncated) cluster name directly.
+			if c, ok := clustersByName[base]; ok {
+				return c, base, true
+			}
+			// 2b. Base matches a cluster whose name was truncated to form the infraID.
+			if c, ok := clustersByInfraBase[base]; ok {
+				return c, c.Name, true
+			}
+		}
+	}
+	// 3. Fall back to the ocpctl ClusterName tag, which holds the full name.
+	if clusterNameTag != "" {
+		if c, ok := clustersByName[clusterNameTag]; ok {
+			return c, clusterNameTag, true
+		}
+	}
+	return nil, "", false
 }
