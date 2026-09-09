@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -442,9 +443,59 @@ func (h *HibernateHandler) hibernateIKS(ctx context.Context, cluster *types.Clus
 	return nil
 }
 
-// hibernateROSA hibernates a ROSA cluster by scaling all machine pools to 0
+// rosaMinReplicasForPool returns the OCM-enforced minimum replica count that the
+// last workload-capable machine pool must retain: 3 for a multi-zone pool, 2 for
+// single-zone. ROSA/OCM rejects any edit that would take that pool below this
+// (CLUSTERS-MGMT-400 "At least one machine pool able to run OCP workload is
+// required"), so a true scale-to-0 hibernation of the default worker pool is
+// impossible.
+func rosaMinReplicasForPool(pool installer.ROSAMachinePool) int {
+	if len(pool.AvailabilityZones) > 1 {
+		return 3
+	}
+	return 2
+}
+
+// isWorkloadCapablePool reports whether a machine pool can satisfy OCM's
+// "at least one pool able to run OCP workload" invariant. OCM's rule is: no
+// taints and not spot-backed. The rosa machinepool JSON we parse exposes taints
+// but not the spot flag, so taints are the signal we act on; a spot-only pool
+// would still be rejected by OCM, which the permanent-error classifier catches.
+func isWorkloadCapablePool(pool installer.ROSAMachinePool) bool {
+	return len(pool.Taints) == 0
+}
+
+// selectROSAPoolToKeep returns the index of the machine pool to keep alive at its
+// minimum replica count during hibernation. It prefers the default worker pool,
+// then any workload-capable (untainted) pool, and falls back to index 0 if none
+// qualify (so we still attempt a valid edit rather than blindly zeroing).
+func selectROSAPoolToKeep(pools []installer.ROSAMachinePool) int {
+	firstCapable := -1
+	for i, p := range pools {
+		if !isWorkloadCapablePool(p) {
+			continue
+		}
+		if firstCapable == -1 {
+			firstCapable = i
+		}
+		switch strings.ToLower(p.ID) {
+		case "worker", "default":
+			return i
+		}
+	}
+	if firstCapable != -1 {
+		return firstCapable
+	}
+	return 0
+}
+
+// hibernateROSA hibernates a ROSA cluster by scaling machine pools down. ROSA
+// Classic has no true hibernate and OCM forbids taking the last workload-capable
+// pool to 0, so we scale every pool to 0 EXCEPT one kept pool, which is scaled to
+// its enforced minimum (2 single-zone / 3 multi-zone). Original replica counts are
+// recorded in job metadata so resume restores the cluster exactly.
 func (h *HibernateHandler) hibernateROSA(ctx context.Context, cluster *types.Cluster, job *types.Job) error {
-	log.Printf("Hibernating ROSA cluster %s by scaling machine pools to 0", cluster.Name)
+	log.Printf("Hibernating ROSA cluster %s by scaling machine pools down (keeping one pool at its minimum)", cluster.Name)
 
 	// Update status to HIBERNATING
 	if err := h.store.Clusters.UpdateStatus(ctx, nil, cluster.ID, types.ClusterStatusHibernating); err != nil {
@@ -475,31 +526,40 @@ func (h *HibernateHandler) hibernateROSA(ctx context.Context, cluster *types.Clu
 		Replicas int    `json:"replicas"`
 	}
 
+	// Keep one workload-capable pool at its OCM-enforced minimum; scale the rest
+	// to 0. This satisfies the "at least one machine pool able to run OCP workload"
+	// invariant that makes a full scale-to-0 impossible on ROSA Classic.
+	keepIdx := selectROSAPoolToKeep(pools)
+
 	originalConfigs := make([]poolConfig, 0, len(pools))
 	totalOriginalReplicas := 0
 
-	for _, pool := range pools {
-		// Skip pools that are already at 0 replicas
-		if pool.Replicas == 0 {
-			log.Printf("Skipping machine pool %s (already at 0 replicas)", pool.ID)
+	for i, pool := range pools {
+		target := 0
+		if i == keepIdx {
+			target = rosaMinReplicasForPool(pool)
+		}
+
+		// Nothing to do if the pool is already at (or below) its target.
+		if pool.Replicas <= target {
+			log.Printf("Skipping machine pool %s (replicas %d already <= target %d)", pool.ID, pool.Replicas, target)
 			continue
 		}
 
-		// Store original configuration
+		// Store original configuration so resume can restore it exactly.
 		originalConfigs = append(originalConfigs, poolConfig{
 			ID:       pool.ID,
 			Replicas: pool.Replicas,
 		})
 		totalOriginalReplicas += pool.Replicas
 
-		log.Printf("Scaling machine pool %s from %d to 0 replicas", pool.ID, pool.Replicas)
+		log.Printf("Scaling machine pool %s from %d to %d replicas", pool.ID, pool.Replicas, target)
 
-		// Scale pool to 0
-		if err := rosaInstaller.ScaleMachinePool(ctx, cluster.Name, pool.ID, 0); err != nil {
-			return fmt.Errorf("scale machine pool %s to 0: %w", pool.ID, err)
+		if err := rosaInstaller.ScaleMachinePool(ctx, cluster.Name, pool.ID, target); err != nil {
+			return fmt.Errorf("scale machine pool %s to %d: %w", pool.ID, target, err)
 		}
 
-		log.Printf("Successfully scaled machine pool %s to 0 replicas", pool.ID)
+		log.Printf("Successfully scaled machine pool %s to %d replicas", pool.ID, target)
 	}
 
 	// Store original pool configurations in job metadata for resume
@@ -521,7 +581,7 @@ func (h *HibernateHandler) hibernateROSA(ctx context.Context, cluster *types.Clu
 		return fmt.Errorf("update cluster status to HIBERNATED: %w", err)
 	}
 
-	log.Printf("ROSA cluster %s hibernated successfully (scaled %d replicas to 0 across %d machine pools)",
+	log.Printf("ROSA cluster %s hibernated successfully (scaled down %d replicas across %d machine pools; one pool kept at its minimum)",
 		cluster.Name, totalOriginalReplicas, len(originalConfigs))
 
 	return nil

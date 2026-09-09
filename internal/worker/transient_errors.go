@@ -122,6 +122,11 @@ var knownPermanentErrorPatterns = []permanentErrorPattern{
 	{"subscriptionnotfound", "Azure subscription not found or inaccessible"},
 	// Azure quota.
 	{"quotaexceeded", "Azure quota exceeded for the requested resources"},
+	// ROSA/OCM: cannot take the last workload-capable machine pool below its
+	// enforced minimum (2 single-zone / 3 multi-zone). A deterministic 400 that no
+	// retry can fix. hibernateROSA avoids this by keeping one pool at its minimum;
+	// this classification is defense-in-depth so any residual case fails fast.
+	{"at least one machine pool able to run", "ROSA requires at least one workload-capable machine pool at its minimum replica count; it cannot be scaled to 0"},
 }
 
 // DetectTransientError analyzes an error to determine if it's transient

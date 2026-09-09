@@ -106,4 +106,20 @@ func TestDetectPermanentError(t *testing.T) {
 			t.Fatalf("expected no permanent cause, got %q", cause)
 		}
 	})
+
+	t.Run("ROSA machinepool minimum is permanent", func(t *testing.T) {
+		// The pgaikwad-rosa-portworx case: OCM refuses to scale the last
+		// workload-capable pool to 0. Deterministic 400 — must not be retried.
+		err := errors.New("scale machine pool worker to 0: rosa edit machinepool failed: exit status 1\n" +
+			"Stderr: Failed to update machine pool 'worker' on cluster 'pgaikwad-rosa-portworx': " +
+			"status is 400, identifier is '400', code is 'CLUSTERS-MGMT-400': " +
+			"Machine pool 'worker' ... can't be updated with provided params. " +
+			"At least one machine pool able to run OCP workload is required.")
+		if cause, _ := DetectPermanentError(err); cause == "" {
+			t.Fatal("expected permanent classification, got none")
+		}
+		if te := DetectTransientError(err); te != nil {
+			t.Fatalf("expected non-transient, got %+v", te)
+		}
+	})
 }
