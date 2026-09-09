@@ -234,6 +234,18 @@ type mockOrphanedResourceStore struct {
 	// recorded writes
 	resolved     []resolvedCall
 	markResolved error
+
+	// stale-resolve sweep
+	resolveStaleCalls []resolveStaleCall
+	resolveStaleN     int64
+	resolveStaleErr   error
+}
+
+type resolveStaleCall struct {
+	cloud      store.OrphanCloud
+	cutoff     time.Time
+	resolvedBy string
+	notes      string
 }
 
 func (m *mockOrphanedResourceStore) Upsert(ctx context.Context, resource *types.OrphanedResource) error {
@@ -255,6 +267,11 @@ func (m *mockOrphanedResourceStore) List(ctx context.Context, filters store.Orph
 func (m *mockOrphanedResourceStore) MarkResolved(ctx context.Context, id, resolvedBy, notes string) error {
 	m.resolved = append(m.resolved, resolvedCall{id: id, resolvedBy: resolvedBy, notes: notes})
 	return m.markResolved
+}
+
+func (m *mockOrphanedResourceStore) ResolveStale(ctx context.Context, cloud store.OrphanCloud, cutoff time.Time, resolvedBy, notes string) (int64, error) {
+	m.resolveStaleCalls = append(m.resolveStaleCalls, resolveStaleCall{cloud: cloud, cutoff: cutoff, resolvedBy: resolvedBy, notes: notes})
+	return m.resolveStaleN, m.resolveStaleErr
 }
 
 type mockAuditStore struct {

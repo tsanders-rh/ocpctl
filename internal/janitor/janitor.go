@@ -35,6 +35,15 @@ type Config struct {
 	OrphanAutoDelete            orphan.AutoDeleteMode
 	OrphanAutoDeleteMaxPerCycle int
 	OrphanSafetyConfig          orphan.Config
+
+	// OrphanStaleResolveAge is how long an ACTIVE orphaned-resource record may go
+	// without being re-detected before the janitor auto-resolves it as "no longer
+	// present in cloud". Guards against zombie records for resources that vanished
+	// on their own (ephemeral install artifacts, out-of-band cleanup) which would
+	// otherwise sit ACTIVE forever, never re-detected, permanently below the
+	// safety gate's min-detections threshold. 0 disables the sweep. Env override:
+	// ORPHAN_STALE_RESOLVE_HOURS (default 2h ~= 8 detection cycles).
+	OrphanStaleResolveAge time.Duration
 }
 
 // DefaultConfig returns default janitor configuration
@@ -54,6 +63,7 @@ func DefaultConfig() *Config {
 		OrphanAutoDelete:            orphan.AutoDeleteModeFromEnv(),
 		OrphanAutoDeleteMaxPerCycle: orphan.AutoDeleteMaxPerCycleFromEnv(),
 		OrphanSafetyConfig:          orphan.ConfigFromEnv(),
+		OrphanStaleResolveAge:       orphanStaleResolveAgeFromEnv(),
 	}
 }
 
@@ -215,14 +225,25 @@ func (j *Janitor) run() {
 		// Check if enough time has passed since last orphan check
 		if time.Since(j.lastOrphanCheck) >= j.config.OrphanCheckInterval {
 			// Detect AWS orphaned resources
-			if err := j.detectOrphanedResources(ctx); err != nil {
+			awsDetected, err := j.detectOrphanedResources(ctx)
+			if err != nil {
 				log.Printf("Error detecting orphaned AWS resources: %v", err)
 			}
 
 			// Detect GCP orphaned resources
-			if err := j.detectOrphanedGCPResources(ctx); err != nil {
+			gcpDetected, err := j.detectOrphanedGCPResources(ctx)
+			if err != nil {
 				log.Printf("Error detecting orphaned GCP resources: %v", err)
 			}
+
+			// Reconcile away stale ACTIVE records for resources that have
+			// disappeared from the cloud (no longer re-detected). Runs after
+			// detection so freshly-seen resources have bumped timestamps, and
+			// BEFORE auto-remediation so it never wastes a safety probe on a
+			// resource we're about to resolve. Per-cloud, gated on that cloud
+			// having detected something this cycle, so a broken detection cycle
+			// can't sweep the whole backlog.
+			j.reconcileStaleOrphans(ctx, awsDetected, gcpDetected)
 
 			// Auto-remediate (delete) orphaned resources that pass the safety
 			// gate. Runs right after detection so it acts on the freshly-updated

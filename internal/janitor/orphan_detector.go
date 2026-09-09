@@ -29,13 +29,16 @@ type OrphanedResource struct {
 	Tags         map[string]string
 }
 
-// DetectOrphanedResources finds AWS resources that don't match any cluster in the database
-func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
+// detectOrphanedResources finds AWS resources that don't match any cluster in
+// the database. It returns the number of orphaned resources successfully
+// re-detected (upserted) this cycle -- the caller uses a non-zero count as the
+// "AWS detection was healthy" signal that gates stale-record reconciliation.
+func (j *Janitor) detectOrphanedResources(ctx context.Context) (int, error) {
 	// Build lookup maps using streaming to prevent memory exhaustion
 	// Process clusters in batches instead of loading all at once
 	_, clustersByName, err := j.buildClusterLookupMaps(ctx)
 	if err != nil {
-		return fmt.Errorf("build cluster lookup maps: %w", err)
+		return 0, fmt.Errorf("build cluster lookup maps: %w", err)
 	}
 
 	// Initialize AWS SDK with default config
@@ -43,7 +46,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Printf("Failed to load AWS config: %v (skipping orphan detection)", err)
-		return nil // Don't fail janitor if AWS SDK can't be loaded
+		return 0, nil // Don't fail janitor if AWS SDK can't be loaded
 	}
 
 	// If region is still empty, use a default
@@ -148,6 +151,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 	}
 
 	// Report findings
+	upserted := 0
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned AWS resources:", len(orphans))
 		leakCache := newLeakSourceCache()
@@ -182,6 +186,8 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 
 			if err := j.stores.orphaned.Upsert(ctx, dbOrphan); err != nil {
 				log.Printf("  WARNING: Failed to persist orphaned resource to database: %v", err)
+			} else {
+				upserted++
 			}
 		}
 		log.Printf("These resources may incur costs and should be manually cleaned up.")
@@ -224,7 +230,7 @@ func (j *Janitor) detectOrphanedResources(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return upserted, nil
 }
 
 // detectOrphanedVPCs finds VPCs tagged with cluster info but no matching cluster

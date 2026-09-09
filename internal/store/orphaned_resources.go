@@ -249,6 +249,54 @@ func (s *OrphanedResourceStore) MarkResolved(ctx context.Context, id string, res
 	return nil
 }
 
+// OrphanCloud selects which cloud's resource types a stale-resolve sweep applies
+// to. GCP resource types are prefixed "GCP" (see pkg/types); everything else is
+// AWS/global. Scoping the sweep per-cloud means a broken detection cycle for one
+// cloud can never auto-resolve the other cloud's still-present orphans.
+type OrphanCloud string
+
+const (
+	OrphanCloudAWS OrphanCloud = "aws"
+	OrphanCloudGCP OrphanCloud = "gcp"
+)
+
+// ResolveStale marks ACTIVE orphaned resources (for the given cloud) whose
+// last_detected_at is older than cutoff as RESOLVED. These are records for
+// resources the detector has stopped seeing -- i.e. the underlying cloud
+// resource has disappeared (ephemeral install artifacts, or something cleaned up
+// out-of-band) -- so the DB row would otherwise linger ACTIVE forever, never
+// re-detected, permanently below the safety gate's min-detections threshold.
+// Returns the number of rows resolved.
+//
+// The caller must only invoke this after a HEALTHY detection cycle for that
+// cloud (one that actually re-detected resources); otherwise a broken cycle that
+// found nothing would sweep the entire active backlog.
+func (s *OrphanedResourceStore) ResolveStale(ctx context.Context, cloud OrphanCloud, cutoff time.Time, resolvedBy, notes string) (int64, error) {
+	// Constant, non-user-controlled predicate -- safe to interpolate.
+	typePredicate := "resource_type NOT LIKE 'GCP%'"
+	if cloud == OrphanCloudGCP {
+		typePredicate = "resource_type LIKE 'GCP%'"
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE orphaned_resources
+		SET status = 'RESOLVED',
+			resolved_at = NOW(),
+			resolved_by = $2,
+			notes = $3,
+			updated_at = NOW()
+		WHERE status = 'ACTIVE'
+		  AND last_detected_at < $1
+		  AND %s
+	`, typePredicate)
+
+	result, err := s.pool.Exec(ctx, query, cutoff, resolvedBy, notes)
+	if err != nil {
+		return 0, fmt.Errorf("resolve stale orphaned resources: %w", err)
+	}
+	return result.RowsAffected(), nil
+}
+
 // MarkIgnored marks an orphaned resource as ignored (false positive or intentional)
 func (s *OrphanedResourceStore) MarkIgnored(ctx context.Context, id string, notes string) error {
 	query := `

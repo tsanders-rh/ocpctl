@@ -57,6 +57,7 @@ type orphanedResourceStore interface {
 	Upsert(ctx context.Context, resource *types.OrphanedResource) error
 	List(ctx context.Context, filters store.OrphanedResourceFilters) ([]*types.OrphanedResource, int, error)
 	MarkResolved(ctx context.Context, id string, resolvedBy string, notes string) error
+	ResolveStale(ctx context.Context, cloud store.OrphanCloud, cutoff time.Time, resolvedBy, notes string) (int64, error)
 }
 
 type auditStore interface {

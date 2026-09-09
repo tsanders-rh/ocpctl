@@ -13,19 +13,22 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
-// detectOrphanedGCPResources finds GCP resources that don't match any cluster in the database
-func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
+// detectOrphanedGCPResources finds GCP resources that don't match any cluster in
+// the database. It returns the number of orphaned resources successfully
+// re-detected (upserted) this cycle -- the caller uses a non-zero count as the
+// "GCP detection was healthy" signal that gates stale-record reconciliation.
+func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) (int, error) {
 	// Build lookup maps using streaming to prevent memory exhaustion
 	_, clustersByName, err := j.buildClusterLookupMaps(ctx)
 	if err != nil {
-		return fmt.Errorf("build cluster lookup maps: %w", err)
+		return 0, fmt.Errorf("build cluster lookup maps: %w", err)
 	}
 
 	// Get GCP project from environment
 	project := os.Getenv("GCP_PROJECT")
 	if project == "" {
 		log.Printf("GCP_PROJECT environment variable not set, skipping GCP orphan detection")
-		return nil
+		return 0, nil
 	}
 
 	log.Printf("Checking for orphaned GCP resources in project: %s", project)
@@ -97,6 +100,7 @@ func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
 	}
 
 	// Report findings
+	upserted := 0
 	if len(orphans) > 0 {
 		log.Printf("WARNING: Found %d orphaned GCP resources:", len(orphans))
 		leakCache := newLeakSourceCache()
@@ -121,6 +125,8 @@ func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
 
 			if err := j.stores.orphaned.Upsert(ctx, dbOrphan); err != nil {
 				log.Printf("  WARNING: Failed to persist orphaned resource to database: %v", err)
+			} else {
+				upserted++
 			}
 		}
 		log.Printf("These resources may incur costs and should be manually cleaned up.")
@@ -166,7 +172,7 @@ func (j *Janitor) detectOrphanedGCPResources(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return upserted, nil
 }
 
 // detectOrphanedGCPInstances finds GCP Compute instances tagged with cluster info but no matching cluster
