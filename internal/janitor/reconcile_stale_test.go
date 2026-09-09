@@ -19,19 +19,19 @@ func TestReconcileStaleOrphans_DisabledWhenAgeZero(t *testing.T) {
 	m := &mockOrphanedResourceStore{}
 	j := newReconcileJanitor(0, m)
 
-	j.reconcileStaleOrphans(context.Background(), 100, 100)
+	j.reconcileStaleOrphans(context.Background(), true, true)
 
 	if len(m.resolveStaleCalls) != 0 {
 		t.Fatalf("expected no ResolveStale calls when disabled, got %d", len(m.resolveStaleCalls))
 	}
 }
 
-func TestReconcileStaleOrphans_SkipsCloudWithZeroDetections(t *testing.T) {
+func TestReconcileStaleOrphans_SkipsCloudWhoseDetectionFailed(t *testing.T) {
 	m := &mockOrphanedResourceStore{resolveStaleN: 3}
 	j := newReconcileJanitor(2*time.Hour, m)
 
-	// AWS healthy, GCP detected nothing -> only AWS is swept.
-	j.reconcileStaleOrphans(context.Background(), 5, 0)
+	// AWS detection succeeded, GCP detection errored -> only AWS is swept.
+	j.reconcileStaleOrphans(context.Background(), true, false)
 
 	if len(m.resolveStaleCalls) != 1 {
 		t.Fatalf("expected exactly 1 ResolveStale call, got %d", len(m.resolveStaleCalls))
@@ -41,15 +41,31 @@ func TestReconcileStaleOrphans_SkipsCloudWithZeroDetections(t *testing.T) {
 	}
 }
 
-func TestReconcileStaleOrphans_SkipsAllWhenNothingDetected(t *testing.T) {
+func TestReconcileStaleOrphans_SkipsAllWhenBothDetectionsFailed(t *testing.T) {
 	m := &mockOrphanedResourceStore{}
 	j := newReconcileJanitor(2*time.Hour, m)
 
-	// Both detectors returned 0 (possibly broken cycle) -> never sweep.
-	j.reconcileStaleOrphans(context.Background(), 0, 0)
+	// Both detection passes errored (e.g. expired creds / outage) -> never sweep.
+	j.reconcileStaleOrphans(context.Background(), false, false)
 
 	if len(m.resolveStaleCalls) != 0 {
-		t.Fatalf("expected no ResolveStale calls when both clouds detected nothing, got %d", len(m.resolveStaleCalls))
+		t.Fatalf("expected no ResolveStale calls when both detections failed, got %d", len(m.resolveStaleCalls))
+	}
+}
+
+// TestReconcileStaleOrphans_SweepsCleanCloud is the regression guard for the
+// incident: a cloud whose detection succeeds but finds ZERO orphans (the healthy
+// steady state after the detector correctly matches every resource to a live
+// cluster) must still sweep its lingering ACTIVE zombies. The gate is success,
+// not count>0, so awsOK/gcpOK are true even when the cycle detected nothing.
+func TestReconcileStaleOrphans_SweepsCleanCloud(t *testing.T) {
+	m := &mockOrphanedResourceStore{resolveStaleN: 2}
+	j := newReconcileJanitor(2*time.Hour, m)
+
+	j.reconcileStaleOrphans(context.Background(), true, true)
+
+	if len(m.resolveStaleCalls) != 2 {
+		t.Fatalf("expected both clouds swept on a clean-but-successful cycle, got %d", len(m.resolveStaleCalls))
 	}
 }
 
@@ -58,7 +74,7 @@ func TestReconcileStaleOrphans_SweepsBothCloudsWhenHealthy(t *testing.T) {
 	j := newReconcileJanitor(2*time.Hour, m)
 
 	before := time.Now()
-	j.reconcileStaleOrphans(context.Background(), 10, 10)
+	j.reconcileStaleOrphans(context.Background(), true, true)
 	after := time.Now()
 
 	if len(m.resolveStaleCalls) != 2 {
@@ -88,7 +104,7 @@ func TestReconcileStaleOrphans_StoreErrorIsNonFatal(t *testing.T) {
 	j := newReconcileJanitor(2*time.Hour, m)
 
 	// Must not panic and must still attempt both clouds.
-	j.reconcileStaleOrphans(context.Background(), 1, 1)
+	j.reconcileStaleOrphans(context.Background(), true, true)
 
 	if len(m.resolveStaleCalls) != 2 {
 		t.Fatalf("expected both clouds attempted despite errors, got %d calls", len(m.resolveStaleCalls))

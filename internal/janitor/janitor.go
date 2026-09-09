@@ -225,25 +225,26 @@ func (j *Janitor) run() {
 		// Check if enough time has passed since last orphan check
 		if time.Since(j.lastOrphanCheck) >= j.config.OrphanCheckInterval {
 			// Detect AWS orphaned resources
-			awsDetected, err := j.detectOrphanedResources(ctx)
-			if err != nil {
-				log.Printf("Error detecting orphaned AWS resources: %v", err)
+			_, awsErr := j.detectOrphanedResources(ctx)
+			if awsErr != nil {
+				log.Printf("Error detecting orphaned AWS resources: %v", awsErr)
 			}
 
 			// Detect GCP orphaned resources
-			gcpDetected, err := j.detectOrphanedGCPResources(ctx)
-			if err != nil {
-				log.Printf("Error detecting orphaned GCP resources: %v", err)
+			_, gcpErr := j.detectOrphanedGCPResources(ctx)
+			if gcpErr != nil {
+				log.Printf("Error detecting orphaned GCP resources: %v", gcpErr)
 			}
 
 			// Reconcile away stale ACTIVE records for resources that have
 			// disappeared from the cloud (no longer re-detected). Runs after
 			// detection so freshly-seen resources have bumped timestamps, and
 			// BEFORE auto-remediation so it never wastes a safety probe on a
-			// resource we're about to resolve. Per-cloud, gated on that cloud
-			// having detected something this cycle, so a broken detection cycle
-			// can't sweep the whole backlog.
-			j.reconcileStaleOrphans(ctx, awsDetected, gcpDetected)
+			// resource we're about to resolve. Per-cloud, gated on that cloud's
+			// detection SUCCEEDING this cycle (not on count>0), so a broken
+			// detection cycle can't sweep the whole backlog while a clean cloud
+			// still reconciles its lingering zombies.
+			j.reconcileStaleOrphans(ctx, awsErr == nil, gcpErr == nil)
 
 			// Auto-remediate (delete) orphaned resources that pass the safety
 			// gate. Runs right after detection so it acts on the freshly-updated

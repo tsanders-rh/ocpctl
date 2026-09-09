@@ -41,29 +41,36 @@ func orphanStaleResolveAgeFromEnv() time.Duration {
 // inflated by zombies.
 //
 // It NEVER touches the cloud; it only reconciles DB state. It is gated per-cloud
-// on that cloud having re-detected at least one resource this cycle: a broken
-// detection pass (expired creds, API outage) that finds nothing must not sweep
+// on that cloud's detection pass SUCCEEDING this cycle (no error): a broken
+// detection pass (expired creds, API outage) returns an error and must not sweep
 // the entire active backlog into RESOLVED. Because the guard is per-cloud, a
 // broken GCP cycle can't false-resolve AWS orphans and vice versa.
 //
+// A successful scan that finds ZERO orphans is the healthy steady state (e.g.
+// once the detector correctly matches every resource to a live cluster) and MUST
+// still sweep stale rows -- otherwise pre-existing ACTIVE zombies get stuck
+// forever the moment a cloud goes clean. Gating on success (not count>0) is what
+// makes that work; an earlier count>0 gate wedged stale rows whenever a cloud
+// legitimately reported zero.
+//
 // Residual limitation (documented, accepted): if a single resource *type's*
-// scan within an otherwise-healthy cloud fails continuously for longer than the
-// stale window, that type's still-present orphans could be resolved. The 2h
-// default (~8 cycles) makes this unlikely, and a later re-detection simply
-// re-inserts the record as ACTIVE.
-func (j *Janitor) reconcileStaleOrphans(ctx context.Context, awsDetected, gcpDetected int) {
+// scan within an otherwise-healthy cloud fails without surfacing an error for
+// longer than the stale window, that type's still-present orphans could be
+// resolved. The 2h default (~8 cycles) makes this unlikely, and a later
+// re-detection simply re-inserts the record as ACTIVE.
+func (j *Janitor) reconcileStaleOrphans(ctx context.Context, awsOK, gcpOK bool) {
 	if j.config.OrphanStaleResolveAge <= 0 {
 		return // disabled
 	}
 	cutoff := time.Now().Add(-j.config.OrphanStaleResolveAge)
 
-	// Only sweep a cloud that proved healthy this cycle by re-detecting >0
-	// resources. A zero count means either the cloud is genuinely clean or
-	// detection is broken; both look identical here, so we fail safe and skip.
-	if awsDetected > 0 {
+	// Only sweep a cloud whose detection pass completed without error this
+	// cycle. A failed pass is the one case where a zero result is untrustworthy;
+	// a successful pass is trusted even when it found nothing.
+	if awsOK {
 		j.resolveStaleForCloud(ctx, store.OrphanCloudAWS, cutoff)
 	}
-	if gcpDetected > 0 {
+	if gcpOK {
 		j.resolveStaleForCloud(ctx, store.OrphanCloudGCP, cutoff)
 	}
 }
