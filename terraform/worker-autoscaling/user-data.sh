@@ -67,6 +67,20 @@ mkdir -p /opt/ocpctl/profiles
 aws s3 sync s3://ocpctl-binaries/profiles/ /opt/ocpctl/profiles/
 chown -R ocpctl:ocpctl /opt/ocpctl/profiles
 
+# Download post-deployment manifests + addon scripts (e.g. windows-vm/*.sh).
+# Addon tasks resolve script/manifest paths under /opt/ocpctl/manifests
+# (OcpctlBaseDir + "manifests"), so without this an addon whose task is a
+# manifests/ script fails with "script not found at path
+# /opt/ocpctl/manifests/...". deploy.sh scps this dir to the STATIC hosts, but
+# the ASG must self-pull from S3 (the single source of truth) on every boot —
+# same pattern as profiles/scripts above. chmod 755 so the .sh files are
+# executable when the worker runs them.
+echo "Downloading post-deployment manifests"
+mkdir -p /opt/ocpctl/manifests
+aws s3 sync s3://ocpctl-binaries/manifests/ /opt/ocpctl/manifests/
+chmod -R 755 /opt/ocpctl/manifests
+chown -R ocpctl:ocpctl /opt/ocpctl/manifests
+
 # Download CLI login hooks + installer script referenced by the worker service.
 echo "Downloading worker scripts from S3"
 mkdir -p /opt/ocpctl/scripts
