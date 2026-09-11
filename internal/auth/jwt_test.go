@@ -86,16 +86,21 @@ func TestValidateAccessToken_Tampered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	// Flip the last character of the signature segment.
+	// Flip the FIRST character of the signature segment. The first base64url
+	// char carries 6 meaningful bits, so any change alters the decoded signature
+	// bytes. (Tampering the LAST char is unreliable: in a 43-char base64url
+	// signature its low 2 bits are padding that decode away, so e.g. 'A'<->'B'
+	// yields identical bytes and the "tampered" token still validates ~1/16 of
+	// the time.)
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
 	}
 	sig := []byte(parts[2])
-	if sig[len(sig)-1] == 'A' {
-		sig[len(sig)-1] = 'B'
+	if sig[0] == 'A' {
+		sig[0] = 'B'
 	} else {
-		sig[len(sig)-1] = 'A'
+		sig[0] = 'A'
 	}
 	tampered := parts[0] + "." + parts[1] + "." + string(sig)
 
