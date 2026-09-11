@@ -1246,20 +1246,29 @@ export default function ClusterDetailPage() {
               {jobs.map((job) => (
                 <div
                   key={job.id}
-                  className="flex items-center justify-between p-3 border rounded-md"
+                  className="p-3 border rounded-md space-y-2"
                 >
-                  <div>
-                    <div className="font-medium">{job.job_type}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {formatDate(job.created_at)}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{job.job_type}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {formatDate(job.created_at)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm text-muted-foreground">
+                        Attempt {job.attempt}/{job.max_attempts}
+                      </div>
+                      <ClusterStatusBadge status={job.status as any} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-muted-foreground">
-                      Attempt {job.attempt}/{job.max_attempts}
+                  {job.error_message && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-destructive">
+                        {job.error_message}
+                      </pre>
                     </div>
-                    <ClusterStatusBadge status={job.status as any} />
-                  </div>
+                  )}
                 </div>
               ))}
             </div>

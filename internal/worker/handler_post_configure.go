@@ -1403,6 +1403,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		// Install operators
 		for _, op := range prof.PostDeployment.Operators {
 			if err := h.installOperator(ctx, cluster, kubeconfigPath, op); err != nil {
+				logWriter("[Profile] Operator %s FAILED: %v", op.Name, err)
 				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
 				return fmt.Errorf("install operator %s: %w", op.Name, err)
 			}
@@ -1411,6 +1412,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		// Execute scripts
 		for _, script := range prof.PostDeployment.Scripts {
 			if err := h.executeScript(ctx, cluster, kubeconfigPath, script); err != nil {
+				logWriter("[Profile] Script %s FAILED: %v", script.Name, err)
 				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
 				return fmt.Errorf("execute script %s: %w", script.Name, err)
 			}
@@ -1419,6 +1421,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		// Apply manifests
 		for _, manifest := range prof.PostDeployment.Manifests {
 			if err := h.applyOpenShiftManifest(ctx, cluster, kubeconfigPath, manifest); err != nil {
+				logWriter("[Profile] Manifest %s FAILED: %v", manifest.Name, err)
 				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
 				return fmt.Errorf("apply manifest %s: %w", manifest.Name, err)
 			}
@@ -1427,6 +1430,7 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 		// Install Helm charts
 		for _, chart := range prof.PostDeployment.HelmCharts {
 			if err := h.installHelmChart(ctx, cluster, kubeconfigPath, chart); err != nil {
+				logWriter("[Profile] Helm chart %s FAILED: %v", chart.Name, err)
 				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
 				return fmt.Errorf("install helm chart %s: %w", chart.Name, err)
 			}
@@ -1458,33 +1462,32 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 			logWriter("[Addon DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
 
 			// Execute based on task type
+			var taskErr error
 			switch task.Type {
 			case "operator":
 				op := task.Config.(types.CustomOperatorConfig)
-				if err := h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("install addon operator %s: %w", op.Name, err)
-				}
+				taskErr = h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID)
 			case "script":
 				script := task.Config.(types.CustomScriptConfig)
-				if err := h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("execute addon script %s: %w", script.Name, err)
-				}
+				taskErr = h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID)
 			case "manifest":
 				manifest := task.Config.(types.CustomManifestConfig)
-				if err := h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("apply addon manifest %s: %w", manifest.Name, err)
-				}
+				taskErr = h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID)
 			case "helmChart":
 				chart := task.Config.(types.CustomHelmChartConfig)
-				if err := h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("install addon helm chart %s: %w", chart.Name, err)
-				}
+				taskErr = h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID)
 			default:
-				return fmt.Errorf("unknown task type: %s", task.Type)
+				taskErr = fmt.Errorf("unknown task type: %s", task.Type)
+			}
+
+			if taskErr != nil {
+				// Surface the failure reason in the streamed deployment logs (the
+				// Logs tab), not just the worker journal / jobs.error_message, so
+				// users can self-diagnose. Without this the Logs tab stops at the
+				// "Executing task" line and gives no hint why the addon failed.
+				logWriter("[Addon DAG] Task %s FAILED: %v", task.Name, taskErr)
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("addon task %s (%s): %w", task.Name, task.Type, taskErr)
 			}
 
 			logWriter("[Addon DAG] Task %s completed successfully", task.Name)
@@ -1516,33 +1519,30 @@ func (h *PostConfigureHandler) handleOpenShiftPostConfigure(ctx context.Context,
 			logWriter("[DAG] Executing task: %s (type=%s, dependencies=%v)", task.Name, task.Type, task.Dependencies)
 
 			// Execute based on task type
+			var taskErr error
 			switch task.Type {
 			case "operator":
 				op := task.Config.(types.CustomOperatorConfig)
-				if err := h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("install custom operator %s: %w", op.Name, err)
-				}
+				taskErr = h.executeCustomOperatorWithFeatures(ctx, cluster, kubeconfigPath, op, infraID)
 			case "script":
 				script := task.Config.(types.CustomScriptConfig)
-				if err := h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("execute custom script %s: %w", script.Name, err)
-				}
+				taskErr = h.executeCustomScriptWithFeatures(ctx, cluster, kubeconfigPath, script, infraID)
 			case "manifest":
 				manifest := task.Config.(types.CustomManifestConfig)
-				if err := h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("apply custom manifest %s: %w", manifest.Name, err)
-				}
+				taskErr = h.executeCustomManifestWithFeatures(ctx, cluster, kubeconfigPath, manifest, infraID)
 			case "helmChart":
 				chart := task.Config.(types.CustomHelmChartConfig)
-				if err := h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID); err != nil {
-					_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
-					return fmt.Errorf("install custom helm chart %s: %w", chart.Name, err)
-				}
+				taskErr = h.executeCustomHelmChartWithFeatures(ctx, cluster, kubeconfigPath, chart, infraID)
 			default:
-				return fmt.Errorf("unknown task type: %s", task.Type)
+				taskErr = fmt.Errorf("unknown task type: %s", task.Type)
+			}
+
+			if taskErr != nil {
+				// Stream the failure reason to the Logs tab (see the addon DAG loop
+				// above for rationale).
+				logWriter("[DAG] Task %s FAILED: %v", task.Name, taskErr)
+				_ = h.updatePostDeployStatus(ctx, cluster.ID, "failed")
+				return fmt.Errorf("custom task %s (%s): %w", task.Name, task.Type, taskErr)
 			}
 
 			logWriter("[DAG] Task %s completed successfully", task.Name)
@@ -1709,18 +1709,23 @@ func (h *PostConfigureHandler) waitForOperatorReady(ctx context.Context, kubecon
 	ticker := time.NewTicker(PostConfigPollInterval)
 	defer ticker.Stop()
 
+	// Remember the last CSV phase we observed so a timeout error is diagnostic
+	// (e.g. "last CSV phase: Installing") instead of just "timeout".
+	lastStatus := "no CSV observed yet"
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for operator %s to be ready", op.Name)
+			return fmt.Errorf("timeout waiting for operator %s to be ready (last CSV phase: %s)", op.Name, lastStatus)
 		case <-ticker.C:
 			// Check if CSV is ready
 			cmd := exec.CommandContext(ctx, "oc", "--kubeconfig", kubeconfigPath,
 				"get", "csv", "-n", op.Namespace, "-o", "jsonpath={.items[?(@.spec.displayName contains '"+op.Name+"')].status.phase}")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
+				lastStatus = fmt.Sprintf("error querying CSV: %v", err)
 				log.Printf("Checking operator status: %v (will retry)", err)
 				continue
 			}
@@ -1730,6 +1735,9 @@ func (h *PostConfigureHandler) waitForOperatorReady(ctx context.Context, kubecon
 				return nil
 			}
 
+			if trimmed := strings.TrimSpace(string(output)); trimmed != "" {
+				lastStatus = trimmed
+			}
 			log.Printf("Operator %s status: %s (waiting...)", op.Name, strings.TrimSpace(string(output)))
 		}
 	}
