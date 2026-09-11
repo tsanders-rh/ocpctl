@@ -7,7 +7,9 @@ requesting a cluster and reload them later to pre-populate the create-cluster fo
 When a template is applied, every field stored in the template is filled in and any
 field not present in the template is left for the user to complete. The **cluster name
 is never stored in, or populated from, a template** — it must always be entered per
-cluster.
+cluster. **Sensitive data is likewise never stored in a template**: the custom pull
+secret (registry credentials) is excluded from capture and stripped server-side, so it
+must be re-entered per cluster.
 
 Templates are **private to each user**: a template is only ever visible to, editable
 by, and deletable by its owner. Each user may keep at most **5 templates**.
@@ -57,11 +59,25 @@ cluster is ready; cluster templates describe *how to request* the cluster itself
 - **Context:** Mirroring the typed `PostConfigTemplate.Config` would require a Go struct
   duplicating every form field and would drift as the form evolves.
 - **Decision:** `ClusterTemplate.Config` is `json.RawMessage` persisted to a `JSONB`
-  column. The backend validates only that the config is a JSON object and that a `name`
-  key is stripped.
-- **Outcome:** Minimal backend surface; the frontend owns the shape. The `name`-strip is
-  a defense-in-depth guarantee that the "name is never templated" rule holds even if a
-  client sends one.
+  column. The backend validates only that the config is a JSON object and strips the keys
+  a template must never carry (`name` and the sensitive `custom_pull_secret`).
+- **Outcome:** Minimal backend surface; the frontend owns the shape. The strip is a
+  defense-in-depth guarantee that the "name is never templated" and "no sensitive data is
+  templated" rules hold even if a client sends those keys.
+
+### 2a. Sensitive data is never templated (config → decision → outcome)
+
+- **Context:** The create-cluster form carries a `custom_pull_secret` (additional registry
+  credentials). Persisting it in a template would store secret material in the
+  `cluster_templates` JSONB column and replay it into the form whenever the template is
+  applied.
+- **Decision:** `custom_pull_secret` is excluded from `TEMPLATE_FIELDS` on the frontend
+  (never captured, never restored) and is stripped server-side in `sanitizeTemplateConfig`
+  alongside `name`.
+- **Outcome:** Templates hold only non-sensitive convenience parameters; the pull secret is
+  re-entered per cluster. Both layers enforce it, so a hand-crafted API request cannot
+  smuggle a secret into a template. (An SSH *public* key is not treated as sensitive — it is
+  meant to be shared — and remains templatable.)
 
 ### 3. Template values win over profile defaults
 
@@ -138,10 +154,11 @@ type ClusterTemplate struct {
 
 ## What a Template Stores
 
-All create-cluster form fields **except `name`**. `owner` and the transient
-`idempotency_key` are not meaningful reusable parameters and are excluded from the
+All create-cluster form fields **except `name` and `custom_pull_secret`**. `owner` and the
+transient `idempotency_key` are not meaningful reusable parameters and are excluded from the
 capture list (`owner` is always the requesting user; `idempotency_key` is a per-request
-dedup token).
+dedup token). `custom_pull_secret` is excluded because it is sensitive (see Design
+Decision 2a).
 
 Captured fields (`TEMPLATE_FIELDS`):
 
@@ -149,13 +166,14 @@ Captured fields (`TEMPLATE_FIELDS`):
 platform, cluster_type, version, profile, region, base_domain,
 owner, team, cost_center, ttl_hours, ssh_public_key, extra_tags,
 offhours_opt_in, skip_post_deployment, postConfigAddOns, customPostConfig,
-enable_efs_storage, preserve_on_failure, credentials_mode, custom_pull_secret,
+enable_efs_storage, preserve_on_failure, credentials_mode,
 override_work_hours, work_hours_enabled, work_hours_start, work_hours_end, work_days
 ```
 
 > Note: `owner` is listed above because the form carries it, but the backend strips
-> `name` only; `owner` is harmless (always the same user for a private template). The
-> single hard rule is: **`name` is never stored and never applied.**
+> `name` and `custom_pull_secret`; `owner` is harmless (always the same user for a private
+> template). The hard rules are: **`name` is never stored and never applied**, and **no
+> sensitive data (`custom_pull_secret`) is ever stored or applied.**
 
 ## API
 
@@ -187,9 +205,9 @@ Request body (create/update):
 }
 ```
 
-The server strips any `name` key inside `config` before persisting. `POST` fails with a
-400 when the caller already has `MaxTemplatesPerUser` (5) templates; overwriting via
-`PATCH` is unaffected by the limit.
+The server strips the `name` and `custom_pull_secret` keys inside `config` before
+persisting. `POST` fails with a 400 when the caller already has `MaxTemplatesPerUser` (5)
+templates; overwriting via `PATCH` is unaffected by the limit.
 
 ## Backend Components
 
@@ -200,7 +218,7 @@ The server strips any `name` key inside `config` before persisting. `POST` fails
 - `internal/store/store.go` — `Store.ClusterTemplates` wiring.
 - `internal/api/handler_cluster_templates.go` — `ClusterTemplateHandler` (bind →
   validate → `sanitizeTemplateConfig` → store). `sanitizeTemplateConfig` enforces the
-  JSON-object shape and the `name` strip.
+  JSON-object shape and strips the `templateStrippedKeys` (`name`, `custom_pull_secret`).
 - `internal/api/server.go` — route registration.
 
 Ownership is enforced at the SQL layer: every query filters by `owner_id`, so there is
@@ -251,6 +269,9 @@ no cross-user read/update/delete path even with a guessed ID.
   surfaced as an error in the save dialog.
 - **Config with a stray `name`:** stripped server-side; never applied client-side
   (`name` is not in `TEMPLATE_FIELDS`).
+- **Config with a stray `custom_pull_secret`:** stripped server-side; never captured or
+  applied client-side (`custom_pull_secret` is not in `TEMPLATE_FIELDS`). Applying a
+  template leaves the pull-secret field empty for the user to fill in.
 - **Platform/cluster-type in template:** applied to both the react-hook-form values and
   the separate `selectedPlatform` / `selectedClusterType` component state that drives
   profile filtering.
@@ -262,8 +283,8 @@ no cross-user read/update/delete path even with a guessed ID.
 
 ## Testing
 
-- Backend: unit tests for `sanitizeTemplateConfig` (object required, `name` stripped)
-  and owner-scoping of `ClusterTemplateStore` methods.
+- Backend: unit tests for `sanitizeTemplateConfig` (object required, `name` and
+  `custom_pull_secret` stripped) and owner-scoping of `ClusterTemplateStore` methods.
 - Frontend: apply-template pre-fills fields and leaves `name` empty; template values
   survive the profile-defaults effect; save captures current values minus `name`.
 
