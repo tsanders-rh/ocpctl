@@ -1020,7 +1020,9 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 		return fmt.Errorf("create auth directory: %w", err)
 	}
 
+	kubeconfigOK := true
 	if err := eksInstaller.GetKubeconfig(ctx, cluster.Name, cluster.Region, kubeconfigPath); err != nil {
+		kubeconfigOK = false
 		log.Printf("Warning: failed to get kubeconfig: %v", err)
 	}
 
@@ -1042,6 +1044,24 @@ func (h *CreateHandler) handleEKSCreate(ctx context.Context, job *types.Job, clu
 
 	kubeconfigURI := fmt.Sprintf("file://%s", kubeconfigPath)
 	outputs.KubeconfigS3URI = &kubeconfigURI
+
+	// Replace the exec-based (aws eks get-token) kubeconfig with a portable,
+	// token-based one so it works without the AWS CLI or IAM setup. Done here,
+	// before the outputs are stored and before storeArtifacts uploads the
+	// workDir to S3, so both the DB record and the S3 artifact are portable.
+	// Best-effort: on failure we keep the exec-based kubeconfig.
+	if kubeconfigOK {
+		ttlHours := k8s.ResolvePortableTokenTTL(cluster.TTLHours)
+		if creds, perr := k8s.GeneratePortableKubeconfig(ctx, kubeconfigPath, kubeconfigPath, ttlHours); perr != nil {
+			log.Printf("Warning: failed to generate portable EKS kubeconfig for %s, keeping exec-based: %v", cluster.Name, perr)
+		} else {
+			outputs.SAName = &creds.SAName
+			outputs.SANamespace = &creds.SANamespace
+			outputs.SAToken = &creds.Token
+			outputs.SATokenExpiresAt = &creds.ExpiresAt
+			log.Printf("Generated portable EKS kubeconfig for %s (token expires %s)", cluster.Name, creds.ExpiresAt.Format(time.RFC3339))
+		}
+	}
 
 	// Store cluster outputs
 	if err := h.store.ClusterOutputs.Upsert(ctx, outputs); err != nil {
@@ -1826,13 +1846,30 @@ func (h *CreateHandler) storeGKEClusterOutputs(ctx context.Context, cluster *typ
 	apiURL := fmt.Sprintf("https://%s", info.Endpoint)
 
 	// Create cluster outputs record
+	kubeconfigPath := filepath.Join(workDir, "auth", "kubeconfig")
 	outputs := &types.ClusterOutputs{
 		ID:              uuid.New().String(),
 		ClusterID:       cluster.ID,
 		APIURL:          &apiURL,
-		KubeconfigS3URI: func() *string { s := fmt.Sprintf("file://%s/auth/kubeconfig", workDir); return &s }(),
+		KubeconfigS3URI: func() *string { s := fmt.Sprintf("file://%s", kubeconfigPath); return &s }(),
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
+	}
+
+	// Replace the exec-based (gke-gcloud-auth-plugin) kubeconfig with a portable,
+	// token-based one so it works without gcloud or the auth plugin installed.
+	// Best-effort: on failure we keep the exec-based kubeconfig.
+	if _, statErr := os.Stat(kubeconfigPath); statErr == nil {
+		ttlHours := k8s.ResolvePortableTokenTTL(cluster.TTLHours)
+		if creds, perr := k8s.GeneratePortableKubeconfig(ctx, kubeconfigPath, kubeconfigPath, ttlHours); perr != nil {
+			log.Printf("Warning: failed to generate portable GKE kubeconfig for %s, keeping exec-based: %v", cluster.Name, perr)
+		} else {
+			outputs.SAName = &creds.SAName
+			outputs.SANamespace = &creds.SANamespace
+			outputs.SAToken = &creds.Token
+			outputs.SATokenExpiresAt = &creds.ExpiresAt
+			log.Printf("Generated portable GKE kubeconfig for %s (token expires %s)", cluster.Name, creds.ExpiresAt.Format(time.RFC3339))
+		}
 	}
 
 	// Upsert outputs to database
