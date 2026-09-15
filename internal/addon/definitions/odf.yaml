@@ -21,8 +21,54 @@ versions:
             set -euo pipefail
 
             OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}' | cut -d. -f1,2)
-            CHANNEL="stable-${OCP_VERSION}"
-            echo "Detected OCP version ${OCP_VERSION}, using ODF channel ${CHANNEL}"
+            DESIRED="stable-${OCP_VERSION}"
+
+            # Resilient channel selection. The redhat-operators catalog does not
+            # always carry the channel that tracks this OCP minor -- e.g. a
+            # pre-release OCP whose ODF catalog only offers a different stable-X.Y
+            # -- so a hardcoded stable-${OCP_VERSION} can point at a channel that
+            # does not exist and the Subscription never resolves. Read the
+            # odf-operator PackageManifest and pick: the desired channel if the
+            # catalog offers it; else the catalog's defaultChannel; else the newest
+            # stable-X.Y. Falls back to the desired channel if the PackageManifest
+            # is unavailable.
+            CHANNEL="${DESIRED}"
+            PM=""
+            for i in $(seq 1 12); do
+              PM=$(oc get packagemanifest odf-operator -n openshift-marketplace \
+                    -o jsonpath='{.status.defaultChannel}|{range .status.channels[*]}{.name},{end}' 2>/dev/null || true)
+              [ -n "${PM}" ] && [ "${PM}" != "|" ] && break
+              sleep 10
+            done
+            if [ -n "${PM}" ] && [ "${PM}" != "|" ]; then
+              DEFAULT_CH="${PM%%|*}"
+              CHANNELS="${PM#*|}"
+              if printf '%s' ",${CHANNELS}" | grep -q ",${DESIRED},"; then
+                CHANNEL="${DESIRED}"
+              elif [ -n "${DEFAULT_CH}" ] && printf '%s' ",${CHANNELS}" | grep -q ",${DEFAULT_CH},"; then
+                CHANNEL="${DEFAULT_CH}"
+              else
+                NEWEST=""
+                for c in $(printf '%s' "${CHANNELS}" | tr ',' ' '); do
+                  case "$c" in
+                    stable-*.*)
+                      if [ -z "${NEWEST}" ]; then
+                        NEWEST="$c"
+                      else
+                        av=${c#stable-}; bv=${NEWEST#stable-}
+                        if [ "${av%.*}" -gt "${bv%.*}" ] 2>/dev/null || { [ "${av%.*}" -eq "${bv%.*}" ] && [ "${av#*.}" -gt "${bv#*.}" ]; } 2>/dev/null; then
+                          NEWEST="$c"
+                        fi
+                      fi
+                      ;;
+                  esac
+                done
+                [ -n "${NEWEST}" ] && CHANNEL="${NEWEST}" || CHANNEL="${DEFAULT_CH:-${DESIRED}}"
+              fi
+              echo "Selected ODF channel ${CHANNEL} (desired ${DESIRED}; catalog default ${DEFAULT_CH:-none}; available ${CHANNELS:-none})"
+            else
+              echo "WARNING: odf-operator PackageManifest unavailable; falling back to ${DESIRED}" >&2
+            fi
 
             echo "Creating OperatorGroup..."
             cat <<EOF | oc apply -f -
