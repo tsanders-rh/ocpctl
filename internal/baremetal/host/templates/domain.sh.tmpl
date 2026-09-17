@@ -1,0 +1,23 @@
+set -euo pipefail
+if virsh dominfo {{ shq .Name }} >/dev/null 2>&1; then
+  echo "domain {{ .Name }} exists, skipping"
+else
+  qemu-img create -f qcow2 /var/lib/libvirt/images/{{ .Name }}.qcow2 {{ .NodeDiskGB }}G >/dev/null
+{{- if .AgentISO }}
+  # Placeholder so virt-install accepts the cdrom source at define time; the real
+  # agent ISO is written to this path before the domain is booted.
+  [ -f {{ .AgentISO }} ] || : > {{ .AgentISO }}
+{{- end }}
+  virt-install \
+    --name {{ shq .Name }} \
+    --memory {{ .RAMMB }} \
+    --vcpus {{ .VCPU }} \
+    --cpu host-passthrough \
+    --os-variant rhel9.4 \
+    --disk path=/var/lib/libvirt/images/{{ .Name }}.qcow2,bus=virtio \
+    {{ .CDROM }} \
+    --network network={{ .LibvirtNet }},mac={{ shq .MAC }},model=virtio \
+    --boot uefi,hd,cdrom \
+    --graphics none --noautoconsole --import --print-xml 1 > /tmp/{{ .Name }}.xml
+  virsh define /tmp/{{ .Name }}.xml >/dev/null
+fi

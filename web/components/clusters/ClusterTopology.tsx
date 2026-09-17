@@ -21,6 +21,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   [Platform.GCP]: "Google Cloud Platform (GCP)",
   [Platform.Azure]: "Microsoft Azure",
   [Platform.IBMCloud]: "IBM Cloud",
+  [Platform.BareMetal]: "Bare Metal",
 };
 
 export function ClusterTopology({ cluster, outputs }: ClusterTopologyProps) {

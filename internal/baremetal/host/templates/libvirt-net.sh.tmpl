@@ -1,0 +1,5 @@
+set -euo pipefail
+virsh net-info {{ .LibvirtNet }} >/dev/null 2>&1 || virsh net-define {{ .NetXMLPath }}
+virsh net-autostart {{ .LibvirtNet }} 2>/dev/null || true
+virsh net-start {{ .LibvirtNet }} 2>/dev/null || true
+echo "libvirt network {{ .LibvirtNet }} OK"

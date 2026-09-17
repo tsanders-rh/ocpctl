@@ -27,10 +27,11 @@ const (
 type Platform string
 
 const (
-	PlatformAWS      Platform = "aws"
-	PlatformIBMCloud Platform = "ibmcloud"
-	PlatformGCP      Platform = "gcp"
-	PlatformAzure    Platform = "azure"
+	PlatformAWS       Platform = "aws"
+	PlatformIBMCloud  Platform = "ibmcloud"
+	PlatformGCP       Platform = "gcp"
+	PlatformAzure     Platform = "azure"
+	PlatformBareMetal Platform = "baremetal"
 )
 
 // ClusterType represents the type of Kubernetes cluster

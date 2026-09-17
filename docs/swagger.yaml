@@ -269,6 +269,29 @@ definitions:
     - supportedPlatforms
     - version
     type: object
+  api.CreateBroadcastAlertRequest:
+    properties:
+      body:
+        minLength: 1
+        type: string
+      expiresAt:
+        type: string
+      severity:
+        allOf:
+        - $ref: '#/definitions/types.BroadcastAlertSeverity'
+        enum:
+        - info
+        - warning
+        - critical
+      title:
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - body
+    - severity
+    - title
+    type: object
   api.CreateClusterRequest:
     properties:
       base_domain:
@@ -324,6 +347,7 @@ definitions:
         - ibmcloud
         - gcp
         - azure
+        - baremetal
         type: string
       postConfigAddOns:
         description: Pre-approved add-ons with version selection
@@ -469,6 +493,37 @@ definitions:
         type: array
       timestamp:
         type: string
+    type: object
+  api.InstalledVersion:
+    properties:
+      binary_path:
+        description: e.g., "/usr/local/bin/openshift-install-4.20"
+        type: string
+      ccoctl_path:
+        description: e.g., "/usr/local/bin/ccoctl-4.20"
+        type: string
+      exact_version:
+        description: e.g., "4.20.17"
+        type: string
+      major_minor:
+        description: e.g., "4.20"
+        type: string
+      profile_references:
+        description: e.g., ["4.20", "4.20.3", "4.20.4"]
+        items:
+          type: string
+        type: array
+    type: object
+  api.InstalledVersionsResponse:
+    properties:
+      binaries_path:
+        type: string
+      openshift_versions:
+        additionalProperties:
+          $ref: '#/definitions/api.InstalledVersion'
+        type: object
+      total_installed:
+        type: integer
     type: object
   api.JobMetricsSnapshot:
     properties:
@@ -901,16 +956,43 @@ definitions:
     properties:
       addon_id:
         type: string
-      channel:
+      version:
         description: Optional, uses default version if empty
         type: string
     required:
     - addon_id
     type: object
+  profile.AzureCandidate:
+    properties:
+      compute_sku:
+        type: string
+      control_plane_sku:
+        type: string
+      region:
+        type: string
+      zones:
+        items:
+          type: string
+        type: array
+    type: object
   profile.AzureConfig:
     properties:
       base_domain_resource_group:
         type: string
+      capacity_fallback:
+        description: |-
+          CapacityFallback is an ordered list of (region, zones, SKU) candidates the
+          worker's Azure capacity pre-flight probes at create time. Azure availability
+          zones are physically separate datacenters with independent capacity, so a
+          SKU can be allocatable in one zone of a region and "SkuNotAvailable" in
+          another — and `az vm list-skus` does NOT predict transient runtime capacity.
+          The pre-flight tries each candidate in order via a real allocation probe and
+          pins the create (region + zones + SKUs) to the first candidate whose required
+          zones all allocate. Empty means "no fallback" (single implicit candidate
+          built from the request region + profile SKUs).
+        items:
+          $ref: '#/definitions/profile.AzureCandidate'
+        type: array
       compute:
         $ref: '#/definitions/profile.AzureMachineConfig'
       control_plane:
@@ -934,6 +1016,27 @@ definitions:
       vm_size:
         description: e.g., "Standard_D8s_v3"
         type: string
+    type: object
+  profile.BareMetalConfig:
+    properties:
+      api_vip:
+        type: string
+      fedora_release:
+        type: string
+      host_ami_owner:
+        type: string
+      host_instance_type:
+        type: string
+      ingress_vip:
+        type: string
+      network_cidr:
+        type: string
+      node_disk_gb:
+        type: integer
+      spare_worker_count:
+        type: integer
+      sushy_port:
+        type: integer
     type: object
   profile.BaseDomainConfig:
     properties:
@@ -1270,6 +1373,8 @@ definitions:
         $ref: '#/definitions/profile.AWSConfig'
       azure:
         $ref: '#/definitions/profile.AzureConfig'
+      bareMetal:
+        $ref: '#/definitions/profile.BareMetalConfig'
       eks:
         $ref: '#/definitions/profile.EKSConfig'
       gcp:
@@ -1350,6 +1455,7 @@ definitions:
         - ibmcloud
         - gcp
         - azure
+        - baremetal
       platformConfig:
         $ref: '#/definitions/profile.PlatformConfig'
       postDeployment:
@@ -1383,6 +1489,9 @@ definitions:
         items:
           type: string
         type: array
+      cluster_type:
+        description: openshift, eks, gke, iks
+        type: string
       current_versions:
         items:
           type: string
@@ -1583,6 +1692,53 @@ definitions:
     - id
     - version
     type: object
+  types.AddonUsage:
+    properties:
+      addon:
+        type: string
+      cluster_count:
+        type: integer
+      estimated_cost:
+        type: number
+      runtime_hours:
+        type: number
+    type: object
+  types.BroadcastAlert:
+    properties:
+      ackCount:
+        description: |-
+          AckCount and TotalUsers are populated for the admin list view only; they
+          are zero on the per-user "active alerts" endpoint.
+        type: integer
+      active:
+        type: boolean
+      body:
+        type: string
+      createdAt:
+        type: string
+      createdBy:
+        type: string
+      expiresAt:
+        type: string
+      id:
+        type: string
+      severity:
+        $ref: '#/definitions/types.BroadcastAlertSeverity'
+      title:
+        type: string
+      totalUsers:
+        type: integer
+    type: object
+  types.BroadcastAlertSeverity:
+    enum:
+    - info
+    - warning
+    - critical
+    type: string
+    x-enum-varnames:
+    - BroadcastAlertInfo
+    - BroadcastAlertWarning
+    - BroadcastAlertCritical
   types.ChangePasswordRequest:
     properties:
       current_password:
@@ -1699,6 +1855,31 @@ definitions:
       work_hours_end:
         type: string
       work_hours_start:
+        type: string
+    type: object
+  types.ClusterCostDetail:
+    properties:
+      created_at:
+        type: string
+      current_month_cost:
+        type: number
+      estimated_hourly_cost:
+        type: number
+      id:
+        type: string
+      last_30_days_cost:
+        type: number
+      name:
+        type: string
+      owner:
+        type: string
+      profile:
+        type: string
+      runtime_hours_current_month:
+        type: number
+      runtime_hours_last_30_days:
+        type: number
+      status:
         type: string
     type: object
   types.ClusterPool:
@@ -1883,6 +2064,28 @@ definitions:
     - ClusterTypeGKE
     - ClusterTypeARO
     - ClusterTypeAKS
+  types.ClusterUsage:
+    properties:
+      cluster_type:
+        type: string
+      created_at:
+        type: string
+      destroyed_at:
+        type: string
+      estimated_cost:
+        type: number
+      name:
+        type: string
+      owner:
+        description: email when resolvable, else owner_id
+        type: string
+      region:
+        type: string
+      runtime_hours:
+        type: number
+      status:
+        type: string
+    type: object
   types.CreateAPIKeyRequest:
     properties:
       expires_at:
@@ -2168,6 +2371,15 @@ definitions:
     required:
     - name
     type: object
+  types.DailyCostPoint:
+    properties:
+      date:
+        description: YYYY-MM-DD format
+        type: string
+      total_cost:
+        description: Sum of all cluster costs for this day
+        type: number
+    type: object
   types.GrantTeamAdminRequest:
     properties:
       notes:
@@ -2296,6 +2508,13 @@ definitions:
         type: string
       console_url:
         type: string
+      kubeadmin:
+        properties:
+          password:
+            type: string
+          username:
+            type: string
+        type: object
       kubeconfig_path:
         type: string
       lease_expires_at:
@@ -2313,6 +2532,42 @@ definitions:
         type: string
       sa_token_expires_at:
         type: string
+    type: object
+  types.LifecycleStats:
+    properties:
+      avg_lifetime_hours:
+        description: avg lifetime of clusters active in-window
+        type: number
+      by_cluster_type:
+        additionalProperties:
+          type: integer
+        type: object
+      by_platform:
+        additionalProperties:
+          type: integer
+        type: object
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      create_failure:
+        description: failed CREATE jobs
+        type: integer
+      create_success:
+        description: successful CREATE jobs
+        type: integer
+      create_success_rate:
+        description: 0..1, over completed CREATE jobs
+        type: number
+      created:
+        description: CREATE jobs that succeeded
+        type: integer
+      destroyed:
+        description: DESTROY/JANITOR_DESTROY jobs that succeeded
+        type: integer
+      hibernated:
+        description: HIBERNATE jobs that succeeded
+        type: integer
     type: object
   types.LoginRequest:
     properties:
@@ -2336,6 +2591,13 @@ definitions:
     type: object
   types.OrphanedResource:
     properties:
+      cluster_id:
+        description: |-
+          ClusterID/JobID are best-effort leak-source back-references, populated at
+          detection time by matching the extracted cluster name (see janitor
+          resolveLeakSource). Either may be nil when the source can't be resolved or
+          the referenced record was later purged (FK is ON DELETE SET NULL).
+        type: string
       cluster_name:
         type: string
       created_at:
@@ -2345,6 +2607,8 @@ definitions:
       first_detected_at:
         type: string
       id:
+        type: string
+      job_id:
         type: string
       last_detected_at:
         type: string
@@ -2421,18 +2685,49 @@ definitions:
     - OrphanedResourceTypeGCPInstance
     - OrphanedResourceTypeGCPBucket
     - OrphanedResourceTypeGCPIPAddress
+  types.PeriodComparison:
+    properties:
+      current_period:
+        description: Current period total cost
+        type: number
+      end_date:
+        description: Current period end date
+        type: string
+      percent_change:
+        description: Percentage change (positive = increase)
+        type: number
+      previous_period:
+        description: Previous period total cost
+        type: number
+      start_date:
+        description: Current period start date
+        type: string
+    type: object
+  types.PeriodCostSummary:
+    properties:
+      end_date:
+        type: string
+      estimated_full_month:
+        type: number
+      start_date:
+        type: string
+      total_cost:
+        type: number
+    type: object
   types.Platform:
     enum:
     - aws
     - ibmcloud
     - gcp
     - azure
+    - baremetal
     type: string
     x-enum-varnames:
     - PlatformAWS
     - PlatformIBMCloud
     - PlatformGCP
     - PlatformAzure
+    - PlatformBareMetal
   types.PoolState:
     enum:
     - READY
@@ -2561,6 +2856,22 @@ definitions:
       updated_at:
         type: string
     type: object
+  types.ProfileUsage:
+    properties:
+      cluster_count:
+        type: integer
+      clusters:
+        description: per-cluster detail, sorted by est. cost desc
+        items:
+          $ref: '#/definitions/types.ClusterUsage'
+        type: array
+      estimated_cost:
+        type: number
+      profile:
+        type: string
+      runtime_hours:
+        type: number
+    type: object
   types.StorageConfig:
     properties:
       auth_mode:
@@ -2618,6 +2929,32 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  types.TeamCostSummary:
+    properties:
+      clusters:
+        items:
+          $ref: '#/definitions/types.ClusterCostDetail'
+        type: array
+      current_month:
+        $ref: '#/definitions/types.PeriodCostSummary'
+      daily_trend:
+        description: Daily costs for last 30 days
+        items:
+          $ref: '#/definitions/types.DailyCostPoint'
+        type: array
+      last_30_days:
+        $ref: '#/definitions/types.PeriodCostSummary'
+      month_over_month:
+        allOf:
+        - $ref: '#/definitions/types.PeriodComparison'
+        description: This month vs last month
+      team:
+        type: string
+      week_over_week:
+        allOf:
+        - $ref: '#/definitions/types.PeriodComparison'
+        description: This week vs last week
     type: object
   types.UpdateAPIKeyRequest:
     properties:
@@ -2722,6 +3059,57 @@ definitions:
         minLength: 2
         type: string
     type: object
+  types.UsageCostSummary:
+    properties:
+      clusters_active:
+        description: clusters active at any point in-window
+        type: integer
+      prior_period_comparison:
+        allOf:
+        - $ref: '#/definitions/types.PeriodComparison'
+        description: vs. the equally-sized preceding window
+      total_cost:
+        description: estimated $ across all clusters in-window
+        type: number
+      total_runtime_hours:
+        description: summed cluster runtime hours in-window
+        type: number
+    type: object
+  types.UsageReport:
+    properties:
+      addons:
+        description: sorted by cluster count desc
+        items:
+          $ref: '#/definitions/types.AddonUsage'
+        type: array
+      cost:
+        $ref: '#/definitions/types.UsageCostSummary'
+      end_date:
+        description: YYYY-MM-DD (inclusive)
+        type: string
+      generated_at:
+        type: string
+      lifecycle:
+        $ref: '#/definitions/types.LifecycleStats'
+      profiles:
+        description: sorted by cluster count desc
+        items:
+          $ref: '#/definitions/types.ProfileUsage'
+        type: array
+      start_date:
+        description: YYYY-MM-DD (inclusive)
+        type: string
+      users:
+        description: sorted by est. cost desc
+        items:
+          $ref: '#/definitions/types.UserUsage'
+        type: array
+      versions:
+        description: OpenShift-family versions, sorted by cluster count desc
+        items:
+          $ref: '#/definitions/types.VersionUsage'
+        type: array
+    type: object
   types.UserResponse:
     properties:
       active:
@@ -2765,6 +3153,29 @@ definitions:
     - RoleUser
     - RoleViewer
     - RoleTeamAdmin
+  types.UserUsage:
+    properties:
+      cluster_count:
+        type: integer
+      estimated_cost:
+        type: number
+      owner:
+        description: email when resolvable, else owner_id
+        type: string
+      runtime_hours:
+        type: number
+    type: object
+  types.VersionUsage:
+    properties:
+      cluster_count:
+        type: integer
+      estimated_cost:
+        type: number
+      runtime_hours:
+        type: number
+      version:
+        type: string
+    type: object
   types.WorkHoursSchedule:
     properties:
       end_time:
@@ -2795,6 +3206,104 @@ info:
   title: OCPCTL API
   version: "1.0"
 paths:
+  /admin/broadcast-alerts:
+    get:
+      description: Returns all broadcast alerts (active and past) with per-alert acknowledgment
+        counts.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List broadcast alerts
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Creates a broadcast alert shown to all users until acknowledged.
+        Critical alerts render as a blocking modal; info/warning render as a dismissible
+        banner.
+      parameters:
+      - description: Alert to create
+        in: body
+        name: alert
+        required: true
+        schema:
+          $ref: '#/definitions/api.CreateBroadcastAlertRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/types.BroadcastAlert'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create broadcast alert
+      tags:
+      - admin
+  /admin/broadcast-alerts/{id}:
+    delete:
+      description: Marks a broadcast alert inactive so it stops showing to users.
+        Acknowledgment history is retained.
+      parameters:
+      - description: Alert ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deactivate broadcast alert
+      tags:
+      - admin
   /admin/clusters/long-running:
     get:
       description: Returns READY clusters running 24+ hours without hibernation (admin
@@ -2854,6 +3363,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Get cluster statistics
+      tags:
+      - admin
+  /admin/installed-versions:
+    get:
+      description: Returns all OpenShift installer versions currently installed on
+        the server by checking /usr/local/bin/openshift-install-* binaries
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.InstalledVersionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden - Admin access required
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get installed OpenShift versions
       tags:
       - admin
   /admin/orphaned-resources:
@@ -3027,6 +3564,36 @@ paths:
       security:
       - BearerAuth: []
       summary: Mark orphaned resource as resolved
+      tags:
+      - Orphaned Resources
+  /admin/orphaned-resources/{id}/safety:
+    get:
+      description: Runs the deletion safety gate (live-cluster guard, grace period,
+        status, VPC-alive probe) for an orphaned resource and returns the verdict.
+        Deletes nothing. Admin only.
+      parameters:
+      - description: Resource ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Resource not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Preview deletion safety checks
       tags:
       - Orphaned Resources
   /admin/orphaned-resources/stats:
@@ -3406,6 +3973,46 @@ paths:
       summary: Check profiles for version updates
       tags:
       - admin
+  /admin/reports/usage:
+    get:
+      consumes:
+      - application/json
+      description: 'Returns a platform-wide usage/cost report for an adhoc date range:
+        estimated cost, most used profiles, most active users, and cluster lifecycle
+        stats.'
+      parameters:
+      - description: Start date (YYYY-MM-DD), inclusive. Defaults to 30 days ago.
+        in: query
+        name: start_date
+        type: string
+      - description: End date (YYYY-MM-DD), inclusive. Defaults to today.
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.UsageReport'
+        "400":
+          description: Invalid date range
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to build report
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get usage report
+      tags:
+      - Reports
   /admin/system/infrastructure:
     get:
       description: Returns information about API server, workers, and autoscaling
@@ -4447,6 +5054,55 @@ paths:
       summary: Refresh access token
       tags:
       - Authentication
+  /broadcast-alerts/{id}/ack:
+    post:
+      description: Records that the current user has acknowledged (dismissed) an alert.
+        Idempotent.
+      parameters:
+      - description: Alert ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Acknowledge an alert
+      tags:
+      - broadcast-alerts
+  /broadcast-alerts/active:
+    get:
+      description: Returns active, non-expired broadcast alerts the current user has
+        not yet acknowledged, most severe first.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List active alerts for current user
+      tags:
+      - broadcast-alerts
   /clusters:
     get:
       description: Lists all clusters accessible to the authenticated user. Admins
@@ -6220,6 +6876,47 @@ paths:
       summary: Readiness check
       tags:
       - system
+  /teams/{name}/costs:
+    get:
+      consumes:
+      - application/json
+      description: Returns cost summary for a team (current month and last 30 days)
+      parameters:
+      - description: Team name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.TeamCostSummary'
+        "403":
+          description: Not authorized to view this team
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Team not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to get team costs
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get team costs
+      tags:
+      - Teams
   /templates:
     get:
       description: Lists post-configuration templates visible to the authenticated

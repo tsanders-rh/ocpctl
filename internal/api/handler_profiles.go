@@ -109,8 +109,10 @@ func (h *ProfileHandler) List(c echo.Context) error {
 			platform = types.PlatformGCP
 		case "azure":
 			platform = types.PlatformAzure
+		case "baremetal":
+			platform = types.PlatformBareMetal
 		default:
-			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', 'gcp', or 'azure'")
+			return ErrorBadRequest(c, "Invalid platform. Must be 'aws', 'ibmcloud', 'gcp', 'azure', or 'baremetal'")
 		}
 		platformFilter = &platform
 	}

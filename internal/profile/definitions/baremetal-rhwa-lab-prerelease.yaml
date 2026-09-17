@@ -1,0 +1,102 @@
+name: baremetal-rhwa-lab-prerelease
+displayName: Emulated Bare Metal RHWA Lab (Agent-Based, Prerelease)
+description: Pre-release (RC) variant of the bare-metal RHWA lab for testing RHWA/ODF
+  on OpenShift 5.0 release candidates. Same nested-virt EC2 host + libvirt VMs +
+  sushy-tools BMCs + Agent-Based Installer as the GA profile; ships an RC OCP
+  version. RC builds are published on the standard client mirror, so the agent
+  installer fetches them like a GA build. (EC/nightly builds live on a different
+  mirror and need release-image-override handling the agent path does not yet do.)
+platform: baremetal
+clusterType: openshift
+track: prerelease
+enabled: true
+openshiftVersions:
+  allowlist:
+  - 5.0.0-ec.5
+  - 5.0.0-rc.1
+  - 5.0.0-rc.2
+  - 5.0.0-0.nightly
+  default: 5.0.0-rc.2
+regions:
+  allowlist:
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  default: us-east-1
+baseDomains:
+  allowlist:
+  - migration.redhat.com
+  default: migration.redhat.com
+compute:
+  controlPlane:
+    replicas: 3
+    instanceType: vm-8vcpu-20gb
+    schedulable: true
+  workers:
+    # Post-install MachineSet scale target (rhwa-lab WORKER_COUNT). The agent
+    # install-config always requests 0 workers (masters come up schedulable);
+    # the baremetal lifecycle scales the metal3 MachineSet to this count after
+    # the cluster is up, then marks the masters unschedulable.
+    replicas: 3
+    minReplicas: 0
+    maxReplicas: 6
+    instanceType: vm-4vcpu-16gb
+    autoscaling: false
+lifecycle:
+  maxTTLHours: 168
+  defaultTTLHours: 24
+  allowCustomTTL: true
+  warnBeforeDestroyHours: 2
+networking:
+  networkType: OVNKubernetes
+  clusterNetworks:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+  machineNetwork:
+  - cidr: 192.168.126.0/24
+tags:
+  required:
+    Environment: lab
+  defaults:
+    Purpose: rhwa-medik8s-testing
+    ManagedBy: cluster-control-plane
+    Track: prerelease
+    Category: node-remediation
+  allowUserTags: true
+features:
+  offHoursScaling: false
+  fipsMode: false
+  privateCluster: false
+costControls:
+  # List-price basis: 1x m8i.12xlarge host @~2.42/hr (us-east-1) + 1TB gp3
+  estimatedHourlyCost: 2.5
+  maxMonthlyCost: 1825
+  budgetAlertThreshold: 0.8
+platformConfig:
+  baremetal:
+    hostInstanceType: m8i.12xlarge
+    hostAMIOwner: '125523088429'
+    fedoraRelease: '44'
+    nodeDiskGB: 120
+    spareWorkerCount: 3
+    networkCIDR: 192.168.126.0/24
+    apiVIP: 192.168.126.5
+    ingressVIP: 192.168.126.6
+    sushyPort: 8000
+    odf:
+      enabled: true
+      # ceph sizing/channel default in-code (3 OSDs, 200 GB usable, replica 3,
+      # squid, channel stable-<ocp-minor> resolved against the catalog).
+metadata:
+  notes:
+  - Pre-release RC variant; installs an OpenShift 5.0 release candidate via the agent installer
+  - Provisions the full substrate (EC2 host, libvirt VMs, sushy-tools BMCs) natively via ocpctl
+  - RHWA operators and fence_redfish fencing are configured natively during create (no separate addon)
+  - ODF channel is resolved from the catalog PackageManifest, so a pre-release ODF catalog is tolerated
+  warnings:
+  - RC only - EC/nightly builds are on a different mirror and are not yet supported on the agent path
+  - Runs on a single large EC2 host; cost accrues whenever the host is running
+  - Hibernate/resume and pooling are not supported for bare-metal clusters

@@ -1,0 +1,7 @@
+set -euo pipefail
+mkdir -p /var/lib/libvirt/images
+virsh pool-info default >/dev/null 2>&1 || virsh pool-define-as default dir --target /var/lib/libvirt/images
+virsh pool-autostart default 2>/dev/null || true
+virsh pool-start default 2>/dev/null || true
+virsh pool-refresh default 2>/dev/null || true
+echo "storage pool default OK"

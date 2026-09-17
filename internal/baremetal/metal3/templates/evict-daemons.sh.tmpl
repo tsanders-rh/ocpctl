@@ -1,0 +1,39 @@
+set -euo pipefail
+# compute.replicas:0 installs with mastersSchedulable:true, so DaemonSets with
+# os:linux selectors place pods on the control plane. Once mastersSchedulable is
+# flipped false the masters get the NoSchedule taint, which never evicts running
+# pods, so those orphans linger as "misscheduled" (tripping KubeDaemonSetMisScheduled
+# / RolloutStuck). Delete the DaemonSet-owned pods on masters whose tolerations do
+# NOT cover the master/control-plane taint; the DaemonSet controller won't recreate
+# them on the tainted masters. Taint-tolerating daemons are left untouched.
+masters="$({{.OC}} get nodes -l node-role.kubernetes.io/master -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)" || exit 0
+[[ -n "$masters" ]] || exit 0
+count="$(wc -w <<<"$masters")"
+# Wait (~60s) for the NoSchedule taint so evicted pods are not rescheduled onto a
+# still-schedulable master.
+for ((i=0; i<20; i++)); do
+  tainted=0
+  for node in $masters; do
+    if {{.OC}} get node "$node" -o jsonpath='{.spec.taints[*].key}' 2>/dev/null | grep -q 'node-role.kubernetes.io/master'; then
+      tainted=$((tainted + 1))
+    fi
+  done
+  [[ "$tainted" -eq "$count" ]] && break
+  sleep 3
+done
+echo "Clearing DaemonSet pods stranded on the control plane"
+for node in $masters; do
+  while read -r ns name; do
+    [[ -n "$ns" && -n "$name" ]] || continue
+    {{.OC}} -n "$ns" delete pod "$name" --wait=false >/dev/null 2>&1 && echo "evicted stranded ${ns}/${name}"
+  done < <({{.OC}} get pods -A --field-selector "spec.nodeName=${node}" -o json 2>/dev/null \
+    | jq -r '.items[]
+        | select(any(.metadata.ownerReferences[]?; .kind == "DaemonSet"))
+        | select( ( [ .spec.tolerations[]?
+              | select(
+                  ( (.key == "node-role.kubernetes.io/master" or .key == "node-role.kubernetes.io/control-plane")
+                    and (.effect == null or .effect == "" or .effect == "NoSchedule") )
+                  or ( (.key == null or .key == "") and .operator == "Exists" )
+                ) ] | length ) == 0 )
+        | "\(.metadata.namespace) \(.metadata.name)"' 2>/dev/null)
+done

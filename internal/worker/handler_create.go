@@ -91,6 +91,13 @@ func (h *CreateHandler) Handle(ctx context.Context, job *types.Job) error {
 
 // handleOpenShiftCreate handles OpenShift cluster creation
 func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	// Bare-metal is agent-based, not IPI: it drives the native
+	// internal/baremetal orchestration rather than running openshift-install
+	// directly.
+	if cluster.Platform == types.PlatformBareMetal {
+		return h.handleBareMetalCreate(ctx, job, cluster)
+	}
+
 	log.Printf("Starting OpenShift cluster creation for %s", cluster.Name)
 
 	// Update cluster status to CREATING

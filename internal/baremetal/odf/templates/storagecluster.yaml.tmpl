@@ -1,0 +1,11 @@
+{{.OC}} apply -f - <<'YAML'
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  name: ocs-external-storagecluster
+  namespace: {{.Namespace}}
+spec:
+  externalStorage:
+    enable: true
+  labelSelector: {}
+YAML

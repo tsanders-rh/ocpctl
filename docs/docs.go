@@ -23,6 +23,154 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/broadcast-alerts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all broadcast alerts (active and past) with per-alert acknowledgment counts.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List broadcast alerts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a broadcast alert shown to all users until acknowledged. Critical alerts render as a blocking modal; info/warning render as a dismissible banner.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create broadcast alert",
+                "parameters": [
+                    {
+                        "description": "Alert to create",
+                        "name": "alert",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.CreateBroadcastAlertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/types.BroadcastAlert"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/broadcast-alerts/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a broadcast alert inactive so it stops showing to users. Acknowledgment history is retained.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Deactivate broadcast alert",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Alert ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/clusters/long-running": {
             "get": {
                 "security": [
@@ -111,6 +259,49 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/installed-versions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all OpenShift installer versions currently installed on the server by checking /usr/local/bin/openshift-install-* binaries",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get installed OpenShift versions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.InstalledVersionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - Admin access required",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -407,6 +598,50 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orphaned-resources/{id}/safety": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs the deletion safety gate (live-cluster guard, grace period, status, VPC-alive probe) for an orphaned resource and returns the verdict. Deletes nothing. Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Preview deletion safety checks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -946,6 +1181,66 @@ const docTemplate = `{
                         "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/reports/usage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a platform-wide usage/cost report for an adhoc date range: estimated cost, most used profiles, most active users, and cluster lifecycle stats.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get usage report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD), inclusive. Defaults to 30 days ago.",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD), inclusive. Defaults to today.",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/types.UsageReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid date range",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to build report",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -2540,6 +2835,81 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/broadcast-alerts/active": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns active, non-expired broadcast alerts the current user has not yet acknowledged, most severe first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "broadcast-alerts"
+                ],
+                "summary": "List active alerts for current user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/broadcast-alerts/{id}/ack": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records that the current user has acknowledged (dismissed) an alert. Idempotent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "broadcast-alerts"
+                ],
+                "summary": "Acknowledge an alert",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Alert ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -5246,6 +5616,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/teams/{name}/costs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns cost summary for a team (current month and last 30 days)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Teams"
+                ],
+                "summary": "Get team costs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Team name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/types.TeamCostSummary"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized to view this team",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get team costs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/templates": {
             "get": {
                 "security": [
@@ -6254,6 +6688,40 @@ const docTemplate = `{
                 }
             }
         },
+        "api.CreateBroadcastAlertRequest": {
+            "type": "object",
+            "required": [
+                "body",
+                "severity",
+                "title"
+            ],
+            "properties": {
+                "body": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "severity": {
+                    "enum": [
+                        "info",
+                        "warning",
+                        "critical"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BroadcastAlertSeverity"
+                        }
+                    ]
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1
+                }
+            }
+        },
         "api.CreateClusterRequest": {
             "type": "object",
             "required": [
@@ -6338,7 +6806,8 @@ const docTemplate = `{
                         "aws",
                         "ibmcloud",
                         "gcp",
-                        "azure"
+                        "azure",
+                        "baremetal"
                     ]
                 },
                 "postConfigAddOns": {
@@ -6542,6 +7011,51 @@ const docTemplate = `{
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "api.InstalledVersion": {
+            "type": "object",
+            "properties": {
+                "binary_path": {
+                    "description": "e.g., \"/usr/local/bin/openshift-install-4.20\"",
+                    "type": "string"
+                },
+                "ccoctl_path": {
+                    "description": "e.g., \"/usr/local/bin/ccoctl-4.20\"",
+                    "type": "string"
+                },
+                "exact_version": {
+                    "description": "e.g., \"4.20.17\"",
+                    "type": "string"
+                },
+                "major_minor": {
+                    "description": "e.g., \"4.20\"",
+                    "type": "string"
+                },
+                "profile_references": {
+                    "description": "e.g., [\"4.20\", \"4.20.3\", \"4.20.4\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.InstalledVersionsResponse": {
+            "type": "object",
+            "properties": {
+                "binaries_path": {
+                    "type": "string"
+                },
+                "openshift_versions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.InstalledVersion"
+                    }
+                },
+                "total_installed": {
+                    "type": "integer"
                 }
             }
         },
@@ -7197,9 +7711,29 @@ const docTemplate = `{
                 "addon_id": {
                     "type": "string"
                 },
-                "channel": {
+                "version": {
                     "description": "Optional, uses default version if empty",
                     "type": "string"
+                }
+            }
+        },
+        "profile.AzureCandidate": {
+            "type": "object",
+            "properties": {
+                "compute_sku": {
+                    "type": "string"
+                },
+                "control_plane_sku": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -7208,6 +7742,13 @@ const docTemplate = `{
             "properties": {
                 "base_domain_resource_group": {
                     "type": "string"
+                },
+                "capacity_fallback": {
+                    "description": "CapacityFallback is an ordered list of (region, zones, SKU) candidates the\nworker's Azure capacity pre-flight probes at create time. Azure availability\nzones are physically separate datacenters with independent capacity, so a\nSKU can be allocatable in one zone of a region and \"SkuNotAvailable\" in\nanother — and ` + "`" + `az vm list-skus` + "`" + ` does NOT predict transient runtime capacity.\nThe pre-flight tries each candidate in order via a real allocation probe and\npins the create (region + zones + SKUs) to the first candidate whose required\nzones all allocate. Empty means \"no fallback\" (single implicit candidate\nbuilt from the request region + profile SKUs).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/profile.AzureCandidate"
+                    }
                 },
                 "compute": {
                     "$ref": "#/definitions/profile.AzureMachineConfig"
@@ -7242,6 +7783,38 @@ const docTemplate = `{
                 "vm_size": {
                     "description": "e.g., \"Standard_D8s_v3\"",
                     "type": "string"
+                }
+            }
+        },
+        "profile.BareMetalConfig": {
+            "type": "object",
+            "properties": {
+                "api_vip": {
+                    "type": "string"
+                },
+                "fedora_release": {
+                    "type": "string"
+                },
+                "host_ami_owner": {
+                    "type": "string"
+                },
+                "host_instance_type": {
+                    "type": "string"
+                },
+                "ingress_vip": {
+                    "type": "string"
+                },
+                "network_cidr": {
+                    "type": "string"
+                },
+                "node_disk_gb": {
+                    "type": "integer"
+                },
+                "spare_worker_count": {
+                    "type": "integer"
+                },
+                "sushy_port": {
+                    "type": "integer"
                 }
             }
         },
@@ -7738,6 +8311,9 @@ const docTemplate = `{
                 "azure": {
                     "$ref": "#/definitions/profile.AzureConfig"
                 },
+                "bareMetal": {
+                    "$ref": "#/definitions/profile.BareMetalConfig"
+                },
                 "eks": {
                     "$ref": "#/definitions/profile.EKSConfig"
                 },
@@ -7861,7 +8437,8 @@ const docTemplate = `{
                         "aws",
                         "ibmcloud",
                         "gcp",
-                        "azure"
+                        "azure",
+                        "baremetal"
                     ],
                     "allOf": [
                         {
@@ -7903,6 +8480,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "cluster_type": {
+                    "description": "openshift, eks, gke, iks",
+                    "type": "string"
                 },
                 "current_versions": {
                     "type": "array",
@@ -8199,6 +8780,72 @@ const docTemplate = `{
                 }
             }
         },
+        "types.AddonUsage": {
+            "type": "object",
+            "properties": {
+                "addon": {
+                    "type": "string"
+                },
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "estimated_cost": {
+                    "type": "number"
+                },
+                "runtime_hours": {
+                    "type": "number"
+                }
+            }
+        },
+        "types.BroadcastAlert": {
+            "type": "object",
+            "properties": {
+                "ackCount": {
+                    "description": "AckCount and TotalUsers are populated for the admin list view only; they\nare zero on the per-user \"active alerts\" endpoint.",
+                    "type": "integer"
+                },
+                "active": {
+                    "type": "boolean"
+                },
+                "body": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "createdBy": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "severity": {
+                    "$ref": "#/definitions/types.BroadcastAlertSeverity"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "totalUsers": {
+                    "type": "integer"
+                }
+            }
+        },
+        "types.BroadcastAlertSeverity": {
+            "type": "string",
+            "enum": [
+                "info",
+                "warning",
+                "critical"
+            ],
+            "x-enum-varnames": [
+                "BroadcastAlertInfo",
+                "BroadcastAlertWarning",
+                "BroadcastAlertCritical"
+            ]
+        },
         "types.ChangePasswordRequest": {
             "type": "object",
             "required": [
@@ -8368,6 +9015,44 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "work_hours_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.ClusterCostDetail": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_month_cost": {
+                    "type": "number"
+                },
+                "estimated_hourly_cost": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_30_days_cost": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "runtime_hours_current_month": {
+                    "type": "number"
+                },
+                "runtime_hours_last_30_days": {
+                    "type": "number"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -8609,6 +9294,39 @@ const docTemplate = `{
                 "ClusterTypeARO",
                 "ClusterTypeAKS"
             ]
+        },
+        "types.ClusterUsage": {
+            "type": "object",
+            "properties": {
+                "cluster_type": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "destroyed_at": {
+                    "type": "string"
+                },
+                "estimated_cost": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "description": "email when resolvable, else owner_id",
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "runtime_hours": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
         },
         "types.CreateAPIKeyRequest": {
             "type": "object",
@@ -9012,6 +9730,19 @@ const docTemplate = `{
                 }
             }
         },
+        "types.DailyCostPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "description": "YYYY-MM-DD format",
+                    "type": "string"
+                },
+                "total_cost": {
+                    "description": "Sum of all cluster costs for this day",
+                    "type": "number"
+                }
+            }
+        },
         "types.GrantTeamAdminRequest": {
             "type": "object",
             "required": [
@@ -9179,6 +9910,17 @@ const docTemplate = `{
                 "console_url": {
                     "type": "string"
                 },
+                "kubeadmin": {
+                    "type": "object",
+                    "properties": {
+                        "password": {
+                            "type": "string"
+                        },
+                        "username": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "kubeconfig_path": {
                     "type": "string"
                 },
@@ -9203,6 +9945,57 @@ const docTemplate = `{
                 },
                 "sa_token_expires_at": {
                     "type": "string"
+                }
+            }
+        },
+        "types.LifecycleStats": {
+            "type": "object",
+            "properties": {
+                "avg_lifetime_hours": {
+                    "description": "avg lifetime of clusters active in-window",
+                    "type": "number"
+                },
+                "by_cluster_type": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_platform": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_status": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "create_failure": {
+                    "description": "failed CREATE jobs",
+                    "type": "integer"
+                },
+                "create_success": {
+                    "description": "successful CREATE jobs",
+                    "type": "integer"
+                },
+                "create_success_rate": {
+                    "description": "0..1, over completed CREATE jobs",
+                    "type": "number"
+                },
+                "created": {
+                    "description": "CREATE jobs that succeeded",
+                    "type": "integer"
+                },
+                "destroyed": {
+                    "description": "DESTROY/JANITOR_DESTROY jobs that succeeded",
+                    "type": "integer"
+                },
+                "hibernated": {
+                    "description": "HIBERNATE jobs that succeeded",
+                    "type": "integer"
                 }
             }
         },
@@ -9239,6 +10032,10 @@ const docTemplate = `{
         "types.OrphanedResource": {
             "type": "object",
             "properties": {
+                "cluster_id": {
+                    "description": "ClusterID/JobID are best-effort leak-source back-references, populated at\ndetection time by matching the extracted cluster name (see janitor\nresolveLeakSource). Either may be nil when the source can't be resolved or\nthe referenced record was later purged (FK is ON DELETE SET NULL).",
+                    "type": "string"
+                },
                 "cluster_name": {
                     "type": "string"
                 },
@@ -9252,6 +10049,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "job_id": {
                     "type": "string"
                 },
                 "last_detected_at": {
@@ -9349,19 +10149,63 @@ const docTemplate = `{
                 "OrphanedResourceTypeGCPIPAddress"
             ]
         },
+        "types.PeriodComparison": {
+            "type": "object",
+            "properties": {
+                "current_period": {
+                    "description": "Current period total cost",
+                    "type": "number"
+                },
+                "end_date": {
+                    "description": "Current period end date",
+                    "type": "string"
+                },
+                "percent_change": {
+                    "description": "Percentage change (positive = increase)",
+                    "type": "number"
+                },
+                "previous_period": {
+                    "description": "Previous period total cost",
+                    "type": "number"
+                },
+                "start_date": {
+                    "description": "Current period start date",
+                    "type": "string"
+                }
+            }
+        },
+        "types.PeriodCostSummary": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "estimated_full_month": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "total_cost": {
+                    "type": "number"
+                }
+            }
+        },
         "types.Platform": {
             "type": "string",
             "enum": [
                 "aws",
                 "ibmcloud",
                 "gcp",
-                "azure"
+                "azure",
+                "baremetal"
             ],
             "x-enum-varnames": [
                 "PlatformAWS",
                 "PlatformIBMCloud",
                 "PlatformGCP",
-                "PlatformAzure"
+                "PlatformAzure",
+                "PlatformBareMetal"
             ]
         },
         "types.PoolState": {
@@ -9546,6 +10390,30 @@ const docTemplate = `{
                 }
             }
         },
+        "types.ProfileUsage": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "clusters": {
+                    "description": "per-cluster detail, sorted by est. cost desc",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ClusterUsage"
+                    }
+                },
+                "estimated_cost": {
+                    "type": "number"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "runtime_hours": {
+                    "type": "number"
+                }
+            }
+        },
         "types.StorageConfig": {
             "type": "object",
             "properties": {
@@ -9627,6 +10495,49 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "types.TeamCostSummary": {
+            "type": "object",
+            "properties": {
+                "clusters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ClusterCostDetail"
+                    }
+                },
+                "current_month": {
+                    "$ref": "#/definitions/types.PeriodCostSummary"
+                },
+                "daily_trend": {
+                    "description": "Daily costs for last 30 days",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.DailyCostPoint"
+                    }
+                },
+                "last_30_days": {
+                    "$ref": "#/definitions/types.PeriodCostSummary"
+                },
+                "month_over_month": {
+                    "description": "This month vs last month",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PeriodComparison"
+                        }
+                    ]
+                },
+                "team": {
+                    "type": "string"
+                },
+                "week_over_week": {
+                    "description": "This week vs last week",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PeriodComparison"
+                        }
+                    ]
                 }
             }
         },
@@ -9778,6 +10689,81 @@ const docTemplate = `{
                 }
             }
         },
+        "types.UsageCostSummary": {
+            "type": "object",
+            "properties": {
+                "clusters_active": {
+                    "description": "clusters active at any point in-window",
+                    "type": "integer"
+                },
+                "prior_period_comparison": {
+                    "description": "vs. the equally-sized preceding window",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PeriodComparison"
+                        }
+                    ]
+                },
+                "total_cost": {
+                    "description": "estimated $ across all clusters in-window",
+                    "type": "number"
+                },
+                "total_runtime_hours": {
+                    "description": "summed cluster runtime hours in-window",
+                    "type": "number"
+                }
+            }
+        },
+        "types.UsageReport": {
+            "type": "object",
+            "properties": {
+                "addons": {
+                    "description": "sorted by cluster count desc",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AddonUsage"
+                    }
+                },
+                "cost": {
+                    "$ref": "#/definitions/types.UsageCostSummary"
+                },
+                "end_date": {
+                    "description": "YYYY-MM-DD (inclusive)",
+                    "type": "string"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "lifecycle": {
+                    "$ref": "#/definitions/types.LifecycleStats"
+                },
+                "profiles": {
+                    "description": "sorted by cluster count desc",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ProfileUsage"
+                    }
+                },
+                "start_date": {
+                    "description": "YYYY-MM-DD (inclusive)",
+                    "type": "string"
+                },
+                "users": {
+                    "description": "sorted by est. cost desc",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.UserUsage"
+                    }
+                },
+                "versions": {
+                    "description": "OpenShift-family versions, sorted by cluster count desc",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.VersionUsage"
+                    }
+                }
+            }
+        },
         "types.UserResponse": {
             "type": "object",
             "properties": {
@@ -9839,6 +10825,41 @@ const docTemplate = `{
                 "RoleViewer",
                 "RoleTeamAdmin"
             ]
+        },
+        "types.UserUsage": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "estimated_cost": {
+                    "type": "number"
+                },
+                "owner": {
+                    "description": "email when resolvable, else owner_id",
+                    "type": "string"
+                },
+                "runtime_hours": {
+                    "type": "number"
+                }
+            }
+        },
+        "types.VersionUsage": {
+            "type": "object",
+            "properties": {
+                "cluster_count": {
+                    "type": "integer"
+                },
+                "estimated_cost": {
+                    "type": "number"
+                },
+                "runtime_hours": {
+                    "type": "number"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
         },
         "types.WorkHoursSchedule": {
             "type": "object",

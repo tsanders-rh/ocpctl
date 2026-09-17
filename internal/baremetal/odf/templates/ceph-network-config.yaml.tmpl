@@ -1,0 +1,15 @@
+version: 2
+ethernets:
+  ceph0:
+    match:
+      macaddress: "{{.MAC}}"
+    set-name: ceph0
+    dhcp4: false
+    addresses:
+      - {{.IP}}/24
+    routes:
+      - to: default
+        via: {{.NetGateway}}
+    nameservers:
+      addresses:
+        - {{.NetGateway}}

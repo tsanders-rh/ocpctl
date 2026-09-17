@@ -1,0 +1,50 @@
+set -euo pipefail
+{{.OC}} apply -f - <<'EOF'
+apiVersion: fence-agents-remediation.medik8s.io/v1alpha1
+kind: FenceAgentsRemediationTemplate
+metadata:
+  name: fenceagentsremediationtemplate-default
+  namespace: {{.NS}}
+spec:
+  template:
+    spec:
+      agent: fence_redfish
+      remediationStrategy: ResourceDeletion
+      sharedparameters:
+        "--ip": "{{.NetGateway}}"
+        "--ipport": "{{.SushyPort}}"
+        "--username": "{{.SushyUser}}"
+        "--password": "{{.SushyPass}}"
+        "--ssl-insecure": "1"
+      nodeparameters:
+        "--systems-uri":
+{{- range .FenceNodes}}
+          "{{.Host}}": "/redfish/v1/Systems/{{.UUID}}"
+{{- end}}
+EOF
+{{.OC}} apply -f - <<'EOF'
+apiVersion: remediation.medik8s.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: rhwa-nhc
+spec:
+  minHealthy: "51%"
+  selector:
+    matchExpressions:
+    - key: node-role.kubernetes.io/worker
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: DoesNotExist
+  remediationTemplate:
+    apiVersion: fence-agents-remediation.medik8s.io/v1alpha1
+    kind: FenceAgentsRemediationTemplate
+    name: fenceagentsremediationtemplate-default
+    namespace: {{.NS}}
+  unhealthyConditions:
+  - type: Ready
+    status: "False"
+    duration: 60s
+  - type: Ready
+    status: Unknown
+    duration: 60s
+EOF

@@ -145,7 +145,7 @@ export default function NewClusterPage() {
 
       // Filter by cluster type
       let clusterTypeMatch = false;
-      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-, azure-)
+      // For OpenShift clusters, show profiles that start with platform prefix (aws-, ibmcloud-, gcp-, azure-, baremetal-)
       // but exclude managed service profiles (ROSA, ARO, AKS, EKS, IKS, GKE)
       if (selectedClusterType === ClusterType.OpenShift) {
         clusterTypeMatch = p.name.startsWith(`${selectedPlatform}-`) &&
@@ -427,6 +427,9 @@ export default function NewClusterPage() {
                     } else if (newPlatform === Platform.Azure && (currentClusterType === ClusterType.EKS || currentClusterType === ClusterType.IKS || currentClusterType === ClusterType.GKE || currentClusterType === ClusterType.ROSA)) {
                       setValue("cluster_type", ClusterType.OpenShift);
                       setSelectedClusterType(ClusterType.OpenShift);
+                    } else if (newPlatform === Platform.BareMetal && currentClusterType !== ClusterType.OpenShift) {
+                      setValue("cluster_type", ClusterType.OpenShift);
+                      setSelectedClusterType(ClusterType.OpenShift);
                     }
                   }}
                 >
@@ -438,6 +441,7 @@ export default function NewClusterPage() {
                     <SelectItem value="ibmcloud">IBM Cloud</SelectItem>
                     <SelectItem value="gcp">Google Cloud Platform</SelectItem>
                     <SelectItem value="azure">Azure</SelectItem>
+                    <SelectItem value="baremetal">Bare Metal (Agent-Based)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -921,7 +925,7 @@ export default function NewClusterPage() {
                       onChange={(tags) => setValue("extra_tags", tags)}
                     />
                     <p className="text-sm text-muted-foreground">
-                      Add custom tags to apply to all deployed {watchedValues.platform === "aws" ? "AWS" : watchedValues.platform === "gcp" ? "GCP" : watchedValues.platform === "azure" ? "Azure" : "IBM Cloud"} resources
+                      Add custom tags to apply to all deployed {watchedValues.platform === "aws" ? "AWS" : watchedValues.platform === "gcp" ? "GCP" : watchedValues.platform === "azure" ? "Azure" : watchedValues.platform === "baremetal" ? "Bare Metal" : "IBM Cloud"} resources
                     </p>
                   </div>
                 </div>

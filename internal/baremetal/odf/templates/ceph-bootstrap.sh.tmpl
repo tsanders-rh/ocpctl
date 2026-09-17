@@ -1,0 +1,70 @@
+set -euo pipefail
+# cephadm host prerequisites, installed here (not via cloud-init) with retries and
+# visible errors so a first-boot dnf/mirror problem is reported plainly.
+if ! command -v podman >/dev/null 2>&1; then
+  ok=""
+  for attempt in 1 2 3; do
+    if dnf install -y podman lvm2 chrony python3 jq; then ok=1; break; fi
+    echo "dnf install attempt ${attempt} failed; retrying in 15s..." >&2
+    sleep 15
+  done
+  [[ -n "$ok" ]] || { echo "ERROR: could not install podman/prereqs on the ceph VM (check its outbound DNS/mirrors)." >&2; exit 1; }
+fi
+systemctl enable --now chronyd 2>/dev/null || true
+# Release-specific cephadm from the CentOS Storage SIG so the binary matches the
+# {{.Release}} container image the cluster runs (a mismatched cephadm hands back a
+# mgr-dump ODF's rook cannot parse). Resolve its absolute path.
+CEPHADM="$(command -v cephadm || true)"
+if [[ -z "$CEPHADM" ]]; then
+  dnf install -y 'centos-release-ceph-{{.Release}}' >/dev/null 2>&1 || true
+  dnf install -y cephadm >/dev/null 2>&1 || true
+  CEPHADM="$(command -v cephadm || true)"
+fi
+[[ -n "$CEPHADM" && -x "$CEPHADM" ]] || { echo "ERROR: could not install cephadm (centos-release-ceph-{{.Release}} + cephadm)." >&2; exit 1; }
+echo "using cephadm at $CEPHADM"
+# --single-host-defaults sets the CRUSH failure domain to OSD so a replicated pool
+# of size {{.PoolReplica}} places all copies on this one host's OSDs.
+if ! "$CEPHADM" shell -- ceph -s </dev/null >/dev/null 2>&1; then
+  "$CEPHADM" {{if .Image}}--image '{{.Image}}' {{end}}bootstrap \
+    --mon-ip '{{.IP}}' \
+    --single-host-defaults \
+    --allow-fqdn-hostname \
+    --skip-dashboard \
+    --skip-monitoring-stack \
+    --allow-overwrite </dev/null
+fi
+# </dev/null on every cephadm shell: cephadm shell reads stdin, and this whole
+# script is fed to 'sudo bash -s' ON stdin -- without the redirect the first shell
+# swallows the rest of the script.
+CEPH() { "$CEPHADM" shell -- "$@" </dev/null; }
+# One OSD per blank data disk (--all-available-devices consumes the blank virtio
+# disks; the root disk has a filesystem and is skipped).
+CEPH ceph orch apply osd --all-available-devices || true
+for i in $(seq 1 60); do
+  up=$(CEPH ceph osd stat -f json 2>/dev/null | jq -r '.num_up_osds' 2>/dev/null || echo 0)
+  [[ "${up}" -ge {{.OSDCount}} ]] && break
+  sleep 10
+done
+up=$(CEPH ceph osd stat -f json 2>/dev/null | jq -r '.num_up_osds' 2>/dev/null || echo 0)
+[[ "${up}" -ge {{.OSDCount}} ]] || { echo "ERROR: only ${up}/{{.OSDCount}} OSDs are up; check 'ceph orch device ls' / 'ceph -s'." >&2; exit 1; }
+# Replicated RBD data pool for ODF external.
+for i in 1 2 3; do
+  CEPH ceph osd pool create '{{.RBDPool}}' {{.PGNum}} {{.PGNum}} replicated 2>&1 || true
+  CEPH ceph osd pool ls 2>/dev/null | grep -qx '{{.RBDPool}}' && break
+  echo "pool {{.RBDPool}} not present yet (attempt ${i}); retrying..." >&2
+  sleep 10
+done
+CEPH ceph osd pool ls | grep -qx '{{.RBDPool}}' || { echo "ERROR: RBD pool '{{.RBDPool}}' could not be created." >&2; exit 1; }
+CEPH ceph osd pool set '{{.RBDPool}}' size {{.PoolReplica}}
+CEPH ceph osd pool set '{{.RBDPool}}' min_size 2
+CEPH ceph osd pool application enable '{{.RBDPool}}' rbd 2>&1 || true
+CEPH rbd pool init '{{.RBDPool}}'
+# ceph-mgr prometheus module (port 9283): the external-details exporter needs it.
+CEPH ceph mgr module enable prometheus
+for i in $(seq 1 18); do
+  CEPH ceph mgr services 2>/dev/null | grep -q prometheus && break
+  sleep 5
+done
+CEPH ceph mgr services 2>/dev/null | grep -q prometheus || echo "WARN: prometheus mgr endpoint not reported yet; the exporter may retry." >&2
+echo "--- ceph status ---"; CEPH ceph -s || true
+echo "--- pool usable (MAX AVAIL) ---"; CEPH ceph df detail || true

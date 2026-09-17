@@ -81,6 +81,7 @@ export default function AdminDashboardPage() {
     gcp: { hex: "#22c55e", legend: "bg-green-500" },
     ibmcloud: { hex: "#a855f7", legend: "bg-purple-500" },
     azure: { hex: "#06b6d4", legend: "bg-cyan-500" },
+    baremetal: { hex: "#f97316", legend: "bg-orange-500" },
   } as const;
 
   // Format data for platform donut chart

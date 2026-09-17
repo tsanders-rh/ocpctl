@@ -69,6 +69,10 @@ type InstallConfigData struct {
 	// Azure-specific
 	AzureBaseDomainResourceGroup string
 	AzureZones                   []string // Availability zones to pin control-plane/worker machines to
+
+	// Bare-metal-specific
+	APIVIPs     []string
+	IngressVIPs []string
 }
 
 // RenderInstallConfig generates an install-config.yaml file
@@ -180,6 +184,18 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		}
 	}
 
+	if prof.Platform == "baremetal" && prof.PlatformConfig.BareMetal != nil {
+		data.APIVIPs = []string{prof.PlatformConfig.BareMetal.APIVIP}
+		data.IngressVIPs = []string{prof.PlatformConfig.BareMetal.IngressVIP}
+		// Agent-based installs bring workers up post-install via a metal3
+		// MachineSet, never through the install-config: compute.replicas must be 0
+		// so the installer marks the control plane schedulable and does not wait
+		// for workers that do not yet exist. The profile's worker replicas is the
+		// post-install MachineSet scale target (applied by the baremetal
+		// lifecycle), not an install-time count.
+		data.WorkerReplicas = 0
+	}
+
 	// Select appropriate template
 	var tmplStr string
 	switch prof.Platform {
@@ -191,6 +207,8 @@ func (r *Renderer) RenderInstallConfig(req *types.CreateClusterRequest, pullSecr
 		tmplStr = gcpInstallConfigTemplate
 	case "azure":
 		tmplStr = azureInstallConfigTemplate
+	case "baremetal":
+		tmplStr = baremetalInstallConfigTemplate
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", prof.Platform)
 	}
@@ -635,6 +653,44 @@ networking:
   - {{.ServiceCIDR}}
   machineNetwork:
   - cidr: {{.MachineCIDR}}
+pullSecret: '{{.PullSecret}}'
+{{- if .SSHKey}}
+sshKey: '{{.SSHKey}}'
+{{- end}}
+`
+
+// baremetalInstallConfigTemplate is the template for the agent-based bare-metal
+// install-config.yaml. Workers are provisioned post-install by a metal3
+// MachineSet, so compute.replicas is expected to be 0 in the profile.
+const baremetalInstallConfigTemplate = `apiVersion: v1
+baseDomain: {{.BaseDomain}}
+metadata:
+  name: {{.ClusterName}}
+networking:
+  networkType: {{.NetworkType}}
+  clusterNetwork:
+  - cidr: {{.ClusterCIDR}}
+    hostPrefix: {{.ClusterPrefix}}
+  serviceNetwork:
+  - {{.ServiceCIDR}}
+  machineNetwork:
+  - cidr: {{.MachineCIDR}}
+compute:
+- name: worker
+  replicas: {{.WorkerReplicas}}
+controlPlane:
+  name: master
+  replicas: {{.ControlPlaneReplicas}}
+platform:
+  baremetal:
+    apiVIPs:
+{{- range .APIVIPs}}
+    - {{.}}
+{{- end}}
+    ingressVIPs:
+{{- range .IngressVIPs}}
+    - {{.}}
+{{- end}}
 pullSecret: '{{.PullSecret}}'
 {{- if .SSHKey}}
 sshKey: '{{.SSHKey}}'

@@ -1,0 +1,29 @@
+set -euo pipefail
+{{.OC}} apply -f - <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{.NS}}
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: rhwa-operatorgroup
+  namespace: {{.NS}}
+# Empty spec = AllNamespaces install mode. NHC and FAR are AllNamespaces-only.
+spec: {}
+{{- range .Operators}}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{.Name}}
+  namespace: {{$.NS}}
+spec:
+  channel: {{.Channel}}
+  name: {{.Name}}
+  source: {{.Source}}
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+{{- end}}
+EOF

@@ -1,0 +1,33 @@
+set -euo pipefail
+{{.OC}} apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.Host}}-bmc-secret
+  namespace: openshift-machine-api
+type: Opaque
+stringData:
+  username: "{{.BMCUser}}"
+  password: "{{.BMCPass}}"
+EOF
+# Masters install via ABI and must NEVER be reprovisioned: attach the BMC only,
+# no boot MAC or root-device hints. Patch the installer's BMH if present;
+# otherwise self-heal by creating an externallyProvisioned one (BMC only).
+if {{.OC}} -n openshift-machine-api get baremetalhost {{.Host}} >/dev/null 2>&1; then
+  {{.OC}} -n openshift-machine-api patch baremetalhost {{.Host}} --type merge -p '{"spec":{"online":true,"bmc":{"address":"{{.BMC}}","credentialsName":"{{.Host}}-bmc-secret","disableCertificateVerification":true}}}'
+else
+  {{.OC}} apply -f - <<'EOF'
+apiVersion: metal3.io/v1alpha1
+kind: BareMetalHost
+metadata:
+  name: {{.Host}}
+  namespace: openshift-machine-api
+spec:
+  online: true
+  externallyProvisioned: true
+  bmc:
+    address: {{.BMC}}
+    credentialsName: {{.Host}}-bmc-secret
+    disableCertificateVerification: true
+EOF
+fi

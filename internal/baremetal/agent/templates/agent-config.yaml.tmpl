@@ -1,0 +1,34 @@
+apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: {{ .ClusterName }}
+rendezvousIP: {{ .RendezvousIP }}
+hosts:
+{{- range .Masters }}
+- hostname: {{ .Host }}
+  role: {{ .Role }}
+  interfaces:
+  - name: {{ $.Iface }}
+    macAddress: {{ .MAC }}
+  networkConfig:
+    interfaces:
+    - name: {{ $.Iface }}
+      type: ethernet
+      state: up
+      mac-address: {{ .MAC }}
+      ipv4:
+        enabled: true
+        dhcp: false
+        address:
+        - ip: {{ .IP }}
+          prefix-length: 24
+    dns-resolver:
+      config:
+        server:
+        - {{ $.NetGateway }}
+    routes:
+      config:
+      - destination: 0.0.0.0/0
+        next-hop-address: {{ $.NetGateway }}
+        next-hop-interface: {{ $.Iface }}
+{{- end }}

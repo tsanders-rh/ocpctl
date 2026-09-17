@@ -1,0 +1,33 @@
+set -euo pipefail
+BASE="{{.ImagesDir}}/ceph-base.qcow2"
+ROOT="{{.ImagesDir}}/{{.NodeName}}.qcow2"
+SEED="{{.ImagesDir}}/{{.NodeName}}-seed.iso"
+# CentOS-Stream GenericCloud base image (cached once; reused as a COW backing file).
+if [[ ! -f "$BASE" ]]; then
+  curl -fsSL '{{.CloudImageURL}}' -o "$BASE.tmp"
+  mv "$BASE.tmp" "$BASE"
+fi
+# Root (COW off base) + one blank data disk per OSD. Created only if missing so a
+# retry reuses what a previous attempt already built (and never wipes OSD data).
+[[ -f "$ROOT" ]] || qemu-img create -f qcow2 -F qcow2 -b "$BASE" "$ROOT" {{.RootDiskGB}}G >/dev/null
+{{- range .OSDDevs}}
+[[ -f "{{$.ImagesDir}}/{{$.NodeName}}-{{.}}.qcow2" ]] || qemu-img create -f qcow2 "{{$.ImagesDir}}/{{$.NodeName}}-{{.}}.qcow2" {{$.OSDDiskGB}}G >/dev/null
+{{- end}}
+# Build the NoCloud seed (label 'cidata'; user-data + meta-data + network-config).
+genisoimage -quiet -output "$SEED" -volid cidata -joliet -rock \
+  {{.SeedDir}}/user-data {{.SeedDir}}/meta-data {{.SeedDir}}/network-config
+# Import the cloud image (BIOS boot) with the OSD disks and the seed cdrom. Every
+# referenced file is persistent, so 'virsh start' won't miss transient media.
+virt-install \
+  --name '{{.NodeName}}' \
+  --memory {{.RAMMB}} \
+  --vcpus {{.VCPU}} \
+  --cpu host-passthrough \
+  --os-variant {{.OSVariant}} \
+  --disk path="$ROOT",bus=virtio{{range .OSDDevs}} --disk path="{{$.ImagesDir}}/{{$.NodeName}}-{{.}}.qcow2",bus=virtio{{end}} \
+  --disk path="$SEED",device=cdrom \
+  --network network={{.LibvirtNet}},mac='{{.MAC}}',model=virtio \
+  --graphics none --noautoconsole --import --print-xml 1 > /tmp/{{.NodeName}}.xml
+virsh define /tmp/{{.NodeName}}.xml >/dev/null
+virsh start '{{.NodeName}}' >/dev/null
+echo "ceph VM {{.NodeName}} defined + started"

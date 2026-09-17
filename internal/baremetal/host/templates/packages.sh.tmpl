@@ -1,0 +1,8 @@
+set -euo pipefail
+dnf -y install qemu-kvm libvirt virt-install libvirt-client \
+     podman haproxy jq httpd-tools openssl bind-utils nmstate genisoimage >/dev/null
+systemctl enable --now libvirtd
+if [[ ! -e /dev/kvm ]]; then echo "ERROR: /dev/kvm missing - nested virt not active"; exit 1; fi
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+setsebool -P haproxy_connect_any 1 2>/dev/null || true
+echo "host packages OK"

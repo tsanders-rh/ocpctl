@@ -1,0 +1,4 @@
+set -euo pipefail
+systemctl enable --now haproxy
+systemctl restart haproxy
+echo "haproxy OK"

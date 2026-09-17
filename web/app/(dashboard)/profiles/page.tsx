@@ -88,6 +88,13 @@ export default function ProfilesPage() {
             >
               Azure
             </Button>
+            <Button
+              variant={selectedPlatform === Platform.BareMetal ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlatform(Platform.BareMetal)}
+            >
+              Bare Metal
+            </Button>
           </div>
         </div>
 

@@ -7,7 +7,7 @@ type Profile struct {
 	Name               string                `yaml:"name" validate:"required"`
 	DisplayName        string                `yaml:"displayName" validate:"required"`
 	Description        string                `yaml:"description" validate:"required"`
-	Platform           types.Platform        `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
+	Platform           types.Platform        `yaml:"platform" validate:"required,oneof=aws ibmcloud gcp azure baremetal"`
 	ClusterType        types.ClusterType     `yaml:"clusterType,omitempty"`
 	Track              string                `yaml:"track,omitempty" validate:"omitempty,oneof=ga prerelease kube"` // ga, prerelease, or kube
 	Enabled            bool                  `yaml:"enabled"`
@@ -153,15 +153,50 @@ type CostControlsConfig struct {
 
 // PlatformConfig contains platform-specific configuration
 type PlatformConfig struct {
-	AWS      *AWSConfig      `yaml:"aws,omitempty"`
-	IBMCloud *IBMCloudConfig `yaml:"ibmcloud,omitempty"`
-	EKS      *EKSConfig      `yaml:"eks,omitempty"`
-	GCP      *GCPConfig      `yaml:"gcp,omitempty"`
-	GKE      *GKEConfig      `yaml:"gke,omitempty"`
-	ROSA     *ROSAConfig     `yaml:"rosa,omitempty"`
-	Azure    *AzureConfig    `yaml:"azure,omitempty"`
-	ARO      *AROConfig      `yaml:"aro,omitempty"`
-	AKS      *AKSConfig      `yaml:"aks,omitempty"`
+	AWS       *AWSConfig       `yaml:"aws,omitempty"`
+	IBMCloud  *IBMCloudConfig  `yaml:"ibmcloud,omitempty"`
+	EKS       *EKSConfig       `yaml:"eks,omitempty"`
+	GCP       *GCPConfig       `yaml:"gcp,omitempty"`
+	GKE       *GKEConfig       `yaml:"gke,omitempty"`
+	ROSA      *ROSAConfig      `yaml:"rosa,omitempty"`
+	Azure     *AzureConfig     `yaml:"azure,omitempty"`
+	ARO       *AROConfig       `yaml:"aro,omitempty"`
+	AKS       *AKSConfig       `yaml:"aks,omitempty"`
+	BareMetal *BareMetalConfig `yaml:"baremetal,omitempty"`
+}
+
+// BareMetalConfig contains bare-metal (agent-based) platform settings
+type BareMetalConfig struct {
+	HostInstanceType string `yaml:"hostInstanceType" json:"host_instance_type"`
+	HostAMIOwner     string `yaml:"hostAMIOwner,omitempty" json:"host_ami_owner,omitempty"`
+	FedoraRelease    string `yaml:"fedoraRelease,omitempty" json:"fedora_release,omitempty"`
+	NodeDiskGB       int    `yaml:"nodeDiskGB,omitempty" json:"node_disk_gb,omitempty"`
+	SpareWorkerCount int    `yaml:"spareWorkerCount,omitempty" json:"spare_worker_count,omitempty"`
+	NetworkCIDR      string `yaml:"networkCIDR,omitempty" json:"network_cidr,omitempty"`
+	APIVIP           string `yaml:"apiVIP" json:"api_vip"`
+	IngressVIP       string `yaml:"ingressVIP" json:"ingress_vip"`
+	SushyPort        int    `yaml:"sushyPort,omitempty" json:"sushy_port,omitempty"`
+	HostVolumeGB     int    `yaml:"hostVolumeGB,omitempty" json:"host_volume_gb,omitempty"` // host root disk in GB (holds all VM qcow2s); default 1000
+
+	ODF *ODFConfig `yaml:"odf,omitempty" json:"odf,omitempty"` // optional ODF-external + single-VM Ceph
+}
+
+// ODFConfig enables OpenShift Data Foundation in external mode backed by a
+// single-VM Ceph cluster on the bare-metal host. Zero values take package
+// defaults (OSDs 3, usable 200 GB, replica 3, ceph 4 vCPU / 16 GB / 40 GB root,
+// release squid). Channel is the desired ODF Subscription channel; it is resolved
+// against the catalog at install time, so an absent channel is tolerated.
+type ODFConfig struct {
+	Enabled          bool   `yaml:"enabled" json:"enabled"`
+	Channel          string `yaml:"channel,omitempty" json:"channel,omitempty"`
+	CephOSDCount     int    `yaml:"cephOSDCount,omitempty" json:"ceph_osd_count,omitempty"`
+	CephPoolUsableGB int    `yaml:"cephPoolUsableGB,omitempty" json:"ceph_pool_usable_gb,omitempty"`
+	CephReplica      int    `yaml:"cephReplica,omitempty" json:"ceph_replica,omitempty"`
+	CephVCPU         int    `yaml:"cephVCPU,omitempty" json:"ceph_vcpu,omitempty"`
+	CephRAMGB        int    `yaml:"cephRAMGB,omitempty" json:"ceph_ram_gb,omitempty"`
+	CephRootDiskGB   int    `yaml:"cephRootDiskGB,omitempty" json:"ceph_root_disk_gb,omitempty"`
+	CephRelease      string `yaml:"cephRelease,omitempty" json:"ceph_release,omitempty"`
+	CloudImageURL    string `yaml:"cloudImageURL,omitempty" json:"cloud_image_url,omitempty"`
 }
 
 // AWSConfig contains AWS-specific settings

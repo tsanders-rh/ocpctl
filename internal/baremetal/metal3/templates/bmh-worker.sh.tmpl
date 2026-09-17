@@ -1,0 +1,30 @@
+set -euo pipefail
+{{.OC}} apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.Host}}-bmc-secret
+  namespace: openshift-machine-api
+type: Opaque
+stringData:
+  username: "{{.BMCUser}}"
+  password: "{{.BMCPass}}"
+---
+# Provisionable BMH: rootDeviceHints pins the virtio root disk (/dev/vda) because
+# metal3 defaults to /dev/sda, which is absent on virtio. Shared by cluster
+# workers and (unconsumed, available) spares.
+apiVersion: metal3.io/v1alpha1
+kind: BareMetalHost
+metadata:
+  name: {{.Host}}
+  namespace: openshift-machine-api
+spec:
+  online: true
+  bootMACAddress: {{.MAC}}
+  rootDeviceHints:
+    deviceName: /dev/vda
+  bmc:
+    address: {{.BMC}}
+    credentialsName: {{.Host}}-bmc-secret
+    disableCertificateVerification: true
+EOF

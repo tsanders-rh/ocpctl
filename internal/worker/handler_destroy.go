@@ -86,6 +86,12 @@ func (h *DestroyHandler) Handle(ctx context.Context, job *types.Job) error {
 
 // handleOpenShiftDestroy handles OpenShift cluster destruction
 func (h *DestroyHandler) handleOpenShiftDestroy(ctx context.Context, job *types.Job, cluster *types.Cluster) error {
+	// Bare-metal tears down by reclaiming its AWS substrate by tag (terminating
+	// the host removes the VMs/BMCs with it), not openshift-install destroy.
+	if cluster.Platform == types.PlatformBareMetal {
+		return h.handleBareMetalDestroy(ctx, job, cluster)
+	}
+
 	log.Printf("Starting OpenShift cluster destruction for %s", cluster.Name)
 
 	// Work directory should still exist from creation

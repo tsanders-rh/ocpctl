@@ -1,0 +1,25 @@
+global
+    log /dev/log local0
+    maxconn 4000
+defaults
+    mode tcp
+    log global
+    option tcplog
+    timeout connect 10s
+    timeout client 5m
+    timeout server 5m
+frontend api
+    bind *:6443
+    default_backend api
+backend api
+    server apivip {{ .APIVIP }}:6443 check
+frontend ingress_https
+    bind *:443
+    default_backend ingress_https
+backend ingress_https
+    server ingressvip {{ .IngressVIP }}:443 check
+frontend ingress_http
+    bind *:80
+    default_backend ingress_http
+backend ingress_http
+    server ingressvip {{ .IngressVIP }}:80 check

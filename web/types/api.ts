@@ -5,6 +5,7 @@ export enum Platform {
   IBMCloud = "ibmcloud",
   GCP = "gcp",
   Azure = "azure",
+  BareMetal = "baremetal",
 }
 
 export enum ClusterType {

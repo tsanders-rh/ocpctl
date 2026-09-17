@@ -1,0 +1,6 @@
+#cloud-config
+hostname: {{.Host}}
+fqdn: {{.Host}}.{{.BaseDomain}}
+ssh_pwauth: false
+ssh_authorized_keys:
+  - {{.SSHPubKey}}

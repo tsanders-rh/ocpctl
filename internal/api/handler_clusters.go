@@ -105,7 +105,7 @@ func (h *ClusterHandler) checkClusterAccess(c echo.Context, cluster *types.Clust
 // CreateClusterRequest represents the API request to create a cluster
 type CreateClusterRequest struct {
 	Name               string                   `json:"name" validate:"required,min=3,max=63,cluster_name"`
-	Platform           string                   `json:"platform" validate:"required,oneof=aws ibmcloud gcp azure"`
+	Platform           string                   `json:"platform" validate:"required,oneof=aws ibmcloud gcp azure baremetal"`
 	ClusterType        string                   `json:"cluster_type" validate:"required,oneof=openshift rosa eks iks gke aro aks"`
 	Version            string                   `json:"version" validate:"required"`
 	Profile            string                   `json:"profile" validate:"required"`
@@ -203,10 +203,11 @@ func (h *ClusterHandler) Create(c echo.Context) error {
 
 	// Validate platform and cluster type combinations
 	validCombinations := map[types.Platform][]types.ClusterType{
-		types.PlatformAWS:      {types.ClusterTypeOpenShift, types.ClusterTypeROSA, types.ClusterTypeEKS},
-		types.PlatformGCP:      {types.ClusterTypeOpenShift, types.ClusterTypeGKE},
-		types.PlatformIBMCloud: {types.ClusterTypeOpenShift, types.ClusterTypeIKS},
-		types.PlatformAzure:    {types.ClusterTypeOpenShift, types.ClusterTypeARO, types.ClusterTypeAKS},
+		types.PlatformAWS:       {types.ClusterTypeOpenShift, types.ClusterTypeROSA, types.ClusterTypeEKS},
+		types.PlatformGCP:       {types.ClusterTypeOpenShift, types.ClusterTypeGKE},
+		types.PlatformIBMCloud:  {types.ClusterTypeOpenShift, types.ClusterTypeIKS},
+		types.PlatformAzure:     {types.ClusterTypeOpenShift, types.ClusterTypeARO, types.ClusterTypeAKS},
+		types.PlatformBareMetal: {types.ClusterTypeOpenShift},
 	}
 
 	platform := types.Platform(req.Platform)
@@ -1422,6 +1423,12 @@ func (h *ClusterHandler) Hibernate(c echo.Context) error {
 		return err
 	}
 
+	// Bare-metal clusters run on a nested-virt host the orchestrator has no
+	// hibernate/resume path for; reject early rather than failing at the worker.
+	if cluster.Platform == types.PlatformBareMetal {
+		return ErrorBadRequest(c, "Hibernation is not supported for bare-metal clusters")
+	}
+
 	// Can only hibernate READY clusters
 	if cluster.Status != types.ClusterStatusReady {
 		return ErrorBadRequest(c, "Can only hibernate clusters in READY status")
@@ -1614,6 +1621,12 @@ func (h *ClusterHandler) Resume(c echo.Context) error {
 	// Check access
 	if err := h.checkClusterAccess(c, cluster); err != nil {
 		return err
+	}
+
+	// Bare-metal clusters are never hibernated (see Hibernate), so they can never
+	// be resumed either; reject explicitly for a clear message.
+	if cluster.Platform == types.PlatformBareMetal {
+		return ErrorBadRequest(c, "Resume is not supported for bare-metal clusters")
 	}
 
 	// Can only resume HIBERNATED clusters

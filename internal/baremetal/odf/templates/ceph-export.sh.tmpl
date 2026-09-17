@@ -1,0 +1,10 @@
+set -euo pipefail
+CEPHADM="$(command -v cephadm)"
+curl -fsSL '{{.ExporterURL}}' -o /tmp/exporter.py
+[[ -s /tmp/exporter.py ]] || { echo "ERROR: failed to download the exporter from {{.ExporterURL}}" >&2; exit 1; }
+"$CEPHADM" shell -- python3 - \
+  --rbd-data-pool-name '{{.RBDPool}}' \
+  --namespace '{{.Namespace}}' \
+  --monitoring-endpoint '{{.IP}}' \
+  --monitoring-endpoint-port 9283 \
+  --format json < /tmp/exporter.py
