@@ -34,6 +34,7 @@ const CATEGORIES = [
   { value: "storage", label: "Storage" },
   { value: "networking", label: "Networking" },
   { value: "cicd", label: "CI/CD" },
+  { value: "ai", label: "AI/ML" },
 ];
 
 const PLATFORMS = [
@@ -323,6 +324,7 @@ function AddonCard({
       storage: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
       networking: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
       cicd: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
+      ai: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300",
     };
     return colors[category] || "bg-gray-100 text-gray-800";
   };

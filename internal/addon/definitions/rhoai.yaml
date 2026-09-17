@@ -1,0 +1,596 @@
+id: rhoai
+name: Red Hat OpenShift AI (RHOAI) Self-Managed
+description: Red Hat OpenShift AI 3.5 self-managed. Installs the rhods-operator (AllNamespaces mode) and a DataScienceCluster providing the OpenShift AI dashboard, workbenches (Jupyter notebooks), and AI pipelines. An optional variant adds KServe model serving with its required cert-manager dependency.
+category: ai
+enabled: true
+supportedPlatforms:
+  - openshift
+
+versions:
+  # ---------------------------------------------------------------------------
+  # Core: dashboard + workbenches + AI pipelines. No extra operator dependencies.
+  # ---------------------------------------------------------------------------
+  - channel: stable-3.5
+    displayName: "RHOAI 3.5 (Dashboard, Workbenches, AI Pipelines)"
+    isDefault: true
+    config:
+      scripts:
+        - name: rhoai-preflight
+          description: "Verify OpenShift version, default StorageClass, worker capacity, and absence of Open Data Hub"
+          timeout: "10m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "=== RHOAI 3.5 pre-flight checks ==="
+
+            OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}')
+            MAJOR=$(echo "${OCP_VERSION}" | cut -d. -f1)
+            MINOR=$(echo "${OCP_VERSION}" | cut -d. -f2)
+            echo "OpenShift version: ${OCP_VERSION}"
+
+            if [ "${MAJOR}" -lt 4 ] || { [ "${MAJOR}" -eq 4 ] && [ "${MINOR}" -lt 19 ]; }; then
+              echo "ERROR: RHOAI 3.5 requires OpenShift 4.19.9 or later (found ${OCP_VERSION})"
+              exit 1
+            fi
+
+            echo "Checking for a default StorageClass..."
+            DEFAULT_SC=$(oc get storageclass \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' \
+              | awk '$2 == "true" { print $1 }' | head -1)
+
+            if [ -z "${DEFAULT_SC}" ]; then
+              echo "ERROR: no default StorageClass found. RHOAI requires dynamic provisioning."
+              oc get storageclass || true
+              exit 1
+            fi
+            echo "  Default StorageClass: ${DEFAULT_SC}"
+
+            echo "Checking that Open Data Hub is not installed..."
+            if oc get subscriptions.operators.coreos.com -A -o name 2>/dev/null | grep -q opendatahub; then
+              echo "ERROR: Open Data Hub is installed. RHOAI cannot be installed alongside ODH."
+              exit 1
+            fi
+
+            echo "Reporting worker capacity (RHOAI wants 2+ nodes with 8 CPU / 32 GiB each)..."
+            oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,MEM:.status.allocatable.memory
+
+            SCHEDULABLE=$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.unschedulable}{"\n"}{end}' \
+              | awk '$2 != "true" { print $1 }' | wc -l | tr -d ' ')
+            echo "  Schedulable nodes: ${SCHEDULABLE}"
+            if [ "${SCHEDULABLE}" -lt 2 ]; then
+              echo "  WARNING: single-node cluster detected. RHOAI 3.5 wants 32 CPU / 128 GiB on SNO."
+            fi
+
+            echo "Pre-flight checks passed"
+
+        - name: install-rhoai-operator
+          description: "Install the rhods-operator via OLM (AllNamespaces) and wait for the CSV to succeed"
+          dependsOn: [rhoai-preflight]
+          timeout: "30m"
+          env:
+            RHOAI_CHANNEL: "stable-3.5"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            CHANNEL="${RHOAI_CHANNEL:-stable-3.5}"
+            NS="redhat-ods-operator"
+
+            echo "Verifying channel ${CHANNEL} exists in the redhat-operators catalog..."
+            AVAILABLE=$(oc get packagemanifest rhods-operator -n openshift-marketplace \
+              -o jsonpath='{.status.channels[*].name}' 2>/dev/null || true)
+
+            if [ -z "${AVAILABLE}" ]; then
+              echo "WARNING: could not read the rhods-operator PackageManifest; using ${CHANNEL} as-is"
+            elif ! echo " ${AVAILABLE} " | grep -q " ${CHANNEL} "; then
+              FALLBACK=$(oc get packagemanifest rhods-operator -n openshift-marketplace \
+                -o jsonpath='{.status.defaultChannel}' 2>/dev/null || true)
+              echo "WARNING: channel ${CHANNEL} not offered by the catalog."
+              echo "         Available: ${AVAILABLE}"
+              if [ -z "${FALLBACK}" ]; then
+                echo "ERROR: no default channel to fall back to"
+                exit 1
+              fi
+              echo "         Falling back to the catalog default channel: ${FALLBACK}"
+              CHANNEL="${FALLBACK}"
+            fi
+            echo "Using channel: ${CHANNEL}"
+
+            echo "Creating namespace ${NS}..."
+            cat <<EOF | oc apply -f -
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: ${NS}
+            EOF
+
+            # RHOAI only supports AllNamespaces install mode, so the OperatorGroup
+            # must NOT set targetNamespaces.
+            echo "Creating OperatorGroup (AllNamespaces)..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1
+            kind: OperatorGroup
+            metadata:
+              name: rhods-operator
+              namespace: ${NS}
+            spec: {}
+            EOF
+
+            echo "Creating Subscription..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: Subscription
+            metadata:
+              name: rhods-operator
+              namespace: ${NS}
+            spec:
+              name: rhods-operator
+              channel: "${CHANNEL}"
+              source: redhat-operators
+              sourceNamespace: openshift-marketplace
+              installPlanApproval: Automatic
+            EOF
+
+            echo "Waiting for the rhods-operator CSV to appear..."
+            for i in $(seq 1 60); do
+              if oc get csv -n "${NS}" -o name 2>/dev/null | grep -q rhods-operator; then
+                break
+              fi
+              sleep 10
+            done
+
+            CSV=$(oc get csv -n "${NS}" -o name 2>/dev/null | grep rhods-operator | head -1)
+            if [ -z "${CSV}" ]; then
+              echo "ERROR: rhods-operator CSV never appeared after 10 minutes"
+              oc get subscription rhods-operator -n "${NS}" -o yaml || true
+              oc get installplan -n "${NS}" || true
+              exit 1
+            fi
+
+            echo "Waiting for ${CSV} to reach Succeeded..."
+            oc wait "${CSV}" -n "${NS}" \
+              --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s
+
+            echo "Waiting for the DataScienceCluster CRD to be established..."
+            for i in $(seq 1 30); do
+              if oc get crd datascienceclusters.datasciencecluster.opendatahub.io >/dev/null 2>&1; then
+                break
+              fi
+              sleep 10
+            done
+            oc wait --for=condition=Established \
+              crd/datascienceclusters.datasciencecluster.opendatahub.io --timeout=300s
+
+            # The operator creates a DSCInitialization itself. Wait for it when present,
+            # but do not fail the install if this release does not use one.
+            if oc get crd dscinitializations.dscinitialization.opendatahub.io >/dev/null 2>&1; then
+              echo "Waiting for DSCInitialization to settle..."
+              for i in $(seq 1 30); do
+                DSCI=$(oc get dscinitialization -o name 2>/dev/null | head -1)
+                if [ -n "${DSCI}" ]; then
+                  oc wait "${DSCI}" --for=jsonpath='{.status.phase}'=Ready --timeout=600s || \
+                    echo "WARNING: DSCInitialization did not report Ready; continuing"
+                  break
+                fi
+                sleep 10
+              done
+            fi
+
+            echo "rhods-operator installation complete"
+
+        - name: wait-for-rhoai-ready
+          description: "Wait for the DataScienceCluster to reach Ready and report the dashboard route"
+          dependsOn: [rhoai-datasciencecluster]
+          timeout: "45m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Waiting for DataScienceCluster default-dsc to become Ready..."
+            oc wait datasciencecluster default-dsc \
+              --for=jsonpath='{.status.phase}'=Ready --timeout=2400s
+
+            echo "Installed components:"
+            oc get datasciencecluster default-dsc -o jsonpath='{.status.installedComponents}' || true
+            echo
+
+            echo "Waiting for application pods in redhat-ods-applications..."
+            for i in $(seq 1 60); do
+              NOT_READY=$(oc get pods -n redhat-ods-applications \
+                --field-selector=status.phase!=Running,status.phase!=Succeeded \
+                -o name 2>/dev/null | wc -l | tr -d ' ')
+              if [ "${NOT_READY}" = "0" ]; then
+                break
+              fi
+              sleep 10
+            done
+            oc get pods -n redhat-ods-applications || true
+
+            DASHBOARD=$(oc get route -n redhat-ods-applications \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.host}{"\n"}{end}' 2>/dev/null \
+              | grep -i dashboard | awk '{ print $2 }' | head -1)
+            if [ -n "${DASHBOARD}" ]; then
+              echo "OpenShift AI dashboard: https://${DASHBOARD}"
+            else
+              echo "WARNING: no dashboard route found in redhat-ods-applications"
+              oc get route -n redhat-ods-applications || true
+            fi
+
+            echo "RHOAI is ready"
+
+      manifests:
+        - name: rhoai-datasciencecluster
+          description: "DataScienceCluster with dashboard, workbenches, and AI pipelines enabled"
+          dependsOn: [install-rhoai-operator]
+          content: |
+            apiVersion: datasciencecluster.opendatahub.io/v2
+            kind: DataScienceCluster
+            metadata:
+              name: default-dsc
+            spec:
+              components:
+                dashboard:
+                  managementState: Managed
+                workbenches:
+                  managementState: Managed
+                  workbenchNamespace: rhods-notebooks
+                aipipelines:
+                  managementState: Managed
+                  argoWorkflowsControllers:
+                    managementState: Managed
+                kserve:
+                  managementState: Removed
+                kueue:
+                  managementState: Removed
+                ray:
+                  managementState: Removed
+                trainer:
+                  managementState: Removed
+                trainingoperator:
+                  managementState: Removed
+                trustyai:
+                  managementState: Removed
+                feastoperator:
+                  managementState: Removed
+                mlflowoperator:
+                  managementState: Removed
+                modelregistry:
+                  managementState: Removed
+                  registriesNamespace: rhoai-model-registries
+                ogx:
+                  managementState: Removed
+
+  # ---------------------------------------------------------------------------
+  # Core + KServe model serving. KServe requires the cert-manager Operator.
+  # ---------------------------------------------------------------------------
+  - channel: stable-3.5-serving
+    displayName: "RHOAI 3.5 + Model Serving (KServe, requires cert-manager)"
+    isDefault: false
+    config:
+      scripts:
+        - name: rhoai-preflight
+          description: "Verify OpenShift version, default StorageClass, worker capacity, and absence of Open Data Hub"
+          timeout: "10m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "=== RHOAI 3.5 pre-flight checks ==="
+
+            OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}')
+            MAJOR=$(echo "${OCP_VERSION}" | cut -d. -f1)
+            MINOR=$(echo "${OCP_VERSION}" | cut -d. -f2)
+            echo "OpenShift version: ${OCP_VERSION}"
+
+            if [ "${MAJOR}" -lt 4 ] || { [ "${MAJOR}" -eq 4 ] && [ "${MINOR}" -lt 19 ]; }; then
+              echo "ERROR: RHOAI 3.5 requires OpenShift 4.19.9 or later (found ${OCP_VERSION})"
+              exit 1
+            fi
+
+            echo "Checking for a default StorageClass..."
+            DEFAULT_SC=$(oc get storageclass \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' \
+              | awk '$2 == "true" { print $1 }' | head -1)
+
+            if [ -z "${DEFAULT_SC}" ]; then
+              echo "ERROR: no default StorageClass found. RHOAI requires dynamic provisioning."
+              oc get storageclass || true
+              exit 1
+            fi
+            echo "  Default StorageClass: ${DEFAULT_SC}"
+
+            echo "Checking that Open Data Hub is not installed..."
+            if oc get subscriptions.operators.coreos.com -A -o name 2>/dev/null | grep -q opendatahub; then
+              echo "ERROR: Open Data Hub is installed. RHOAI cannot be installed alongside ODH."
+              exit 1
+            fi
+
+            echo "Reporting worker capacity (model serving wants headroom beyond the 8 CPU / 32 GiB baseline)..."
+            oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,MEM:.status.allocatable.memory
+
+            echo "Pre-flight checks passed"
+
+        - name: install-cert-manager
+          description: "Install the cert-manager Operator required by KServe"
+          dependsOn: [rhoai-preflight]
+          timeout: "20m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            NS="cert-manager-operator"
+
+            if oc get csv -A -o name 2>/dev/null | grep -q cert-manager; then
+              echo "cert-manager is already present on this cluster; skipping install"
+              exit 0
+            fi
+
+            echo "Creating namespace ${NS}..."
+            cat <<EOF | oc apply -f -
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: ${NS}
+            EOF
+
+            echo "Creating OperatorGroup..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1
+            kind: OperatorGroup
+            metadata:
+              name: cert-manager-operator
+              namespace: ${NS}
+            spec:
+              targetNamespaces:
+                - ${NS}
+            EOF
+
+            CHANNEL=$(oc get packagemanifest openshift-cert-manager-operator -n openshift-marketplace \
+              -o jsonpath='{.status.defaultChannel}' 2>/dev/null || true)
+            CHANNEL="${CHANNEL:-stable-v1}"
+            echo "Using cert-manager channel: ${CHANNEL}"
+
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: Subscription
+            metadata:
+              name: openshift-cert-manager-operator
+              namespace: ${NS}
+            spec:
+              name: openshift-cert-manager-operator
+              channel: "${CHANNEL}"
+              source: redhat-operators
+              sourceNamespace: openshift-marketplace
+              installPlanApproval: Automatic
+            EOF
+
+            echo "Waiting for the cert-manager CSV to appear..."
+            for i in $(seq 1 60); do
+              if oc get csv -n "${NS}" -o name 2>/dev/null | grep -q cert-manager; then
+                break
+              fi
+              sleep 10
+            done
+
+            CSV=$(oc get csv -n "${NS}" -o name 2>/dev/null | grep cert-manager | head -1)
+            if [ -z "${CSV}" ]; then
+              echo "ERROR: cert-manager CSV never appeared after 10 minutes"
+              oc get installplan -n "${NS}" || true
+              exit 1
+            fi
+
+            oc wait "${CSV}" -n "${NS}" \
+              --for=jsonpath='{.status.phase}'=Succeeded --timeout=600s
+
+            echo "cert-manager is installed"
+
+        - name: install-rhoai-operator
+          description: "Install the rhods-operator via OLM (AllNamespaces) and wait for the CSV to succeed"
+          dependsOn: [install-cert-manager]
+          timeout: "30m"
+          env:
+            RHOAI_CHANNEL: "stable-3.5"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            CHANNEL="${RHOAI_CHANNEL:-stable-3.5}"
+            NS="redhat-ods-operator"
+
+            echo "Verifying channel ${CHANNEL} exists in the redhat-operators catalog..."
+            AVAILABLE=$(oc get packagemanifest rhods-operator -n openshift-marketplace \
+              -o jsonpath='{.status.channels[*].name}' 2>/dev/null || true)
+
+            if [ -z "${AVAILABLE}" ]; then
+              echo "WARNING: could not read the rhods-operator PackageManifest; using ${CHANNEL} as-is"
+            elif ! echo " ${AVAILABLE} " | grep -q " ${CHANNEL} "; then
+              FALLBACK=$(oc get packagemanifest rhods-operator -n openshift-marketplace \
+                -o jsonpath='{.status.defaultChannel}' 2>/dev/null || true)
+              echo "WARNING: channel ${CHANNEL} not offered by the catalog."
+              echo "         Available: ${AVAILABLE}"
+              if [ -z "${FALLBACK}" ]; then
+                echo "ERROR: no default channel to fall back to"
+                exit 1
+              fi
+              echo "         Falling back to the catalog default channel: ${FALLBACK}"
+              CHANNEL="${FALLBACK}"
+            fi
+            echo "Using channel: ${CHANNEL}"
+
+            echo "Creating namespace ${NS}..."
+            cat <<EOF | oc apply -f -
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: ${NS}
+            EOF
+
+            echo "Creating OperatorGroup (AllNamespaces)..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1
+            kind: OperatorGroup
+            metadata:
+              name: rhods-operator
+              namespace: ${NS}
+            spec: {}
+            EOF
+
+            echo "Creating Subscription..."
+            cat <<EOF | oc apply -f -
+            apiVersion: operators.coreos.com/v1alpha1
+            kind: Subscription
+            metadata:
+              name: rhods-operator
+              namespace: ${NS}
+            spec:
+              name: rhods-operator
+              channel: "${CHANNEL}"
+              source: redhat-operators
+              sourceNamespace: openshift-marketplace
+              installPlanApproval: Automatic
+            EOF
+
+            echo "Waiting for the rhods-operator CSV to appear..."
+            for i in $(seq 1 60); do
+              if oc get csv -n "${NS}" -o name 2>/dev/null | grep -q rhods-operator; then
+                break
+              fi
+              sleep 10
+            done
+
+            CSV=$(oc get csv -n "${NS}" -o name 2>/dev/null | grep rhods-operator | head -1)
+            if [ -z "${CSV}" ]; then
+              echo "ERROR: rhods-operator CSV never appeared after 10 minutes"
+              oc get subscription rhods-operator -n "${NS}" -o yaml || true
+              oc get installplan -n "${NS}" || true
+              exit 1
+            fi
+
+            echo "Waiting for ${CSV} to reach Succeeded..."
+            oc wait "${CSV}" -n "${NS}" \
+              --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s
+
+            echo "Waiting for the DataScienceCluster CRD to be established..."
+            for i in $(seq 1 30); do
+              if oc get crd datascienceclusters.datasciencecluster.opendatahub.io >/dev/null 2>&1; then
+                break
+              fi
+              sleep 10
+            done
+            oc wait --for=condition=Established \
+              crd/datascienceclusters.datasciencecluster.opendatahub.io --timeout=300s
+
+            if oc get crd dscinitializations.dscinitialization.opendatahub.io >/dev/null 2>&1; then
+              echo "Waiting for DSCInitialization to settle..."
+              for i in $(seq 1 30); do
+                DSCI=$(oc get dscinitialization -o name 2>/dev/null | head -1)
+                if [ -n "${DSCI}" ]; then
+                  oc wait "${DSCI}" --for=jsonpath='{.status.phase}'=Ready --timeout=600s || \
+                    echo "WARNING: DSCInitialization did not report Ready; continuing"
+                  break
+                fi
+                sleep 10
+              done
+            fi
+
+            echo "rhods-operator installation complete"
+
+        - name: wait-for-rhoai-ready
+          description: "Wait for the DataScienceCluster to reach Ready and report the dashboard route"
+          dependsOn: [rhoai-datasciencecluster]
+          timeout: "60m"
+          content: |
+            #!/bin/bash
+            set -euo pipefail
+
+            echo "Waiting for DataScienceCluster default-dsc to become Ready..."
+            oc wait datasciencecluster default-dsc \
+              --for=jsonpath='{.status.phase}'=Ready --timeout=3000s
+
+            echo "Installed components:"
+            oc get datasciencecluster default-dsc -o jsonpath='{.status.installedComponents}' || true
+            echo
+
+            echo "Verifying the KServe CRDs are present..."
+            for CRD in inferenceservices.serving.kserve.io servingruntimes.serving.kserve.io; do
+              if oc get crd "${CRD}" >/dev/null 2>&1; then
+                echo "  ✓ ${CRD}"
+              else
+                echo "  ✗ ${CRD} not found"
+                exit 1
+              fi
+            done
+
+            oc get pods -n redhat-ods-applications || true
+
+            DASHBOARD=$(oc get route -n redhat-ods-applications \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.host}{"\n"}{end}' 2>/dev/null \
+              | grep -i dashboard | awk '{ print $2 }' | head -1)
+            if [ -n "${DASHBOARD}" ]; then
+              echo "OpenShift AI dashboard: https://${DASHBOARD}"
+            else
+              echo "WARNING: no dashboard route found in redhat-ods-applications"
+              oc get route -n redhat-ods-applications || true
+            fi
+
+            echo "RHOAI with model serving is ready"
+
+      manifests:
+        - name: rhoai-datasciencecluster
+          description: "DataScienceCluster with dashboard, workbenches, AI pipelines, and KServe enabled"
+          dependsOn: [install-rhoai-operator]
+          content: |
+            apiVersion: datasciencecluster.opendatahub.io/v2
+            kind: DataScienceCluster
+            metadata:
+              name: default-dsc
+            spec:
+              components:
+                dashboard:
+                  managementState: Managed
+                workbenches:
+                  managementState: Managed
+                  workbenchNamespace: rhods-notebooks
+                aipipelines:
+                  managementState: Managed
+                  argoWorkflowsControllers:
+                    managementState: Managed
+                kserve:
+                  managementState: Managed
+                kueue:
+                  managementState: Removed
+                ray:
+                  managementState: Removed
+                trainer:
+                  managementState: Removed
+                trainingoperator:
+                  managementState: Removed
+                trustyai:
+                  managementState: Removed
+                feastoperator:
+                  managementState: Removed
+                mlflowoperator:
+                  managementState: Removed
+                modelregistry:
+                  managementState: Removed
+                  registriesNamespace: rhoai-model-registries
+                ogx:
+                  managementState: Removed
+
+metadata:
+  notes:
+    - "Targets RHOAI 3.5 self-managed (channel stable-3.5); falls back to the catalog default channel if stable-3.5 is not offered"
+    - "Requires OpenShift 4.19.9 or later (RHOAI 3.5 supports 4.19.9+, 4.20, 4.21, 4.22)"
+    - "Operator is installed in redhat-ods-operator in AllNamespaces mode; applications land in redhat-ods-applications and workbenches in rhods-notebooks"
+    - "Uses the v2 DataScienceCluster API (datasciencecluster.opendatahub.io/v2), which is the 3.x component schema"
+    - "Components not enabled by default (kueue, ray, trainer, trainingoperator, trustyai, feastoperator, mlflowoperator, modelregistry, ogx) can be turned on by editing default-dsc after install"
+    - "The serving variant also installs the cert-manager Operator, which KServe requires in 3.5"
+    - "Install typically takes 20-40 minutes: operator CSV, then DataScienceCluster reconcile"
+  warnings:
+    - "Needs at least 2 schedulable nodes with 8 CPU and 32 GiB RAM each; a single-node cluster needs 32 CPU and 128 GiB"
+    - "The default SNO profile (1 x m6i.2xlarge) is far below the SNO requirement and will not support this addon"
+    - "A default StorageClass with dynamic provisioning is required"
+    - "Cannot be installed on a cluster that already runs Open Data Hub"
+    - "Model registry, distributed workloads (kueue/ray/trainer), and OGX need extra operators or external MySQL/S3 and are left Removed"
+    - "RHOAI 3.x is a new-install-only path; in-place upgrade from 2.x is not covered by this addon"

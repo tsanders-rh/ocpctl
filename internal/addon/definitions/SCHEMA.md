@@ -6,7 +6,7 @@ Each add-on is defined in a separate YAML file with this structure:
 - `id` (string, required): Unique identifier (e.g., "oadp")
 - `name` (string, required): Display name
 - `description` (string, required): User-facing description
-- `category` (string, required): One of: backup, migration, cicd, monitoring, security, storage, networking
+- `category` (string, required): One of: backup, migration, cicd, monitoring, security, storage, networking, virtualization, ai
 - `enabled` (boolean, required): Whether add-on is available for selection
 - `supportedPlatforms` (array, required): Platforms where this add-on can run (openshift, eks, iks)
 - `versions` (array, required): List of available versions

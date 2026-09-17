@@ -31,6 +31,7 @@ const CATEGORIES = [
   "storage",
   "networking",
   "cicd",
+  "ai",
 ];
 
 const PLATFORMS = ["openshift", "eks", "gke", "iks"];
