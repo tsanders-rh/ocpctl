@@ -4,7 +4,7 @@
 
 **Audience:** Operators, administrators, and users experiencing issues with ocpctl.
 
-**Last Updated:** 2026-05-08
+**Last Updated:** 2026-09-19
 
 ---
 
@@ -18,8 +18,16 @@ Issue Type?
 ├─ Cluster Operation Issues → Section 4
 ├─ Performance/Slow → Section 5
 ├─ Access/Authentication → Section 6
-└─ Database Issues → Section 7
+├─ Database Issues → Section 7
+└─ Orphaned resources / auto-remediation → Section 11
 ```
+
+**Deployment-specific context this guide assumes:** binaries run from
+`/opt/ocpctl/current` (a symlink to a versioned release dir); both environments
+use RDS, not a local PostgreSQL; production processes jobs on an autoscaling
+worker fleet whose instances are rebuilt from S3 on every boot (section 3.5);
+and dev shares production's AWS account, which matters for orphan detection
+(section 11).
 
 ---
 
@@ -35,6 +43,7 @@ Issue Type?
 8. [Network and Connectivity Issues](#8-network-and-connectivity-issues)
 9. [Storage and Disk Space Issues](#9-storage-and-disk-space-issues)
 10. [Common Error Messages](#10-common-error-messages)
+11. [Orphaned Resources and Auto-Remediation](#11-orphaned-resources-and-auto-remediation)
 
 ---
 
@@ -108,27 +117,47 @@ aws ec2 describe-instances --instance-ids $INSTANCE_ID \
 
 **Symptoms:**
 ```
-scp: /opt/ocpctl/bin/ocpctl-api: Permission denied
+scp: /opt/ocpctl/releases/v0.YYYYMMDD.xxxx/ocpctl-api: Permission denied
 ```
 
+**Layout you are deploying into.** Binaries do **not** live in `/opt/ocpctl/bin`.
+Each deploy installs into a versioned directory and flips a symlink, which is
+what the systemd units point at:
+
+```
+/opt/ocpctl/releases/v0.YYYYMMDD.HASH/ocpctl-api    # the actual binary
+/opt/ocpctl/current -> releases/v0.YYYYMMDD.HASH    # symlink, flipped on deploy
+```
+
+`ExecStart=/opt/ocpctl/current/ocpctl-api` (see `deploy/systemd/*.service`).
+Installing a binary anywhere else — `/opt/ocpctl/bin` included — leaves the
+running service on the old version and breaks rollback, which works by pointing
+`current` at an older release directory.
+
 **Common Causes:**
-- Target directory doesn't exist
-- Wrong permissions on target directory
+- Release directory doesn't exist yet
+- Uploading straight to a root-owned path instead of staging via `/tmp`
 - Not using sudo when needed
 
 **Solutions:**
 ```bash
-# Create directory with correct permissions first
-ssh -i ~/.ssh/key.pem ubuntu@$EC2_IP \
-  "sudo mkdir -p /opt/ocpctl/bin && sudo chown -R ubuntu:ubuntu /opt/ocpctl"
+# Prefer the deploy script, which does all of this correctly:
+./scripts/deploy-env.sh dev
 
-# Then upload
-scp -i ~/.ssh/key.pem bin/ocpctl-api ubuntu@$EC2_IP:/tmp/
-ssh -i ~/.ssh/key.pem ubuntu@$EC2_IP \
-  "sudo mv /tmp/ocpctl-api /opt/ocpctl/bin/ && sudo chmod +x /opt/ocpctl/bin/ocpctl-api"
+# If you must place a binary by hand, mirror what the script does:
+export VERSION=v0.YYYYMMDD.xxxx
+ssh -i "$SSH_KEY" ubuntu@$EC2_IP "sudo mkdir -p /opt/ocpctl/releases/$VERSION"
+scp -i "$SSH_KEY" bin/ocpctl-api-$VERSION ubuntu@$EC2_IP:/tmp/
+ssh -i "$SSH_KEY" ubuntu@$EC2_IP \
+  "sudo install -m 755 /tmp/ocpctl-api-$VERSION /opt/ocpctl/releases/$VERSION/ocpctl-api && \
+   sudo ln -snf /opt/ocpctl/releases/$VERSION /opt/ocpctl/current && \
+   sudo systemctl restart ocpctl-api"
 ```
 
-### 1.3 PostgreSQL Installation Fails
+### 1.3 PostgreSQL Installation Fails (local/standalone installs only)
+
+> Dev and production use **RDS** — you do not install PostgreSQL on those hosts.
+> This applies only to a local or standalone deployment.
 
 **Symptoms:**
 ```
@@ -159,11 +188,30 @@ sudo dnf install -y postgresql-server postgresql
 
 ### 1.4 Database Migration Fails
 
+> **Migrations are applied by the API binary on startup**, not by a separate
+> command — `cmd/api/main.go` calls `store.Migrate()`, which records applied
+> versions in `schema_migrations`. Deploying the API is what migrates dev and
+> prod. Do not point the `goose` CLI (`make migrate-up`) at those databases: it
+> uses a different bookkeeping table and would try to re-apply every migration.
+> See [DEVOPS.md section 5](../development/DEVOPS.md#5-database-migrations).
+
 **Symptoms:**
 ```
 ERROR: relation "schema_migrations" does not exist
 ERROR: permission denied for database postgres
 ```
+
+**Symptom: a migration you know exists never ran, with no error.**
+The runner keys on the numeric filename prefix and skips any version already
+recorded, so **two files sharing a prefix mean the second is silently never
+applied**. Compare what shipped against what was recorded:
+```bash
+psql "$DATABASE_URL" -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 5;"
+ls internal/store/migrations/ | tail -5
+```
+`internal/store/migrations_test.go` fails the build on duplicate prefixes, so
+this should not reach a deployed binary — but a database migrated by an older
+binary can still be missing the shadowed migration.
 
 **Diagnostic Steps:**
 ```bash
@@ -179,7 +227,8 @@ psql "$DATABASE_URL" -c "SELECT version();"
 
 **Solutions:**
 
-**If database doesn't exist:**
+**If database doesn't exist** (local/standalone only — on RDS the database and
+master user are created by Terraform):
 ```bash
 sudo -u postgres psql << EOF
 CREATE DATABASE ocpctl;
@@ -222,8 +271,9 @@ sudo journalctl -u ocpctl-api -n 50 --no-pager
 # 2. Check environment file exists
 sudo test -f /etc/ocpctl/api.env && echo "Found" || echo "Missing"
 
-# 3. Manually run binary to see error
-sudo -u ocpctl /opt/ocpctl/bin/ocpctl-api
+# 3. Manually run binary to see error (loads the same env the unit does)
+sudo -u ocpctl env $(sudo cat /etc/ocpctl/api.env | grep -v '^#' | xargs) \
+  /opt/ocpctl/current/ocpctl-api
 ```
 
 **Common Errors and Solutions:**
@@ -286,7 +336,7 @@ sudo cat /etc/ocpctl/worker.env
 # 3. Test worker binary manually
 sudo -u ocpctl OPENSHIFT_PULL_SECRET='{"auths":{}}' \
   DATABASE_URL='postgres://...' \
-  /opt/ocpctl/bin/ocpctl-worker
+  /opt/ocpctl/current/ocpctl-worker
 ```
 
 **Common Errors:**
@@ -326,11 +376,15 @@ Error: EADDRINUSE: address already in use :::3000
 
 **Solutions:**
 
-**Missing dependencies:**
+> The frontend is **built on your machine**, not on the server:
+> `scripts/deploy-web.sh` runs `npm install`, lint and `npm run build` locally,
+> ships a package, and then runs only `npm install --production` on the host.
+> Because devDependencies are absent there, building in place will not work.
+
+**Missing dependencies or missing build:**
 ```bash
-cd /opt/ocpctl/web
-sudo -u ocpctl npm install
-sudo systemctl restart ocpctl-web
+# Re-run the real deploy from your workstation -- this is the fix for both.
+./scripts/deploy-web.sh dev          # or: production
 ```
 
 **Port in use:**
@@ -339,11 +393,10 @@ sudo netstat -tlnp | grep 3000
 # Kill process or change web port
 ```
 
-**Build missing:**
+**Check what is actually deployed:**
 ```bash
-cd /opt/ocpctl/web
-sudo -u ocpctl npm run build
-sudo systemctl restart ocpctl-web
+ls -la /opt/ocpctl/web/.next/ && sudo systemctl status ocpctl-web
+sudo journalctl -u ocpctl-web -n 50 --no-pager
 ```
 
 ---
@@ -507,7 +560,84 @@ sudo nano /opt/ocpctl/profiles/your-profile.yaml
 sudo systemctl restart ocpctl-api
 ```
 
-### 3.5 Service Quota Exceeded
+### 3.5 Failures That Only Happen on Autoscale Workers
+
+**Symptom shape:** a cluster create works on the static worker host but fails on
+an ASG worker, or every create started after a scale-out fails the same way.
+
+Autoscale workers do **not** share the static host's filesystem. They boot from
+the Terraform launch-template user-data
+(`terraform/worker-autoscaling/user-data.sh`), which re-downloads the binary,
+profiles, manifests, hook scripts and `worker.env` from S3 and regenerates the
+systemd unit on every boot. Anything that directory layout or those hooks get
+wrong reappears on every new instance.
+
+**First: confirm which worker ran the job.**
+```bash
+psql "$DATABASE_URL" -c \
+  "SELECT id, locked_by, expires_at FROM job_locks WHERE cluster_id='$CLUSTER_ID';"
+# locked_by identifies the worker; ASG instances are tagged Name=ocpctl-worker
+aws ec2 describe-instances --filters "Name=tag:Name,Values=ocpctl-worker" \
+  "Name=instance-state-name,Values=running" \
+  --query 'Reservations[].Instances[].[InstanceId,LaunchTime,PrivateIpAddress]'
+```
+
+**Known failure modes on this path:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `failed to create tmp file for bootstrap ignition: /var/lib/ocpctl/tmp/...: no such file or directory` | `/var/lib/ocpctl` owned by root, so the `ocpctl` user cannot create `TMPDIR` alongside `clusters/` | user-data now creates `tmp/` and chowns the **parent**. Unblock in place: `sudo mkdir -p /var/lib/ocpctl/tmp && sudo chown -R ocpctl:ocpctl /var/lib/ocpctl` |
+| `creating Azure session: failed to retrieve credentials from user: EOF` | `~/.azure/osServicePrincipal.json` missing, so `openshift-install` prompted interactively | `scripts/azure-login.sh` writes it after `az login`; verify the file exists, is owned by `ocpctl`, mode 600 |
+| `script not found at path /opt/ocpctl/manifests/...` | `manifests/` was never synced to the instance, so addon tasks that run a manifest script fail | user-data now `aws s3 sync`s `manifests/`; confirm `/opt/ocpctl/manifests` is populated |
+
+**Checking a live ASG worker:**
+```bash
+# Did user-data finish, and what did it do?
+sudo tail -100 /var/log/cloud-init-output.log
+ls -ld /var/lib/ocpctl /var/lib/ocpctl/tmp /var/lib/ocpctl/clusters   # all ocpctl:ocpctl
+sudo ls -l /opt/ocpctl/manifests | head
+sudo -u ocpctl ls -l /opt/ocpctl/.azure/osServicePrincipal.json
+```
+
+> **Where the fix belongs.** Hook scripts (`azure-login.sh`, `ibmcloud-login.sh`,
+> `ensure-installers.sh`) are pulled fresh from S3 each boot, so editing the repo
+> script and running `deploy.sh` is enough — it also recycles the workers.
+> Anything in the **systemd unit, directory layout or boot steps** lives in the
+> launch template and needs `terraform apply` in `terraform/worker-autoscaling/`;
+> `deploy.sh` does **not** apply Terraform. Editing
+> `scripts/bootstrap-worker.sh` reaches nothing — it is the legacy manual-AMI
+> path. This has bitten the same way three times; see DEVOPS.md section 4.
+
+### 3.6 Nightly / Prerelease Install Failures
+
+These affect `track: prerelease` and nightly versions only — a GA install of the
+same profile succeeding does not rule them out.
+
+**Node never joins, bootstrap times out, MCD rejects the image:**
+Nightly release images in `registry.ci` are unsigned, while nodes enforce
+sigstore verification on release repos. The installer injects a permissive
+`policy.json` via MachineConfig for prerelease installs
+(`internal/installer/signature_policy.go`). If you see signature rejections in
+the node journal, check that the cluster was actually created on a prerelease
+track and that the policy MachineConfig rendered.
+
+**`manifest unknown` when downloading the installer:**
+5.x nightlies live in `registry.ci` under `ocp/release-<major>` (e.g.
+`ocp/release-5`), not the 4.x `ocp/release`. Version resolution is major-aware;
+a wrong-repo lookup surfaces as `manifest unknown`.
+
+**`unauthorized` pulling from registry.ci:**
+The registry.ci pull secret is an OAuth token with a **28-day lifetime** and it
+expires silently — every nightly install starts failing at once.
+```bash
+./scripts/check-ci-pull-secret-expiry.sh        # reports days remaining
+./scripts/refresh-ci-pull-secret.sh             # runbook: docs/operations/CI_PULL_SECRET_REFRESH.md
+```
+Refreshing is a manual chore. The token in use at the time of writing expires
+**2026-10-17**; the refresh must be applied to dev, prod **and** the S3 copy the
+ASG workers read.
+
+### 3.7 Service Quota Exceeded
 
 **Symptoms:**
 ```
@@ -583,10 +713,27 @@ ERROR: failed to hibernate cluster: timeout waiting for nodes to stop
 Job status: FAILED
 ```
 
+**Hibernation is platform-specific.** How the worker stops a cluster depends on
+where it runs, so check you are looking at the right mechanism:
+
+| Platform | Mechanism | Where to look |
+|----------|-----------|---------------|
+| AWS OpenShift IPI | Stop EC2 instances by `kubernetes.io/cluster/<infraID>` tag | EC2 console / CLI below |
+| Azure OpenShift IPI | `az vm deallocate` across the cluster resource group | `az vm list -g <infraID>-rg -d` |
+| IBM Cloud | Stop VSIs whose name matches the infraID prefix | `ibmcloud is instances` |
+| EKS / GKE | Scale node groups / node pools to 0 | Control plane keeps running |
+
+> Azure and IBM OpenShift hibernate/resume were added in #147. For Azure the
+> resource group recorded in installer metadata is empty for installer-managed
+> clusters, so the code falls back to `<infraID>-rg` — if hibernate reports "no
+> resource group", that fallback is what to check. IBM requires the
+> `vpc-infrastructure` ibmcloud CLI plugin on the worker.
+
 **Solutions:**
 ```bash
-# 1. Check cluster type supports hibernation
-# ROSA hibernation is limited (can only scale workers to 0)
+# 1. Confirm the cluster's platform and that hibernation applies
+psql "$DATABASE_URL" -c \
+  "SELECT name, platform, cluster_type, status FROM clusters WHERE id='$CLUSTER_ID';"
 
 # 2. Check for pending pods preventing drain
 oc get pods -A | grep -v Running | grep -v Completed
@@ -668,6 +815,42 @@ psql "$DATABASE_URL" -c \
   "UPDATE jobs SET status='PENDING', attempt=0 WHERE cluster_id='$CLUSTER_ID' AND job_type='DESTROY';"
 ```
 
+### 4.5 Post-Configure / Addon Failures
+
+**Symptoms:**
+- Cluster reaches READY, then the POST_CONFIGURE job fails
+- Addon (CNV, MTA, MTC, OADP) never becomes available
+- The cluster itself is fine — only post-deployment failed
+
+A POST_CONFIGURE job runs after a cluster reaches READY. Failures here are
+addon-level, not install-level, so `.openshift_install.log` will tell you
+nothing.
+
+**Where to look first.** The failing task's error is surfaced in the UI —
+the **Logs** tab streams the task error, and the **Jobs** card renders
+`job.error_message`. From the database:
+```bash
+psql "$DATABASE_URL" -c \
+  "SELECT job_type, status, error_message FROM jobs
+    WHERE cluster_id='$CLUSTER_ID' AND job_type='POST_CONFIGURE'
+    ORDER BY created_at DESC LIMIT 1;"
+```
+
+**Common causes:**
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Addon pods rejected: `violates PodSecurity "restricted:latest"` | The addon's manifests have no `securityContext` and land in a namespace with restricted PSA enforcement | Set baseline PSA on the addon's namespace, or add a compliant `securityContext`. ocpctl does **not** validate addon manifests against PSA — a bad manifest fails only at apply time |
+| CNV catalog pod `ImagePullBackOff` / CNV post-config fails | Cluster pull secret lacks a `quay.io/openshift-cnv` entry; the nightly/stable-stage catalogs pull `quay.io/openshift-cnv/nightly-catalog:*` | Restore the `quay.io/openshift-cnv` credential in the pull secret used for the cluster |
+| Operator never goes Available, times out in the CSV phase | Operator install genuinely stalled | The timeout message names the phase it was waiting in; check `oc get csv -n <addon-namespace>` |
+
+**Re-running post-configuration:**
+```bash
+psql "$DATABASE_URL" -c \
+  "UPDATE jobs SET status='PENDING', attempt=0
+    WHERE cluster_id='$CLUSTER_ID' AND job_type='POST_CONFIGURE';"
+```
+
 ---
 
 ## 5. Performance Issues
@@ -697,17 +880,19 @@ df -h
 
 **Database slow:**
 ```bash
-# Add indexes if missing
-psql "$DATABASE_URL" << EOF
-CREATE INDEX IF NOT EXISTS idx_clusters_status ON clusters(status);
-CREATE INDEX IF NOT EXISTS idx_clusters_owner ON clusters(owner);
-CREATE INDEX IF NOT EXISTS idx_jobs_cluster_id ON jobs(cluster_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-EOF
-
-# Vacuum database
+# Vacuum/analyze first -- stale planner statistics are the usual cause
 psql "$DATABASE_URL" -c "VACUUM ANALYZE;"
+
+# Confirm the expected indexes are present (they ship in migrations, so a
+# missing one means migrations did not fully apply -- see 1.4, do NOT hand-create)
+psql "$DATABASE_URL" -c "\di idx_clusters*"
+psql "$DATABASE_URL" -c "\di idx_jobs*"
 ```
+
+> Indexes on `clusters(status)`, `clusters(owner)`, `jobs(cluster_id)` and
+> `jobs(status)` have existed since migration `00001`; `00034` and `00040` add
+> composite indexes for stuck-job detection and the job queue. If a query is
+> slow, the fix is a new migration, not ad-hoc DDL on a live database.
 
 **High memory usage:**
 ```bash
@@ -718,13 +903,17 @@ sudo systemctl restart ocpctl-api ocpctl-worker
 # t3.medium → t3.large
 ```
 
-**Too many concurrent requests:**
+**Hitting the rate limiter:**
 ```bash
-# Reduce rate limit or add more API instances
-sudo nano /etc/ocpctl/api.env
-# Increase: RATE_LIMIT_REQUESTS=200
-sudo systemctl restart ocpctl-api
+# Symptom is HTTP 429, not slowness. The limit is 300 requests/minute per
+# client (internal/api/server.go, RateLimitRequests), with tighter per-route
+# limits on auth (login 5/min, logout and refresh 10/min).
+sudo journalctl -u ocpctl-api --since '15 minutes ago' | grep -i "rate limit"
 ```
+
+> There is **no `RATE_LIMIT_REQUESTS` environment variable** — the value is a
+> compile-time default in `internal/api/server.go`. Changing it requires a code
+> change and a deploy; adding it to `api.env` has no effect.
 
 ### 5.2 Worker Jobs Queuing Up
 
@@ -742,24 +931,27 @@ psql "$DATABASE_URL" -c \
 psql "$DATABASE_URL" -c \
   "SELECT id, job_type, started_at FROM jobs WHERE status='RUNNING';"
 
-# Check worker concurrency
-sudo grep WORKER_CONCURRENCY /etc/ocpctl/worker.env
+# Check how many jobs each worker will run at once (logged at startup)
+sudo journalctl -u ocpctl-worker | grep "max_concurrent" | tail -1
 ```
 
 **Solutions:**
 
-**Increase worker concurrency:**
+**Add worker capacity (the supported lever):**
 ```bash
-sudo nano /etc/ocpctl/worker.env
-# Change: WORKER_CONCURRENCY=5  (from 3)
-sudo systemctl restart ocpctl-worker
+# Production scales horizontally via the ocpctl-worker-asg ASG. Raise desired
+# capacity; new instances boot from the Terraform launch template and pull the
+# current binary, profiles and worker.env from S3.
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name ocpctl-worker-asg --desired-capacity 3
 ```
 
-**Add autoscaling workers:**
-```bash
-# See autoscaling worker setup in deployment docs
-# Or manually launch additional worker instances
-```
+> **Per-worker concurrency is not configurable at runtime.** `MaxConcurrent` is
+> a compile-time default of 3 (`internal/worker/worker.go`); `cmd/worker/main.go`
+> takes `worker.DefaultConfig()` and overrides only `WorkDir`. Neither
+> `WORKER_CONCURRENCY` nor `CONCURRENCY` is read by anything — setting either in
+> `worker.env` is a no-op. Changing it means changing the code. Scale out
+> instead.
 
 **Clear stuck locks:**
 ```bash
@@ -888,13 +1080,15 @@ aws sts get-caller-identity
 # Should show role ARN
 
 # 3. Test IAM authentication manually
-curl -X POST http://localhost:8080/api/v1/auth/iam \
-  -H "Content-Type: application/json" \
-  -d '{
-    "access_key_id": "AKIA...",
-    "secret_access_key": "...",
-    "region": "us-east-1"
-  }'
+# IAM auth is SigV4 REQUEST SIGNING, not a login endpoint: you sign a normal
+# API call with your AWS credentials and the RequireAuthDual middleware
+# verifies the signature. There is no endpoint that accepts an access key in a
+# request body -- never POST a secret access key anywhere.
+aws configure export-credentials --format env > /tmp/creds && . /tmp/creds
+curl --aws-sigv4 "aws:amz:us-east-1:execute-api" \
+  --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
+  -H "x-amz-security-token: $AWS_SESSION_TOKEN" \
+  http://localhost:8080/api/v1/clusters
 ```
 
 **IAM group restriction:**
@@ -914,6 +1108,11 @@ sudo systemctl restart ocpctl-api
 
 ### 7.1 Database Connection Failed
 
+> **Both environments use RDS.** Dev and production each point at their own RDS
+> instance (`ocpctl-dev-db` / `ocpctl-db`); there is no PostgreSQL server running
+> on the API host, so `systemctl start postgresql` and `sudo -u postgres psql`
+> do not apply. `psql` is installed on the hosts purely as a client.
+
 **Symptoms:**
 ```
 ERROR: dial tcp: connect: connection refused
@@ -922,35 +1121,31 @@ ERROR: pq: password authentication failed
 
 **Solutions:**
 
-**PostgreSQL not running:**
+**Check reachability first:**
 ```bash
-sudo systemctl status postgresql
-# If not running:
-sudo systemctl start postgresql
+# From the API/worker host. Endpoint for each env: config/environments.sh ($RDS_HOST)
+psql "$DATABASE_URL" -c "SELECT version();"
+
+# If it hangs rather than refusing, it is the security group, not credentials:
+# the RDS SG must allow 5432 from the API/worker host and from the worker ASG.
+aws rds describe-db-instances --db-instance-identifier ocpctl-db \
+  --query 'DBInstances[0].[DBInstanceStatus,Endpoint.Address,VpcSecurityGroups]'
 ```
 
 **Wrong password:**
 ```bash
-# Check password in Parameter Store matches database
-DB_PASSWORD=$(aws ssm get-parameter \
-  --name /ocpctl/database/password \
-  --with-decryption \
-  --query Parameter.Value \
-  --output text)
-
-# Reset PostgreSQL password to match
-sudo -u postgres psql -c \
-  "ALTER USER ocpctl_user WITH PASSWORD '$DB_PASSWORD';"
+# Credentials live in the DATABASE_URL inside the env files, which come from
+# config/{api,worker}.env.<env> at deploy time (and s3://<binaries>/config/worker.env
+# for ASG workers). Rotating means updating BOTH the handover bundle and the S3
+# runtime copy -- see docs/operations/OWNERSHIP_HANDOVER.md.
+aws rds modify-db-instance --db-instance-identifier ocpctl-db \
+  --master-user-password '<new-password>' --apply-immediately
 ```
 
 **Wrong hostname:**
 ```bash
-# For PostgreSQL on EC2, should be: localhost
-# For RDS, should be: <endpoint>.rds.amazonaws.com
-
-# Update DATABASE_URL
-sudo nano /etc/ocpctl/api.env
-# Update hostname in connection string
+# Should be the RDS endpoint, never localhost.
+sudo grep -o '@[^/]*' /etc/ocpctl/api.env
 sudo systemctl restart ocpctl-api ocpctl-worker
 ```
 
@@ -1128,6 +1323,89 @@ aws s3 mb s3://your-bucket-name
 
 ---
 
+## 11. Orphaned Resources and Auto-Remediation
+
+The janitor periodically lists cloud resources and compares them against the
+`clusters` table; anything it cannot attribute to a known cluster is recorded as
+an **orphaned resource** (`internal/janitor/orphan_detector.go`). Detection runs
+on its own interval (15 minutes, less often than the 5-minute janitor tick, to
+stay under cloud API rate limits).
+
+### 11.1 The safety property you must understand first
+
+Detection is judged **against the environment's own database**. An environment
+that shares a cloud account with another deployment will therefore classify the
+other deployment's **live** infrastructure as orphaned. This is exactly the case
+here: dev and production share AWS account `346869059911`, and dev has no live
+clusters of its own, so dev's janitor sees production's live resources as
+orphans. Dev's orphan count running into the thousands while prod's is in the
+hundreds is expected, not a bug.
+
+**Because of that, `on` mode is interlocked.** Real deletion requires
+`ORPHAN_AUTO_DELETE_ALLOW_ON=true|1|yes` in the environment
+(`internal/orphan/autodelete.go`, `AutoDeleteOnAllowed()`):
+
+- The API refuses to save mode `on` with **403** when it is unset
+  (`PUT /api/v1/admin/orphaned-resources/auto-remediation`).
+- The janitor independently **clamps `on` → `dryrun`** at runtime, so an
+  already-saved setting or a stale `ORPHAN_AUTO_DELETE=on` in `worker.env`
+  still cannot delete.
+
+Arming an environment means setting the flag on **both** the API host (to save
+the setting) and the worker/janitor hosts (to act on it). **Leave it unset on
+dev.** If you see `mode 'on' requested but ORPHAN_AUTO_DELETE_ALLOW_ON is not
+set ... clamping to dryrun` in the worker journal, the interlock is doing its
+job.
+
+### 11.2 Modes
+
+`off` (no detection action) · `dryrun` (log what would be deleted) · `on` (delete
+for real, subject to the interlock above plus the per-resource safety and
+ownership gates). Read or change it in the admin console, or:
+
+```bash
+curl -s .../api/v1/admin/orphaned-resources/auto-remediation     # current mode
+sudo journalctl -u ocpctl-worker | grep orphan-auto-delete | tail -20
+```
+
+### 11.3 Live cluster resources being flagged as orphans
+
+**Symptom:** load balancers, EBS volumes or EIPs belonging to a healthy,
+READY cluster show up as ACTIVE orphans.
+
+`openshift-install` truncates names longer than 21 characters when deriving the
+infraID, so a long cluster name produces resource names that no longer match the
+cluster name by prefix. Matching is truncation-aware; if you still see
+false positives, compare the actual infraID against the cluster name:
+
+```bash
+oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}'
+psql "$DATABASE_URL" -c "SELECT name FROM clusters WHERE id='$CLUSTER_ID';"
+```
+
+Do not delete a flagged resource without confirming its cluster is genuinely
+gone. Mark it resolved instead:
+`PATCH /api/v1/admin/orphaned-resources/:id/resolve`.
+
+### 11.4 Orphan records that never clear
+
+**Symptom:** ACTIVE orphan rows stuck at `detection_count=1` that are no longer
+actually present in the cloud.
+
+A minimum-detections gate means a record detected once and never again can never
+advance, so it sits ACTIVE forever. The janitor auto-resolves these: an
+age-based sweep resolves ACTIVE records that are no longer re-detected, gated on
+the per-cloud detection having **succeeded** (so a failed scan is never read as
+"everything vanished"). Tunable via `ORPHAN_STALE_RESOLVE_HOURS` (default 2).
+
+```bash
+sudo journalctl -u ocpctl-worker | grep orphan-reconcile | tail -20
+```
+
+This sweep is database-only — it never touches cloud resources.
+
+---
+
 ## Emergency Procedures
 
 ### Service Complete Restart
@@ -1141,8 +1419,8 @@ DELETE FROM job_locks WHERE expires_at < NOW() + INTERVAL '1 hour';
 UPDATE jobs SET status='PENDING', attempt=0 WHERE status='RUNNING';
 EOF
 
-# Start services
-sudo systemctl start postgresql nginx ocpctl-api ocpctl-worker ocpctl-web
+# Start services (no local postgresql -- the database is RDS)
+sudo systemctl start nginx ocpctl-api ocpctl-worker ocpctl-web
 
 # Verify health
 curl http://localhost:8080/health
@@ -1162,18 +1440,29 @@ sudo systemctl start ocpctl-api ocpctl-worker
 ```
 
 ### Force Cluster Cleanup
+
+Use only if a normal destroy has failed and 4.4 did not clear it. There is no
+force-cleanup script in the repo — do this deliberately, by hand.
+
 ```bash
-# Use only if normal destroy fails
-export INFRA_ID=<cluster-infra-id>
-export VPC_ID=<cluster-vpc-id>
+export INFRA_ID=<cluster-infra-id>   # oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}'
 
-# Delete all cluster resources
-scripts/force-cleanup-cluster.sh $INFRA_ID $VPC_ID
+# 1. Prefer re-running the installer's own destroy, which knows the dependency
+#    order. Fetch the cluster's installer dir from S3 first:
+aws s3 sync s3://ocpctl-artifacts/clusters/$CLUSTER_ID/ /tmp/$CLUSTER_ID/
+openshift-install destroy cluster --dir /tmp/$CLUSTER_ID
 
-# Update database
+# 2. Only if that fails, delete by tag in dependency order (LBs and NAT
+#    gateways before subnets/VPC) using the queries in section 4.4.
+
+# 3. Update the database LAST, once the cloud side is actually clean.
 psql "$DATABASE_URL" -c \
   "UPDATE clusters SET status='DESTROYED', destroyed_at=NOW() WHERE id='$CLUSTER_ID';"
 ```
+
+> Marking the row DESTROYED before the resources are gone is how you create
+> orphans: the janitor matches live cloud resources against the `clusters` table,
+> so anything left behind becomes an untracked orphaned resource (section 11).
 
 ---
 
@@ -1216,6 +1505,6 @@ sudo netstat -tlnp
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-05-08
+**Document Version:** 1.1
+**Last Updated:** 2026-09-19
 **Feedback:** Report issues to GitHub or team Slack
