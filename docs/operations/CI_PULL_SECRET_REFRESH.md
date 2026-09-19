@@ -53,6 +53,27 @@ cleared on app.ci — i.e. `oc login` to app.ci succeeds and `oc adm release inf
 can read `registry.ci.openshift.org/ocp/release` nightlies. This is already true
 for the maintainer account.
 
+### Checking the expiry date without waiting for a failure
+
+The token is opaque, but app.ci will tell you when it expires, and the deployed
+token can authenticate the query about itself. This needs no browser login:
+
+```bash
+scripts/check-ci-pull-secret-expiry.sh                      # defaults to production
+scripts/check-ci-pull-secret-expiry.sh config/worker.env.dev
+```
+
+It prints the exact expiry and days remaining, and exits non-zero when the token
+is expired or inside the warning window (7 days by default, `WARN_DAYS` to
+change) — so it also works as the alerting hook described in
+[§6](#6-why-this-is-manual--automation-notes).
+
+The mechanism: an OpenShift OAuth token is stored as an `OAuthAccessToken` named
+`sha256~<base64url(sha256(secret))>`, and `useroauthaccesstokens` lets a user list
+their own. The script derives that name from the token in the pull secret and
+matches it against the list, so it reports the expiry of *the token you actually
+have deployed* rather than whichever token happens to be newest.
+
 ---
 
 ## 3. Mint a fresh CI token
