@@ -101,7 +101,7 @@ gh api -X PUT repos/tsanders-rh/ocpctl/branches/main/protection \
 - [ ] Behavior matches the PR description; scope is contained.
 - [ ] Tests cover the change; a bug fix has a regression test.
 - [ ] No secrets/credentials in code, config, or logs.
-- [ ] DB migrations are additive/backward-compatible and reversible (`migrate-down` works).
+- [ ] DB migrations use the next free `NNNNN` prefix (a reused one is silently never applied), are additive/backward-compatible, and carry a working `-- +goose Down` for manual recovery. Dev/prod apply migrations on API startup — see [DEVOPS.md §5](DEVOPS.md#5-database-migrations).
 - [ ] Changes to **worker boot scripts** land in the right place — the prod ASG boots from `terraform/worker-autoscaling/user-data.sh`, **not** `scripts/bootstrap-worker.sh` (legacy). See CLAUDE.md.
 - [ ] Terraform changes reviewed against a `terraform plan`.
 
@@ -148,7 +148,7 @@ The unit-test build gate still applies. The `SKIP_TESTS=1` override exists only 
 |-------------|---------------|-------|
 | New profile | `internal/profile/definitions/*.yaml` | Deploy syncs to S3; API reload picks it up |
 | New addon | `internal/addon/definitions/*.yaml` | Same as profiles |
-| DB schema | `internal/store/migrations/NNNNN_*.sql` | Additive + reversible; test `migrate-up`/`down` |
+| DB schema | `internal/store/migrations/NNNNN_*.sql` | Next free prefix; additive + reversible. Test `migrate-up`/`down` against a **local** DB only — dev/prod migrate on API startup ([DEVOPS.md §5](DEVOPS.md#5-database-migrations)) |
 | API handler | `internal/api/handler_*.go` | |
 | Worker job | `internal/worker/handler_*.go` | |
 | **ASG worker boot** | `terraform/worker-autoscaling/user-data.sh` | Requires `terraform apply` (new LT version), **not** `deploy.sh` |
