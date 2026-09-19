@@ -64,7 +64,7 @@
 
 /etc/ocpctl/
 ├── api.env                     # API server config (DATABASE_URL, JWT_SECRET)
-└── worker.env                  # Worker config (WORK_DIR, CONCURRENCY, OCM_TOKEN for ROSA)
+└── worker.env                  # Worker config (WORKER_WORK_DIR, TMPDIR, PROFILES_DIR, OCM_TOKEN for ROSA)
 
 /var/lib/ocpctl/
 └── clusters/                   # Worker cluster work directories
@@ -125,7 +125,7 @@ sudo systemctl restart ocpctl-worker
 
 /etc/ocpctl/
 ├── api.env                     # API server config (DATABASE_URL, JWT_SECRET)
-├── worker.env                  # Worker config (WORK_DIR, CONCURRENCY, cloud credentials)
+├── worker.env                  # Worker config (WORKER_WORK_DIR, TMPDIR, PROFILES_DIR, cloud credentials)
 └── web.env                     # Web frontend config (NEXT_PUBLIC_API_URL, etc.)
 
 /var/lib/ocpctl/
@@ -254,7 +254,9 @@ ocpctl/
 **Worker Service** (`cmd/worker/main.go`):
 - Polls PostgreSQL job queue every 10 seconds
 - Acquires distributed locks (90-minute TTL)
-- Processes jobs concurrently (default: 3 max)
+- Processes jobs concurrently (3 max). **Not runtime-configurable**: `MaxConcurrent`
+  is a compile-time default in `internal/worker/worker.go`, and `cmd/worker/main.go`
+  overrides only `WorkDir` — no env var changes it. Scale the ASG instead.
 - Streams logs to database
 - Graceful shutdown: 1 hour timeout
 
@@ -547,8 +549,9 @@ sudo journalctl -u ocpctl-worker -f
 
 **Check cluster work directory**:
 ```bash
-# On worker server
-cd /var/lib/ocpctl/clusters/<cluster-name>
+# On worker server. Directories are named by cluster UUID, NOT cluster name
+# (internal/worker/workdir.go: ensureSecureWorkDir joins baseDir + cluster.ID).
+cd /var/lib/ocpctl/clusters/<cluster-id>
 ls -la
 cat .openshift_install.log  # OpenShift installer logs
 ```
@@ -730,8 +733,8 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 ### "Cluster stuck in CREATING"
 1. Check job status: `SELECT * FROM jobs WHERE cluster_id = 'xxx' AND status = 'RUNNING'`
 2. Check worker logs: `sudo journalctl -u ocpctl-worker -f`
-3. Check work directory: `ls /var/lib/ocpctl/clusters/<cluster-name>/`
-4. Check installer logs: `cat /var/lib/ocpctl/clusters/<cluster-name>/.openshift_install.log`
+3. Check work directory: `ls /var/lib/ocpctl/clusters/<cluster-id>/` (UUID, not name)
+4. Check installer logs: `cat /var/lib/ocpctl/clusters/<cluster-id>/.openshift_install.log`
 
 ### "Worker not picking up jobs"
 1. Check worker service: `sudo systemctl status ocpctl-worker`
