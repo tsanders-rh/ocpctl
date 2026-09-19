@@ -164,25 +164,27 @@ amount of AWS access compensates for.
 
 | Credential | Where | Notes |
 |-----------|-------|-------|
-| registry.ci pull secret | `worker.env` (both envs) + S3 | **Expires 2026-09-23 18:21:52Z — see the warning below.** 28-day lifetime, manual refresh. Runbook: [CI_PULL_SECRET_REFRESH.md](CI_PULL_SECRET_REFRESH.md); helpers: `scripts/check-ci-pull-secret-expiry.sh` (reports days remaining), `scripts/refresh-ci-pull-secret.sh`. Nightly/prerelease installs fail when it lapses. |
+| registry.ci pull secret | `worker.env` (both envs) + S3 | **Expires 2026-10-17 16:19:12Z — see the warning below.** 28-day lifetime, manual refresh. Runbook: [CI_PULL_SECRET_REFRESH.md](CI_PULL_SECRET_REFRESH.md); helpers: `scripts/check-ci-pull-secret-expiry.sh` (reports days remaining), `scripts/refresh-ci-pull-secret.sh`. Nightly/prerelease installs fail when it lapses. |
 | `OCM_TOKEN` | `worker.env` | Red Hat account token, used for ROSA/OCM paths. |
 | Azure service principal | `worker.env` (`AZURE_CLIENT_*`) | Written to `osServicePrincipal.json` by the `azure-login.sh` ExecStartPre hook. |
 | IBM Cloud API key | `worker.env` (`IC_API_KEY`) | |
 | GCP service account | `GOOGLE_APPLICATION_CREDENTIALS` → `/opt/ocpctl/gcp-credentials.json` on each host | Not in the repo; present on the hosts and in S3 config. |
 | `JWT_SECRET` | `api.env.*` | Rotating it logs every user out. |
 
-> **The registry.ci token expires 2026-09-23 and cannot be renewed by the team as
+> **The registry.ci token expires 2026-10-17 and cannot be renewed by the team as
 > things stand.** It is a personal OAuth token minted from the *departing
 > maintainer's* interactive app.ci login — there is no scriptable refresh and no
 > machine identity behind it. Once that account is gone, nobody can re-mint it.
 >
-> Two things have to happen, and the first one is time-boxed:
+> It was refreshed on 2026-09-19 (the previous one was four days from lapsing) and
+> deployed to both environments, so there is a **28-day runway from that date**.
+> That is the whole window, and only one thing closes it:
 >
-> 1. **Before the account is deprovisioned**, the departing maintainer refreshes it
->    (buys ~28 days) so nightly provisioning does not break during the transition.
-> 2. **The successor mints it from their own app.ci account**, which first requires
->    the `qci-image-puller` gate to be cleared for them. That is a request to the
->    CI/DPTP team and is *not* instant — start it now, not when the token lapses.
+> **The successor must mint their own token from their own app.ci account**, which
+> first requires the `qci-image-puller` gate to be cleared for them. That is a
+> request to the CI/DPTP team and is *not* instant — start it now, not when the
+> token lapses. If the maintainer's account is still live near 2026-10-17 they can
+> buy another 28 days, but that is a stopgap, not the fix.
 >
 > Check the deployed token's remaining life any time with
 > `scripts/check-ci-pull-secret-expiry.sh` (exits non-zero inside the warning
@@ -265,7 +267,7 @@ warning email.
 
 | Cadence | Task |
 |---------|------|
-| ~Every 28 days | Refresh the registry.ci pull secret ([runbook](CI_PULL_SECRET_REFRESH.md)). Run `scripts/check-ci-pull-secret-expiry.sh` to see days remaining; nothing alerts on this yet. |
+| ~Every 28 days — **next due 2026-10-17** | Refresh the registry.ci pull secret ([runbook](CI_PULL_SECRET_REFRESH.md)). Run `scripts/check-ci-pull-secret-expiry.sh` to see days remaining; nothing alerts on this yet. |
 | Weekly | Check orphaned-resource counts and the janitor's auto-remediation mode. Dev must stay `dryrun` (see §6). |
 | Per deploy | `./scripts/deploy-env.sh dev`, validate, then promote to production. |
 | Quarterly | Re-push the handover bundle so it does not drift from the running config. |
@@ -319,9 +321,11 @@ unset. See CLAUDE.md → Recent Changes.
 ## 7. Offboarding checklist for the departing owner
 
 - [ ] Fill in §1 with real names.
-- [ ] **Refresh the registry.ci pull secret before your app.ci account goes away**
-      (expires 2026-09-23), and open the `qci-image-puller` request for your
-      successor so they can mint their own (§4c).
+- [x] **Refresh the registry.ci pull secret before your app.ci account goes away** —
+      done 2026-09-19, now expires 2026-10-17.
+- [ ] **Open the `qci-image-puller` request for your successor** so they can mint
+      their own token before 2026-10-17 (§4c). This has lead time; it is the only
+      thing that makes nightly installs survive your departure.
 - [ ] Re-issue the worker AWS credentials off the personal IAM user (§4a) and
       confirm a cluster create still succeeds afterward.
 - [ ] Transfer or document the `dog8code.com` registrar account (§4b).
