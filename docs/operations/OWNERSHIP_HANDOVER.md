@@ -173,6 +173,54 @@ amount of AWS access compensates for.
 
 ---
 
+### 4d. The team's `aws-reporting` reaper will delete these hosts
+
+This is not an ocpctl component and it is not under this repo's control, but it
+**terminated the dev server on 2026-09-19** and it will do so again. Anyone owning
+ocpctl has to know how it works.
+
+It is a Lambda named `aws-reporting` in account `346869059911` (source:
+`github.com/fusor/misc-env-scripts`), driven by EventBridge:
+
+| Rule | Schedule (UTC) | Command | Effect |
+|------|----------------|---------|--------|
+| `aws_report_generation_schedule` | daily 14:00 | `report` | Rewrites the `EC2-Old-Instances` tab with every instance older than **30 days**. |
+| `aws_ec2_deletion_summary_schedule` | Mon 14:15 | `generate_ec2_deletion_summary` | Warning email to the team list. |
+| `aws_purge_instance_schedule` | **Sat 00:00** | `purge_instances` | **Terminates** every instance on that tab older than **34 days** whose `Saved` cell does not contain `save`. |
+
+The one and only exemption is a spreadsheet cell. In the
+[Mig Eng AWS Report](https://docs.google.com/spreadsheets/d/1XOMu12uPJgtX_gN3mUTQu89kArzBft4edhbkXqlae5M/edit)
+sheet, tab `EC2-Old-Instances`, the row for the instance must have `Saved` set to
+`Save`. That is why production survives — `i-033657f517e3be9c4` / `ocpctl-production`
+is marked `Save`. The old dev instance was not, so it was terminated. There is no
+tag-based, name-based, or account-based exemption in the code.
+
+**You cannot pre-mark a young instance.** The daily `report` run clears the tab and
+rewrites it from instances that are *currently* older than 30 days, carrying the
+`Saved` value forward only for rows it re-emits. A row added early is wiped by the
+next daily run.
+
+So for the rebuilt dev instance `i-0d7d3ef3ee0477078` (launched 2026-09-19) the
+action window is:
+
+- **~2026-10-20** — it first appears on `EC2-Old-Instances` (age > 30 days).
+- **Mark `Saved` = `Save` during the following days.**
+- **2026-10-24 00:00 UTC** — first Saturday purge at which it is older than 34 days.
+  If it is unmarked then, it is terminated.
+
+Treat that as a hard deadline, and re-check after any dev rebuild (a rebuild means a
+new instance ID, so the mark does not carry over). The durable fix is to change the
+reaper to honor an instance tag instead of a spreadsheet cell, which requires a PR
+to `misc-env-scripts` and that team's agreement — worth raising, because every team
+using this account has the same failure mode.
+
+> Unrelated but noticed while reading the Lambda: its configuration holds SMTP
+> credentials (`SMTP_USERNAME`/`SMTP_PASSWORD`, an IAM access key) in **plaintext
+> environment variables**, readable by anyone with `lambda:GetFunctionConfiguration`.
+> Worth reporting to whoever owns that function.
+
+---
+
 ## 5. Recurring chores
 
 | Cadence | Task |
@@ -181,6 +229,7 @@ amount of AWS access compensates for.
 | Weekly | Check orphaned-resource counts and the janitor's auto-remediation mode. Dev must stay `dryrun` (see §6). |
 | Per deploy | `./scripts/deploy-env.sh dev`, validate, then promote to production. |
 | Quarterly | Re-push the handover bundle so it does not drift from the running config. |
+| After any EC2 rebuild, and by **2026-10-24** for the current dev box | Mark the instance `Save` in the reaper's spreadsheet or it gets terminated (§4d). |
 
 ---
 
@@ -189,19 +238,28 @@ amount of AWS access compensates for.
 Verified against AWS at the time of writing. A new owner should not discover these
 the hard way.
 
-**Dev is currently down.** The dev EC2 instance recorded in Terraform state
-(`i-0d5b343fb88ad0160`) no longer exists, and its Elastic IP `44.214.230.178` has
-been released. `dev.ocpctl.<BASE_DOMAIN>` is a dangling A record pointing at an
-address the account no longer holds, and the URL does not respond. The **dev RDS
-instance `ocpctl-dev-db` is still running and still billing.** Production is
-unaffected and healthy (`/version` returns 200).
+**Dev was destroyed and has been rebuilt.** The previous dev instance
+(`i-0d5b343fb88ad0160`) was terminated by the team's `aws-reporting` reaper on
+2026-09-19 (see §4d — this *will* recur). It has been rebuilt via `terraform apply`
+in `terraform/dev`; the RDS instance was never touched, so no data was lost. The new
+instance is `i-0d7d3ef3ee0477078` at **`3.229.198.9`** (a new IP, already written
+back to `config/environments.sh` and `CLAUDE.local.md`). API, worker, and web are
+all running `v0.20260919.07ae79e`, all four services are enabled at boot, and
+https://dev.ocpctl.<BASE_DOMAIN> serves the UI and authenticates.
 
-Recovery is a `terraform apply` in `terraform/dev` (the plan shows the instance and
-EIP as "to be created"), followed by `scripts/bootstrap-dev-server.sh` and a
-`deploy-env.sh dev`. Note that this yields a **new IP**, which must be written back
-to `config/environments.sh` and `CLAUDE.local.md`. Decide deliberately whether dev
-is worth rebuilding before applying — if it is not, destroy the RDS instance rather
-than paying for an orphan.
+Rebuilding from scratch exposed a set of bugs that had been fixed by hand on the old
+box and never committed, so the scripts could not actually reproduce a working host.
+Those are fixed now (release symlink, `/var/log/ocpctl`, worker ExecStartPre hooks,
+`~/.azure` ownership, Node.js install, nginx frontend routing, web unit and
+`web.env` install, boot enablement). **If you rebuild dev again, the scripted path
+should work end to end** — but re-verify rather than assume.
+
+One known gap remains on the live dev box: Let's Encrypt renewal is still configured
+with `authenticator = standalone` while nginx holds port 80, so renewal will fail.
+The certificate is valid until 2026-12-18, so this is not urgent, but fix it before
+then. `scripts/bootstrap-dev-server.sh` already does the right thing for a fresh
+host; the live box needs the same edit to
+`/etc/letsencrypt/renewal/dev.ocpctl.<BASE_DOMAIN>.conf`.
 
 **Pre-existing Terraform drift.** `terraform plan` in `terraform/worker-autoscaling`
 shows one in-place update to `aws_autoscaling_group.worker` (a `ManagedBy`
