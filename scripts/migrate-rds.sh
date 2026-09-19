@@ -1,11 +1,21 @@
 #!/bin/bash
-# Script to run database migrations against the RDS instance
-# Usage: ./scripts/migrate-rds.sh [up|down|status]
+# Script to run goose migrations against a database.
+# Usage: RDS_HOST=<host> RDS_PASSWORD=<pw> ./scripts/migrate-rds.sh [up|down|status]
+#
+# ⚠️ NOT for dev or production. Those databases are migrated by the API binary
+# itself (cmd/api/main.go -> store.Migrate()), which records applied versions in
+# `schema_migrations`. goose uses a separate `goose_db_version` table that the
+# application never writes, so against an app-migrated database goose sees an
+# unmigrated schema and `up` would try to re-apply every migration from 00001.
+# See docs/development/DEVOPS.md section 5.
+#
+# RDS_HOST is deliberately required: there is no default, so this cannot be
+# aimed at a live environment by accident.
 
 set -e
 
 # RDS connection details
-RDS_HOST="${RDS_HOST:-44.201.165.78}"
+RDS_HOST="${RDS_HOST:?RDS_HOST must be set explicitly (no default; see header — do not aim this at dev/production)}"
 RDS_PORT="${RDS_PORT:-5432}"
 RDS_USER="${RDS_USER:-ocpctl}"
 RDS_DB="${RDS_DB:-ocpctl}"

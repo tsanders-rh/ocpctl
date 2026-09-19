@@ -16,7 +16,7 @@ validation).
 | DB | `ocpctl-dev-db` (RDS, own) | `ocpctl-db` (RDS) |
 | Binaries bucket | `s3://ocpctl-dev-binaries` | `s3://ocpctl-binaries` |
 | Artifacts bucket | `s3://ocpctl-dev-artifacts` | `s3://ocpctl-artifacts` |
-| Autoscale workers | single node | `ocpctl-worker-asg` (ASG) |
+| Autoscale workers | none — worker runs on the API host | `ocpctl-worker-asg` (ASG) |
 | SSH key | `~/.ssh/<DEV_SSH_KEY>` | `~/.ssh/<PROD_SSH_KEY>` |
 
 **Golden rule:** changes prove out in **dev** before production. Production is a
@@ -106,6 +106,7 @@ behavior always runs tests.
 ```bash
 ./scripts/deploy-env.sh dev                 # build+test, deploy latest to dev
 ./scripts/deploy-env.sh dev v0.20260819.6c97dca   # deploy a specific version
+./scripts/deploy-web.sh dev                 # UI changes only — separate step, see below
 ```
 
 ### Production (deliberate promotion)
@@ -114,6 +115,7 @@ behavior always runs tests.
 ./scripts/deploy-env.sh production v0.20260819.6c97dca
 # or the production-only script:
 ./scripts/deploy.sh v0.20260819.6c97dca
+./scripts/deploy-web.sh production          # UI changes only — separate step
 ```
 
 **What a deploy does** (see CLAUDE.md → Deployment Process for detail):
@@ -121,10 +123,27 @@ behavior always runs tests.
 2. Upload versioned + `binaries/` (stable) to S3; update `LATEST`.
 3. Sync profiles, addons, manifests, scripts to S3.
 4. **Terminate running autoscale workers** so the ASG relaunches them fresh from
-   S3 (prod only) — no manual termination needed.
-5. Deploy to the API/worker host(s): copy binary → flip `current` symlink →
-   `systemctl restart`; requeue RUNNING jobs, clear stale locks.
+   S3 — no manual termination needed. Instances are matched by the
+   environment's `$AUTOSCALE_TAG`; in practice only production has an ASG
+   (`ocpctl-worker-asg`) to relaunch them.
+5. Deploy the **API host first** (copy binary → flip `current` symlink →
+   `systemctl restart`), then each worker host (same, plus requeue RUNNING jobs
+   and clear stale locks). API-first is deliberate: the API restart is what
+   applies pending DB migrations (see §5).
 6. Verify `/version` on API and worker.
+
+### The web frontend is a separate deploy
+
+`deploy.sh` and `deploy-env.sh` build and ship **only the Go binaries** — they
+do not touch the Next.js frontend at all. A UI change is not live until you also
+run:
+
+```bash
+./scripts/deploy-web.sh dev          # or: production
+```
+
+It deploys to the same host as the API (`$API_HOST`), installs `web.env`, and
+restarts `ocpctl-web`. Both environments run an `ocpctl-web` service.
 
 ### Autoscale workers (production)
 
@@ -157,16 +176,47 @@ terraform apply
 
 Migrations live in `internal/store/migrations/` (`NNNNN_name.sql`, goose format).
 
+### Dev and prod: the API applies them automatically
+
+**You do not run a migration command against dev or production.** The migration
+files are `go:embed`-ed into the API binary, and `cmd/api/main.go` calls
+`store.Migrate()` on startup — so *deploying the API is what migrates the
+schema*. That happens before the API binds its port, which is why `deploy.sh`
+polls `/version` for up to 60s instead of checking once, and why the API host is
+deployed before the workers. The worker does **not** migrate; it opens the pool
+and assumes the schema is already forward.
+
+The runner (`internal/store/store.go`, `Migrate()`) tracks applied versions in
+its own `schema_migrations` table, keyed on the numeric filename prefix, and
+executes only the `-- +goose Up` half. **It has no down path** — the `Down`
+sections exist for manual/goose use, not for anything the app will run.
+
+> ⚠️ **Do not point the `goose` CLI at a dev or production database.** The
+> `make migrate-up` / `make migrate-down` targets below invoke `goose`, which
+> keeps its bookkeeping in a *different* table (`goose_db_version`) that the
+> application never writes. Against an app-migrated database goose therefore
+> sees an unmigrated schema and `migrate-up` would attempt to re-apply every
+> migration from `00001`. Those targets are for a **local scratch database**
+> only:
+
 ```bash
-DATABASE_URL=... make migrate-up      # apply
-DATABASE_URL=... make migrate-down    # roll back one
+DATABASE_URL=postgres://…/localdb make migrate-up      # local dev DB only
+DATABASE_URL=postgres://…/localdb make migrate-down    # local dev DB only
 ```
 
-Rules:
+### Rules
+
+- **Never reuse a version prefix.** The runner keys on the `NNNNN` prefix and
+  skips anything already recorded, so a second file with an existing prefix is
+  **silently never applied** — no error, no warning. Always take the next free
+  number; `internal/store/migrations_test.go` fails the build on duplicates.
 - **Additive and backward-compatible** — a new binary and the previous one may run
-  against the same schema briefly during a rollout.
-- **Reversible** — every migration has a working `-- +goose Down`.
-- Apply migrations to **dev first**, exercise the app, then production.
+  against the same schema briefly during a rollout, and a rollback (§6) leaves the
+  new schema in place.
+- **Reversible** — every migration has a working `-- +goose Down`, for manual
+  recovery.
+- Apply migrations to **dev first** (i.e. deploy to dev), exercise the app, then
+  production.
 - Never edit a migration that has already run in any environment; add a new one.
 
 ---
@@ -181,8 +231,17 @@ ssh -i ~/.ssh/<PROD_SSH_KEY> ubuntu@<PROD_HOST> 'sudo ls -d /opt/ocpctl/releases
 ./scripts/deploy-env.sh production v0.20260413.1346b69
 ```
 
-If a bad migration is involved, roll the schema back (`migrate-down`) as part of
-the rollback, in the reverse order it was applied.
+Redeploying an older binary rolls back **code only — never the schema.** The old
+API will re-run `Migrate()` on startup, find every version already recorded in
+`schema_migrations`, and leave the newer schema exactly as it is. This is fine
+precisely because migrations are required to be backward-compatible (§5): the
+previous binary has to be able to run against the newer schema.
+
+If a migration itself is the problem, a code rollback will not save you. Undo it
+deliberately and out-of-band: apply that migration's `-- +goose Down` SQL by
+hand (reverse order if several), then `DELETE FROM schema_migrations WHERE
+version = 'NNNNN'` for each — otherwise the runner still considers it applied and
+will not re-run it once the fix ships. Take an RDS snapshot first.
 
 ---
 
@@ -208,7 +267,7 @@ the rollback, in the reverse order it was applied.
 ## 8. Quick health checks
 
 ```bash
-# Service status / logs (dev shown; prod is the same minus -web)
+# Service status / logs (dev shown; prod runs the same three services)
 ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> \
   'sudo systemctl status ocpctl-api ocpctl-worker ocpctl-web'
 ssh -i ~/.ssh/<DEV_SSH_KEY> ubuntu@<DEV_HOST> 'sudo journalctl -u ocpctl-worker -f'

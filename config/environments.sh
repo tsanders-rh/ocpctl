@@ -58,7 +58,7 @@ load_environment() {
       DOMAIN="ocpctl.${OCPCTL_BASE_DOMAIN}"
       AUTOSCALE_TAG="ocpctl-worker"
       CONFIG_SUFFIX="production"
-      RDS_HOST="44.201.165.78"
+      RDS_HOST="ocpctl-db.czu6z8r7it71.us-east-1.rds.amazonaws.com"
       ;;
     *)
       echo "load_environment: unknown environment '$env' (expected dev|production)" >&2
