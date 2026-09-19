@@ -214,13 +214,27 @@ reaper to honor an instance tag instead of a spreadsheet cell, which requires a 
 to `misc-env-scripts` and that team's agreement — worth raising, because every team
 using this account has the same failure mode.
 
-For reference on the account's current posture: the reaper's `terminate_instance`
-wraps the API call in a `try`/`except` and only logs failures, so EC2 termination
-protection stops it without disrupting the rest of the purge. **Production
-(`i-033657f517e3be9c4`) has `DisableApiTermination = true`; dev
-(`i-0d7d3ef3ee0477078`) does not.** Production therefore has two independent
-defenses and dev has none beyond the spreadsheet mark above. Neither the dev nor the
-worker Terraform sets `disable_api_termination`, so a rebuild would not add it.
+**Second defense: EC2 termination protection.** The reaper's `terminate_instance`
+wraps the API call in a `try`/`except` and only logs failures, so termination
+protection blocks it without disrupting the rest of the purge for other teams. Both
+static hosts now have `DisableApiTermination = true` — production
+(`i-033657f517e3be9c4`), which always did, and dev (`i-0d7d3ef3ee0477078`), enabled
+2026-09-19 after the reaper destroyed its predecessor.
+
+Dev's is codified as `disable_api_termination = true` on `aws_instance.dev_server`
+in `terraform/dev/main.tf`, so a rebuild keeps it. Production's is set out-of-band
+and is **not** in Terraform — if production is ever rebuilt from config, it comes
+back unprotected.
+
+This makes the spreadsheet mark a backstop rather than the only thing standing
+between dev and deletion, but **do both** — protection stops the terminate call,
+while the mark keeps the instance off the deletion list and out of the weekly
+warning email.
+
+> **To intentionally destroy either host**, clear the flag first
+> (`aws ec2 modify-instance-attribute --instance-id <id> --no-disable-api-termination`,
+> or set the Terraform attribute to `false` and apply); otherwise the destroy fails
+> with `OperationNotPermitted`.
 
 > Unrelated but noticed while reading the Lambda: its configuration holds SMTP
 > credentials (`SMTP_USERNAME`/`SMTP_PASSWORD`, an IAM access key) in **plaintext
