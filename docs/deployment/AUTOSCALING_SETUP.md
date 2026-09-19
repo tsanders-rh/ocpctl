@@ -1,5 +1,23 @@
 # Autoscaling Worker Setup
 
+> ## ⚠️ LEGACY — this is not how production autoscale workers boot
+>
+> This document describes the older **manual-AMI** approach
+> (`scripts/user-data-worker.sh` + `scripts/bootstrap-worker.sh`). The current
+> `ocpctl-worker-asg` is **Terraform-managed**: instances boot from the launch
+> template rendered from
+> [`terraform/worker-autoscaling/user-data.sh`](../../terraform/worker-autoscaling/user-data.sh),
+> which re-downloads the binary, profiles, manifests and hook scripts from S3 and
+> regenerates the systemd unit on every boot.
+>
+> **Edits to the scripts described here do not reach production workers.** To
+> change worker boot behavior, edit the Terraform user-data and run
+> `terraform apply` in `terraform/worker-autoscaling/` — `deploy.sh` does not
+> apply Terraform. See
+> [DEVOPS.md §4](../development/DEVOPS.md) for the supported path.
+>
+> Kept for historical reference only.
+
 ## Problem Statement
 
 When AWS autoscaling launches new worker instances, they need to:

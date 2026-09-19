@@ -44,13 +44,19 @@ Installation and setup guides:
 
 ### 🚀 [deployment/](deployment/)
 
-Deployment and production guides:
+Deployment and production guides.
 
-- **[DEPLOYMENT_WEB.md](deployment/DEPLOYMENT_WEB.md)** - Web frontend deployment guide
-  - Production build configuration
-  - Systemd service setup
-  - Nginx reverse proxy
-  - SSL/TLS configuration
+> **Shipping a change to the existing dev/production environments is documented in
+> [development/DEVOPS.md](development/DEVOPS.md)**, not here. The guides in this
+> directory are mostly about standing up a *new* instance or configuring a cloud.
+
+- **[DEPLOYMENT_GUIDE.md](deployment/DEPLOYMENT_GUIDE.md)** - Full deployment procedures, dev→production promotion, maintenance windows
+- **[DEPLOYMENT_CHECKLIST.md](deployment/DEPLOYMENT_CHECKLIST.md)** - Verification checklist
+- **[DEPLOYMENT_WEB.md](deployment/DEPLOYMENT_WEB.md)** - Web frontend: build config, systemd, nginx, SSL/TLS
+- **[TERRAFORM.md](deployment/TERRAFORM.md)** - Infrastructure as Code
+- **[AWS_QUICKSTART.md](deployment/AWS_QUICKSTART.md)** / **[PREREQUISITES.md](deployment/PREREQUISITES.md)** - Standing up a new instance
+- Cloud setup: **[AZURE_SETUP.md](deployment/AZURE_SETUP.md)**, **[GCP_SETUP.md](deployment/GCP_SETUP.md)**, **[IBMCLOUD_SETUP.md](deployment/IBMCLOUD_SETUP.md)**
+- **[DEV_RUNBOOK.md](deployment/DEV_RUNBOOK.md)** - Dev environment runbook
 
 ### 🏗️ [architecture/](architecture/)
 
@@ -159,7 +165,8 @@ Issue tracking and technical documentation:
 ### Common Tasks
 
 - **Setting up development environment**: [../DEVELOPMENT.md](../DEVELOPMENT.md)
-- **Deploying to production**: [deployment/DEPLOYMENT_WEB.md](deployment/DEPLOYMENT_WEB.md)
+- **Deploying to dev or production**: [development/DEVOPS.md](development/DEVOPS.md) (backend + frontend, migrations, rollback)
+- **Taking over the deployment**: [operations/OWNERSHIP_HANDOVER.md](operations/OWNERSHIP_HANDOVER.md)
 - **Using cluster pools**: [user-guide/cluster-pools.md](user-guide/cluster-pools.md)
 - **Configuring disaster recovery**: [operations/DISASTER_RECOVERY.md](operations/DISASTER_RECOVERY.md)
 - **Installing OpenShift**: [setup/OPENSHIFT_INSTALL_SETUP.md](setup/OPENSHIFT_INSTALL_SETUP.md)

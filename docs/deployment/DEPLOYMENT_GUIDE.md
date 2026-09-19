@@ -409,19 +409,20 @@ vim config/worker.env.dev
 openssl rand -base64 32
 ```
 
-### 3. Update deploy-env.sh with Dev Server IP
+### 3. Point the deploy scripts at the dev server
 
-Edit `scripts/deploy-env.sh` and replace:
-```bash
-API_HOST="DEV_SERVER_IP"  # Line ~35
-WORKER_HOSTS=("DEV_SERVER_IP")  # Line ~36
-```
+Deployment targets are centralized in
+[`config/environments.sh`](../../config/environments.sh) — **do not edit the
+deploy scripts**, which source it via `load_environment dev|production`.
 
-With actual dev server IP:
+Update the `dev)` branch:
 ```bash
-API_HOST="10.0.1.100"  # Example
+API_HOST="10.0.1.100"                     # Example
 WORKER_HOSTS=("10.0.1.100")
 ```
+
+Machine-specific overrides (a different SSH user or key path) can be supplied via
+`OCPCTL_SSH_USER` / `OCPCTL_SSH_KEY` without touching the file at all.
 
 ### 4. Initial Dev Deployment
 

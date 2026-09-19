@@ -81,6 +81,14 @@ ocpctl is a production-ready platform that provides a standardized workflow for 
 
 ## Getting Started
 
+> **Already have ocpctl running and just need to ship a change?** This section is
+> for standing up a **new** instance. To deploy to existing dev/production
+> environments, go straight to **[DevOps &
+> Deployment](docs/development/DEVOPS.md)** — it covers `deploy-env.sh`,
+> `deploy-web.sh`, migrations, and rollback. Taking over someone else's
+> deployment? Start with **[Ownership &
+> Handover](docs/operations/OWNERSHIP_HANDOVER.md)**.
+
 **Deployment Path:**
 ```
 Prerequisites → Choose Method → Deploy → Verify
@@ -141,6 +149,12 @@ After deployment, use the verification checklist:
 
 ### 📚 Additional Resources
 
+**Running an existing deployment:**
+- **[DevOps & Deployment](docs/development/DEVOPS.md)** - How code ships to dev/production: the deploy scripts, the test gate, migrations, rollback, secrets
+- **[Ownership & Handover](docs/operations/OWNERSHIP_HANDOVER.md)** - Taking over the environments: untracked files, shared Terraform state, person-bound credentials, recurring chores
+- **[Deployment Scripts](scripts/README.md)** - Which script deploys what
+
+**Reference:**
 - **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Comprehensive deployment procedures and maintenance windows
 - **[Dev/Test Environment Plan](docs/deployment/DEV_TEST_ENVIRONMENT_PLAN.md)** - Multi-environment setup strategy
 - **[Cost Estimation Guide](docs/operations/COST_ESTIMATION.md)** - Detailed cost breakdown and optimization
