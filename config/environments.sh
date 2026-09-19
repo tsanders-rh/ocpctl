@@ -38,8 +38,8 @@ load_environment() {
   case "$env" in
     dev)
       ENV_NAME="dev"
-      API_HOST="44.214.230.178"
-      WORKER_HOSTS=("44.214.230.178")
+      API_HOST="3.229.198.9"
+      WORKER_HOSTS=("3.229.198.9")
       SSH_KEY="${OCPCTL_SSH_KEY:-$HOME/.ssh/ocpctl-dev-key}"
       S3_BUCKET="s3://ocpctl-dev-binaries"
       S3_ARTIFACTS_BUCKET="s3://ocpctl-dev-artifacts"

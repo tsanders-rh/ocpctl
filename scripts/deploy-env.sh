@@ -273,10 +273,17 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Create versioned directory
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
-    # Deploy installer scripts
+    # Deploy installer scripts.
+    #
+    # azure-login.sh and ibmcloud-login.sh are ExecStartPre hooks in the worker
+    # unit — without them on disk the service dies at 203/EXEC before it ever
+    # runs. Autoscale workers get these from S3 via the Terraform user-data;
+    # static hosts only get them here, so keep this list in sync with the unit.
     scp -i "$SSH_KEY" scripts/ensure-installers.sh $SSH_USER@$host:/tmp/ensure-installers.sh
     scp -i "$SSH_KEY" scripts/download-specific-version.sh $SSH_USER@$host:/tmp/download-specific-version.sh
-    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && sudo install -m 755 /tmp/download-specific-version.sh ${REMOTE_BASE}/scripts/download-specific-version.sh && rm /tmp/ensure-installers.sh /tmp/download-specific-version.sh"
+    scp -i "$SSH_KEY" scripts/azure-login.sh $SSH_USER@$host:/tmp/azure-login.sh
+    scp -i "$SSH_KEY" scripts/ibmcloud-login.sh $SSH_USER@$host:/tmp/ibmcloud-login.sh
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && sudo install -m 755 /tmp/download-specific-version.sh ${REMOTE_BASE}/scripts/download-specific-version.sh && sudo install -m 755 /tmp/azure-login.sh ${REMOTE_BASE}/scripts/azure-login.sh && sudo install -m 755 /tmp/ibmcloud-login.sh ${REMOTE_BASE}/scripts/ibmcloud-login.sh && rm /tmp/ensure-installers.sh /tmp/download-specific-version.sh /tmp/azure-login.sh /tmp/ibmcloud-login.sh"
 
     # Run ensure-installers to download/update all required CLIs (openshift-install, rosa, eksctl, etc.)
     echo -e "${YELLOW}  Running ensure-installers to install/update CLIs...${NC}"

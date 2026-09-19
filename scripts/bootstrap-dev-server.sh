@@ -56,18 +56,30 @@ else
   echo "✓ ocpctl user already exists"
 fi
 
-# Set up directory structure with correct ownership
-sudo mkdir -p /opt/ocpctl/{current,releases,profiles,addons,manifests,scripts}
+# Set up directory structure with correct ownership.
+#
+# NOTE: 'current' is deliberately NOT created here. deploy-env.sh publishes a
+# release with `ln -snf .../releases/<version> /opt/ocpctl/current`; if 'current'
+# already exists as a directory, ln drops the symlink *inside* it and the unit's
+# ExecStart=/opt/ocpctl/current/ocpctl-api resolves to nothing (203/EXEC).
+sudo mkdir -p /opt/ocpctl/{releases,profiles,addons,manifests,scripts}
 sudo mkdir -p /var/lib/ocpctl/{clusters,tmp}
 sudo mkdir -p /etc/ocpctl
+# The systemd units run with ProtectSystem=strict and
+# ReadWritePaths=/opt/ocpctl /var/lib/ocpctl /var/log/ocpctl. A ReadWritePaths
+# entry that does not exist is a hard start failure (226/NAMESPACE), so this
+# directory must exist before the services are started.
+sudo mkdir -p /var/log/ocpctl
 
 sudo chown -R ocpctl:ocpctl /opt/ocpctl
 sudo chown -R ocpctl:ocpctl /var/lib/ocpctl
 sudo chown -R ocpctl:ocpctl /etc/ocpctl
+sudo chown ocpctl:ocpctl /var/log/ocpctl
 
 sudo chmod 750 /opt/ocpctl
 sudo chmod 750 /var/lib/ocpctl
 sudo chmod 750 /etc/ocpctl
+sudo chmod 755 /var/log/ocpctl
 
 echo "✓ Directory structure created"
 ENDSSH
@@ -86,6 +98,18 @@ if ! command -v nginx &> /dev/null; then
   echo "✓ Installed nginx"
 else
   echo "✓ nginx already installed"
+fi
+
+# Node.js for the Next.js frontend. The ocpctl-web unit runs /usr/bin/npm start,
+# so without this the service fails at 203/EXEC and only the API comes up.
+# Ubuntu's own nodejs package is too old for Next.js 14 — use NodeSource 20.x,
+# matching production (v20.x).
+if ! command -v node &> /dev/null; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  echo "✓ Installed Node.js $(node --version)"
+else
+  echo "✓ Node.js already installed ($(node --version))"
 fi
 
 # Stop nginx for certbot standalone mode
@@ -140,23 +164,31 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
-    # Proxy to API server
-    location / {
+    # Routing mirrors production: the Next.js frontend owns '/', and the Go API
+    # is reached under '/api/'. web.env sets NEXT_PUBLIC_API_URL=/api/v1 so the
+    # browser calls back through this same vhost (no CORS, no hardcoded host).
+
+    # Swagger API documentation
+    location /swagger/ {
+        proxy_pass http://127.0.0.1:8080/swagger/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # API backend (Go)
+    location /api/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
 
-        # WebSocket support (for future use)
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        # Long-running operations (VPC deletion, cluster creation, ...)
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 360s;
+        proxy_read_timeout 360s;
     }
 
     # Health check endpoint (direct, no auth)
@@ -165,9 +197,35 @@ server {
         access_log off;
     }
 
+    location /ready {
+        proxy_pass http://127.0.0.1:8080/ready;
+        access_log off;
+    }
+
     # Version endpoint
     location /version {
         proxy_pass http://127.0.0.1:8080/version;
+        access_log off;
+    }
+
+    # Next.js frontend
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Static files (Next.js)
+    location /_next/static {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, immutable";
     }
 }
 EOF
@@ -192,6 +250,7 @@ echo ""
 echo -e "${YELLOW}Step 5: Deploying systemd service files...${NC}"
 scp -i "$SSH_KEY" deploy/systemd/ocpctl-api.service $SSH_USER@$DEV_SERVER_IP:/tmp/
 scp -i "$SSH_KEY" deploy/systemd/ocpctl-worker.service $SSH_USER@$DEV_SERVER_IP:/tmp/
+scp -i "$SSH_KEY" deploy/systemd/ocpctl-web.service $SSH_USER@$DEV_SERVER_IP:/tmp/
 
 ssh -i "$SSH_KEY" $SSH_USER@$DEV_SERVER_IP 'bash -s' << 'ENDSSH'
 set -e
@@ -199,19 +258,25 @@ set -e
 # Install systemd service files
 sudo install -m 644 /tmp/ocpctl-api.service /etc/systemd/system/
 sudo install -m 644 /tmp/ocpctl-worker.service /etc/systemd/system/
-sudo rm /tmp/ocpctl-api.service /tmp/ocpctl-worker.service
+sudo install -m 644 /tmp/ocpctl-web.service /etc/systemd/system/
+sudo rm /tmp/ocpctl-api.service /tmp/ocpctl-worker.service /tmp/ocpctl-web.service
 
 # Reload systemd
 sudo systemctl daemon-reload
 
-echo "✓ systemd service files installed"
+# Enable at boot. The units are started by deploy-env.sh/deploy-web.sh, which
+# only ever calls `systemctl start` — without this the whole stack stays down
+# after a reboot.
+sudo systemctl enable ocpctl-api ocpctl-worker ocpctl-web
+
+echo "✓ systemd service files installed and enabled"
 ENDSSH
 
 echo -e "${GREEN}✓ systemd services configured${NC}"
 echo ""
 
 echo -e "${YELLOW}Step 6: Setting up certbot auto-renewal...${NC}"
-ssh -i "$SSH_KEY" $SSH_USER@$DEV_SERVER_IP 'bash -s' << 'ENDSSH'
+ssh -i "$SSH_KEY" $SSH_USER@$DEV_SERVER_IP "bash -s" << ENDSSH
 set -e
 
 # Create renewal hook to reload nginx
@@ -221,6 +286,17 @@ systemctl reload nginx
 EOF
 
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
+# The cert above was issued with --standalone while nginx was stopped. nginx now
+# owns port 80, so leaving authenticator=standalone makes every future renewal
+# fail with "Could not bind TCP port 80". Switch renewal to the nginx
+# authenticator, which validates through the running server with no downtime.
+sudo apt-get install -y python3-certbot-nginx
+RENEWAL_CONF=/etc/letsencrypt/renewal/$DOMAIN.conf
+if sudo grep -q '^authenticator = standalone' "\$RENEWAL_CONF"; then
+  sudo sed -i 's|^authenticator = standalone|authenticator = nginx\ninstaller = nginx|' "\$RENEWAL_CONF"
+  echo "✓ Switched renewal authenticator to nginx"
+fi
 
 # Test renewal (dry run)
 sudo certbot renew --dry-run
@@ -246,8 +322,9 @@ echo ""
 echo "4. Initialize database:"
 echo "   ./scripts/init-dev-database.sh"
 echo ""
-echo "5. Deploy services:"
+echo "5. Deploy services (API + worker, then the web frontend):"
 echo "   ./scripts/deploy-env.sh dev"
+echo "   ./scripts/deploy-web.sh dev"
 echo ""
 echo "6. Access dev environment:"
 echo "   https://$DOMAIN"

@@ -37,6 +37,15 @@ echo -e "${YELLOW}Environment: $(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]
 REMOTE_BASE="/opt/ocpctl"
 WEB_DIR="web"
 
+# The EnvironmentFile is installed from here on every deploy, so fail early and
+# loudly rather than part-way through with the service already stopped.
+if [ ! -f "config/web.env.$CONFIG_SUFFIX" ]; then
+    echo -e "${RED}Error: config/web.env.$CONFIG_SUFFIX not found${NC}"
+    echo "Copy it from the handover bundle (./scripts/handover-bundle.sh pull)"
+    echo "or start from config/web.env.dev.template"
+    exit 1
+fi
+
 echo -e "${YELLOW}Domain: $DOMAIN${NC}"
 echo ""
 
@@ -144,9 +153,27 @@ echo ""
 # Deploy on server
 echo -e "${YELLOW}Deploying on server...${NC}"
 
-# Stop web service
+# Install the systemd unit and its EnvironmentFile before touching the service.
+#
+# This script used to assume both already existed, so a rebuilt host failed here
+# with "Unit ocpctl-web.service not loaded" and the frontend could only be
+# recovered by hand. Installing them every deploy keeps a fresh box and an
+# existing box on the same, version-controlled definition.
+echo -e "${YELLOW}  Installing systemd unit and web.env...${NC}"
+scp -i "$SSH_KEY" deploy/systemd/ocpctl-web.service "$SSH_USER@$SSH_HOST:/tmp/ocpctl-web.service"
+scp -i "$SSH_KEY" "config/web.env.$CONFIG_SUFFIX" "$SSH_USER@$SSH_HOST:/tmp/web.env"
+ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" "
+    sudo install -m 644 /tmp/ocpctl-web.service /etc/systemd/system/ocpctl-web.service
+    sudo install -m 600 -o ocpctl -g ocpctl /tmp/web.env /etc/ocpctl/web.env
+    rm /tmp/ocpctl-web.service /tmp/web.env
+    sudo systemctl daemon-reload
+    sudo systemctl enable ocpctl-web
+"
+echo -e "${GREEN}✓ Unit and configuration installed${NC}"
+
+# Stop web service (may not be running yet on a freshly bootstrapped host)
 echo -e "${YELLOW}  Stopping ocpctl-web service...${NC}"
-ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" 'sudo systemctl stop ocpctl-web'
+ssh -i "$SSH_KEY" "$SSH_USER@$SSH_HOST" 'sudo systemctl stop ocpctl-web || true'
 echo -e "${GREEN}✓ Service stopped${NC}"
 
 # Backup current deployment (excluding node_modules and build artifacts)

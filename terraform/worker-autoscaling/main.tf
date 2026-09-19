@@ -6,6 +6,17 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Shared remote state. Team-owned, not laptop-owned: this state backs the
+  # worker launch template, which is the only supported path for worker-boot
+  # fixes (see docs/development/DEVOPS.md section 4).
+  backend "s3" {
+    bucket         = "ocpctl-tfstate-346869059911"
+    key            = "worker-autoscaling/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "ocpctl-tf-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

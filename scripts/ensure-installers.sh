@@ -426,7 +426,31 @@ ensure_ibmcloud() {
         fi
     fi
 
+    reown_service_home_dotdir ".azure"
+
     return 0
+}
+
+# Re-own a root-created dotdir under the service HOME to the HOME owner.
+#
+# Exactly the .bluemix problem above, for the other CLIs: this script runs as
+# root with HOME pinned to /opt/ocpctl, so any CLI invoked here creates
+# root-owned state that the unprivileged ocpctl user cannot write later. az is
+# the one that bites — the next ExecStartPre (azure-login.sh) runs as ocpctl and
+# dies with "PermissionError: /opt/ocpctl/.azure/azureProfile.json", taking the
+# whole worker with it.
+reown_service_home_dotdir() {
+    local dotdir="$1"
+    [ "$(id -u)" -eq 0 ] || return 0
+    [ -d "${HOME}/${dotdir}" ] || return 0
+
+    local home_owner
+    home_owner="$(stat -c '%U:%G' "${HOME}" 2>/dev/null)"
+    if [ -n "${home_owner}" ] && [ "${home_owner}" != "root:root" ]; then
+        log "Re-owning ${HOME}/${dotdir} to ${home_owner} for the service user..."
+        chown -R "${home_owner}" "${HOME}/${dotdir}" || \
+            log "WARNING: Failed to chown ${HOME}/${dotdir} (non-fatal)"
+    fi
 }
 
 ensure_rosa() {

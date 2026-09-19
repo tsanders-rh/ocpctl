@@ -10,6 +10,17 @@ terraform {
       version = "~> 4.0"
     }
   }
+
+  # Shared remote state. Team-owned, not laptop-owned: this state holds the dev
+  # EC2/RDS/S3 stack and tls_private_key.dev_key (the dev SSH key is recoverable
+  # only from here -- see docs/operations/OWNERSHIP_HANDOVER.md).
+  backend "s3" {
+    bucket         = "ocpctl-tfstate-346869059911"
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "ocpctl-tf-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

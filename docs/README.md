@@ -108,6 +108,7 @@ User documentation and guides:
 
 Operations and maintenance guides:
 
+- **[OWNERSHIP_HANDOVER.md](operations/OWNERSHIP_HANDOVER.md)** - **NEW!** Taking over the dev/production deployments: the untracked files, the shared Terraform state, the person-bound credentials, and the offboarding checklist
 - **[CI_PULL_SECRET_REFRESH.md](operations/CI_PULL_SECRET_REFRESH.md)** - **NEW!** Runbook for rotating the registry.ci pull secret (required for nightly builds; expires ~monthly)
 - **[resource-tagging-operations.md](operations/resource-tagging-operations.md)** - Operational procedures for AWS resource tagging and monitoring
 - **[AWS_IAM_PERMISSIONS.md](operations/AWS_IAM_PERMISSIONS.md)** - IAM permissions required for OCPCTL operations

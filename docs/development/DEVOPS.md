@@ -45,13 +45,18 @@ needs the following on their own machine — none of it is in git:
 2. **The real env-config secret files** — `config/api.env.<env>` and
    `config/worker.env.<env>` (gitignored; they carry `DATABASE_URL`, `JWT_SECRET`,
    `OCM_TOKEN`, the OpenShift pull secret, and cloud creds). Only the
-   `*.template` versions are tracked; copy and fill them, or pull the real ones
-   from a teammate / `s3://<binaries-bucket>/config/`.
+   `*.template` versions are tracked. Fastest path is
+   `./scripts/handover-bundle.sh pull`, which fetches these plus the SSH keys,
+   `tfvars`, and `CLAUDE.local.md` from the team-owned encrypted bundle — see
+   [OWNERSHIP_HANDOVER.md](../operations/OWNERSHIP_HANDOVER.md).
 3. **AWS credentials** (`aws configure` / SSO) with access to the S3 binaries +
    artifacts buckets and the worker ASG, in the account that hosts the
    deployment.
 4. **Local tooling**: Go (build + `go test` gate), `aws` CLI, `jq`, `ssh`/`scp`,
    and Node.js 18+ for `scripts/deploy-web.sh`.
+5. **For Terraform changes only**: nothing extra. State is in a shared S3 backend
+   declared in each root module, so `terraform -chdir=terraform/<module> init` is
+   enough — never keep a local `terraform.tfstate`.
 
 With those in place, `./scripts/deploy-env.sh dev` (or `production`) is
 self-contained.
@@ -188,7 +193,12 @@ the rollback, in the reverse order it was applied.
   (incl. the Azure service principal). Autoscale workers pull it at boot, so
   **secrets never land in the launch template or tfstate.**
 - Local env config: `config/{api,worker,web}.env.{dev,production}` (git-ignored;
-  templates checked in as `*.template`).
+  templates checked in as `*.template`). A maintainer's full untracked set —
+  these plus SSH keys, `tfvars`, and `CLAUDE.local.md` — is kept in the
+  KMS-encrypted handover bundle (`scripts/handover-bundle.sh`); see
+  [OWNERSHIP_HANDOVER.md](../operations/OWNERSHIP_HANDOVER.md). **Changing a
+  worker credential means updating both the bundle and the S3 runtime copy** —
+  workers only read the latter.
 - **Never** commit secrets or paste them into logs/PRs. The pre-commit security
   check will flag obvious leaks, but it is not a substitute for care.
 - CI/nightly secrets live in GitHub Actions repo secrets (see NIGHTLY_PIPELINE.md).

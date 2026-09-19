@@ -1,5 +1,6 @@
 [Unit]
 Description=ocpctl Web Frontend
+Documentation=https://github.com/tsanders-rh/ocpctl
 After=network.target ocpctl-api.service
 
 [Service]
@@ -11,6 +12,9 @@ EnvironmentFile=/etc/ocpctl/web.env
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ocpctl-web
 
 [Install]
 WantedBy=multi-user.target
