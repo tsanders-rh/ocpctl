@@ -1,6 +1,6 @@
 name: baremetal-rhwa-lab-prerelease
 displayName: Emulated Bare Metal RHWA Lab (Agent-Based, Prerelease)
-description: Pre-release (RC) variant of the bare-metal RHWA lab for testing RHWA/ODF
+description: Pre-release (RC) variant of the bare-metal RHWA lab for testing RHWA
   on OpenShift 5.0 release candidates. Same nested-virt EC2 host + libvirt VMs +
   sushy-tools BMCs + Agent-Based Installer as the GA profile; ships an RC OCP
   version. RC builds are published on the standard client mirror, so the agent
@@ -86,16 +86,14 @@ platformConfig:
     apiVIP: 192.168.126.5
     ingressVIP: 192.168.126.6
     sushyPort: 8000
-    odf:
-      enabled: true
-      # ceph sizing/channel default in-code (3 OSDs, 200 GB usable, replica 3,
-      # squid, channel stable-<ocp-minor> resolved against the catalog).
+    # No ODF: this profile installs RHWA fencing only. The
+    # baremetal-rhwa-lab-with-odf-prerelease profile is the same cluster plus
+    # ODF-external.
 metadata:
   notes:
   - Pre-release RC variant; installs an OpenShift 5.0 release candidate via the agent installer
   - Provisions the full substrate (EC2 host, libvirt VMs, sushy-tools BMCs) natively via ocpctl
   - RHWA operators and fence_redfish fencing are configured natively during create (no separate addon)
-  - ODF channel is resolved from the catalog PackageManifest, so a pre-release ODF catalog is tolerated
   warnings:
   - RC only - EC/nightly builds are on a different mirror and are not yet supported on the agent path
   - Runs on a single large EC2 host; cost accrues whenever the host is running

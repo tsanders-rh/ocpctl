@@ -1,19 +1,22 @@
-name: baremetal-rhwa-lab
-displayName: Emulated Bare Metal RHWA Lab (Agent-Based)
-description: Compact 3-node agent-based cluster on a nested-virt EC2 host for RHWA/Medik8s
-  node remediation testing. Provisions the host, libvirt VMs and sushy-tools BMCs,
-  then installs via the Agent-Based Installer. Workers join post-install via a metal3
-  MachineSet so failure-injection scenarios have real BareMetalHosts to fence.
+name: baremetal-rhwa-lab-with-odf-prerelease
+displayName: Emulated Bare Metal RHWA Lab with ODF (Agent-Based, Prerelease)
+description: Pre-release (RC) variant of the bare-metal RHWA lab for testing RHWA/ODF
+  on OpenShift 5.0 release candidates. Same nested-virt EC2 host + libvirt VMs +
+  sushy-tools BMCs + Agent-Based Installer as the GA profile; ships an RC OCP
+  version. RC builds are published on the standard client mirror, so the agent
+  installer fetches them like a GA build. (EC/nightly builds live on a different
+  mirror and need release-image-override handling the agent path does not yet do.)
 platform: baremetal
 clusterType: openshift
-track: ga
+track: prerelease
 enabled: true
 openshiftVersions:
   allowlist:
-  - '4.20'
-  - '4.21'
-  - '4.22'
-  default: '4.22'
+  - 5.0.0-ec.5
+  - 5.0.0-rc.1
+  - 5.0.0-rc.2
+  - 5.0.0-0.nightly
+  default: 5.0.0-rc.2
 regions:
   allowlist:
   - us-east-1
@@ -60,7 +63,7 @@ tags:
   defaults:
     Purpose: rhwa-medik8s-testing
     ManagedBy: cluster-control-plane
-    Track: ga
+    Track: prerelease
     Category: node-remediation
   allowUserTags: true
 features:
@@ -68,9 +71,12 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  # List-price basis: 1x m8i.12xlarge host @~2.42/hr (us-east-1) + 1TB gp3
-  estimatedHourlyCost: 2.5
-  maxMonthlyCost: 1825
+  # List-price basis: 1x m8i.12xlarge host @~2.42/hr (us-east-1) + ~1.7TB gp3.
+  # ODF sizes the root disk at 1000 GB + osdCount*osdDiskGB (3 x 236 GB at the
+  # in-code defaults), so this profile carries ~700 GB more disk than the
+  # no-ODF baremetal-rhwa-lab-prerelease.
+  estimatedHourlyCost: 2.58
+  maxMonthlyCost: 1883
   budgetAlertThreshold: 0.8
 platformConfig:
   baremetal:
@@ -83,15 +89,18 @@ platformConfig:
     apiVIP: 192.168.126.5
     ingressVIP: 192.168.126.6
     sushyPort: 8000
-    # No ODF: this profile installs RHWA fencing only. The
-    # baremetal-rhwa-lab-with-odf profile is the same cluster plus ODF-external.
+    odf:
+      enabled: true
+      # ceph sizing/channel default in-code (3 OSDs, 200 GB usable, replica 3,
+      # squid, channel stable-<ocp-minor> resolved against the catalog).
 metadata:
   notes:
+  - Pre-release RC variant; installs an OpenShift 5.0 release candidate via the agent installer
   - Provisions the full substrate (EC2 host, libvirt VMs, sushy-tools BMCs) natively via ocpctl
-  - Agent-based install; the agent ISO is built exactly once (rebuilding orphans cluster certs)
-  - Control plane schedulable (3 nodes suitable for compact testing)
-  - Spare worker VMs are BMC-configured but not installed, giving the MachineSet scale-up capacity
   - RHWA operators and fence_redfish fencing are configured natively during create (no separate addon)
+  - ODF channel is resolved from the catalog PackageManifest, so a pre-release ODF catalog is tolerated
   warnings:
+  - ODF adds roughly 20 minutes to create and ~700 GB of host disk; use baremetal-rhwa-lab-prerelease if you do not need storage
+  - RC only - EC/nightly builds are on a different mirror and are not yet supported on the agent path
   - Runs on a single large EC2 host; cost accrues whenever the host is running
   - Hibernate/resume and pooling are not supported for bare-metal clusters

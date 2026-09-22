@@ -1,9 +1,10 @@
-name: baremetal-rhwa-lab
-displayName: Emulated Bare Metal RHWA Lab (Agent-Based)
+name: baremetal-rhwa-lab-with-odf
+displayName: Emulated Bare Metal RHWA Lab with ODF (Agent-Based)
 description: Compact 3-node agent-based cluster on a nested-virt EC2 host for RHWA/Medik8s
   node remediation testing. Provisions the host, libvirt VMs and sushy-tools BMCs,
   then installs via the Agent-Based Installer. Workers join post-install via a metal3
-  MachineSet so failure-injection scenarios have real BareMetalHosts to fence.
+  MachineSet so failure-injection scenarios have real BareMetalHosts to fence. Adds
+  ODF-external backed by a single-VM Ceph cluster on the same host.
 platform: baremetal
 clusterType: openshift
 track: ga
@@ -68,9 +69,12 @@ features:
   fipsMode: false
   privateCluster: false
 costControls:
-  # List-price basis: 1x m8i.12xlarge host @~2.42/hr (us-east-1) + 1TB gp3
-  estimatedHourlyCost: 2.5
-  maxMonthlyCost: 1825
+  # List-price basis: 1x m8i.12xlarge host @~2.42/hr (us-east-1) + ~1.7TB gp3.
+  # ODF sizes the root disk at 1000 GB + osdCount*osdDiskGB (3 x 236 GB at the
+  # in-code defaults), so this profile carries ~700 GB more disk than the
+  # no-ODF baremetal-rhwa-lab.
+  estimatedHourlyCost: 2.58
+  maxMonthlyCost: 1883
   budgetAlertThreshold: 0.8
 platformConfig:
   baremetal:
@@ -83,8 +87,10 @@ platformConfig:
     apiVIP: 192.168.126.5
     ingressVIP: 192.168.126.6
     sushyPort: 8000
-    # No ODF: this profile installs RHWA fencing only. The
-    # baremetal-rhwa-lab-with-odf profile is the same cluster plus ODF-external.
+    odf:
+      enabled: true
+      # ceph sizing/channel default in-code (3 OSDs, 200 GB usable, replica 3,
+      # squid, channel stable-<ocp-minor> resolved against the catalog).
 metadata:
   notes:
   - Provisions the full substrate (EC2 host, libvirt VMs, sushy-tools BMCs) natively via ocpctl
@@ -92,6 +98,8 @@ metadata:
   - Control plane schedulable (3 nodes suitable for compact testing)
   - Spare worker VMs are BMC-configured but not installed, giving the MachineSet scale-up capacity
   - RHWA operators and fence_redfish fencing are configured natively during create (no separate addon)
+  - ODF-external is backed by a single-VM Ceph cluster on the same host; the ODF channel is resolved from the catalog PackageManifest
   warnings:
+  - ODF adds roughly 20 minutes to create and ~700 GB of host disk; use baremetal-rhwa-lab if you do not need storage
   - Runs on a single large EC2 host; cost accrues whenever the host is running
   - Hibernate/resume and pooling are not supported for bare-metal clusters

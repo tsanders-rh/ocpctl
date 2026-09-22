@@ -50,6 +50,8 @@ func TestProfileMetadataWarningsSurvivesYAML(t *testing.T) {
 			"aws-rhwa-lab-prerelease",
 			"baremetal-rhwa-lab",
 			"baremetal-rhwa-lab-prerelease",
+			"baremetal-rhwa-lab-with-odf",
+			"baremetal-rhwa-lab-with-odf-prerelease",
 		}
 
 		byName := map[string]*profile.Profile{}
