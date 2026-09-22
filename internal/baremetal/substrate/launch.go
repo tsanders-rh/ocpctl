@@ -20,7 +20,14 @@ import (
 const instanceRunningTimeout = 10 * time.Minute
 
 var (
-	basePorts    = []int32{22, 6443, 443, 80}
+	// clusterPorts are the cluster's public endpoints reached through the host
+	// EIP: kube API (6443) and ingress (443/80). Like any public OpenShift
+	// cluster these are open to the internet by default so whoever requested the
+	// cluster can reach it.
+	clusterPorts = []int32{6443, 443, 80}
+	// sshPorts is administrative SSH to the underlying substrate host, kept
+	// restricted to the deployer's IP (or the profile's explicit allow-list).
+	sshPorts     = []int32{22}
 	hairpinPorts = []int32{6443, 443, 80}
 )
 
@@ -172,13 +179,31 @@ func ensureSecurityGroup(ctx context.Context, c clients, spec LaunchSpec, tags m
 	}
 	sgID := aws.ToString(sg.GroupId)
 
-	cidrs := spec.AllowCIDRs
-	if len(cidrs) == 0 {
-		cidrs = detectCallerCIDRs(c.get)
+	// Cluster endpoints are internet-accessible like any public OpenShift
+	// cluster. ocpctl runs on a server, so the old behavior of locking these to
+	// the deployer's IP left the client that requested the cluster (and everyone
+	// else) unable to reach the API and console. A profile may still pin them by
+	// setting AllowCIDRs.
+	clusterCIDRs := spec.AllowCIDRs
+	if len(clusterCIDRs) == 0 {
+		clusterCIDRs = []string{"0.0.0.0/0"}
 	}
-	for _, cidr := range cidrs {
-		if err := authorizePorts(ctx, c, sgID, basePorts, cidr); err != nil {
-			return "", fmt.Errorf("substrate authorize ingress: %w", err)
+	for _, cidr := range dedupeCIDRs(clusterCIDRs) {
+		if err := authorizePorts(ctx, c, sgID, clusterPorts, cidr); err != nil {
+			return "", fmt.Errorf("substrate authorize cluster ingress: %w", err)
+		}
+	}
+
+	// SSH to the substrate host is administrative access, not part of the
+	// cluster's public surface, so it stays restricted. The caller is always
+	// admitted: the worker that runs this is the one that SSHes in to provision
+	// the host (lifecycle.Create -> host.Provision), so dropping its IP would
+	// break the install outright. A profile allow-list therefore *adds*
+	// operator access on top rather than replacing it.
+	sshCIDRs := append(detectCallerCIDRs(c.get), spec.AllowCIDRs...)
+	for _, cidr := range dedupeCIDRs(sshCIDRs) {
+		if err := authorizePorts(ctx, c, sgID, sshPorts, cidr); err != nil {
+			return "", fmt.Errorf("substrate authorize ssh ingress: %w", err)
 		}
 	}
 	return sgID, nil
@@ -303,6 +328,23 @@ func aRecordChange(action r53types.ChangeAction, name, value string) r53types.Ch
 			ResourceRecords: []r53types.ResourceRecord{{Value: aws.String(value)}},
 		},
 	}
+}
+
+// dedupeCIDRs drops repeated entries, preserving order. Authorizing the same
+// CIDR twice on one port fails with InvalidPermission.Duplicate, which matters
+// once the caller's own IP is unioned with a profile allow-list that may
+// already contain it.
+func dedupeCIDRs(cidrs []string) []string {
+	seen := make(map[string]struct{}, len(cidrs))
+	out := make([]string, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		if _, dup := seen[cidr]; dup {
+			continue
+		}
+		seen[cidr] = struct{}{}
+		out = append(out, cidr)
+	}
+	return out
 }
 
 func authorizePorts(ctx context.Context, c clients, sgID string, ports []int32, cidr string) error {
