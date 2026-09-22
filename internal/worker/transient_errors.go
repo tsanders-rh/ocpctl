@@ -196,20 +196,91 @@ func DetectPermanentError(err error) (cause string, detail string) {
 // permanent failure: among the lines that contain pattern, it prefers the last
 // one tagged `level=error` (the installer's final fatal message), falling back to
 // the last line that merely mentions the pattern. Returns "" if no line matches.
+//
+// When the winning line is a fragment of a pretty-printed Azure error block, the
+// adjacent "message" value is appended. openshift-install renders Azure SDK
+// errors as multi-line JSON, one `level=error msg=` line per JSON line, so the
+// line carrying the marker holds only the code and the line below it holds the
+// detail an operator actually needs:
+//
+//	level=error msg=    "code": "ResourceGroupNotFound",
+//	level=error msg=    "message": "Resource group 'x' could not be found."
+//
+// Matching line-at-a-time therefore used to yield `"code": "ResourceGroupNotFound",`
+// and drop the resource-group name, so every such failure required digging
+// through the installer log by hand to learn which group was missing.
 func extractRelevantLine(raw, pattern string) string {
-	var match, errLevelMatch string
-	for _, ln := range strings.Split(raw, "\n") {
+	lines := strings.Split(raw, "\n")
+
+	lastIdx, errLevelIdx := -1, -1
+	for i, ln := range lines {
 		l := strings.ToLower(ln)
 		if !strings.Contains(l, pattern) {
 			continue
 		}
-		match = strings.TrimSpace(ln)
+		lastIdx = i
 		if strings.Contains(l, "level=error") {
-			errLevelMatch = strings.TrimSpace(ln)
+			errLevelIdx = i
 		}
 	}
-	if errLevelMatch != "" {
-		return errLevelMatch
+
+	idx := errLevelIdx
+	if idx < 0 {
+		idx = lastIdx
 	}
-	return match
+	if idx < 0 {
+		return ""
+	}
+
+	detail := strings.TrimSpace(lines[idx])
+	if msg := adjacentJSONMessage(lines, idx); msg != "" {
+		detail += " " + msg
+	}
+	return detail
+}
+
+// adjacentJSONMessage returns the `"message": "..."` value belonging to the JSON
+// error block that line idx is part of, or "" when idx is not such a fragment.
+//
+// Deliberately narrow: it fires only when the matched line looks like a JSON
+// "code" fragment that carries no message of its own, and only scans a few lines
+// ahead (Azure emits "code" before "message"), so it cannot pull an unrelated
+// message in from a different error block further down the log.
+func adjacentJSONMessage(lines []string, idx int) string {
+	const window = 6
+
+	matched := lines[idx]
+	if !strings.Contains(matched, `"code"`) || jsonStringField(matched, "message") != "" {
+		return ""
+	}
+
+	for i := idx + 1; i < len(lines) && i <= idx+window; i++ {
+		if v := jsonStringField(lines[i], "message"); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// jsonStringField pulls the value of a `"field": "value"` pair out of a single
+// line. It does not handle escaped quotes inside the value — an Azure message
+// containing one would be truncated at that point, which still leaves the useful
+// prefix (the resource name) intact.
+func jsonStringField(line, field string) string {
+	needle := `"` + field + `":`
+	i := strings.Index(line, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := line[i+len(needle):]
+	start := strings.Index(rest, `"`)
+	if start < 0 {
+		return ""
+	}
+	rest = rest[start+1:]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }
