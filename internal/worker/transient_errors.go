@@ -89,6 +89,23 @@ This job will automatically retry with exponential backoff.`,
 		Remediation: `AWS API is being throttled. This job will automatically retry in 5 minutes.`,
 		BackoffMins: 5,
 	},
+	{
+		Pattern:     "address already in use",
+		Description: "A local port an installer component needs is held by another install on this worker",
+		Remediation: `An installer component could not bind a local port because another cluster
+install on this worker already holds it.
+
+The known case is Azure: the installer runs cluster-api-provider-azure (CAPZ),
+which binds port 8443 with no way to change it, so two concurrent Azure installs
+on one worker collide. The losing CAPZ exits immediately and the install then
+fails reaching its validating webhook with "connection refused" — which looks
+like an Azure credential failure but is not one.
+
+The port frees itself when the other install's Cluster API phase finishes
+(roughly 22 minutes into a 42-minute install), so this job will retry in 25
+minutes. Azure installs on different workers do not conflict.`,
+		BackoffMins: 25,
+	},
 }
 
 // permanentErrorPattern describes a failure that a retry cannot fix.
