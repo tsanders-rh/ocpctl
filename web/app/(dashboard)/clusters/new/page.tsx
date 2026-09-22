@@ -29,7 +29,7 @@ import {
 import { ExecutionPanel } from "@/components/clusters/ClusterForm/ExecutionPanel";
 import { Platform, ClusterType, UserRole, type ValidationError } from "@/types/api";
 import { ApiError } from "@/lib/api/client";
-import { AlertCircle, Clock } from "lucide-react";
+import { AlertCircle, AlertTriangle, Clock } from "lucide-react";
 
 const DAYS_OF_WEEK = [
   "Sunday",
@@ -599,6 +599,21 @@ export default function NewClusterPage() {
                     <p className="text-sm text-muted-foreground">
                       {selectedProfile.description}
                     </p>
+                    {selectedProfile.metadata?.warnings && selectedProfile.metadata.warnings.length > 0 && (
+                      <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm space-y-1">
+                          <p className="font-medium text-amber-900 dark:text-amber-100">
+                            Before You Create This Cluster
+                          </p>
+                          <ul className="list-disc list-inside space-y-0.5 text-amber-800 dark:text-amber-200">
+                            {selectedProfile.metadata.warnings.map((warning, i) => (
+                              <li key={i}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
                     {(selectedProfile.cost_controls?.estimated_hourly_cost ?? 0) >= 4 && (
                       <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
                         <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />

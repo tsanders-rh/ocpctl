@@ -45,6 +45,7 @@ type ProfileResponse struct {
 	CostControls       *profile.CostControlsConfig     `json:"cost_controls,omitempty"`
 	PostDeployment     *profile.PostDeploymentConfig   `json:"post_deployment,omitempty"`
 	DefaultAddons      []profile.AddonReference        `json:"default_addons,omitempty"`
+	Metadata           *profile.MetadataConfig         `json:"metadata,omitempty"`
 	DeploymentMetrics  *types.ProfileDeploymentMetrics `json:"deployment_metrics,omitempty"`
 }
 
@@ -70,6 +71,7 @@ func toProfileResponse(p *profile.Profile) *ProfileResponse {
 		CostControls:       &p.CostControls,
 		PostDeployment:     p.PostDeployment,
 		DefaultAddons:      p.DefaultAddons,
+		Metadata:           p.Metadata,
 	}
 }
 

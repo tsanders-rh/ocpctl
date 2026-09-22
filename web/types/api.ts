@@ -450,6 +450,12 @@ export interface Profile {
   };
   post_deployment?: PostDeploymentConfig;
   default_addons?: AddonReference[];
+  metadata?: {
+    capabilities?: string[];
+    capacity?: Record<string, any>;
+    notes?: string[];
+    warnings?: string[];
+  };
   deployment_metrics?: ProfileDeploymentMetrics;
 }
 
