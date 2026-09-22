@@ -40,6 +40,15 @@ func TestLoader_LoadProfile(t *testing.T) {
 		assert.Equal(t, 168, prof.Lifecycle.MaxTTLHours)
 	})
 
+	for _, profileName := range []string{"aws-minimal-ga", "aws-standard-ga", "aws-sno-ga"} {
+		t.Run(profileName+" supports legacy OCP 4.12", func(t *testing.T) {
+			prof, err := loader.Load(profileName)
+			require.NoError(t, err)
+			require.NotNil(t, prof.OpenshiftVersions)
+			assert.Contains(t, prof.OpenshiftVersions.Allowlist, "4.12")
+		})
+	}
+
 	t.Run("ibmcloud-standard supports OCP 4.22 GA and defaults to it", func(t *testing.T) {
 		prof, err := loader.Load("ibmcloud-standard")
 		require.NoError(t, err)

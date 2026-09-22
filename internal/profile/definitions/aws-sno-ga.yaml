@@ -8,6 +8,7 @@ enabled: true
 credentialsMode: Auto
 openshiftVersions:
   allowlist:
+  - '4.12'
   - '4.14'
   - '4.16'
   - '4.18'

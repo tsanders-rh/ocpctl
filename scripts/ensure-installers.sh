@@ -6,10 +6,11 @@ set -e
 
 S3_BUCKET="s3://ocpctl-binaries"
 INSTALL_DIR="/usr/local/bin"
-REQUIRED_VERSIONS=("4.14" "4.16" "4.18" "4.19" "4.20" "4.21" "4.22")
+REQUIRED_VERSIONS=("4.12" "4.14" "4.16" "4.18" "4.19" "4.20" "4.21" "4.22")
 
 # Default patch versions to use if not specified
 declare -A DEFAULT_PATCHES
+DEFAULT_PATCHES["4.12"]="4.12.81"  # Final 4.12 EUS release; pin legacy installs to a concrete patch
 DEFAULT_PATCHES["4.14"]="4.14.38"  # Latest 4.14 release
 DEFAULT_PATCHES["4.16"]="4.16.24"  # Latest 4.16 release
 DEFAULT_PATCHES["4.18"]="4.18.35"
