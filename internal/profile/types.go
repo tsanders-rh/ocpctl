@@ -178,6 +178,15 @@ type BareMetalConfig struct {
 	SushyPort        int    `yaml:"sushyPort,omitempty" json:"sushy_port,omitempty"`
 	HostVolumeGB     int    `yaml:"hostVolumeGB,omitempty" json:"host_volume_gb,omitempty"` // host root disk in GB (holds all VM qcow2s); default 1000
 
+	// AllowCIDRs pins ingress to the substrate host's security group to an
+	// explicit allow-list (e.g. ["203.0.113.0/24"]), covering both the cluster
+	// endpoints (kube API, ingress) and administrative SSH. Empty leaves the
+	// substrate's own defaults in place — see ensureSecurityGroup in
+	// internal/baremetal/substrate. Entries are validated as CIDRs at profile
+	// load; a bad value would otherwise fail the launch after the security group
+	// already exists.
+	AllowCIDRs []string `yaml:"allowCIDRs,omitempty" json:"allow_cidrs,omitempty"`
+
 	ODF *ODFConfig `yaml:"odf,omitempty" json:"odf,omitempty"` // optional ODF-external + single-VM Ceph
 }
 

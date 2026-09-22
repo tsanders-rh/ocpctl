@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tsanders-rh/ocpctl/internal/profile"
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoader_LoadProfile(t *testing.T) {
@@ -235,5 +236,48 @@ func TestLoader_Validate(t *testing.T) {
 		err := loader.Validate(prof)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not in allowlist")
+	})
+}
+
+func TestLoader_BareMetalAllowCIDRs(t *testing.T) {
+	loader := profile.NewLoader("definitions")
+
+	t.Run("parses the allowCIDRs YAML key", func(t *testing.T) {
+		var bm profile.BareMetalConfig
+		require.NoError(t, yaml.Unmarshal([]byte("allowCIDRs:\n- 203.0.113.0/24\n- 198.51.100.7/32\n"), &bm))
+		assert.Equal(t, []string{"203.0.113.0/24", "198.51.100.7/32"}, bm.AllowCIDRs)
+	})
+
+	t.Run("shipped profile leaves ingress at the substrate default", func(t *testing.T) {
+		prof, err := loader.Load("baremetal-rhwa-lab")
+		require.NoError(t, err)
+		require.NotNil(t, prof.PlatformConfig.BareMetal)
+		assert.Empty(t, prof.PlatformConfig.BareMetal.AllowCIDRs)
+	})
+
+	t.Run("accepts valid CIDRs", func(t *testing.T) {
+		prof, err := loader.Load("baremetal-rhwa-lab")
+		require.NoError(t, err)
+		prof.PlatformConfig.BareMetal.AllowCIDRs = []string{"203.0.113.0/24", "2001:db8::/32"}
+		assert.NoError(t, loader.Validate(prof))
+	})
+
+	t.Run("rejects a bare IP and suggests the host prefix", func(t *testing.T) {
+		prof, err := loader.Load("baremetal-rhwa-lab")
+		require.NoError(t, err)
+		prof.PlatformConfig.BareMetal.AllowCIDRs = []string{"203.0.113.0/24", "198.51.100.7"}
+		err = loader.Validate(prof)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "allowCIDRs[1]")
+		assert.Contains(t, err.Error(), "use 198.51.100.7/32")
+	})
+
+	t.Run("rejects a malformed entry", func(t *testing.T) {
+		prof, err := loader.Load("baremetal-rhwa-lab")
+		require.NoError(t, err)
+		prof.PlatformConfig.BareMetal.AllowCIDRs = []string{"everyone"}
+		err = loader.Validate(prof)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a valid CIDR")
 	})
 }
