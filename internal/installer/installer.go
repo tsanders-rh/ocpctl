@@ -134,7 +134,7 @@ func NewInstaller() *Installer {
 }
 
 // NewInstallerForVersion creates a new installer instance for a specific OpenShift version
-// Supports versions 4.14-4.22 and 5.0+
+// Supports versions 4.12-4.22 and 5.0+
 func NewInstallerForVersion(version string) (*Installer, error) {
 	// Extract major.minor version (e.g., "4.20.3" -> "4.20")
 	majorMinor := extractMajorMinor(version)
@@ -143,7 +143,11 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}
 
 	// Validate supported version
-	supportedVersions := []string{"4.14", "4.16", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "5.0", "5.1"}
+	// 4.12 predates the CAPI-based installer, so it drives the older
+	// Terraform-based install flow. That path needs no special handling here (we
+	// only shell out), and it is why 4.12 cannot hit the CAPZ port collision that
+	// affects Azure on 4.16+.
+	supportedVersions := []string{"4.12", "4.14", "4.16", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "5.0", "5.1"}
 	isSupported := false
 	for _, v := range supportedVersions {
 		if majorMinor == v {
@@ -152,7 +156,7 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 		}
 	}
 	if !isSupported {
-		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.14, 4.16, 4.18-4.23, 5.0-5.1)", version)
+		return nil, fmt.Errorf("unsupported OpenShift version: %s (supported: 4.12, 4.14, 4.16, 4.18-4.23, 5.0-5.1)", version)
 	}
 
 	// Check for version-specific binaries in environment (exact version first, then major.minor)
