@@ -378,6 +378,95 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/orphaned-resources/auto-remediation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the console-configured auto-remediation settings (if any) and the janitor's last-cycle telemetry. Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Get orphaned-resource auto-remediation config and status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.AutoRemediationResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the janitor's auto-remediation mode (off|dryrun|on) and per-cycle deletion cap. The DB value overrides the worker's env bootstrap and takes effect within one janitor cycle (no restart). Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orphaned Resources"
+                ],
+                "summary": "Update orphaned-resource auto-remediation config",
+                "parameters": [
+                    {
+                        "description": "New settings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.UpdateAutoRemediationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.AutoRemediationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/admin/orphaned-resources/stats": {
             "get": {
                 "security": [
@@ -6407,6 +6496,20 @@ const docTemplate = `{
                 }
             }
         },
+        "api.AutoRemediationResponse": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "settings": {
+                    "$ref": "#/definitions/types.OrphanAutoRemediationSettings"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.OrphanAutoRemediationStatus"
+                }
+            }
+        },
         "api.AutoscaleMetricsSnapshot": {
             "type": "object",
             "properties": {
@@ -7249,6 +7352,9 @@ const docTemplate = `{
                 "lifecycle": {
                     "$ref": "#/definitions/profile.LifecycleConfig"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/profile.MetadataConfig"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -7391,6 +7497,17 @@ const docTemplate = `{
                     }
                 },
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.UpdateAutoRemediationRequest": {
+            "type": "object",
+            "properties": {
+                "maxPerCycle": {
+                    "type": "integer"
+                },
+                "mode": {
                     "type": "string"
                 }
             }
@@ -7801,6 +7918,10 @@ const docTemplate = `{
                 "host_instance_type": {
                     "type": "string"
                 },
+                "host_volume_gb": {
+                    "description": "host root disk in GB (holds all VM qcow2s); default 1000",
+                    "type": "integer"
+                },
                 "ingress_vip": {
                     "type": "string"
                 },
@@ -7809,6 +7930,14 @@ const docTemplate = `{
                 },
                 "node_disk_gb": {
                     "type": "integer"
+                },
+                "odf": {
+                    "description": "optional ODF-external + single-VM Ceph",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/profile.ODFConfig"
+                        }
+                    ]
                 },
                 "spare_worker_count": {
                     "type": "integer"
@@ -8194,6 +8323,13 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "warnings": {
+                    "description": "Warnings are caveats shown in the create flow before a user commits to a\ncluster: unsupported lifecycle operations, cost traps, and the like. Keep\neach entry short and actionable.\n\nNote for anyone adding a warning: the YAML key alone is not enough. It must\nalso survive to ProfileResponse, and YAML decoding is lenient — an unknown\nor untagged field is dropped with no error. See the tests in\nmetadata_warnings_test.go.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -8267,6 +8403,41 @@ const docTemplate = `{
                 },
                 "volume_type": {
                     "type": "string"
+                }
+            }
+        },
+        "profile.ODFConfig": {
+            "type": "object",
+            "properties": {
+                "ceph_osd_count": {
+                    "type": "integer"
+                },
+                "ceph_pool_usable_gb": {
+                    "type": "integer"
+                },
+                "ceph_ram_gb": {
+                    "type": "integer"
+                },
+                "ceph_release": {
+                    "type": "string"
+                },
+                "ceph_replica": {
+                    "type": "integer"
+                },
+                "ceph_root_disk_gb": {
+                    "type": "integer"
+                },
+                "ceph_vcpu": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "cloud_image_url": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },
@@ -10026,6 +10197,57 @@ const docTemplate = `{
                 },
                 "user": {
                     "$ref": "#/definitions/types.UserResponse"
+                }
+            }
+        },
+        "types.OrphanAutoRemediationSettings": {
+            "type": "object",
+            "properties": {
+                "maxPerCycle": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.OrphanAutoRemediationStatus": {
+            "type": "object",
+            "properties": {
+                "capped": {
+                    "type": "boolean"
+                },
+                "deleted": {
+                    "type": "integer"
+                },
+                "evaluated": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "lastRunAt": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "skippedUnowned": {
+                    "type": "integer"
+                },
+                "skippedUnsafe": {
+                    "type": "integer"
+                },
+                "totalActive": {
+                    "description": "TotalActive is the full count of ACTIVE orphaned resources at cycle start.\nEach cycle evaluates only the most-recently-detected slice (see Truncated),\nso this exposes the real backlog rather than just what was evaluated.",
+                    "type": "integer"
+                },
+                "truncated": {
+                    "description": "Truncated is true when TotalActive exceeded the per-cycle listing limit, so\nEvaluated/WouldDelete reflect only the evaluated slice, not the full backlog.",
+                    "type": "boolean"
+                },
+                "wouldDelete": {
+                    "type": "integer"
                 }
             }
         },

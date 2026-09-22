@@ -408,15 +408,14 @@ type MetadataConfig struct {
 	Capabilities []string               `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 	Capacity     map[string]interface{} `yaml:"capacity,omitempty" json:"capacity,omitempty"`
 	Notes        []string               `yaml:"notes,omitempty" json:"notes,omitempty"`
-	// Warnings are caveats a user must see *before* creating a cluster from this
-	// profile — unsupported lifecycle operations, cost traps, and the like. They
-	// are surfaced in the create flow next to the profile picker, so keep each
-	// entry short and actionable.
+	// Warnings are caveats shown in the create flow before a user commits to a
+	// cluster: unsupported lifecycle operations, cost traps, and the like. Keep
+	// each entry short and actionable.
 	//
-	// This field exists because four profiles already shipped a metadata.warnings
-	// block that silently went nowhere: YAML decoding is lenient, so an unknown
-	// key is dropped without error. Adding a warning to a profile is therefore
-	// not enough on its own — it also has to survive to ProfileResponse.
+	// Note for anyone adding a warning: the YAML key alone is not enough. It must
+	// also survive to ProfileResponse, and YAML decoding is lenient — an unknown
+	// or untagged field is dropped with no error. See the tests in
+	// metadata_warnings_test.go.
 	Warnings []string `yaml:"warnings,omitempty" json:"warnings,omitempty"`
 }
 
