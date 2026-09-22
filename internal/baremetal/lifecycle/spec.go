@@ -136,6 +136,7 @@ func buildLaunchSpec(in Input) substrate.LaunchSpec {
 		AMIOwner:      in.BareMetal.HostAMIOwner,
 		FedoraRelease: in.BareMetal.FedoraRelease,
 		HostVolumeGB:  hostVolumeGB(in),
+		AllowCIDRs:    in.BareMetal.AllowCIDRs,
 		CreatedAt:     in.CreatedAt,
 	}
 }

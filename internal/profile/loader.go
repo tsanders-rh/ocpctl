@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,7 +196,32 @@ func (l *Loader) Validate(profile *Profile) error {
 		}
 	}
 
+	// 8. Bare-metal ingress allow-list entries must be CIDRs. AWS rejects
+	// anything else, and it would surface mid-launch as an
+	// AuthorizeSecurityGroupIngress failure once the security group already
+	// exists, so catch it at load.
+	if bm := profile.PlatformConfig.BareMetal; bm != nil {
+		for i, cidr := range bm.AllowCIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				if ip := net.ParseIP(cidr); ip != nil {
+					return fmt.Errorf("baremetal allowCIDRs[%d] %q is a bare IP, not a CIDR (use %s/%d)",
+						i, cidr, cidr, hostPrefixLen(ip))
+				}
+				return fmt.Errorf("baremetal allowCIDRs[%d] %q is not a valid CIDR", i, cidr)
+			}
+		}
+	}
+
 	return nil
+}
+
+// hostPrefixLen returns the single-host prefix length for an IP: /32 for IPv4,
+// /128 for IPv6.
+func hostPrefixLen(ip net.IP) int {
+	if ip.To4() != nil {
+		return 32
+	}
+	return 128
 }
 
 // contains checks if a slice contains a string

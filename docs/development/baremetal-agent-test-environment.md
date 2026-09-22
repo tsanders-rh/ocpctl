@@ -123,7 +123,9 @@ Route53) → `host.Provision` (libvirt/sushy/haproxy + domains) → `agent.Insta
 - **AWS**: everything is tagged `ManagedBy=ocpctl` + `ClusterName=<name>`; find the
   host, SG, EIP, keypair, and Route53 records by those tags.
 - **On the EC2 host** (ssh in as `fedora@<eip>` with the ephemeral key — grab it
-  from the worker if you need it, or add your own to `AllowCIDRs`/SG): `sudo virsh
+  from the worker if you need it; SSH is only open to the IP that launched the
+  host, so add your own CIDR via the profile's
+  `platformConfig.baremetal.allowCIDRs` or edit the SG): `sudo virsh
   list --all`, `sudo virsh net-dhcp-leases rhwa`, and the installer log under
   `/opt/ocpctl-agent/work/.openshift_install.log`.
 - **Cluster**: on the host, `/opt/ocpctl-agent/bin/oc

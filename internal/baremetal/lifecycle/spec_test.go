@@ -70,6 +70,13 @@ func TestBuildLaunchSpec(t *testing.T) {
 	assert.Equal(t, "m8i.12xlarge", s.InstanceType)
 	assert.Equal(t, "125523088429", s.AMIOwner)
 	assert.Equal(t, 1000, s.HostVolumeGB)
+	assert.Empty(t, s.AllowCIDRs, "no profile allow-list leaves the substrate ingress defaults")
+}
+
+func TestBuildLaunchSpec_AllowCIDRs(t *testing.T) {
+	in := testInput()
+	in.BareMetal.AllowCIDRs = []string{"203.0.113.0/24", "198.51.100.7/32"}
+	assert.Equal(t, []string{"203.0.113.0/24", "198.51.100.7/32"}, buildLaunchSpec(in).AllowCIDRs)
 }
 
 func TestBuildTopology(t *testing.T) {
