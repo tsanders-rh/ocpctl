@@ -199,6 +199,24 @@ type Worker struct {
 	jobWg      sync.WaitGroup            // Tracks running job goroutines for graceful shutdown
 	activeJobs map[string]*ActiveJobInfo // Tracks currently running jobs
 	jobsMu     sync.RWMutex              // Protects activeJobs map
+
+	// slots enforces MaxConcurrent as a real cap on jobs in flight. One token is
+	// taken in poll() before a job goroutine is spawned and returned when that
+	// goroutine ends.
+	//
+	// Without this, MaxConcurrent was only the LIMIT on the pending-jobs query:
+	// GetPending returns rows in PENDING/RETRYING, running jobs are not in that
+	// set, and poll() spawned a goroutine per row every PollInterval with no
+	// knowledge of what was already running. A busy queue therefore admitted
+	// MaxConcurrent *additional* jobs every 10 seconds — 6 concurrent installs
+	// were observed on a 2 vCPU host documented as running at most 3.
+	slots chan struct{}
+
+	// lastSlotLog and lastGateLog throttle the "nothing claimed" log lines, which
+	// would otherwise repeat every PollInterval for as long as a queue persists.
+	// Only ever touched from the single poll goroutine.
+	lastSlotLog time.Time
+	lastGateLog time.Time
 }
 
 // NewWorker creates a new worker instance
@@ -226,6 +244,43 @@ func NewWorker(config *Config, st *store.Store, profileRegistry *profile.Registr
 		metrics:    metricsPublisher,
 		asgName:    asgName,
 		activeJobs: make(map[string]*ActiveJobInfo),
+		slots:      make(chan struct{}, slotCapacity(config.MaxConcurrent)),
+	}
+}
+
+// slotCapacity clamps a configured MaxConcurrent to a usable slot count. A
+// zero or negative value would otherwise create a zero-capacity channel, which
+// no job could ever claim, wedging the worker instead of limiting it.
+func slotCapacity(maxConcurrent int) int {
+	if maxConcurrent < 1 {
+		return 1
+	}
+	return maxConcurrent
+}
+
+// freeSlots returns how many more jobs this worker may run concurrently.
+func (w *Worker) freeSlots() int {
+	return cap(w.slots) - len(w.slots)
+}
+
+// tryClaimSlot takes a concurrency slot without blocking, reporting whether one
+// was available.
+func (w *Worker) tryClaimSlot() bool {
+	select {
+	case w.slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// releaseSlot returns a concurrency slot taken by tryClaimSlot.
+func (w *Worker) releaseSlot() {
+	select {
+	case <-w.slots:
+	default:
+		// Unreachable unless a slot is released twice; never block a finishing job.
+		log.Printf("Warning: releaseSlot called with no slot held")
 	}
 }
 
@@ -440,8 +495,24 @@ func (w *Worker) poll() {
 		}
 	}
 
+	// Only claim what this worker can actually run. Anything left in PENDING is
+	// picked up by a later poll or by another worker, and still counts towards the
+	// PendingJobs metric that drives ASG scale-out.
+	//
+	// This runs after the metric publish above deliberately: a saturated worker
+	// must keep reporting queue depth, otherwise the fleet stops scaling exactly
+	// when it most needs to.
+	free := w.freeSlots()
+	if free <= 0 {
+		if time.Since(w.lastSlotLog) > time.Minute {
+			log.Printf("All %d job slots busy; not claiming new jobs (%d pending in queue)", cap(w.slots), totalPending)
+			w.lastSlotLog = time.Now()
+		}
+		return
+	}
+
 	// Get pending jobs for this worker to process
-	jobs, err := w.store.Jobs.GetPending(ctx, w.config.MaxConcurrent)
+	jobs, err := w.store.Jobs.GetPending(ctx, free)
 	if err != nil {
 		log.Printf("Error fetching pending jobs: %v", err)
 		return
@@ -500,6 +571,31 @@ func (w *Worker) poll() {
 			}
 		}
 
+		// An Azure IPI install needs exclusive use of CAPZ's metrics port on this
+		// host (see azure_install_gate.go). Claim the gate before the slot so a
+		// blocked Azure job does not occupy capacity another platform could use.
+		gateHeld := false
+		if needsAzureInstallGate(job, cluster) {
+			if !azureGate.tryAcquire(job.ID) {
+				if time.Since(w.lastGateLog) > time.Minute {
+					holder, held := azureGate.heldBy()
+					log.Printf("Leaving Azure create job %s (cluster %s) in PENDING: job %s has been running an Azure install on this worker for %s and holds port %d",
+						job.ID, cluster.Name, holder, held.Round(time.Second), capzMetricsPort)
+					w.lastGateLog = time.Now()
+				}
+				continue
+			}
+			gateHeld = true
+		}
+
+		if !w.tryClaimSlot() {
+			if gateHeld {
+				azureGate.release(job.ID)
+			}
+			// Slots filled up while this batch was being prepared.
+			return
+		}
+
 		// Track this job goroutine
 		w.jobWg.Add(1)
 		go w.processJob(w.ctx, job, cluster)
@@ -512,6 +608,14 @@ func (w *Worker) poll() {
 func (w *Worker) processJob(ctx context.Context, job *types.Job, cluster *types.Cluster) {
 	// Signal WaitGroup when job completes (for graceful shutdown)
 	defer w.jobWg.Done()
+
+	// Return the concurrency slot claimed for this job in poll().
+	defer w.releaseSlot()
+
+	// Release the Azure install gate if this job holds it. A no-op for every
+	// other job, and for an Azure install whose CAPI phase already released it
+	// early (see releaseAzureGateOnCAPIShutdown).
+	defer azureGate.release(job.ID)
 
 	// Unregister job when it completes (success or failure)
 	defer w.unregisterJob(job.ID)

@@ -257,6 +257,17 @@ ocpctl/
 - Processes jobs concurrently (3 max). **Not runtime-configurable**: `MaxConcurrent`
   is a compile-time default in `internal/worker/worker.go`, and `cmd/worker/main.go`
   overrides only `WorkDir` — no env var changes it. Scale the ASG instead.
+  Enforced by the `slots` semaphore claimed in `poll()` and released when a job
+  goroutine ends. **Before 2026-09-22 it was not a cap at all** — `GetPending`
+  only returns PENDING/RETRYING rows, so running jobs were invisible to it and
+  every poll admitted up to 3 *more* jobs (6 concurrent installs were observed
+  on the t3.large). If you are reading old logs, expect concurrency above 3.
+- **At most one Azure OpenShift IPI install per worker host.** `openshift-install`
+  gives CAPZ no `--metrics-bind-addr`, so it binds the controller-runtime default
+  `:8443`; a second concurrent Azure install loses the bind and its CAPZ exits 1,
+  which surfaces as a misleading `azureclusteridentity` webhook "connection
+  refused". `internal/worker/azure_install_gate.go` serializes them per host;
+  Azure parallelism therefore equals worker count, not workers × MaxConcurrent.
 - Streams logs to database
 - Graceful shutdown: 1 hour timeout
 
@@ -759,6 +770,45 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-09-22**: Azure Creates Collided on CAPZ's Port `:8443` (#189) + `MaxConcurrent` Was Never a Cap
+- **Symptom**: Azure IPI creates failed ~3 seconds in with `failed calling webhook
+  "validation.azureclusteridentity..."` → `connection refused`, preceded by
+  `process cluster-api-provider-azure exited with error: exit status 1`. Reads
+  like an Azure service-principal problem; **is not one**.
+- **Root cause**: the installer randomizes the local CAPI providers' health and
+  webhook ports and explicitly disables metrics for AWS (`--metrics-bind-addr=0`)
+  and CAPI core (`--diagnostics-address=0`), but passes **no metrics flag to the
+  Azure provider**, so CAPZ binds controller-runtime's default `:8443`. A second
+  Azure install on the same host loses the bind, and controller-runtime treats a
+  failed metrics listener as fatal, so the manager exits 1 and takes its
+  validating webhook with it. Real error, buried in the installer log:
+  `failed to start metrics server: ... listen tcp :8443: bind: address already in use`.
+- The port is held for the life of the local CAPI system — from `Started local
+  control plane with envtest` until `Local Cluster API system has completed
+  operations`, ~22 min of a ~42 min install (it stays up until the bootstrap
+  machine is deleted).
+- **Amplifier**: `MaxConcurrent` was only the `LIMIT` on the pending-jobs query,
+  not a cap on jobs in flight — 6 concurrent installs on one t3.large. That also
+  explains why the static host ran everything and ASG workers starved: it drained
+  the queue every 10s.
+- **Fixes**: `slots` semaphore in `poll()` makes `MaxConcurrent` real; per-host
+  Azure gate (`internal/worker/azure_install_gate.go`) leaves extra Azure creates
+  in PENDING (no attempt burned, no partial infra, still counted by the
+  `PendingJobs` metric that drives ASG scale-out); gate released early on the CAPI
+  shutdown marker (~22 min, not ~42); pre-install probe of `:8443` catches holders
+  the gate can't see (a hand-started `openshift-install`); `address already in use`
+  classified transient with a 25-min backoff.
+- **Consequence to remember**: Azure throughput is now **one install per worker
+  host**, so Azure parallelism = worker count (2 today: static + 1 ASG, `max_size`
+  10). Removing that ceiling needs the upstream one-liner giving CAPZ
+  `--metrics-bind-addr=0`, or per-install network namespaces.
+- **Diagnosing recurrences**: the DB hides this. `deployment_logs` are deleted
+  between retries so only the last attempt survives, and the permanent-error
+  classifier overwrites `error_message` with whatever pattern matched — clusters
+  that died on the port were recorded as `ResourceGroupNotFound` and "Azure
+  capacity restrictions". Use the worker journal:
+  `journalctl -u ocpctl-worker | grep "address already in use"`.
+
 **2026-09-05**: Dev and Prod Share One AWS Account — Orphan-Count Divergence + `on`-Mode Interlock
 - **Dev and prod both scan the SAME AWS account (`346869059911`)** — dev was
   provisioned with prod's cloud creds. This is why the two environments report
@@ -903,4 +953,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-09-05 (Documented dev/prod shared AWS account + orphan-count divergence; added ORPHAN_AUTO_DELETE_ALLOW_ON `on`-mode interlock)
+**Last Updated**: 2026-09-22 (Azure CAPZ `:8443` collision (#189) + `MaxConcurrent` is now a real concurrency cap)

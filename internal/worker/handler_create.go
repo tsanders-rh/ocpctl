@@ -351,6 +351,21 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 		}
 	}
 
+	// Azure IPI: the local Cluster API system the installer starts includes CAPZ,
+	// which binds a fixed port this host can only lend to one install at a time.
+	// poll() already gated this job on that port, but verify it is genuinely free
+	// (a manually started openshift-install is invisible to the gate) and hand the
+	// gate on as soon as the installer reports the CAPI phase is over, rather than
+	// holding it for the remaining bootstrap and operator rollout.
+	if cluster.Platform == types.PlatformAzure && cluster.ClusterType == types.ClusterTypeOpenShift {
+		if !capzMetricsPortFree() {
+			return errCAPZMetricsPortBusy(cluster.Name)
+		}
+		// Anchor marker matching past anything a previous attempt appended to this
+		// work directory's log.
+		go releaseAzureGateOnCAPIShutdown(streamCtx, logPath, job.ID, installLogSize(logPath))
+	}
+
 	// Run openshift-install create cluster
 	log.Printf("Running openshift-install create cluster for %s (version %s)", cluster.Name, cluster.Version)
 

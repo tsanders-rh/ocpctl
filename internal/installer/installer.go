@@ -143,6 +143,10 @@ func NewInstallerForVersion(version string) (*Installer, error) {
 	}
 
 	// Validate supported version
+	// 4.12 predates the CAPI-based installer, so it drives the older
+	// Terraform-based install flow. That path needs no special handling here (we
+	// only shell out), and it is why 4.12 cannot hit the CAPZ port collision that
+	// affects Azure on 4.16+.
 	supportedVersions := []string{"4.12", "4.14", "4.16", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "5.0", "5.1"}
 	isSupported := false
 	for _, v := range supportedVersions {
