@@ -150,6 +150,18 @@ func (h *CreateHandler) handleOpenShiftCreate(ctx context.Context, job *types.Jo
 			}
 		}
 	} else if cluster.Platform == types.PlatformAzure {
+		// Base-domain DNS pre-flight FIRST: it is a pair of metadata reads, while
+		// the capacity probe below provisions and tears down real VMs over several
+		// minutes. If the public DNS zone is missing the install is doomed either
+		// way, so spend nothing discovering that (#186).
+		azureBaseDomain := ""
+		if cluster.BaseDomain != nil {
+			azureBaseDomain = *cluster.BaseDomain
+		}
+		if err := ValidateAzureBaseDomainZone(ctx, prof, azureBaseDomain); err != nil {
+			return types.NewPreflightCheckError("%v", err)
+		}
+
 		// Azure capacity pre-flight (real allocation probe). Azure zones have
 		// independent, fluctuating capacity that no API reliably predicts, so we
 		// probe candidates from the profile's capacityFallback matrix with real

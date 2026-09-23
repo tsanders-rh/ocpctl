@@ -2,6 +2,8 @@ package profile
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/tsanders-rh/ocpctl/pkg/types"
@@ -85,6 +87,31 @@ func (r *Registry) ListAll() []*Profile {
 	}
 
 	return profiles
+}
+
+// AzureBaseDomainResourceGroups returns the distinct Azure resource groups that
+// profiles expect their public base-domain DNS zone to live in, sorted for
+// stable logging.
+//
+// Disabled profiles are included: their DNS resource group is shared
+// infrastructure that outlives any single profile's enablement, and protecting
+// one resource group too many is free.
+func (r *Registry) AzureBaseDomainResourceGroups() []string {
+	seen := make(map[string]bool)
+	var groups []string
+	for _, prof := range r.ListAll() {
+		if prof.PlatformConfig.Azure == nil {
+			continue
+		}
+		rg := strings.TrimSpace(prof.PlatformConfig.Azure.BaseDomainResourceGroup)
+		if rg == "" || seen[rg] {
+			continue
+		}
+		seen[rg] = true
+		groups = append(groups, rg)
+	}
+	sort.Strings(groups)
+	return groups
 }
 
 // ListByPlatform returns all enabled profiles for a platform
