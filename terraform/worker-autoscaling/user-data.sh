@@ -81,13 +81,27 @@ aws s3 sync s3://ocpctl-binaries/manifests/ /opt/ocpctl/manifests/
 chmod -R 755 /opt/ocpctl/manifests
 chown -R ocpctl:ocpctl /opt/ocpctl/manifests
 
-# Download CLI login hooks + installer script referenced by the worker service.
+# Sync the WHOLE scripts directory, not a hand-maintained list of files.
+#
+# This used to cp four named scripts, which quietly left autoscale workers
+# without any OTHER script the worker shells out to at runtime — and the worker
+# shells out to several:
+#   • download-specific-version.sh   internal/installer/installer.go
+#   • configure-efs-storage.sh       internal/worker/handler_configure_efs.go
+#   • configure-shared-migration-storage.sh
+#                                    internal/worker/handler_provision_shared_storage.go
+# Any OpenShift version not pre-baked by ensure-installers.sh needs the first
+# one, so 5.0.0-ec.5 (and every nightly/specific patch) failed on these workers
+# with "download-specific-version.sh script not found" while succeeding on the
+# static host, which gets the full directory from deploy.sh.
+#
+# An enumerated list is the bug: it silently omits whatever nobody remembered to
+# add. Syncing the directory — the same pattern used for profiles/ and
+# manifests/ above — makes ASG workers equivalent to static hosts by default and
+# keeps new scripts working without another launch-template revision.
 echo "Downloading worker scripts from S3"
 mkdir -p /opt/ocpctl/scripts
-aws s3 cp s3://ocpctl-binaries/scripts/ensure-installers.sh /opt/ocpctl/scripts/ensure-installers.sh
-aws s3 cp s3://ocpctl-binaries/scripts/azure-login.sh       /opt/ocpctl/scripts/azure-login.sh
-aws s3 cp s3://ocpctl-binaries/scripts/ibmcloud-login.sh    /opt/ocpctl/scripts/ibmcloud-login.sh
-aws s3 cp s3://ocpctl-binaries/scripts/gcp-login.sh         /opt/ocpctl/scripts/gcp-login.sh
+aws s3 sync s3://ocpctl-binaries/scripts/ /opt/ocpctl/scripts/
 chmod 755 /opt/ocpctl/scripts/*.sh
 chown -R ocpctl:ocpctl /opt/ocpctl/scripts
 
@@ -164,6 +178,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=ocpctl
+# Match the static hosts' unit. Some handlers shell out to RELATIVE paths
+# (e.g. "scripts/configure-efs-storage.sh" in handler_configure_efs.go), which
+# systemd would otherwise resolve against its default CWD of "/" — so EFS and
+# shared-migration-storage provisioning looked for /scripts/... and failed only
+# on autoscale workers.
+WorkingDirectory=/opt/ocpctl
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=/opt/ocpctl"
 EnvironmentFile=/etc/ocpctl/worker.env
