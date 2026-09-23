@@ -44,6 +44,21 @@ type Config struct {
 	// safety gate's min-detections threshold. 0 disables the sweep. Env override:
 	// ORPHAN_STALE_RESOLVE_HOURS (default 2h ~= 8 detection cycles).
 	OrphanStaleResolveAge time.Duration
+
+	// Azure reaper keep-alive (see azure_reaper_keepalive.go). A
+	// management-group-scope janitor we don't own deletes Azure resource groups
+	// ~12h after stamping them `openshift_creationDate`, which has repeatedly
+	// destroyed the shared base-domain DNS zone (#186) and reaps live clusters
+	// well inside their ocpctl TTL. Refreshing that tag resets its clock.
+	// Enabled by default; a harmless no-op wherever `az` is unavailable.
+	AzureReaperKeepalive             bool
+	AzureReaperKeepaliveRefreshAfter time.Duration
+
+	// AzureBaseDomainResourceGroups are the shared DNS resource groups the Azure
+	// profiles' baseDomainResourceGroup point at. They carry no ocpctl tags, so
+	// they can't be discovered from the cloud and are injected by the caller
+	// (cmd/worker/main.go, from the profile registry).
+	AzureBaseDomainResourceGroups []string
 }
 
 // DefaultConfig returns default janitor configuration
@@ -64,6 +79,9 @@ func DefaultConfig() *Config {
 		OrphanAutoDeleteMaxPerCycle: orphan.AutoDeleteMaxPerCycleFromEnv(),
 		OrphanSafetyConfig:          orphan.ConfigFromEnv(),
 		OrphanStaleResolveAge:       orphanStaleResolveAgeFromEnv(),
+
+		AzureReaperKeepalive:             azureKeepaliveEnabledFromEnv(),
+		AzureReaperKeepaliveRefreshAfter: azureKeepaliveRefreshAfterFromEnv(),
 	}
 }
 
@@ -87,6 +105,11 @@ type Janitor struct {
 	clusterLookup orphan.ClusterLookup
 	vpcInspector  orphan.VPCInspector
 	orphanDeleter func(ctx context.Context, res *types.OrphanedResource, opts orphan.DeleteOptions) error
+
+	// Azure reaper keep-alive collaborators, seams so the sweep can be tested
+	// without an Azure subscription (default to the real `az` shell-outs).
+	azureGroupLister  func(ctx context.Context) ([]azureResourceGroup, error)
+	azureTagRefresher func(ctx context.Context, rgName, stamp string) error
 }
 
 // NewJanitor creates a new janitor instance
@@ -109,6 +132,9 @@ func NewJanitor(config *Config, st *store.Store, workDir string) *Janitor {
 		metricsPublisher: metricsPublisher,
 		vpcInspector:     orphan.NewAWSVPCInspector(),
 		orphanDeleter:    orphan.DeleteResource,
+
+		azureGroupLister:  listAzureResourceGroups,
+		azureTagRefresher: refreshAzureResourceGroupTag,
 	}
 	if st != nil {
 		j.clusterLookup = orphan.NewStoreClusterLookup(st.Clusters)
@@ -218,6 +244,13 @@ func (j *Janitor) run() {
 	// Enforce work hours (hibernate/resume clusters)
 	if err := j.enforceWorkHours(ctx); err != nil {
 		log.Printf("Error enforcing work hours: %v", err)
+	}
+
+	// Reset the external Azure reaper's 12h countdown on the resource groups we
+	// still need (shared base-domain DNS zone + live clusters). Cheap, and the
+	// outage it prevents takes out every Azure create in the fleet (#186).
+	if err := j.refreshAzureReaperTags(ctx); err != nil {
+		log.Printf("Error refreshing Azure reaper keep-alive tags: %v", err)
 	}
 
 	// Detect orphaned cloud resources (less frequently to avoid rate limits)

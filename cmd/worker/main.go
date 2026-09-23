@@ -342,6 +342,13 @@ func main() {
 
 	// Create janitor
 	janitorConfig := janitor.DefaultConfig()
+	// The Azure reaper keep-alive needs the shared base-domain DNS resource
+	// groups, which carry no ocpctl tags and so can't be discovered from Azure.
+	janitorConfig.AzureBaseDomainResourceGroups = profileRegistry.AzureBaseDomainResourceGroups()
+	if len(janitorConfig.AzureBaseDomainResourceGroups) > 0 && janitorConfig.AzureReaperKeepalive {
+		log.Printf("Azure reaper keep-alive enabled (refresh after %s) for base-domain resource groups: %v",
+			janitorConfig.AzureReaperKeepaliveRefreshAfter, janitorConfig.AzureBaseDomainResourceGroups)
+	}
 	j := janitor.NewJanitor(janitorConfig, st, workDir)
 
 	// Create pool scheduler

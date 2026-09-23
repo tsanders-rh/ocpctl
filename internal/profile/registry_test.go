@@ -1,6 +1,7 @@
 package profile_test
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -100,4 +101,36 @@ func TestRegistry_Count(t *testing.T) {
 	assert.GreaterOrEqual(t, total, 4)    // 4 profiles defined
 	assert.GreaterOrEqual(t, enabled, 2)  // At least 2 AWS profiles enabled
 	assert.LessOrEqual(t, enabled, total) // Enabled <= total
+}
+
+func TestRegistry_AzureBaseDomainResourceGroups(t *testing.T) {
+	loader := profile.NewLoader("definitions")
+	registry, err := profile.NewRegistry(loader)
+	require.NoError(t, err)
+
+	groups := registry.AzureBaseDomainResourceGroups()
+
+	// Both shipped Azure profiles (azure-standard, azure-sno-ga) point at the
+	// same DNS resource group, so the list must be deduplicated — the janitor's
+	// reaper keep-alive uses it as the set of groups to protect.
+	require.NotEmpty(t, groups, "Azure profiles define a baseDomainResourceGroup; it must be discoverable")
+	assert.Equal(t, len(groups), len(uniqueStrings(groups)), "resource groups must be deduplicated: %v", groups)
+	assert.Contains(t, groups, "azure-mg-dog8code-com-dns")
+
+	// Sorted, so log lines and config diffs are stable.
+	sorted := append([]string(nil), groups...)
+	sort.Strings(sorted)
+	assert.Equal(t, sorted, groups)
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
