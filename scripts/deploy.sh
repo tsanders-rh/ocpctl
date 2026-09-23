@@ -136,6 +136,9 @@ echo -e "${GREEN}✓ Uploaded azure-login.sh${NC}"
 aws s3 cp scripts/ibmcloud-login.sh ${S3_BUCKET}/scripts/ibmcloud-login.sh
 echo -e "${GREEN}✓ Uploaded ibmcloud-login.sh${NC}"
 
+aws s3 cp scripts/gcp-login.sh ${S3_BUCKET}/scripts/gcp-login.sh
+echo -e "${GREEN}✓ Uploaded gcp-login.sh${NC}"
+
 aws s3 cp scripts/configure-efs-storage.sh ${S3_BUCKET}/scripts/configure-efs-storage.sh
 echo -e "${GREEN}✓ Uploaded configure-efs-storage.sh${NC}"
 
@@ -267,13 +270,14 @@ for host in "${WORKER_HOSTS[@]}"; do
     # Create versioned directory
     ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/releases/${VERSION}"
 
-    # Deploy installer scripts + CLI login hooks (azure/ibmcloud-login.sh are
+    # Deploy installer scripts + CLI login hooks (azure/ibmcloud/gcp-login.sh are
     # ExecStartPre hooks in ocpctl-worker.service; without them the unit fails, #80)
     scp -i "$SSH_KEY" scripts/ensure-installers.sh $SSH_USER@$host:/tmp/ensure-installers.sh
     scp -i "$SSH_KEY" scripts/download-specific-version.sh $SSH_USER@$host:/tmp/download-specific-version.sh
     scp -i "$SSH_KEY" scripts/azure-login.sh $SSH_USER@$host:/tmp/azure-login.sh
     scp -i "$SSH_KEY" scripts/ibmcloud-login.sh $SSH_USER@$host:/tmp/ibmcloud-login.sh
-    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && sudo install -m 755 /tmp/download-specific-version.sh ${REMOTE_BASE}/scripts/download-specific-version.sh && sudo install -m 755 /tmp/azure-login.sh ${REMOTE_BASE}/scripts/azure-login.sh && sudo install -m 755 /tmp/ibmcloud-login.sh ${REMOTE_BASE}/scripts/ibmcloud-login.sh && rm /tmp/ensure-installers.sh /tmp/download-specific-version.sh /tmp/azure-login.sh /tmp/ibmcloud-login.sh"
+    scp -i "$SSH_KEY" scripts/gcp-login.sh $SSH_USER@$host:/tmp/gcp-login.sh
+    ssh -i "$SSH_KEY" $SSH_USER@$host "sudo mkdir -p ${REMOTE_BASE}/scripts && sudo install -m 755 /tmp/ensure-installers.sh ${REMOTE_BASE}/scripts/ensure-installers.sh && sudo install -m 755 /tmp/download-specific-version.sh ${REMOTE_BASE}/scripts/download-specific-version.sh && sudo install -m 755 /tmp/azure-login.sh ${REMOTE_BASE}/scripts/azure-login.sh && sudo install -m 755 /tmp/ibmcloud-login.sh ${REMOTE_BASE}/scripts/ibmcloud-login.sh && sudo install -m 755 /tmp/gcp-login.sh ${REMOTE_BASE}/scripts/gcp-login.sh && rm /tmp/ensure-installers.sh /tmp/download-specific-version.sh /tmp/azure-login.sh /tmp/ibmcloud-login.sh /tmp/gcp-login.sh"
 
     # Run ensure-installers to download/update all required CLIs (openshift-install, rosa, eksctl, etc.)
     echo -e "${YELLOW}  Running ensure-installers to install/update CLIs...${NC}"

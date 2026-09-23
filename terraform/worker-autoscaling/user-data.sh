@@ -87,8 +87,34 @@ mkdir -p /opt/ocpctl/scripts
 aws s3 cp s3://ocpctl-binaries/scripts/ensure-installers.sh /opt/ocpctl/scripts/ensure-installers.sh
 aws s3 cp s3://ocpctl-binaries/scripts/azure-login.sh       /opt/ocpctl/scripts/azure-login.sh
 aws s3 cp s3://ocpctl-binaries/scripts/ibmcloud-login.sh    /opt/ocpctl/scripts/ibmcloud-login.sh
+aws s3 cp s3://ocpctl-binaries/scripts/gcp-login.sh         /opt/ocpctl/scripts/gcp-login.sh
 chmod 755 /opt/ocpctl/scripts/*.sh
 chown -R ocpctl:ocpctl /opt/ocpctl/scripts
+
+# Download the GCP service-account key. worker.env sets
+# GOOGLE_APPLICATION_CREDENTIALS=/opt/ocpctl/gcp-credentials.json for every
+# worker, but nothing here used to fetch it, so autoscale workers pointed at a
+# file that did not exist and every GCP/GKE create they claimed died instantly
+# with "open /opt/ocpctl/gcp-credentials.json: no such file or directory". That
+# stayed hidden for months because the static host's poll() drained the queue
+# and starved the ASG; once MaxConcurrent became a real cap (#189/#190) jobs
+# started reaching these workers and GCP creates became a coin flip.
+#
+# The download previously existed ONLY in the legacy scripts/bootstrap-worker.sh
+# (added there by scripts/configure-gcp-credentials.sh), which this
+# Terraform-managed ASG never runs — the same trap as the azure-login, TMPDIR and
+# manifests-sync fixes. The durable home for it is here.
+#
+# Non-fatal: an environment may legitimately have no GCP credentials in S3, and
+# taking the whole worker out (set -e) would idle its AWS/Azure/IBM capacity too.
+echo "Downloading GCP credentials from S3"
+if aws s3 cp s3://ocpctl-binaries/config/gcp-credentials.json /opt/ocpctl/gcp-credentials.json; then
+    chmod 600 /opt/ocpctl/gcp-credentials.json
+    chown ocpctl:ocpctl /opt/ocpctl/gcp-credentials.json
+    echo "✓ GCP credentials downloaded"
+else
+    echo "WARNING: Failed to download GCP credentials from S3 (OK if not using GCP; GCP/GKE jobs will fail)"
+fi
 
 # Install all cluster CLIs (openshift-install, oc, eksctl, gcloud, az, ibmcloud, ...)
 # synchronously here so that az/etc. exist BEFORE the azure-login ExecStartPre hook
@@ -142,9 +168,13 @@ Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=/opt/ocpctl"
 EnvironmentFile=/etc/ocpctl/worker.env
 
-# Authenticate cloud CLIs before the worker starts.
+# Authenticate cloud CLIs before the worker starts. gcp-login.sh activates the
+# gcloud service account, which `gcloud` needs for GKE and orphaned-GCP detection
+# (it ignores GOOGLE_APPLICATION_CREDENTIALS for its own auth). It is
+# intentionally non-fatal, unlike azure-login.sh.
 ExecStartPre=/opt/ocpctl/scripts/azure-login.sh
 ExecStartPre=/opt/ocpctl/scripts/ibmcloud-login.sh
+ExecStartPre=/opt/ocpctl/scripts/gcp-login.sh
 
 ExecStart=/usr/local/bin/ocpctl-worker
 Restart=on-failure

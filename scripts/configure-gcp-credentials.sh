@@ -65,28 +65,26 @@ echo -e "${YELLOW}Step 3: Uploading updated worker.env to S3...${NC}"
 aws s3 cp config/worker.env ${S3_BUCKET}/config/worker.env
 echo -e "${GREEN}✓ Uploaded worker.env to S3${NC}"
 
-# Step 4: Update bootstrap-worker.sh to download GCP credentials
-echo -e "${YELLOW}Step 4: Updating bootstrap-worker.sh to download GCP credentials...${NC}"
-if ! grep -q "gcp-credentials.json" scripts/bootstrap-worker.sh; then
-    # Add GCP credentials download after the manifests sync section
-    sed -i.bak '/# Download ensure-installers script/i \
-# Download GCP credentials from S3\
-echo "Downloading GCP credentials from S3..."\
-if aws s3 cp ${S3_BUCKET}/config/gcp-credentials.json ${REMOTE_BASE}/gcp-credentials.json; then\
-    chmod 600 ${REMOTE_BASE}/gcp-credentials.json\
-    echo "✓ GCP credentials downloaded"\
-else\
-    echo "WARNING: Failed to download GCP credentials from S3 (OK if not using GCP)"\
-fi\
-\
-' scripts/bootstrap-worker.sh
-    echo -e "${GREEN}✓ Updated bootstrap-worker.sh${NC}"
-
-    # Upload updated bootstrap script to S3
-    aws s3 cp scripts/bootstrap-worker.sh ${S3_BUCKET}/scripts/bootstrap-worker.sh
-    echo -e "${GREEN}✓ Uploaded updated bootstrap-worker.sh to S3${NC}"
+# Step 4: Verify the autoscale worker boot path fetches the credentials.
+#
+# This step used to sed-patch scripts/bootstrap-worker.sh — the LEGACY manual-AMI
+# bootstrap that the Terraform-managed ASG never runs. So it reported success
+# while autoscale workers went on booting with GOOGLE_APPLICATION_CREDENTIALS
+# pointing at a file nothing had downloaded, and every GCP create those workers
+# claimed failed instantly. The download now lives in the launch-template
+# user-data, which is the only boot path that actually executes.
+echo -e "${YELLOW}Step 4: Verifying autoscale worker boot path (Terraform user-data)...${NC}"
+ASG_USER_DATA="terraform/worker-autoscaling/user-data.sh"
+if grep -q "config/gcp-credentials.json" "$ASG_USER_DATA"; then
+    echo -e "${GREEN}✓ $ASG_USER_DATA downloads GCP credentials${NC}"
+    echo -e "${YELLOW}  NOTE: changing that file requires 'terraform apply' in terraform/worker-autoscaling/${NC}"
+    echo -e "${YELLOW}        (it creates a new launch-template version; the ASG tracks \$Latest).${NC}"
 else
-    echo -e "${GREEN}✓ bootstrap-worker.sh already configured for GCP credentials${NC}"
+    echo -e "${RED}✗ $ASG_USER_DATA does NOT download GCP credentials${NC}"
+    echo -e "${RED}  Autoscale workers will fail every GCP/GKE job with${NC}"
+    echo -e "${RED}  'open /opt/ocpctl/gcp-credentials.json: no such file or directory'.${NC}"
+    echo -e "${RED}  Add the download there — NOT to scripts/bootstrap-worker.sh, which the ASG never runs.${NC}"
+    exit 1
 fi
 
 # Step 5: Configure main API server
