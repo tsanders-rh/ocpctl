@@ -25,6 +25,12 @@ ExecStartPre=/opt/ocpctl/scripts/azure-login.sh
 # Authenticate IBM Cloud CLI with API key if IBM Cloud credentials are configured
 ExecStartPre=/opt/ocpctl/scripts/ibmcloud-login.sh
 
+# Activate the gcloud service account if GCP credentials are configured. gcloud
+# keeps its own credential store and ignores GOOGLE_APPLICATION_CREDENTIALS for
+# its own auth, so GKE provisioning and orphaned-GCP detection need this even
+# though openshift-install reads the key file directly. Non-fatal by design.
+ExecStartPre=/opt/ocpctl/scripts/gcp-login.sh
+
 ExecStart=/opt/ocpctl/current/ocpctl-worker
 Restart=on-failure
 RestartSec=10
