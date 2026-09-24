@@ -431,6 +431,26 @@ if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
         IMPORT_METHOD="snapshot"
         log_info "✓ Validated snapshot is ready: $SNAPSHOT_ID (state: completed)"
         log_info "  Using fast snapshot-based import (expected: 2-3 minutes)"
+
+        # The VM disk is a CSI restore of this snapshot into an encrypted
+        # StorageClass. If the snapshot itself is unencrypted, EBS re-encrypts
+        # every block on restore and the incremental-snapshot lineage is lost,
+        # so the first CSI/Velero backup of every VM is a full ~70 GiB snapshot
+        # (~68 min) instead of an incremental one. Provisioning is unaffected,
+        # so we still use the snapshot - but say so loudly. See issue #198.
+        SNAPSHOT_ENCRYPTED=$(aws ec2 describe-snapshots --snapshot-ids "$SNAPSHOT_ID" --region "$REGION" \
+            --query 'Snapshots[0].Encrypted' --output text 2>/dev/null || echo "unknown")
+
+        if [ "$SNAPSHOT_ENCRYPTED" = "False" ] || [ "$SNAPSHOT_ENCRYPTED" = "false" ]; then
+            log_warn "Golden snapshot $SNAPSHOT_ID is UNENCRYPTED"
+            log_warn "  VM disks restore into an encrypted StorageClass, so EBS must re-encrypt"
+            log_warn "  every block. This breaks incremental-snapshot lineage: the FIRST CSI/Velero"
+            log_warn "  backup of each Windows VM will be a full ~70 GiB snapshot (~68 minutes)."
+            log_warn "  VM provisioning itself is unaffected."
+            log_warn "  Remediate with: scripts/reencrypt-windows-golden-snapshot.sh --region $REGION"
+        elif [ "$SNAPSHOT_ENCRYPTED" = "True" ] || [ "$SNAPSHOT_ENCRYPTED" = "true" ]; then
+            log_info "✓ Golden snapshot is encrypted (CSI backups stay incremental)"
+        fi
     else
         log_warn "Snapshot $SNAPSHOT_ID exists but is not completed (state: $SNAPSHOT_STATE)"
         log_warn "Falling back to S3 import"

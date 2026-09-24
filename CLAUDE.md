@@ -770,6 +770,31 @@ DELETE FROM job_locks WHERE cluster_id = 'cluster-uuid';
 
 ## Recent Changes
 
+**2026-09-24**: Windows Golden Snapshots Were Unencrypted → Full-Size First CSI Backup (#198)
+- **Symptom**: Velero/OADP CSI backups of Windows test VMs took ~68 minutes. The
+  AWS snapshot accounted for essentially all of it (Velero finished ~54s later).
+  A second backup of the same VM was fast.
+- **Root cause**: `startImportSnapshot` ran `aws ec2 import-snapshot` with **no
+  `--encrypted`**, so the golden snapshot (`snap-0059372671a43a646`, us-east-1,
+  v1.0) was unencrypted — while every StorageClass the VM disk restores into sets
+  `encrypted: "true"`. EBS therefore re-encrypted every block on restore, which
+  breaks incremental-snapshot lineage and makes the first backup a **full** 70 GiB
+  snapshot. Both `copy-snapshot` paths propagated the unencrypted state to every
+  region they seeded.
+- **Why it hid for months**: an unencrypted golden snapshot boots VMs perfectly
+  well — nothing fails, nothing logs. And "first backup slow, later backups fast"
+  looks exactly like the ordinary rule that a volume's first snapshot is full, so
+  the symptom doesn't point at encryption on its own.
+- **Fixes**: `--encrypted` (no `--kms-key-id`, so AWS picks the region's default
+  EBS key = the key the CSI driver uses) on all three creation paths;
+  `verifySnapshotEncrypted` gate before SSM publication; consumer-side warning in
+  `setup-windows-vm-infrastructure.sh` when a discovered snapshot is unencrypted
+  (warn, don't reject — provisioning is still 2-3 min vs 30-50 min on the S3
+  fallback); `kms:*`/`ec2:ImportSnapshot`/`ec2:CopySnapshot` added to
+  `deploy/iam-policy-worker-full.json`, which lacked them.
+- **Not retroactive**: run `scripts/reencrypt-windows-golden-snapshot.sh` per
+  region. See "Golden Snapshots MUST Be Encrypted" above.
+
 **2026-09-22**: Azure Creates Collided on CAPZ's Port `:8443` (#189) + `MaxConcurrent` Was Never a Cap
 - **Symptom**: Azure IPI creates failed ~3 seconds in with `failed calling webhook
   "validation.azureclusteridentity..."` → `connection refused`, preceded by
@@ -940,6 +965,38 @@ ocpctl:region: us-east-1
 - Slow path (S3 download): 30-50 minutes
 - Productivity savings: ~$2,500/month (based on 50 Windows deployments/month)
 
+### Golden Snapshots MUST Be Encrypted (#198)
+
+**The golden snapshot's encryption state has to match the StorageClass's.** Every
+StorageClass we restore Windows VM disks into (`gp3-csi-immediate-<zone>`,
+`gp3-csi-wfc`, `gp3-csi-<infraID>-<zone>`) sets `encrypted: "true"` with no
+`kmsKeyId`, so the volume lands on the region's **default EBS key**
+(`alias/aws/ebs`). The VM disk is a direct CSI restore of the golden snapshot
+(`4_windows10-template.yaml` → `source.snapshot`), so if the golden snapshot is
+unencrypted, EBS re-encrypts every block on restore and **severs the incremental
+snapshot lineage** — the first CSI/Velero backup of each VM becomes a full
+~70 GiB snapshot (~68 min) instead of an incremental one. Per AWS: *"if Vol 2 was
+encrypted with a different KMS key than Vol 1, then Snap B would be a full
+snapshot."* VM provisioning is unaffected, which is why this stayed invisible.
+
+- All three creation paths in `internal/worker/handler_windows_snapshot.go`
+  (`importSnapshotArgs`, `copySnapshotArgs` ×2) pass **`--encrypted` without
+  `--kms-key-id`** — that selects the destination region's default EBS key, the
+  same one the CSI driver uses, and avoids granting the `vmimport` service role
+  access to a customer-managed key (only needed for non-default keys).
+- `verifySnapshotEncrypted` gates SSM publication, so an unencrypted snapshot
+  can't be advertised again.
+- **Never pin a `kmsKeyId` on those StorageClasses** without also pinning the
+  same key on the golden snapshot — that silently re-breaks the lineage.
+- **The fix is not retroactive.** Snapshots created before 2026-09-24 are
+  unencrypted. Remediate per region with:
+  `scripts/reencrypt-windows-golden-snapshot.sh --region <region> [--dry-run]`
+  (same-region `copy-snapshot --encrypted`, re-points SSM, strips discovery tags
+  from the old one). Existing clusters' VMs keep the penalty until recreated.
+- Verifying incrementality: `describe-snapshots` reports `VolumeSize` (70 GiB)
+  either way and proves nothing. Use the EBS direct APIs
+  (`ebs:ListChangedBlocks`) between the golden snapshot and the backup snapshot.
+
 ---
 
 ## Resources
@@ -953,4 +1010,4 @@ ocpctl:region: us-east-1
 
 ---
 
-**Last Updated**: 2026-09-22 (Azure CAPZ `:8443` collision (#189) + `MaxConcurrent` is now a real concurrency cap)
+**Last Updated**: 2026-09-24 (Windows golden snapshots must be encrypted to keep CSI backups incremental (#198))

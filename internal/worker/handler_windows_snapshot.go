@@ -16,6 +16,54 @@ import (
 	"github.com/tsanders-rh/ocpctl/pkg/types"
 )
 
+// Golden snapshots must be encrypted with the region's default EBS KMS key.
+//
+// Every StorageClass we restore Windows VM disks into sets `encrypted: "true"`
+// with no `kmsKeyId`, so the EBS CSI driver lands the volume on the default EBS
+// key (alias/aws/ebs). If the golden snapshot is unencrypted, EBS re-encrypts
+// every block on restore, which severs the incremental-snapshot lineage: the
+// first CSI/Velero backup of that volume is a full 70 GiB snapshot (~68 min)
+// instead of an incremental one. See
+// https://docs.aws.amazon.com/ebs/latest/userguide/how_snapshots_work.html —
+// "if Vol 2 was encrypted with a different KMS key than Vol 1, then Snap B
+// would be a full snapshot".
+//
+// We deliberately pass --encrypted *without* --kms-key-id. That selects the
+// destination region's default EBS key, which is the same key the CSI driver
+// picks, and it avoids having to grant the vmimport service role access to a
+// customer-managed key (VM Import only requires that for non-default keys).
+//
+// Note this is not retroactive: golden snapshots created before this was fixed
+// are still unencrypted and must be replaced with an encrypted copy. See
+// scripts/reencrypt-windows-golden-snapshot.sh.
+
+// importSnapshotArgs builds the `aws ec2 import-snapshot` argv for a golden
+// snapshot import. Split out from the exec call so the encryption flag is
+// covered by tests.
+func importSnapshotArgs(region, description, s3Bucket, s3Key string) []string {
+	return []string{"ec2", "import-snapshot",
+		"--description", description,
+		"--region", region,
+		"--disk-container", fmt.Sprintf("Format=RAW,UserBucket={S3Bucket=%s,S3Key=%s}", s3Bucket, s3Key),
+		"--encrypted",
+		"--output", "json",
+	}
+}
+
+// copySnapshotArgs builds the `aws ec2 copy-snapshot` argv used by both the
+// cross-region copy and the same-region persistent copy.
+func copySnapshotArgs(sourceSnapshotID, sourceRegion, destRegion, description string) []string {
+	return []string{"ec2", "copy-snapshot",
+		"--source-region", sourceRegion,
+		"--source-snapshot-id", sourceSnapshotID,
+		"--destination-region", destRegion,
+		"--description", description,
+		"--region", destRegion,
+		"--encrypted",
+		"--output", "json",
+	}
+}
+
 // WindowsSnapshotHandler handles CREATE_WINDOWS_SNAPSHOT jobs
 type WindowsSnapshotHandler struct {
 	config         *Config
@@ -128,6 +176,13 @@ func (h *WindowsSnapshotHandler) handleCopySnapshot(ctx context.Context, job *ty
 		return fmt.Errorf("failed to update status to validating: %w", err)
 	}
 
+	// Refuse to advertise a snapshot that would break CSI backup incrementality
+	if err := h.verifySnapshotEncrypted(ctx, newEBSSnapshotID, region); err != nil {
+		errMsg := fmt.Sprintf("Snapshot encryption check failed: %v", err)
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf("verify snapshot encryption: %w", err)
+	}
+
 	// Publish to SSM Parameter Store
 	ssmPath := fmt.Sprintf("/ocpctl/windows-snapshots/%s/%s", version, region)
 	if err := h.publishToSSM(ctx, region, ssmPath, newEBSSnapshotID); err != nil {
@@ -204,6 +259,13 @@ func (h *WindowsSnapshotHandler) handleRegenerateSnapshot(ctx context.Context, j
 	fmt.Println("Step 3: Tagging EBS snapshot...")
 	if err := h.tagSnapshot(ctx, ebsSnapshotID, region, version); err != nil {
 		fmt.Printf("Warning: Failed to tag snapshot: %v\n", err)
+	}
+
+	// Refuse to advertise a snapshot that would break CSI backup incrementality
+	if err := h.verifySnapshotEncrypted(ctx, ebsSnapshotID, region); err != nil {
+		errMsg := fmt.Sprintf("Snapshot encryption check failed: %v", err)
+		_ = h.store.UpdateWindowsSnapshotStatus(ctx, snapshotID, types.WindowsSnapshotStatusFailed, &errMsg)
+		return fmt.Errorf("verify snapshot encryption: %w", err)
 	}
 
 	// Step 4: Publish to SSM Parameter Store
@@ -504,14 +566,7 @@ func (h *WindowsSnapshotHandler) createPersistentCopy(ctx context.Context, sourc
 	fmt.Printf("  Creating persistent copy of %s in %s...\n", sourceSnapshotID, region)
 
 	// Use copy-snapshot in same region to create a standalone snapshot
-	cmd := exec.CommandContext(ctx, "aws", "ec2", "copy-snapshot",
-		"--source-region", region,
-		"--source-snapshot-id", sourceSnapshotID,
-		"--destination-region", region,
-		"--description", description,
-		"--region", region,
-		"--output", "json",
-	)
+	cmd := exec.CommandContext(ctx, "aws", copySnapshotArgs(sourceSnapshotID, region, region, description)...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -606,14 +661,7 @@ func (h *WindowsSnapshotHandler) copyEBSSnapshot(ctx context.Context, sourceSnap
 	description := fmt.Sprintf("Windows 10 OADP v%s (copied from %s)", version, sourceRegion)
 
 	// Build AWS CLI command to copy snapshot
-	cmd := exec.CommandContext(ctx, "aws", "ec2", "copy-snapshot",
-		"--source-region", sourceRegion,
-		"--source-snapshot-id", sourceSnapshotID,
-		"--destination-region", destRegion,
-		"--description", description,
-		"--region", destRegion,
-		"--output", "json",
-	)
+	cmd := exec.CommandContext(ctx, "aws", copySnapshotArgs(sourceSnapshotID, sourceRegion, destRegion, description)...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -707,12 +755,7 @@ func (h *WindowsSnapshotHandler) startImportSnapshot(ctx context.Context, region
 	s3Key := "windows-images/windows-10-oadp.raw"
 	description := fmt.Sprintf("Windows 10 OADP v%s - %s", version, region)
 
-	cmd := exec.CommandContext(ctx, "aws", "ec2", "import-snapshot",
-		"--description", description,
-		"--region", region,
-		"--disk-container", fmt.Sprintf("Format=RAW,UserBucket={S3Bucket=%s,S3Key=%s}", s3Bucket, s3Key),
-		"--output", "json",
-	)
+	cmd := exec.CommandContext(ctx, "aws", importSnapshotArgs(region, description, s3Bucket, s3Key)...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -835,6 +878,53 @@ func (h *WindowsSnapshotHandler) tagSnapshot(ctx context.Context, snapshotID, re
 	}
 
 	fmt.Printf("  ✓ Tagged snapshot %s\n", snapshotID)
+	return nil
+}
+
+// verifySnapshotEncrypted confirms a freshly created golden snapshot is
+// encrypted before we advertise it via SSM.
+//
+// An unencrypted golden snapshot still boots VMs fine, so nothing downstream
+// fails loudly — it just silently costs every VM restored from it a full-size
+// first CSI backup. That makes it exactly the kind of regression that survives
+// unnoticed, so we gate publication on it rather than trusting the flag.
+func (h *WindowsSnapshotHandler) verifySnapshotEncrypted(ctx context.Context, snapshotID, region string) error {
+	cmd := exec.CommandContext(ctx, "aws", "ec2", "describe-snapshots",
+		"--snapshot-ids", snapshotID,
+		"--region", region,
+		"--query", "Snapshots[0]",
+		"--output", "json",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("describe-snapshots failed: %w\nOutput: %s", err, string(output))
+	}
+
+	var snap struct {
+		Encrypted bool   `json:"Encrypted"`
+		KmsKeyID  string `json:"KmsKeyId"`
+	}
+	if err := json.Unmarshal(output, &snap); err != nil {
+		return fmt.Errorf("parse describe-snapshots response: %w", err)
+	}
+
+	if err := checkSnapshotEncrypted(snapshotID, snap.Encrypted); err != nil {
+		return err
+	}
+
+	fmt.Printf("  ✓ Snapshot %s is encrypted (key: %s)\n", snapshotID, snap.KmsKeyID)
+	return nil
+}
+
+// checkSnapshotEncrypted is the encryption gate itself, split from the AWS call
+// so it can be tested directly.
+func checkSnapshotEncrypted(snapshotID string, encrypted bool) error {
+	if !encrypted {
+		return fmt.Errorf("golden snapshot %s is not encrypted; restoring it into "+
+			"an encrypted StorageClass re-encrypts every block and forces a full "+
+			"first CSI backup (see issue #198)", snapshotID)
+	}
 	return nil
 }
 
