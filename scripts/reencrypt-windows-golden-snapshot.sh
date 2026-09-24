@@ -19,9 +19,18 @@
 #   1. Resolves the golden snapshot for a region from SSM.
 #   2. Exits early if it is already encrypted (safe to re-run).
 #   3. Makes a same-region `copy-snapshot --encrypted` (default EBS KMS key —
-#      the same key the CSI StorageClass uses).
+#      the same key the CSI StorageClass uses), or adopts one already in flight.
 #   4. Waits for the copy, tags it like the original.
 #   5. Re-points the SSM parameter at the new snapshot.
+#
+# Expect this to take roughly an hour. A same-region copy is normally a cheap
+# metadata operation, but this one *changes encryption state*, so every block
+# has to be read, re-encrypted and rewritten — the same full-copy physics that
+# causes the bug being fixed. Observed ~14% after 11 minutes for 70 GiB.
+#
+# The wait is resumable: if the copy is still running when you interrupt it, or
+# you re-run after a timeout, the script finds the in-flight copy by description
+# and adopts it rather than starting a second one.
 #
 # The old snapshot is left in place. Delete it yourself once you are satisfied,
 # and only after checking no live volume still depends on it.
@@ -114,6 +123,7 @@ if [ "$DRY_RUN" = true ]; then
     log_info "[dry-run] Would run: aws ec2 copy-snapshot --encrypted \\"
     log_info "[dry-run]   --source-snapshot-id $OLD_SNAPSHOT --source-region $REGION \\"
     log_info "[dry-run]   --destination-region $REGION --region $REGION"
+    log_info "[dry-run] Would wait ~1 hour (encryption change forces a full block copy)"
     log_info "[dry-run] Would re-point $SSM_PARAM at the new snapshot"
     log_info "[dry-run] Would leave $OLD_SNAPSHOT in place for manual deletion"
     exit 0
@@ -122,21 +132,37 @@ fi
 # 3. Same-region encrypted copy. No --kms-key-id: that selects the region's
 #    default EBS key, which is exactly what `encrypted: "true"` gives the
 #    restored volume, so the lineage is preserved on restore.
-log_info "Creating encrypted copy (default EBS KMS key)..."
-NEW_SNAPSHOT=$(aws ec2 copy-snapshot \
-    --source-region "$REGION" \
-    --source-snapshot-id "$OLD_SNAPSHOT" \
-    --destination-region "$REGION" \
-    --region "$REGION" \
-    --encrypted \
-    --description "Windows 10 OADP v${SNAPSHOT_VERSION} (encrypted copy of ${OLD_SNAPSHOT})" \
-    --query 'SnapshotId' --output text)
+COPY_DESCRIPTION="Windows 10 OADP v${SNAPSHOT_VERSION} (encrypted copy of ${OLD_SNAPSHOT})"
 
-log_info "✓ Copy started: $NEW_SNAPSHOT"
+# Adopt an in-flight or finished copy from an earlier interrupted run rather
+# than kicking off a second hour-long copy of the same data.
+NEW_SNAPSHOT=$(aws ec2 describe-snapshots --owner-ids self --region "$REGION" \
+    --filters "Name=description,Values=${COPY_DESCRIPTION}" \
+              "Name=status,Values=pending,completed" \
+    --query 'reverse(sort_by(Snapshots, &StartTime))[0].SnapshotId' \
+    --output text 2>/dev/null || echo "None")
 
-# 4. Wait for completion
-log_info "Waiting for copy to complete (typically 2-5 minutes for 70 GiB)..."
-DEADLINE=$(( $(date +%s) + 1800 ))
+if [ -n "$NEW_SNAPSHOT" ] && [ "$NEW_SNAPSHOT" != "None" ]; then
+    log_info "Adopting existing encrypted copy from an earlier run: $NEW_SNAPSHOT"
+else
+    log_info "Creating encrypted copy (default EBS KMS key)..."
+    NEW_SNAPSHOT=$(aws ec2 copy-snapshot \
+        --source-region "$REGION" \
+        --source-snapshot-id "$OLD_SNAPSHOT" \
+        --destination-region "$REGION" \
+        --region "$REGION" \
+        --encrypted \
+        --description "$COPY_DESCRIPTION" \
+        --query 'SnapshotId' --output text)
+
+    log_info "✓ Copy started: $NEW_SNAPSHOT"
+fi
+
+# 4. Wait for completion. Changing encryption state forces a full block-by-block
+#    copy, so budget ~an hour for 70 GiB rather than the minutes a same-encryption
+#    same-region copy would take.
+log_info "Waiting for copy to complete (expect ~1 hour for 70 GiB)..."
+DEADLINE=$(( $(date +%s) + 7200 ))
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     read -r COPY_STATE COPY_PROGRESS <<<"$(aws ec2 describe-snapshots \
         --snapshot-ids "$NEW_SNAPSHOT" --region "$REGION" \
@@ -151,7 +177,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     fi
 
     log_info "  Progress: $COPY_PROGRESS (state: $COPY_STATE)"
-    sleep 30
+    sleep 60
 done
 
 if [ "$COPY_STATE" != "completed" ]; then
