@@ -584,9 +584,11 @@ func (h *WindowsSnapshotHandler) createPersistentCopy(ctx context.Context, sourc
 	persistentSnapshotID := result.SnapshotID
 	fmt.Printf("  Persistent copy initiated: %s (waiting for completion...)\n", persistentSnapshotID)
 
-	// Same-region copies are fast (typically 2-5 minutes for 70GB snapshot)
-	// Use shorter timeout than cross-region
-	deadline := time.Now().Add(15 * time.Minute)
+	// A same-region copy is normally a cheap metadata operation, but --encrypted
+	// against an unencrypted source rewrites every block (~1 hour for 70 GiB
+	// observed). Budget for that rather than the minutes a same-encryption copy
+	// would take.
+	deadline := time.Now().Add(90 * time.Minute)
 	for time.Now().Before(deadline) {
 		// Check snapshot status
 		statusCmd := exec.CommandContext(ctx, "aws", "ec2", "describe-snapshots",
