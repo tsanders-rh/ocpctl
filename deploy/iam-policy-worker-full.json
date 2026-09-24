@@ -14,7 +14,9 @@
         "ec2:AttachVolume",
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CancelImportTask",
         "ec2:CopyImage",
+        "ec2:CopySnapshot",
         "ec2:CreateDhcpOptions",
         "ec2:CreateInternetGateway",
         "ec2:CreateNatGateway",
@@ -60,6 +62,7 @@
         "ec2:DescribeRegions",
         "ec2:DescribeRouteTables",
         "ec2:DescribeSecurityGroups",
+        "ec2:DescribeImportSnapshotTasks",
         "ec2:DescribeSnapshots",
         "ec2:DescribeSubnets",
         "ec2:DescribeTags",
@@ -75,6 +78,7 @@
         "ec2:DisassociateAddress",
         "ec2:DisassociateRouteTable",
         "ec2:GetEbsDefaultKmsKeyId",
+        "ec2:ImportSnapshot",
         "ec2:ModifyInstanceAttribute",
         "ec2:ModifyNetworkInterfaceAttribute",
         "ec2:ModifySubnetAttribute",
@@ -241,6 +245,37 @@
         "servicequotas:ListAWSDefaultServiceQuotas"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "EBSSnapshotEncryption",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "kms:ViaService": "ec2.*.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "EBSSnapshotEncryptionGrants",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateGrant"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "kms:GrantIsForAWSResource": "true"
+        }
+      }
     },
     {
       "Sid": "ResourceTagging",

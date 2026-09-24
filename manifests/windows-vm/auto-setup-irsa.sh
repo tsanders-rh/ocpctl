@@ -476,6 +476,21 @@ if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
         IMPORT_METHOD="snapshot"
         log_info "✓ Validated snapshot is ready: $SNAPSHOT_ID (state: completed)"
         log_info "  Using fast snapshot-based import (expected: 2-3 minutes)"
+
+        # An unencrypted golden snapshot restored into an encrypted StorageClass
+        # forces EBS to re-encrypt every block, severing incremental-snapshot
+        # lineage and making the first CSI backup a full ~70 GiB snapshot.
+        # Provisioning still works, so warn rather than reject. See issue #198.
+        SNAPSHOT_ENCRYPTED=$(aws ec2 describe-snapshots --snapshot-ids "$SNAPSHOT_ID" --region "$REGION" \
+            --query 'Snapshots[0].Encrypted' --output text 2>/dev/null || echo "unknown")
+
+        if [ "$SNAPSHOT_ENCRYPTED" = "False" ] || [ "$SNAPSHOT_ENCRYPTED" = "false" ]; then
+            log_warn "Golden snapshot $SNAPSHOT_ID is UNENCRYPTED - first CSI/Velero backup"
+            log_warn "  of each Windows VM will be a full ~70 GiB snapshot (~68 minutes)."
+            log_warn "  Remediate with: scripts/reencrypt-windows-golden-snapshot.sh --region $REGION"
+        elif [ "$SNAPSHOT_ENCRYPTED" = "True" ] || [ "$SNAPSHOT_ENCRYPTED" = "true" ]; then
+            log_info "✓ Golden snapshot is encrypted (CSI backups stay incremental)"
+        fi
     else
         log_warn "Snapshot $SNAPSHOT_ID exists but is not completed (state: $SNAPSHOT_STATE)"
         log_warn "Falling back to S3 import"

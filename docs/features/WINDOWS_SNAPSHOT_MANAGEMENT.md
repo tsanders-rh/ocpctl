@@ -302,8 +302,83 @@ cd web && npm run build && npm run deploy
 
 1. **Admin-only access**: All snapshot management endpoints require admin role
 2. **Audit logging**: All snapshot operations logged to `windows_snapshot_audit`
-3. **IAM permissions**: Worker needs EC2 snapshot and SSM permissions
+3. **IAM permissions**: Worker needs EC2 snapshot, KMS, and SSM permissions
+   (see `deploy/iam-policy-worker-full.json`, Sids `EBSSnapshotEncryption` and
+   `EBSSnapshotEncryptionGrants`)
 4. **Validation required**: Snapshots must boot successfully before marked as "ready"
+5. **Encryption required**: Golden snapshots are created encrypted — see below
+
+## Snapshot Encryption (issue #198)
+
+Golden snapshots **must** be encrypted with the region's default EBS KMS key.
+
+### Why
+
+The Windows VM disk is a direct CSI restore of the golden snapshot
+(`4_windows10-template.yaml` uses `source.snapshot`), into a StorageClass that
+sets `encrypted: "true"` with no `kmsKeyId` — i.e. the default EBS key
+(`alias/aws/ebs`).
+
+If the golden snapshot is unencrypted, EBS must re-encrypt every block during the
+restore, and that **severs the incremental-snapshot lineage**. From the
+[AWS documentation](https://docs.aws.amazon.com/ebs/latest/userguide/how_snapshots_work.html):
+
+> if **Vol 2** was encrypted with a different KMS key than **Vol 1**, then
+> **Snap B** would be a full snapshot.
+
+The consequence is that the *first* CSI/Velero backup of every Windows VM is a
+full ~70 GiB snapshot taking ~68 minutes, rather than an incremental one.
+
+VM provisioning speed is unaffected, so nothing fails or logs an error — which is
+why this went unnoticed. Note also that the symptom ("first backup slow, second
+backup fast") is indistinguishable from the ordinary rule that a volume's first
+snapshot is always full; the encryption state is what actually distinguishes them.
+
+### How it's enforced
+
+| Layer | Mechanism |
+|-------|-----------|
+| Creation | `importSnapshotArgs` / `copySnapshotArgs` pass `--encrypted` |
+| Publication | `verifySnapshotEncrypted` fails the job before writing to SSM |
+| Consumption | `setup-windows-vm-infrastructure.sh` warns if the discovered snapshot is unencrypted |
+| Tests | `internal/worker/handler_windows_snapshot_test.go` |
+
+`--kms-key-id` is deliberately **not** passed. Omitting it selects the
+destination region's default EBS key — the same key the CSI driver will use — and
+avoids having to grant the `vmimport` service role access to a customer-managed
+key (VM Import only requires that for non-default keys).
+
+> **Do not pin a `kmsKeyId` on the Windows StorageClasses** unless you pin the
+> same key on the golden snapshot. A mismatch silently re-introduces the
+> full-snapshot penalty.
+
+### Remediating existing snapshots
+
+The fix is not retroactive. For each region with a pre-existing golden snapshot:
+
+```bash
+# Inspect first
+scripts/reencrypt-windows-golden-snapshot.sh --region us-east-1 --dry-run
+
+# Then remediate
+scripts/reencrypt-windows-golden-snapshot.sh --region us-east-1
+```
+
+This makes a same-region `copy-snapshot --encrypted`, verifies the result is
+encrypted, tags it, re-points the SSM parameter, and strips the
+`ocpctl:managed` / `ocpctl:image-version` discovery tags from the superseded
+snapshot so the EC2-tag fallback can't pick it back up. The old snapshot is left
+in place for manual deletion.
+
+Windows VMs on **existing** clusters still sit on volumes restored from the old
+snapshot and keep the penalty until they are recreated.
+
+### Verifying
+
+`describe-snapshots` reports `VolumeSize` (70 GiB) regardless of how many blocks
+were actually transferred, so it cannot confirm incrementality. Use the EBS
+direct APIs (`ebs:ListChangedBlocks`) between the golden snapshot and the backup
+snapshot instead.
 
 ## Cost Analysis
 
